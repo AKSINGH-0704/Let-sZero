@@ -1,0 +1,76 @@
+FINAL AUTH EXPERIENCE UPGRADE — PRODUCT-LEVEL QUALITY REQUIRED
+
+The current login page is functionally correct but visually underwhelming and does not match the enterprise quality of the landing page.
+
+You are explicitly authorized to perform a FULL UX/UI REBUILD of the login page (UI only).
+
+==============================
+OBJECTIVE
+==============================
+Make the login page feel like Zoho Mail / ZeptoMail quality:
+- Visually engaging
+- Brand-aligned
+- Trust-building
+- Enterprise-grade
+
+This is NOT just a form. It is part of the product experience.
+
+==============================
+MANDATORY DESIGN REQUIREMENTS
+==============================
+
+1. SPLIT SCREEN LAYOUT
+- Two-column layout (desktop)
+- Left: Brand + Value
+- Right: Login Form
+- Responsive: Single column on mobile
+
+2. LEFT PANEL (BRAND & TRUST)
+- Dark gradient or subtle grid background (same theme as landing page)
+- EmailFlow Pro logo
+- Headline:
+  “Enterprise Email Campaign Control”
+- Subtext:
+  “AI-powered personalization, credit governance, and audit-grade compliance”
+- Feature bullets with icons:
+  • AI Personalization
+  • Team Hierarchy
+  • Credit-Based Controls
+  • Audit Logging
+
+3. RIGHT PANEL (LOGIN)
+- Existing username/password fields (unchanged logic)
+- Clear primary CTA: Sign In
+- Divider with text: “or continue with”
+- Social login buttons (UI only):
+  - Continue with Google
+  - Continue with LinkedIn
+  (Visually present, disabled or marked ‘Coming Soon’ if backend not implemented)
+
+4. VISUAL QUALITY
+- No plain white full-page background
+- Strong visual hierarchy
+- Balanced spacing
+- Inter font
+- Button hover + loading states
+- Subtle entrance animation (fade/slide)
+
+5. TRUST MICRO-COPY (BELOW FORM)
+- “Secure access”
+- “Role-based permissions”
+- “All activity is audit logged”
+
+==============================
+STRICT RULES
+==============================
+- JavaScript only
+- Do NOT modify authentication logic
+- Do NOT fake OAuth functionality
+- UI placeholders allowed for social login
+- Demo credentials must remain visible
+
+==============================
+SUCCESS CRITERIA
+==============================
+A first-time visitor should feel:
+“This login page belongs to a serious enterprise SaaS product.”
