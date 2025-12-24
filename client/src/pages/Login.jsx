@@ -5,7 +5,7 @@ import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { 
   Mail, 
@@ -15,7 +15,6 @@ import {
   EyeOff, 
   Brain, 
   Coins, 
-  Users, 
   FileCheck,
   Shield,
   ArrowLeft
@@ -23,7 +22,7 @@ import {
 
 function BrandingPanel() {
   return (
-    <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+    <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/3 right-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
@@ -31,44 +30,65 @@ function BrandingPanel() {
       </div>
 
       <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16">
-        <div className="flex items-center gap-3 mb-10">
+        <div className="flex items-center gap-3 mb-12">
           <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center">
             <Mail className="w-6 h-6 text-white" />
           </div>
           <span className="text-2xl font-semibold text-white">EmailFlow Pro</span>
         </div>
 
-        <h2 className="text-3xl xl:text-4xl font-bold text-white leading-tight mb-4">
-          Enterprise email campaigns with
-          <span className="block bg-gradient-to-r from-indigo-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-            AI personalization
-          </span>
+        <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-4">
+          Welcome back
         </h2>
 
-        <p className="text-white/60 text-lg mb-10 leading-relaxed max-w-md">
-          Credit control, team hierarchy, and complete audit compliance for modern marketing teams.
+        <p className="text-white/60 text-lg mb-12 leading-relaxed max-w-md">
+          Manage campaigns, credits, and teams securely.
         </p>
 
-        <div className="space-y-4">
-          {[
-            { icon: Brain, label: "AI Personalization", desc: "Smart content adaptation" },
-            { icon: Coins, label: "Credit Control", desc: "Budget management gates" },
-            { icon: Users, label: "Team Hierarchy", desc: "Role-based permissions" },
-            { icon: FileCheck, label: "Audit Logging", desc: "Complete activity trail" }
-          ].map((feature) => (
-            <div 
-              key={feature.label} 
-              className="flex items-center gap-4 text-white/70 transition-colors duration-200 hover:text-white/90"
-            >
-              <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
-                <feature.icon className="w-5 h-5 text-cyan-400" />
-              </div>
-              <div>
-                <p className="font-medium text-white/90">{feature.label}</p>
-                <p className="text-sm text-white/50">{feature.desc}</p>
-              </div>
+        <div className="space-y-5">
+          <div className="flex items-center gap-4 text-white/80">
+            <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+              <Brain className="w-5 h-5 text-cyan-400" />
             </div>
-          ))}
+            <span className="text-lg">AI-powered personalization</span>
+          </div>
+          <div className="flex items-center gap-4 text-white/80">
+            <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+              <Coins className="w-5 h-5 text-cyan-400" />
+            </div>
+            <span className="text-lg">Hierarchical credit control</span>
+          </div>
+          <div className="flex items-center gap-4 text-white/80">
+            <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+              <FileCheck className="w-5 h-5 text-cyan-400" />
+            </div>
+            <span className="text-lg">Audit-grade compliance</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileHeader() {
+  return (
+    <div className="lg:hidden bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 px-6 py-8">
+      <div className="flex items-center justify-between mb-6">
+        <Link href="/">
+          <Button variant="ghost" size="sm" className="gap-2 text-white/70 hover:text-white hover:bg-white/10" data-testid="link-back-home-mobile">
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        </Link>
+        <ThemeToggle />
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center">
+          <Mail className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold text-white">EmailFlow Pro</h1>
+          <p className="text-sm text-white/60">Enterprise Email Platform</p>
         </div>
       </div>
     </div>
@@ -95,11 +115,13 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background">
       <BrandingPanel />
 
-      <div className="flex-1 flex flex-col lg:w-[55%]">
-        <div className="flex items-center justify-between p-4 sm:p-6">
+      <MobileHeader />
+
+      <div className="flex-1 flex flex-col lg:w-1/2">
+        <div className="hidden lg:flex items-center justify-between p-6">
           <Link href="/">
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" data-testid="link-back-home">
               <ArrowLeft className="h-4 w-4" />
@@ -109,33 +131,17 @@ export default function Login() {
           <ThemeToggle />
         </div>
 
-        <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-12">
-          <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="lg:hidden flex flex-col items-center mb-8">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 mb-4">
-                <Mail className="h-7 w-7 text-white" />
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight">EmailFlow Pro</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Enterprise Email Marketing Platform
-              </p>
-            </div>
-
-            <div className="hidden lg:block">
-              <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+        <div className="flex-1 flex items-center justify-center px-6 py-8 lg:py-0">
+          <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="hidden lg:block mb-8">
+              <h1 className="text-2xl font-semibold tracking-tight">Sign in to your account</h1>
               <p className="text-muted-foreground mt-1">
-                Sign in to your account to continue
+                Enter your credentials to continue
               </p>
             </div>
 
-            <Card className="border-card-border shadow-lg">
-              <CardHeader className="space-y-1 pb-4 lg:hidden">
-                <CardTitle className="text-xl">Sign in</CardTitle>
-                <CardDescription>
-                  Enter your credentials to access your account
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6 lg:pt-8">
+            <Card className="border-card-border shadow-xl rounded-xl">
+              <CardContent className="pt-8 pb-6 px-6">
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {loginError && (
                     <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-300">
@@ -156,7 +162,7 @@ export default function Login() {
                       onChange={(e) => setUsername(e.target.value)}
                       required
                       disabled={isLoggingIn}
-                      className="h-11 transition-shadow duration-200 focus:shadow-md"
+                      className="h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
                       data-testid="input-username"
                     />
                   </div>
@@ -172,7 +178,7 @@ export default function Login() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                         disabled={isLoggingIn}
-                        className="pr-10 h-11 transition-shadow duration-200 focus:shadow-md"
+                        className="pr-10 h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
                         data-testid="input-password"
                       />
                       <Button
@@ -194,7 +200,7 @@ export default function Login() {
 
                   <Button
                     type="submit"
-                    className="w-full h-11 text-base transition-all duration-200"
+                    className="w-full h-11 text-base font-medium transition-all duration-200 hover:shadow-lg"
                     disabled={isLoggingIn}
                     data-testid="button-login"
                   >
@@ -209,9 +215,9 @@ export default function Login() {
                   </Button>
                 </form>
 
-                <div className="mt-6 pt-4 border-t border-border">
+                <div className="mt-6 pt-5 border-t border-border">
                   <p className="text-xs text-center text-muted-foreground">
-                    Demo credentials: <span className="font-mono">admin / changeme123</span>
+                    Demo credentials: <span className="font-mono bg-muted px-1.5 py-0.5 rounded">admin / changeme123</span>
                   </p>
                 </div>
               </CardContent>
@@ -221,15 +227,11 @@ export default function Login() {
               <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Shield className="h-3.5 w-3.5" />
-                  <span>Secure access</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" />
-                  <span>Role-based</span>
+                  <span>Secure, role-based access</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <FileCheck className="h-3.5 w-3.5" />
-                  <span>Audit logged</span>
+                  <span>All activity is audit logged</span>
                 </div>
               </div>
 
