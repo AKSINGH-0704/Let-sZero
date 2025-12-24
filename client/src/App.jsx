@@ -15,13 +15,18 @@ import Templates from "@/pages/Templates";
 import Users from "@/pages/Users";
 import Audit from "@/pages/Audit";
 import Profile from "@/pages/Profile";
+import ResetPassword from "@/pages/ResetPassword";
 import NotFound from "@/pages/not-found";
 
 function AppRoutes() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, mustResetPassword } = useAuth();
 
   if (isLoading) {
     return null;
+  }
+
+  if (isAuthenticated && mustResetPassword) {
+    return <ResetPassword />;
   }
 
   return (

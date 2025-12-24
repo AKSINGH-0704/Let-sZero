@@ -1,21 +1,27 @@
 import { storage } from "./storage.js";
+import { AUDIT_ACTIONS } from "../shared/schema.js";
 
-const sessions = new Map();
-
-function generateToken() {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-}
-
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
                 req.cookies?.token ||
                 req.headers.cookie?.split("; ").find(c => c.startsWith("token="))?.split("=")[1];
   
-  if (!token || !sessions.has(token)) {
+  if (!token) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   
-  req.user = sessions.get(token);
+  const session = await storage.getSessionByToken(token);
+  if (!session) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  
+  const user = await storage.getUserById(session.userId);
+  if (!user) {
+    await storage.deleteSession(token);
+    return res.status(401).json({ message: "User not found" });
+  }
+  
+  req.user = user;
   req.token = token;
   next();
 }
@@ -35,35 +41,46 @@ function rootAdminMiddleware(req, res, next) {
 }
 
 export async function registerRoutes(httpServer, app) {
+  await storage.initializeRootAdmin();
+
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
       
       const user = await storage.getUserByUsername(username);
-      if (!user || user.password !== password) {
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      const isValid = await storage.validatePassword(user, password);
+      if (!isValid) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      const token = generateToken();
-      const { password: _, ...userWithoutPassword } = user;
-      sessions.set(token, userWithoutPassword);
+      if (!user.isActive) {
+        return res.status(401).json({ message: "Account is disabled" });
+      }
 
-      res.cookie("token", token, {
+      const session = await storage.createSession(user.id);
+
+      res.cookie("token", session.token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000
+        maxAge: 24 * 60 * 60 * 1000
       });
 
       await storage.createAuditLog({
         userId: user.id,
-        userName: user.username,
-        action: "USER_LOGIN",
-        details: `User ${user.username} logged in`
+        action: AUDIT_ACTIONS.USER_LOGIN,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"]
       });
 
-      res.json(userWithoutPassword);
+      const sanitizedUser = storage.sanitizeUser(user);
+      res.json(sanitizedUser);
     } catch (error) {
+      console.error("Login error:", error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -72,12 +89,10 @@ export async function registerRoutes(httpServer, app) {
     try {
       await storage.createAuditLog({
         userId: req.user.id,
-        userName: req.user.username,
-        action: "USER_LOGOUT",
-        details: `User ${req.user.username} logged out`
+        action: AUDIT_ACTIONS.USER_LOGOUT
       });
 
-      sessions.delete(req.token);
+      await storage.deleteSession(req.token);
       res.clearCookie("token");
       res.json({ message: "Logged out successfully" });
     } catch (error) {
@@ -87,13 +102,26 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/auth/me", authMiddleware, async (req, res) => {
     try {
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        sessions.delete(req.token);
-        return res.status(401).json({ message: "User not found" });
+      res.json(req.user);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/reset-password", authMiddleware, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      const user = await storage.getUserByUsername(req.user.username);
+      const isValid = await storage.validatePassword(user, currentPassword);
+      
+      if (!isValid) {
+        return res.status(400).json({ message: "Current password is incorrect" });
       }
-      const { password: _, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
+      
+      await storage.updatePassword(req.user.id, newPassword);
+      
+      res.json({ message: "Password updated successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -112,9 +140,8 @@ export async function registerRoutes(httpServer, app) {
   app.get("/api/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const isRootAdmin = req.user.role === "ROOT_ADMIN";
-      const users = await storage.getUsers(req.user.id, isRootAdmin);
-      const usersWithoutPasswords = users.map(({ password, ...user }) => user);
-      res.json(usersWithoutPasswords);
+      const usersList = await storage.getUsers(req.user.id, isRootAdmin);
+      res.json(usersList);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -132,6 +159,10 @@ export async function registerRoutes(httpServer, app) {
       if (req.user.role === "SUB_ADMIN" && role !== "USER") {
         return res.status(403).json({ message: "Sub-admins can only create users" });
       }
+      
+      if (req.user.role === "ROOT_ADMIN" && role === "USER") {
+        return res.status(403).json({ message: "Root admin can only create sub-admins" });
+      }
 
       const newUser = await storage.createUser({
         username,
@@ -140,24 +171,22 @@ export async function registerRoutes(httpServer, app) {
         role: role || "USER",
         parentId: req.user.id,
         creditsReceived: 0,
-        creditsAllocated: 0,
-        creditsUsed: 0
+        mustResetPassword: true
       });
 
       if (credits && credits > 0) {
-        await storage.allocateCredits(req.user.id, newUser.id, credits);
+        await storage.allocateCredits(req.user.id, newUser.id, credits, req.user.id);
       }
 
       await storage.createAuditLog({
         userId: req.user.id,
-        userName: req.user.username,
-        action: "USER_CREATED",
-        details: `Created user: ${username}`,
-        targetUserName: username
+        action: AUDIT_ACTIONS.USER_CREATED,
+        targetType: "user",
+        targetId: newUser.id,
+        details: { username, role: role || "USER" }
       });
 
-      const { password: _, ...userWithoutPassword } = newUser;
-      res.status(201).json(userWithoutPassword);
+      res.status(201).json(newUser);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -172,18 +201,10 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Invalid credits amount" });
       }
 
-      const { fromUser, toUser } = await storage.allocateCredits(req.user.id, id, credits);
-
-      await storage.createAuditLog({
-        userId: req.user.id,
-        userName: req.user.username,
-        action: "CREDITS_ALLOCATED",
-        details: `Allocated ${credits} credits to ${toUser.username}`,
-        targetUserName: toUser.username
-      });
-
-      const { password: _, ...userWithoutPassword } = toUser;
-      res.json(userWithoutPassword);
+      await storage.allocateCredits(req.user.id, id, credits, req.user.id);
+      
+      const updatedUser = await storage.getUserById(id);
+      res.json(updatedUser);
     } catch (error) {
       res.status(400).json({ message: error.message });
     }
@@ -192,7 +213,7 @@ export async function registerRoutes(httpServer, app) {
   app.delete("/api/users/:id", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
-      const user = await storage.getUser(id);
+      const user = await storage.getUserById(id);
       
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -206,10 +227,10 @@ export async function registerRoutes(httpServer, app) {
 
       await storage.createAuditLog({
         userId: req.user.id,
-        userName: req.user.username,
-        action: "USER_DELETED",
-        details: `Deleted user: ${user.username}`,
-        targetUserName: user.username
+        action: AUDIT_ACTIONS.USER_DELETED,
+        targetType: "user",
+        targetId: id,
+        details: { username: user.username }
       });
 
       res.json({ message: "User deleted successfully" });
@@ -218,11 +239,20 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  app.get("/api/credits/transactions", authMiddleware, async (req, res) => {
+    try {
+      const transactions = await storage.getCreditTransactions(req.user.id);
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/campaigns", authMiddleware, async (req, res) => {
     try {
       const isRootAdmin = req.user.role === "ROOT_ADMIN";
-      const campaigns = await storage.getCampaigns(req.user.id, isRootAdmin);
-      res.json(campaigns);
+      const campaignsList = await storage.getCampaigns(req.user.id, isRootAdmin);
+      res.json(campaignsList);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -232,34 +262,46 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { name, template, contacts, totalEmails } = req.body;
       
-      const user = await storage.getUser(req.user.id);
-      const available = user.creditsReceived - user.creditsAllocated - user.creditsUsed;
-      
-      if (available < totalEmails) {
-        return res.status(400).json({ message: "Insufficient credits" });
+      const canStart = await storage.canStartCampaign(req.user.id, totalEmails);
+      if (!canStart.allowed) {
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+          details: canStart
+        });
+        return res.status(400).json({ message: canStart.reason });
       }
-
-      await storage.useCredits(req.user.id, totalEmails);
 
       const campaign = await storage.createCampaign({
         name,
-        templateSubject: template.subject,
-        templateBody: template.body,
         userId: req.user.id,
-        userName: req.user.username,
         totalEmails,
-        creditsUsed: totalEmails
+        templateSnapshot: template,
+        contactIds: contacts?.map(c => c.id) || [],
+        status: "RUNNING"
+      });
+
+      for (let i = 0; i < totalEmails; i++) {
+        await storage.deductCreditAtomic(req.user.id, campaign.id, `Email ${i + 1} of campaign ${name}`);
+      }
+
+      await storage.updateCampaign(campaign.id, {
+        sentEmails: totalEmails,
+        creditsUsed: totalEmails,
+        status: "COMPLETED",
+        completedAt: new Date()
       });
 
       await storage.createAuditLog({
         userId: req.user.id,
-        userName: req.user.username,
-        action: "CAMPAIGN_CREATED",
-        details: `Created campaign: ${name}`,
-        campaignName: name
+        action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
+        targetType: "campaign",
+        targetId: campaign.id,
+        details: { name, sentEmails: totalEmails }
       });
 
-      res.status(201).json(campaign);
+      const updatedCampaign = await storage.getCampaign(campaign.id);
+      res.status(201).json(updatedCampaign);
     } catch (error) {
       res.status(400).json({ message: error.message });
     }
@@ -291,8 +333,8 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/templates", authMiddleware, async (req, res) => {
     try {
-      const templates = await storage.getTemplates(req.user.id);
-      res.json(templates);
+      const templatesList = await storage.getTemplates(req.user.id);
+      res.json(templatesList);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -327,10 +369,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.delete("/api/templates/:id", authMiddleware, async (req, res) => {
     try {
-      const deleted = await storage.deleteTemplate(req.params.id);
-      if (!deleted) {
-        return res.status(404).json({ message: "Template not found" });
-      }
+      await storage.deleteTemplate(req.params.id, req.user.id);
       res.json({ message: "Template deleted successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -339,7 +378,12 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/audit-logs", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
-      const logs = await storage.getAuditLogs();
+      const { userId, action, limit } = req.query;
+      const logs = await storage.getAuditLogs({ 
+        userId, 
+        action, 
+        limit: limit ? parseInt(limit) : 100 
+      });
       res.json(logs);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -348,9 +392,15 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/ai/preview", authMiddleware, async (req, res) => {
     try {
-      const { subject, body, contacts, tone } = req.body;
+      const { subject, body, contacts } = req.body;
       
-      const previews = contacts.map(contact => {
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.AI_PREVIEW_GENERATED,
+        details: { contactCount: contacts?.length || 0 }
+      });
+      
+      const previews = (contacts || []).map(contact => {
         const data = {
           name: contact.name || "Valued Customer",
           email: contact.email || "customer@example.com",
@@ -378,6 +428,12 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/ai/spam-analysis", authMiddleware, async (req, res) => {
     try {
       const { subject, body } = req.body;
+      
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.SPAM_ANALYSIS_RUN,
+        details: { subjectLength: subject?.length, bodyLength: body?.length }
+      });
       
       const spamWords = [
         "free", "winner", "click here", "buy now", "limited time",

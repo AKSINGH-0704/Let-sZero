@@ -1,313 +1,580 @@
-import { randomUUID } from "crypto";
+import { db } from "./db.js";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { 
+  users, sessions, templates, contacts, campaigns, 
+  campaignEmails, creditTransactions, auditLogs,
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS
+} from "../shared/schema.js";
+import crypto from "crypto";
 
-class MemStorage {
-  constructor() {
-    this.users = new Map();
-    this.campaigns = new Map();
-    this.templates = new Map();
-    this.auditLogs = new Map();
-    
-    this.initDefaultData();
-  }
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
 
-  initDefaultData() {
-    const rootAdminId = randomUUID();
-    const subAdminId = randomUUID();
-    const userId = randomUUID();
-    
-    this.users.set(rootAdminId, {
-      id: rootAdminId,
-      username: "admin",
-      email: "admin@emailflow.pro",
-      password: "admin123",
-      role: "ROOT_ADMIN",
-      parentId: null,
-      creditsReceived: 100000,
-      creditsAllocated: 25000,
-      creditsUsed: 5000,
-      createdAt: new Date().toISOString()
-    });
-    
-    this.users.set(subAdminId, {
-      id: subAdminId,
-      username: "manager",
-      email: "manager@emailflow.pro",
-      password: "manager123",
-      role: "SUB_ADMIN",
-      parentId: rootAdminId,
-      creditsReceived: 15000,
-      creditsAllocated: 5000,
-      creditsUsed: 2000,
-      createdAt: new Date().toISOString()
-    });
-    
-    this.users.set(userId, {
-      id: userId,
-      username: "user",
-      email: "user@emailflow.pro",
-      password: "user123",
-      role: "USER",
-      parentId: subAdminId,
-      creditsReceived: 3000,
+function generateToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+export const storage = {
+  async createUser(userData) {
+    const passwordHash = hashPassword(userData.password);
+    const [user] = await db.insert(users).values({
+      username: userData.username,
+      email: userData.email,
+      passwordHash,
+      role: userData.role || USER_ROLES.USER,
+      parentId: userData.parentId || null,
+      creditsReceived: userData.creditsReceived || 0,
       creditsAllocated: 0,
-      creditsUsed: 500,
-      createdAt: new Date().toISOString()
-    });
+      creditsUsed: 0,
+      mustResetPassword: userData.mustResetPassword !== false,
+      isActive: true
+    }).returning();
+    return this.sanitizeUser(user);
+  },
 
-    const templateId = randomUUID();
-    this.templates.set(templateId, {
-      id: templateId,
-      name: "Welcome Email",
-      subject: "Welcome to our platform, {{name}}!",
-      body: "Hi {{name}},\n\nWelcome to our platform! We're excited to have you from {{company}}.\n\nBest regards,\nThe Team",
-      userId: rootAdminId,
-      createdAt: new Date().toISOString()
-    });
-
-    const campaignId = randomUUID();
-    this.campaigns.set(campaignId, {
-      id: campaignId,
-      name: "Q4 Newsletter",
-      templateId: templateId,
-      userId: rootAdminId,
-      userName: "admin",
-      status: "COMPLETED",
-      totalEmails: 1500,
-      sentEmails: 1485,
-      failedEmails: 15,
-      creditsUsed: 1500,
-      createdAt: new Date(Date.now() - 86400000).toISOString()
-    });
-
-    const campaignId2 = randomUUID();
-    this.campaigns.set(campaignId2, {
-      id: campaignId2,
-      name: "Product Launch",
-      templateId: templateId,
-      userId: rootAdminId,
-      userName: "admin",
-      status: "COMPLETED",
-      totalEmails: 2500,
-      sentEmails: 2480,
-      failedEmails: 20,
-      creditsUsed: 2500,
-      createdAt: new Date(Date.now() - 172800000).toISOString()
-    });
-
-    this.auditLogs.set(randomUUID(), {
-      id: randomUUID(),
-      userId: rootAdminId,
-      userName: "admin",
-      action: "USER_CREATED",
-      details: "Created user: manager",
-      targetUserName: "manager",
-      createdAt: new Date(Date.now() - 604800000).toISOString()
-    });
-
-    this.auditLogs.set(randomUUID(), {
-      id: randomUUID(),
-      userId: rootAdminId,
-      userName: "admin",
-      action: "CREDITS_ALLOCATED",
-      details: "Allocated 15000 credits to manager",
-      targetUserName: "manager",
-      createdAt: new Date(Date.now() - 518400000).toISOString()
-    });
-
-    this.auditLogs.set(randomUUID(), {
-      id: randomUUID(),
-      userId: rootAdminId,
-      userName: "admin",
-      action: "CAMPAIGN_COMPLETED",
-      details: "Campaign Q4 Newsletter completed",
-      campaignName: "Q4 Newsletter",
-      createdAt: new Date(Date.now() - 86400000).toISOString()
-    });
-  }
+  async getUserById(id) {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user ? this.sanitizeUser(user) : null;
+  },
 
   async getUser(id) {
-    return this.users.get(id);
-  }
+    return this.getUserById(id);
+  },
 
   async getUserByUsername(username) {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username
-    );
-  }
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || null;
+  },
 
-  async createUser(userData) {
-    const id = randomUUID();
-    const user = {
-      ...userData,
-      id,
-      creditsReceived: userData.creditsReceived || 0,
-      creditsAllocated: userData.creditsAllocated || 0,
-      creditsUsed: userData.creditsUsed || 0,
-      createdAt: new Date().toISOString()
-    };
-    this.users.set(id, user);
-    return user;
-  }
+  async validatePassword(user, password) {
+    const hash = hashPassword(password);
+    return user.passwordHash === hash;
+  },
+
+  async updatePassword(userId, newPassword) {
+    const passwordHash = hashPassword(newPassword);
+    await db.update(users)
+      .set({ passwordHash, mustResetPassword: false, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+      targetType: "user",
+      targetId: userId
+    });
+  },
 
   async updateUser(id, updates) {
-    const user = this.users.get(id);
-    if (!user) return null;
-    const updated = { ...user, ...updates };
-    this.users.set(id, updated);
-    return updated;
-  }
+    const allowedUpdates = {};
+    if (updates.email) allowedUpdates.email = updates.email;
+    if (updates.isActive !== undefined) allowedUpdates.isActive = updates.isActive;
+    if (updates.mustResetPassword !== undefined) allowedUpdates.mustResetPassword = updates.mustResetPassword;
+    if (updates.lastLoginAt) allowedUpdates.lastLoginAt = updates.lastLoginAt;
+    if (updates.creditsReceived !== undefined) allowedUpdates.creditsReceived = updates.creditsReceived;
+    if (updates.creditsAllocated !== undefined) allowedUpdates.creditsAllocated = updates.creditsAllocated;
+    if (updates.creditsUsed !== undefined) allowedUpdates.creditsUsed = updates.creditsUsed;
+    allowedUpdates.updatedAt = new Date();
+    
+    const [user] = await db.update(users)
+      .set(allowedUpdates)
+      .where(eq(users.id, id))
+      .returning();
+    return user ? this.sanitizeUser(user) : null;
+  },
 
   async deleteUser(id) {
-    return this.users.delete(id);
-  }
+    await db.delete(users).where(eq(users.id, id));
+  },
 
   async getUsers(parentId = null, includeAll = false) {
-    const users = Array.from(this.users.values());
-    if (includeAll) return users;
-    if (parentId) {
-      return users.filter(u => u.parentId === parentId || u.id === parentId);
+    let result;
+    if (includeAll) {
+      result = await db.select().from(users).orderBy(desc(users.createdAt));
+    } else if (parentId) {
+      result = await db.select().from(users)
+        .where(eq(users.parentId, parentId))
+        .orderBy(desc(users.createdAt));
+    } else {
+      result = await db.select().from(users).orderBy(desc(users.createdAt));
     }
-    return users;
-  }
+    return result.map(u => this.sanitizeUser(u));
+  },
 
-  async allocateCredits(fromUserId, toUserId, credits) {
-    const fromUser = this.users.get(fromUserId);
-    const toUser = this.users.get(toUserId);
+  async getChildUsers(parentId) {
+    const result = await db.select().from(users)
+      .where(eq(users.parentId, parentId))
+      .orderBy(desc(users.createdAt));
+    return result.map(u => this.sanitizeUser(u));
+  },
+
+  sanitizeUser(user) {
+    if (!user) return null;
+    const { passwordHash, ...sanitized } = user;
+    sanitized.creditsRemaining = (sanitized.creditsReceived || 0) - 
+                                  (sanitized.creditsAllocated || 0) - 
+                                  (sanitized.creditsUsed || 0);
+    return sanitized;
+  },
+
+  async createSession(userId) {
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    
+    const [session] = await db.insert(sessions).values({
+      userId,
+      token,
+      expiresAt
+    }).returning();
+    
+    await this.updateUser(userId, { lastLoginAt: new Date() });
+    
+    return session;
+  },
+
+  async getSessionByToken(token) {
+    const [session] = await db.select().from(sessions)
+      .where(and(
+        eq(sessions.token, token),
+        gte(sessions.expiresAt, new Date())
+      ));
+    return session || null;
+  },
+
+  async deleteSession(token) {
+    await db.delete(sessions).where(eq(sessions.token, token));
+  },
+
+  async deleteUserSessions(userId) {
+    await db.delete(sessions).where(eq(sessions.userId, userId));
+  },
+
+  async canAllocateCredits(fromUserId, amount) {
+    const user = await this.getUserById(fromUserId);
+    if (!user) return false;
+    return user.creditsRemaining >= amount;
+  },
+
+  async allocateCredits(fromUserId, toUserId, amount, performedBy) {
+    const fromUser = await this.getUserById(fromUserId);
+    const toUser = await this.getUserById(toUserId);
     
     if (!fromUser || !toUser) {
       throw new Error("User not found");
     }
-
-    const fromAvailable = fromUser.creditsReceived - fromUser.creditsAllocated - fromUser.creditsUsed;
-    if (fromAvailable < credits) {
-      throw new Error("Insufficient credits");
+    
+    if (fromUser.role === USER_ROLES.ROOT_ADMIN && toUser.role !== USER_ROLES.SUB_ADMIN) {
+      throw new Error("ROOT_ADMIN can only allocate credits to SUB_ADMINs");
     }
+    if (fromUser.role === USER_ROLES.SUB_ADMIN && toUser.role !== USER_ROLES.USER) {
+      throw new Error("SUB_ADMIN can only allocate credits to USERs");
+    }
+    if (fromUser.role === USER_ROLES.USER) {
+      throw new Error("USER cannot allocate credits");
+    }
+    
+    if (toUser.parentId !== fromUserId) {
+      throw new Error("Can only allocate credits to direct children");
+    }
+    
+    if (fromUser.creditsRemaining < amount) {
+      throw new Error("Insufficient credits available");
+    }
+    
+    const fromBalanceBefore = fromUser.creditsAllocated;
+    const toBalanceBefore = toUser.creditsReceived;
+    
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({ 
+          creditsAllocated: sql`credits_allocated + ${amount}`,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, fromUserId));
+      
+      await tx.update(users)
+        .set({ 
+          creditsReceived: sql`credits_received + ${amount}`,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, toUserId));
+      
+      await tx.insert(creditTransactions).values({
+        userId: fromUserId,
+        type: "allocation_out",
+        amount: -amount,
+        balanceBefore: fromBalanceBefore,
+        balanceAfter: fromBalanceBefore + amount,
+        fromUserId,
+        toUserId,
+        description: `Allocated ${amount} credits to ${toUser.username}`
+      });
+      
+      await tx.insert(creditTransactions).values({
+        userId: toUserId,
+        type: "allocation_in",
+        amount: amount,
+        balanceBefore: toBalanceBefore,
+        balanceAfter: toBalanceBefore + amount,
+        fromUserId,
+        toUserId,
+        description: `Received ${amount} credits from ${fromUser.username}`
+      });
+    });
+    
+    await this.createAuditLog({
+      userId: performedBy || fromUserId,
+      action: AUDIT_ACTIONS.CREDITS_ALLOCATED,
+      targetType: "user",
+      targetId: toUserId,
+      details: { fromUserId, toUserId, amount }
+    });
+    
+    return { success: true, amount };
+  },
 
-    fromUser.creditsAllocated += credits;
-    toUser.creditsReceived += credits;
-
-    this.users.set(fromUserId, fromUser);
-    this.users.set(toUserId, toUser);
-
-    return { fromUser, toUser };
-  }
-
-  async useCredits(userId, credits) {
-    const user = this.users.get(userId);
+  async useCredits(userId, amount) {
+    const user = await this.getUserById(userId);
     if (!user) throw new Error("User not found");
     
-    const available = user.creditsReceived - user.creditsAllocated - user.creditsUsed;
-    if (available < credits) {
+    if (user.creditsRemaining < amount) {
       throw new Error("Insufficient credits");
     }
+    
+    const [updated] = await db.update(users)
+      .set({ 
+        creditsUsed: sql`credits_used + ${amount}`,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    return this.sanitizeUser(updated);
+  },
 
-    user.creditsUsed += credits;
-    this.users.set(userId, user);
-    return user;
-  }
-
-  async getCampaigns(userId = null, isRootAdmin = false) {
-    const campaigns = Array.from(this.campaigns.values());
-    if (isRootAdmin) {
-      return campaigns.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  async deductCreditAtomic(userId, campaignId, description = "Email sent") {
+    const user = await this.getUserById(userId);
+    if (!user) throw new Error("User not found");
+    
+    if (user.creditsRemaining < 1) {
+      throw new Error("Insufficient credits");
     }
-    if (userId) {
-      return campaigns
-        .filter(c => c.userId === userId)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    const balanceBefore = user.creditsUsed;
+    
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({ 
+          creditsUsed: sql`credits_used + 1`,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+      
+      await tx.insert(creditTransactions).values({
+        userId,
+        type: "usage",
+        amount: -1,
+        balanceBefore,
+        balanceAfter: balanceBefore + 1,
+        campaignId,
+        description
+      });
+    });
+    
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CREDITS_USED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { creditsUsed: 1 }
+    });
+    
+    return true;
+  },
+
+  async canStartCampaign(userId, emailCount) {
+    const user = await this.getUserById(userId);
+    if (!user) return { allowed: false, reason: "User not found" };
+    
+    if (user.creditsRemaining < emailCount) {
+      return { 
+        allowed: false, 
+        reason: `Insufficient credits. Need ${emailCount}, have ${user.creditsRemaining}`,
+        creditsNeeded: emailCount,
+        creditsAvailable: user.creditsRemaining
+      };
     }
-    return campaigns.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }
+    
+    return { allowed: true, creditsAvailable: user.creditsRemaining };
+  },
 
-  async getCampaign(id) {
-    return this.campaigns.get(id);
-  }
-
-  async createCampaign(campaignData) {
-    const id = randomUUID();
-    const campaign = {
-      ...campaignData,
-      id,
-      sentEmails: 0,
-      failedEmails: 0,
-      creditsUsed: 0,
-      status: "RUNNING",
-      createdAt: new Date().toISOString()
-    };
-    this.campaigns.set(id, campaign);
-    return campaign;
-  }
-
-  async updateCampaign(id, updates) {
-    const campaign = this.campaigns.get(id);
-    if (!campaign) return null;
-    const updated = { ...campaign, ...updates };
-    this.campaigns.set(id, updated);
-    return updated;
-  }
-
-  async getTemplates(userId = null) {
-    const templates = Array.from(this.templates.values());
-    if (userId) {
-      return templates
-        .filter(t => t.userId === userId)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    }
-    return templates.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }
-
-  async getTemplate(id) {
-    return this.templates.get(id);
-  }
+  async getCreditTransactions(userId, limit = 50) {
+    const result = await db.select().from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId))
+      .orderBy(desc(creditTransactions.createdAt))
+      .limit(limit);
+    return result;
+  },
 
   async createTemplate(templateData) {
-    const id = randomUUID();
-    const template = {
-      ...templateData,
-      id,
-      createdAt: new Date().toISOString()
-    };
-    this.templates.set(id, template);
+    const [template] = await db.insert(templates).values(templateData).returning();
+    await this.createAuditLog({
+      userId: templateData.userId,
+      action: AUDIT_ACTIONS.TEMPLATE_CREATED,
+      targetType: "template",
+      targetId: template.id,
+      details: { name: template.name }
+    });
     return template;
-  }
+  },
+
+  async getTemplates(userId = null) {
+    if (userId) {
+      return await db.select().from(templates)
+        .where(eq(templates.userId, userId))
+        .orderBy(desc(templates.createdAt));
+    }
+    return await db.select().from(templates).orderBy(desc(templates.createdAt));
+  },
+
+  async getTemplate(id) {
+    const [template] = await db.select().from(templates).where(eq(templates.id, id));
+    return template || null;
+  },
 
   async updateTemplate(id, updates) {
-    const template = this.templates.get(id);
-    if (!template) return null;
-    const updated = { ...template, ...updates };
-    this.templates.set(id, updated);
+    const [template] = await db.update(templates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(templates.id, id))
+      .returning();
+    return template || null;
+  },
+
+  async deleteTemplate(id, userId) {
+    await db.delete(templates).where(eq(templates.id, id));
+    if (userId) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.TEMPLATE_DELETED,
+        targetType: "template",
+        targetId: id
+      });
+    }
+  },
+
+  async createContact(contactData) {
+    const [contact] = await db.insert(contacts).values(contactData).returning();
+    return contact;
+  },
+
+  async createContacts(contactsData) {
+    if (contactsData.length === 0) return [];
+    const result = await db.insert(contacts).values(contactsData).returning();
+    await this.createAuditLog({
+      userId: contactsData[0].userId,
+      action: AUDIT_ACTIONS.CONTACT_IMPORTED,
+      targetType: "contacts",
+      details: { count: result.length }
+    });
+    return result;
+  },
+
+  async getContacts(userId) {
+    return await db.select().from(contacts)
+      .where(eq(contacts.userId, userId))
+      .orderBy(desc(contacts.createdAt));
+  },
+
+  async getContactById(id) {
+    const [contact] = await db.select().from(contacts).where(eq(contacts.id, id));
+    return contact || null;
+  },
+
+  async createCampaign(campaignData) {
+    const [campaign] = await db.insert(campaigns).values(campaignData).returning();
+    await this.createAuditLog({
+      userId: campaignData.userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_CREATED,
+      targetType: "campaign",
+      targetId: campaign.id,
+      details: { name: campaign.name, totalEmails: campaign.totalEmails }
+    });
+    return campaign;
+  },
+
+  async getCampaigns(userId = null, isRootAdmin = false) {
+    if (isRootAdmin) {
+      return await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+    }
+    if (userId) {
+      return await db.select().from(campaigns)
+        .where(eq(campaigns.userId, userId))
+        .orderBy(desc(campaigns.createdAt));
+    }
+    return await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  },
+
+  async getCampaign(id) {
+    const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id));
+    return campaign || null;
+  },
+
+  async updateCampaign(id, updates) {
+    const [campaign] = await db.update(campaigns)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(campaigns.id, id))
+      .returning();
+    return campaign || null;
+  },
+
+  async startCampaign(campaignId, userId) {
+    const campaign = await this.getCampaign(campaignId);
+    if (!campaign) throw new Error("Campaign not found");
+    
+    const canStart = await this.canStartCampaign(userId, campaign.totalEmails);
+    if (!canStart.allowed) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+        targetType: "campaign",
+        targetId: campaignId,
+        details: canStart
+      });
+      throw new Error(canStart.reason);
+    }
+    
+    const [updated] = await db.update(campaigns)
+      .set({ 
+        status: CAMPAIGN_STATUS.RUNNING, 
+        startedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(campaigns.id, campaignId))
+      .returning();
+    
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
+      targetType: "campaign",
+      targetId: campaignId
+    });
+    
     return updated;
-  }
+  },
 
-  async deleteTemplate(id) {
-    return this.templates.delete(id);
-  }
+  async completeCampaign(campaignId, userId) {
+    const [campaign] = await db.update(campaigns)
+      .set({ 
+        status: CAMPAIGN_STATUS.COMPLETED, 
+        completedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(campaigns.id, campaignId))
+      .returning();
+    
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails }
+    });
+    
+    return campaign;
+  },
 
-  async getAuditLogs() {
-    return Array.from(this.auditLogs.values())
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }
+  async createAuditLog(data) {
+    try {
+      await db.insert(auditLogs).values({
+        userId: data.userId || null,
+        action: data.action,
+        targetType: data.targetType || null,
+        targetId: data.targetId || null,
+        details: data.details || null,
+        ipAddress: data.ipAddress || null,
+        userAgent: data.userAgent || null
+      });
+    } catch (err) {
+      console.error("Failed to create audit log:", err);
+    }
+  },
 
-  async createAuditLog(logData) {
-    const id = randomUUID();
-    const log = {
-      ...logData,
-      id,
-      createdAt: new Date().toISOString()
-    };
-    this.auditLogs.set(id, log);
-    return log;
-  }
+  async getAuditLogs(filters = {}) {
+    let result;
+    
+    if (filters.userId) {
+      result = await db.select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        action: auditLogs.action,
+        targetType: auditLogs.targetType,
+        targetId: auditLogs.targetId,
+        details: auditLogs.details,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+        username: users.username
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(eq(auditLogs.userId, filters.userId))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(filters.limit || 100);
+    } else {
+      result = await db.select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        action: auditLogs.action,
+        targetType: auditLogs.targetType,
+        targetId: auditLogs.targetId,
+        details: auditLogs.details,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+        username: users.username
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(filters.limit || 100);
+    }
+    
+    return result;
+  },
 
   async getDashboardStats(userId, isRootAdmin) {
-    const campaigns = await this.getCampaigns(userId, isRootAdmin);
+    const campaignsList = await this.getCampaigns(userId, isRootAdmin);
     return {
-      totalCampaigns: campaigns.length,
-      activeCampaigns: campaigns.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
-      completedCampaigns: campaigns.filter(c => c.status === "COMPLETED").length,
-      totalEmailsSent: campaigns.reduce((sum, c) => sum + c.sentEmails, 0)
+      totalCampaigns: campaignsList.length,
+      activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
+      completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
+      totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
     };
-  }
-}
+  },
 
-export const storage = new MemStorage();
+  async initializeRootAdmin() {
+    try {
+      const existingAdmin = await this.getUserByUsername("admin");
+      if (existingAdmin) {
+        console.log("Root admin already exists");
+        return this.sanitizeUser(existingAdmin);
+      }
+      
+      const adminPassword = process.env.ADMIN_PASSWORD || "changeme123";
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@emailflow.pro";
+      
+      const admin = await this.createUser({
+        username: "admin",
+        email: adminEmail,
+        password: adminPassword,
+        role: USER_ROLES.ROOT_ADMIN,
+        creditsReceived: 100000,
+        mustResetPassword: true
+      });
+      
+      console.log("Root admin created - password reset required on first login");
+      return admin;
+    } catch (err) {
+      console.error("Failed to initialize root admin:", err);
+      return null;
+    }
+  }
+};

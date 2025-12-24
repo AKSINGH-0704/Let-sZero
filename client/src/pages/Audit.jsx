@@ -40,11 +40,35 @@ const ACTION_CONFIG = {
   USER_LOGOUT: { icon: LogOut, label: "Logout", color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400" },
   USER_CREATED: { icon: UserPlus, label: "User Created", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
   USER_DELETED: { icon: UserMinus, label: "User Deleted", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+  PASSWORD_CHANGED: { icon: Settings, label: "Password Changed", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400" },
   CREDITS_ALLOCATED: { icon: Coins, label: "Credits Allocated", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
+  CREDITS_USED: { icon: Coins, label: "Credits Used", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" },
   CAMPAIGN_CREATED: { icon: Send, label: "Campaign Created", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" },
+  CAMPAIGN_STARTED: { icon: Send, label: "Campaign Started", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
   CAMPAIGN_COMPLETED: { icon: Send, label: "Campaign Completed", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
-  SETTINGS_UPDATED: { icon: Settings, label: "Settings Updated", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400" }
+  CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS: { icon: Coins, label: "Campaign Blocked", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+  TEMPLATE_CREATED: { icon: FileText, label: "Template Created", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400" },
+  TEMPLATE_DELETED: { icon: FileText, label: "Template Deleted", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+  CONTACT_IMPORTED: { icon: UserPlus, label: "Contacts Imported", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400" },
+  AI_PREVIEW_GENERATED: { icon: Settings, label: "AI Preview", color: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400" },
+  SPAM_ANALYSIS_RUN: { icon: Settings, label: "Spam Analysis", color: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400" }
 };
+
+function formatDetails(details) {
+  if (!details) return "-";
+  if (typeof details === "string") return details;
+  const parts = [];
+  if (details.username) parts.push(`User: ${details.username}`);
+  if (details.amount) parts.push(`Amount: ${details.amount}`);
+  if (details.name) parts.push(`Name: ${details.name}`);
+  if (details.role) parts.push(`Role: ${details.role}`);
+  if (details.creditsNeeded) parts.push(`Needed: ${details.creditsNeeded}`);
+  if (details.creditsAvailable !== undefined) parts.push(`Available: ${details.creditsAvailable}`);
+  if (details.sentEmails) parts.push(`Sent: ${details.sentEmails}`);
+  if (details.totalEmails) parts.push(`Total: ${details.totalEmails}`);
+  if (details.count) parts.push(`Count: ${details.count}`);
+  return parts.length > 0 ? parts.join(", ") : JSON.stringify(details);
+}
 
 export default function Audit() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,9 +79,11 @@ export default function Audit() {
   });
 
   const filteredLogs = (logs || []).filter(log => {
+    const detailsStr = formatDetails(log.details);
     const matchesSearch = 
-      log.userName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.details?.toLowerCase().includes(searchQuery.toLowerCase());
+      log.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      detailsStr.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      log.action?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesAction = actionFilter === "all" || log.action === actionFilter;
     return matchesSearch && matchesAction;
   });
@@ -102,6 +128,10 @@ export default function Audit() {
                   <SelectItem value="CREDITS_ALLOCATED">Credits Allocated</SelectItem>
                   <SelectItem value="CAMPAIGN_CREATED">Campaign Created</SelectItem>
                   <SelectItem value="CAMPAIGN_COMPLETED">Campaign Completed</SelectItem>
+                  <SelectItem value="PASSWORD_CHANGED">Password Changed</SelectItem>
+                  <SelectItem value="CREDITS_USED">Credits Used</SelectItem>
+                  <SelectItem value="CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS">Campaign Blocked</SelectItem>
+                  <SelectItem value="TEMPLATE_CREATED">Template Created</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -149,7 +179,7 @@ export default function Audit() {
                               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
                                 <User className="h-4 w-4 text-primary" />
                               </div>
-                              <span className="font-medium">{log.userName || "System"}</span>
+                              <span className="font-medium">{log.username || "System"}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -159,10 +189,10 @@ export default function Audit() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground max-w-xs truncate">
-                            {log.details || "-"}
+                            {formatDetails(log.details)}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {log.targetUserName || log.campaignName || "-"}
+                            {log.targetType ? `${log.targetType}${log.targetId ? ` #${log.targetId}` : ""}` : "-"}
                           </TableCell>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
                             {formatDate(log.createdAt)}

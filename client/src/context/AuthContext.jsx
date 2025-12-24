@@ -44,6 +44,19 @@ export function AuthProvider({ children }) {
     }
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ currentPassword, newPassword }) => {
+      const res = await apiRequest("POST", "/api/auth/reset-password", { 
+        currentPassword, 
+        newPassword 
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    }
+  });
+
   const login = async (credentials) => {
     return loginMutation.mutateAsync(credentials);
   };
@@ -52,7 +65,12 @@ export function AuthProvider({ children }) {
     return logoutMutation.mutateAsync();
   };
 
+  const resetPassword = async (currentPassword, newPassword) => {
+    return resetPasswordMutation.mutateAsync({ currentPassword, newPassword });
+  };
+
   const isAuthenticated = !!user;
+  const mustResetPassword = user?.mustResetPassword === true;
   const isRootAdmin = user?.role === "ROOT_ADMIN";
   const isSubAdmin = user?.role === "SUB_ADMIN";
   const isAdmin = isRootAdmin || isSubAdmin;
@@ -64,10 +82,14 @@ export function AuthProvider({ children }) {
     isRootAdmin,
     isSubAdmin,
     isAdmin,
+    mustResetPassword,
     login,
     logout,
+    resetPassword,
     loginError: loginMutation.error,
     isLoggingIn: loginMutation.isPending,
+    isResettingPassword: resetPasswordMutation.isPending,
+    resetPasswordError: resetPasswordMutation.error,
     refetch
   };
 
