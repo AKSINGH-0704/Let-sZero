@@ -269,13 +269,13 @@ export default function ProgressTracker() {
 
       {isComplete && (
         <div className="flex justify-center gap-4 pt-4">
-          <Link href="/dashboard">
+          <Link href="/app/dashboard">
             <Button variant="outline" onClick={resetCampaign} data-testid="button-go-dashboard">
               <Home className="mr-2 h-4 w-4" />
               Go to Dashboard
             </Button>
           </Link>
-          <Link href="/history">
+          <Link href="/app/history">
             <Button onClick={resetCampaign} data-testid="button-view-history">
               <History className="mr-2 h-4 w-4" />
               View Campaign History

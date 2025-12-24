@@ -16,10 +16,10 @@ export default function NotFound() {
           <p className="text-muted-foreground mb-6">
             The page you're looking for doesn't exist or has been moved.
           </p>
-          <Link href="/dashboard">
+          <Link href="/">
             <Button className="gap-2" data-testid="button-go-home">
               <Home className="h-4 w-4" />
-              Go to Dashboard
+              Go Home
             </Button>
           </Link>
         </CardContent>

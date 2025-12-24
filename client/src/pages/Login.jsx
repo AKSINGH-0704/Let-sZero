@@ -17,7 +17,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
 
   if (isAuthenticated) {
-    return <Redirect to="/dashboard" />;
+    return <Redirect to="/app/dashboard" />;
   }
 
   const handleSubmit = async (e) => {
@@ -136,7 +136,7 @@ export default function Login() {
 
               <div className="mt-6 pt-4 border-t border-border">
                 <p className="text-xs text-center text-muted-foreground">
-                  Demo credentials: admin / admin123
+                  Demo credentials: admin / changeme123
                 </p>
               </div>
             </CardContent>

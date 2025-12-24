@@ -144,7 +144,7 @@ export default function Dashboard() {
               Welcome back, {user?.username}. Here's your campaign overview.
             </p>
           </div>
-          <Link href="/campaigns/new">
+          <Link href="/app/campaigns/new">
             <Button className="gap-2" data-testid="button-new-campaign">
               <Plus className="h-4 w-4" />
               New Campaign
@@ -190,7 +190,7 @@ export default function Dashboard() {
                 <CardTitle className="text-lg">Recent Campaigns</CardTitle>
                 <CardDescription>Your latest email campaigns</CardDescription>
               </div>
-              <Link href="/history">
+              <Link href="/app/history">
                 <Button variant="ghost" size="sm" className="gap-1" data-testid="link-view-all">
                   View all
                   <ArrowRight className="h-4 w-4" />
@@ -221,7 +221,7 @@ export default function Dashboard() {
                 <div className="text-center py-12">
                   <Send className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
                   <p className="text-muted-foreground mb-4">No campaigns yet</p>
-                  <Link href="/campaigns/new">
+                  <Link href="/app/campaigns/new">
                     <Button variant="outline" size="sm" data-testid="button-create-first-campaign">
                       Create your first campaign
                     </Button>
@@ -237,7 +237,7 @@ export default function Dashboard() {
               <CardDescription>Common tasks and shortcuts</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Link href="/campaigns/new" className="block">
+              <Link href="/app/campaigns/new" className="block">
                 <Button 
                   variant="outline" 
                   className="w-full justify-start gap-3 h-auto py-3"
@@ -252,7 +252,7 @@ export default function Dashboard() {
                   </div>
                 </Button>
               </Link>
-              <Link href="/templates" className="block">
+              <Link href="/app/templates" className="block">
                 <Button 
                   variant="outline" 
                   className="w-full justify-start gap-3 h-auto py-3"
@@ -267,7 +267,7 @@ export default function Dashboard() {
                   </div>
                 </Button>
               </Link>
-              <Link href="/history" className="block">
+              <Link href="/app/history" className="block">
                 <Button 
                   variant="outline" 
                   className="w-full justify-start gap-3 h-auto py-3"

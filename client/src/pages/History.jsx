@@ -94,7 +94,7 @@ export default function History() {
               View and manage your past email campaigns
             </p>
           </div>
-          <Link href="/campaigns/new">
+          <Link href="/app/campaigns/new">
             <Button className="gap-2" data-testid="button-new-campaign">
               <Send className="h-4 w-4" />
               New Campaign
@@ -238,7 +238,7 @@ export default function History() {
                     ? "Try adjusting your filters"
                     : "Create your first email campaign to get started"}
                 </p>
-                <Link href="/campaigns/new">
+                <Link href="/app/campaigns/new">
                   <Button data-testid="button-create-first-campaign">
                     <Send className="mr-2 h-4 w-4" />
                     Create Campaign
