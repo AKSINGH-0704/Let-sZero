@@ -19,7 +19,10 @@ import {
   Users,
   FileCheck,
   Shield,
-  ArrowLeft
+  ArrowLeft,
+  Send,
+  BarChart3,
+  Zap
 } from "lucide-react";
 import { SiGoogle, SiLinkedin } from "react-icons/si";
 
@@ -85,8 +88,8 @@ function BrandingPanel() {
 
 function MobileHeader() {
   return (
-    <div className="lg:hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-6 py-8">
-      <div className="absolute inset-0 lg:hidden overflow-hidden pointer-events-none">
+    <div className="lg:hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-6 py-8 relative">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-40 h-40 bg-cyan-500/10 rounded-full blur-3xl" />
       </div>
@@ -110,6 +113,59 @@ function MobileHeader() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function FloatingVisual() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute top-1/4 -right-20 w-96 h-96 opacity-[0.03] dark:opacity-[0.05]">
+        <div className="relative w-full h-full animate-[float_20s_ease-in-out_infinite]">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2">
+            <div className="w-20 h-20 rounded-2xl border-2 border-primary/40 flex items-center justify-center">
+              <Mail className="w-8 h-8 text-primary/60" />
+            </div>
+          </div>
+          <div className="absolute top-24 left-8">
+            <div className="w-16 h-16 rounded-xl border-2 border-primary/30 flex items-center justify-center">
+              <Send className="w-6 h-6 text-primary/50" />
+            </div>
+          </div>
+          <div className="absolute top-24 right-8">
+            <div className="w-16 h-16 rounded-xl border-2 border-primary/30 flex items-center justify-center">
+              <BarChart3 className="w-6 h-6 text-primary/50" />
+            </div>
+          </div>
+          <div className="absolute top-48 left-1/2 -translate-x-1/2">
+            <div className="w-14 h-14 rounded-lg border-2 border-primary/20 flex items-center justify-center">
+              <Zap className="w-5 h-5 text-primary/40" />
+            </div>
+          </div>
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 300 250">
+            <path d="M150 40 L70 100" stroke="currentColor" strokeWidth="1" fill="none" className="text-primary/20" />
+            <path d="M150 40 L230 100" stroke="currentColor" strokeWidth="1" fill="none" className="text-primary/20" />
+            <path d="M70 100 L150 180" stroke="currentColor" strokeWidth="1" fill="none" className="text-primary/15" />
+            <path d="M230 100 L150 180" stroke="currentColor" strokeWidth="1" fill="none" className="text-primary/15" />
+          </svg>
+        </div>
+      </div>
+
+      <div className="absolute bottom-1/4 -left-32 w-80 h-80 opacity-[0.02] dark:opacity-[0.04]">
+        <div className="relative w-full h-full animate-[float_25s_ease-in-out_infinite_reverse]">
+          <div className="absolute inset-0 rounded-full border border-primary/30" />
+          <div className="absolute inset-8 rounded-full border border-primary/20" />
+          <div className="absolute inset-16 rounded-full border border-primary/10" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Users className="w-10 h-10 text-primary/30" />
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute top-16 left-1/4 w-64 h-64 bg-gradient-to-br from-primary/5 to-transparent rounded-full blur-3xl" />
+      <div className="absolute bottom-16 right-1/4 w-72 h-72 bg-gradient-to-tl from-primary/5 to-transparent rounded-full blur-3xl" />
+      
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(var(--primary-rgb,99,102,241),0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(var(--primary-rgb,99,102,241),0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black_70%)]" />
     </div>
   );
 }
@@ -139,8 +195,10 @@ export default function Login() {
 
       <MobileHeader />
 
-      <div className="flex-1 flex flex-col lg:w-1/2 bg-gradient-to-b from-background to-muted/30">
-        <div className="hidden lg:flex items-center justify-between p-6">
+      <div className="flex-1 flex flex-col lg:w-1/2 relative">
+        <FloatingVisual />
+        
+        <div className="hidden lg:flex items-center justify-between p-6 relative z-10">
           <Link href="/">
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" data-testid="link-back-home">
               <ArrowLeft className="h-4 w-4" />
@@ -150,7 +208,7 @@ export default function Login() {
           <ThemeToggle />
         </div>
 
-        <div className="flex-1 flex items-center justify-center px-6 py-8 lg:py-0">
+        <div className="flex-1 flex items-center justify-center px-6 py-8 lg:py-0 relative z-10">
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="hidden lg:block mb-6">
               <h1 className="text-2xl font-semibold tracking-tight">Sign in to your account</h1>
@@ -159,7 +217,7 @@ export default function Login() {
               </p>
             </div>
 
-            <Card className="border-card-border shadow-2xl shadow-black/5 dark:shadow-black/20 rounded-xl overflow-hidden">
+            <Card className="border-card-border shadow-2xl shadow-black/5 dark:shadow-black/20 rounded-xl overflow-hidden backdrop-blur-sm bg-card/95">
               <CardContent className="pt-8 pb-6 px-6">
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {loginError && (
@@ -297,6 +355,15 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          25% { transform: translateY(-10px) rotate(1deg); }
+          50% { transform: translateY(-5px) rotate(0deg); }
+          75% { transform: translateY(-15px) rotate(-1deg); }
+        }
+      `}</style>
     </div>
   );
 }
