@@ -1,0 +1,241 @@
+CRITICAL INSTRUCTIONS — READ FULLY
+
+I want to enhance the pre-login experience and overall visual presentation of this SaaS so that first-time visitors see a compelling, professional product introduction page instead of a blank login screen.
+
+This must feel enterprise-grade, similar in quality to Zoho Mail and ZeptoMail, but not copied — original, cleaner, more modern, and more confident.
+
+⚠️ IMPORTANT CONSTRAINTS
+
+Do NOT break or change any existing backend logic, auth, credits, campaigns, or APIs
+
+Do NOT remove or simplify existing functionality
+
+Use JavaScript only (no TypeScript)
+
+This is a real SaaS product, not a marketing mockup
+
+1️⃣ PRE-LOGIN PRODUCT INTRO EXPERIENCE (MANDATORY)
+Replace the current default login-first behavior with:
+
+A public product introduction page shown to all non-authenticated users.
+
+This page must include:
+🔹 Hero Section (Above the Fold)
+
+Large, confident headline explaining the product value
+Example tone (do NOT copy):
+
+“Enterprise-grade email campaigns with AI personalization and full control”
+
+Short subtext explaining:
+
+AI-powered personalization
+
+Credit-based control
+
+Team hierarchy
+
+Compliance & audit logging
+
+Two clear CTAs:
+
+“Get Started” → leads to signup/login
+
+“View Features” → scrolls down
+
+Design:
+
+Dark, premium background (deep blue / charcoal / gradient)
+
+Clean typography (Inter)
+
+Subtle animated background shapes or lines (very light, professional)
+
+🔹 Visual Workflow Section (Like ZeptoMail Flow)
+
+Create a visual flow diagram (static UI, not functional):
+
+User Uploads Contacts
+        ↓
+AI Personalization
+        ↓
+Spam Analysis
+        ↓
+Credit Validation
+        ↓
+Secure Delivery
+        ↓
+Analytics & Audit Logs
+
+
+Use soft glowing cards or nodes
+
+Smooth connecting lines
+
+Minimal animation on hover
+
+🔹 Feature Breakdown Section
+
+Create feature cards (icon + title + 1–2 lines):
+
+AI-Powered Personalization
+
+Hierarchical Credit Control
+
+Team-Based Access (ROOT / SUB / USER)
+
+Anti-Spam Intelligence
+
+Live Campaign Tracking
+
+Audit-Grade Logs & Compliance
+
+Design:
+
+Clean cards
+
+Subtle shadows
+
+Professional spacing
+
+🔹 Dashboard Preview Section
+
+Show mock UI screenshots / skeleton previews of:
+
+Dashboard
+
+Campaign history
+
+Credit overview
+
+These are visual previews only, not functional.
+
+🔹 Trust & Professionalism Section
+
+“Built for teams & growing businesses”
+
+“Designed for control, scale, and compliance”
+
+No fake testimonials
+
+Keep it clean and confident
+
+🔹 Final CTA Section
+
+Large call to action:
+
+“Start using EmailFlow Pro”
+
+Leads to login/signup
+
+2️⃣ LOGIN & AUTH FLOW (UNCHANGED LOGIC)
+
+When user clicks Get Started:
+
+Redirect to existing login/signup flow
+
+Do NOT modify:
+
+Auth logic
+
+Sessions
+
+Password reset rules
+
+Roles
+
+This change is purely UX routing + UI, not backend.
+
+3️⃣ GLOBAL DESIGN SYSTEM (APPLY EVERYWHERE)
+
+Unify the entire app visually:
+
+🎨 Design Principles
+
+Enterprise-grade
+
+Calm, confident, minimal
+
+Data-first, not flashy
+
+🎨 Colors
+
+Primary: Deep blue / indigo
+
+Backgrounds: Dark + light variants
+
+Accent: Subtle green / cyan for success states
+
+Error: Muted red (never harsh)
+
+🅰️ Typography
+
+Inter font everywhere
+
+Clear hierarchy:
+
+Page titles
+
+Section headers
+
+Body text
+
+Meta text
+
+🧩 Components
+
+Cards with subtle elevation
+
+Buttons with clear states (hover / disabled)
+
+Consistent spacing
+
+No clutter
+
+4️⃣ ROUTING LOGIC (IMPORTANT)
+
+/ → Product Intro Page (if not logged in)
+
+/login → Login page
+
+/app/* → Auth-protected dashboard
+
+If user is logged in:
+
+Visiting / should redirect to dashboard
+
+5️⃣ WHAT NOT TO DO
+
+🚫 Do NOT:
+
+Add new business features
+
+Change credit rules
+
+Change backend APIs
+
+Introduce TypeScript
+
+Add placeholder/fake data
+
+Copy Zoho/Zepto UI directly
+
+6️⃣ FINAL REQUIREMENT
+
+After implementation:
+
+Confirm that:
+
+First-time users see the intro page
+
+App feels premium, not “internal tool”
+
+Visual quality matches enterprise SaaS expectations
+
+All existing functionality remains intact
+
+⭐ Goal
+
+When a client opens the app for the first time, they should feel:
+
+“This looks like a serious product worth paying for.”

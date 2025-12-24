@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import ProtectedRoute from "@/components/layout/ProtectedRoute";
 
+import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import NewCampaign from "@/pages/NewCampaign";
@@ -31,10 +32,12 @@ function AppRoutes() {
 
   return (
     <Switch>
-      <Route path="/login" component={Login} />
+      <Route path="/login">
+        {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
+      </Route>
       
       <Route path="/">
-        {isAuthenticated ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}
+        {isAuthenticated ? <Redirect to="/dashboard" /> : <Landing />}
       </Route>
 
       <Route path="/dashboard">
