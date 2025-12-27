@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useCampaign } from "@/context/CampaignContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +20,11 @@ export default function FileUpload() {
   const [preview, setPreview] = useState({ headers: [], rows: [] });
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const processFile = useCallback((file) => {
     setError("");
@@ -99,32 +104,39 @@ export default function FileUpload() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           className={cn(
-            "border-2 border-dashed rounded-lg p-12 text-center transition-colors",
+            "border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer",
             isDragOver 
               ? "border-primary bg-primary/5" 
               : "border-border hover:border-primary/50"
           )}
+          onClick={handleBrowseClick}
         >
           <input
+            ref={fileInputRef}
             type="file"
             accept=".csv,.txt"
             onChange={handleFileSelect}
             className="hidden"
-            id="file-upload"
             data-testid="input-file-upload"
           />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-lg font-medium mb-2">
-              Drag and drop your CSV file here
-            </p>
-            <p className="text-sm text-muted-foreground mb-4">
-              or click to browse files
-            </p>
-            <Button variant="outline" type="button" data-testid="button-browse-files">
-              Browse Files
-            </Button>
-          </label>
+          <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-lg font-medium mb-2">
+            Drag and drop your CSV file here
+          </p>
+          <p className="text-sm text-muted-foreground mb-4">
+            or click to browse files
+          </p>
+          <Button 
+            variant="outline" 
+            type="button" 
+            onClick={(e) => {
+              e.stopPropagation();
+              handleBrowseClick();
+            }}
+            data-testid="button-browse-files"
+          >
+            Browse Files
+          </Button>
         </div>
       ) : (
         <Card className="border-card-border">
