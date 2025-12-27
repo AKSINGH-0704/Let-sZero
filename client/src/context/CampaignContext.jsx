@@ -13,7 +13,9 @@ const INITIAL_STATE = {
   },
   aiPreviews: [],
   spamAnalysis: null,
-  campaignName: ""
+  campaignName: "",
+  campaignId: null,
+  campaignData: null
 };
 
 export function CampaignProvider({ children }) {
@@ -47,6 +49,14 @@ export function CampaignProvider({ children }) {
     setCampaignState(prev => ({ ...prev, campaignName: name }));
   };
 
+  const setCampaignId = (id) => {
+    setCampaignState(prev => ({ ...prev, campaignId: id }));
+  };
+
+  const setCampaignData = (data) => {
+    setCampaignState(prev => ({ ...prev, campaignData: data }));
+  };
+
   const resetCampaign = () => {
     setCampaignState(INITIAL_STATE);
   };
@@ -68,6 +78,8 @@ export function CampaignProvider({ children }) {
     setAiPreviews,
     setSpamAnalysis,
     setCampaignName,
+    setCampaignId,
+    setCampaignData,
     resetCampaign,
     goNext,
     goBack

@@ -37,6 +37,8 @@ export default function CampaignConfirmation() {
     spamAnalysis, 
     goBack,
     setCampaignName,
+    setCampaignId,
+    setCampaignData,
     campaignName,
     setStep
   } = useCampaign();
@@ -84,8 +86,14 @@ export default function CampaignConfirmation() {
     },
     onSuccess: (data) => {
       setCampaignName(name);
+      setCampaignId(data.id);
+      setCampaignData(data);
+      
+      queryClient.setQueryData(["/api/campaigns", data.id], data);
+      
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       refetchUser();
       setStep(7);
     },

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useCampaign } from "@/context/CampaignContext";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,8 @@ import {
   Home,
   History,
   Loader2,
-  Mail
+  Mail,
+  PartyPopper
 } from "lucide-react";
 import { formatNumber, cn } from "@/lib/utils";
 
@@ -52,91 +53,90 @@ const STATUS_CONFIG = {
 };
 
 export default function ProgressTracker() {
-  const { contacts, campaignName, resetCampaign } = useCampaign();
-  const [campaign, setCampaign] = useState({
-    status: "RUNNING",
-    sentEmails: 0,
-    failedEmails: 0,
-    totalEmails: contacts.length,
-    emailStatuses: []
+  const { contacts, campaignName, campaignId, campaignData, resetCampaign, columnMapping } = useCampaign();
+  const [emailStatuses, setEmailStatuses] = useState([]);
+
+  const { data: fetchedCampaign } = useQuery({
+    queryKey: ["/api/campaigns", campaignId],
+    enabled: !!campaignId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.status === "COMPLETED" || data?.status === "FAILED") {
+        return false;
+      }
+      return 2000;
+    }
   });
 
-  useEffect(() => {
-    if (campaign.status !== "RUNNING") return;
-
-    const interval = setInterval(() => {
-      setCampaign(prev => {
-        const remaining = prev.totalEmails - prev.sentEmails - prev.failedEmails;
-        if (remaining <= 0) {
-          return { ...prev, status: "COMPLETED" };
-        }
-
-        const toProcess = Math.min(Math.ceil(Math.random() * 5) + 1, remaining);
-        const failed = Math.random() < 0.05 ? 1 : 0;
-        const sent = toProcess - failed;
-
-        const newStatuses = [];
-        for (let i = 0; i < sent; i++) {
-          const contactIndex = prev.sentEmails + prev.failedEmails + i;
-          if (contactIndex < contacts.length) {
-            newStatuses.push({
-              email: contacts[contactIndex]?.email || `email${contactIndex}@example.com`,
-              status: "sent",
-              timestamp: new Date().toISOString()
-            });
-          }
-        }
-        if (failed > 0) {
-          const contactIndex = prev.sentEmails + prev.failedEmails + sent;
-          if (contactIndex < contacts.length) {
-            newStatuses.push({
-              email: contacts[contactIndex]?.email || `email${contactIndex}@example.com`,
-              status: "failed",
-              timestamp: new Date().toISOString()
-            });
-          }
-        }
-
-        return {
-          ...prev,
-          sentEmails: prev.sentEmails + sent,
-          failedEmails: prev.failedEmails + failed,
-          emailStatuses: [...newStatuses, ...prev.emailStatuses].slice(0, 100)
-        };
-      });
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [campaign.status, contacts]);
-
-  const togglePause = () => {
-    setCampaign(prev => ({
-      ...prev,
-      status: prev.status === "RUNNING" ? "PAUSED" : "RUNNING"
-    }));
+  const currentCampaign = fetchedCampaign || campaignData || {
+    status: "COMPLETED",
+    sentEmails: contacts.length,
+    failedEmails: 0,
+    totalEmails: contacts.length,
+    creditsUsed: contacts.length,
+    name: campaignName
   };
 
-  const progress = campaign.totalEmails > 0 
-    ? ((campaign.sentEmails + campaign.failedEmails) / campaign.totalEmails) * 100 
-    : 0;
+  useEffect(() => {
+    if (!contacts.length) return;
 
-  const statusConfig = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.PENDING;
+    const generateStatuses = () => {
+      const statuses = [];
+      const totalProcessed = (currentCampaign.sentEmails || 0) + (currentCampaign.failedEmails || 0);
+      
+      for (let i = 0; i < Math.min(totalProcessed, contacts.length, 50); i++) {
+        const contact = contacts[i];
+        const email = contact?.[columnMapping?.email] || `contact${i + 1}@example.com`;
+        const isFailed = i < (currentCampaign.failedEmails || 0);
+        
+        statuses.push({
+          email,
+          status: isFailed ? "failed" : "sent",
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      return statuses.reverse();
+    };
+
+    setEmailStatuses(generateStatuses());
+  }, [currentCampaign.sentEmails, currentCampaign.failedEmails, contacts, columnMapping]);
+
+  const totalEmails = currentCampaign.totalEmails || contacts.length;
+  const sentEmails = currentCampaign.sentEmails || 0;
+  const failedEmails = currentCampaign.failedEmails || 0;
+  const progress = totalEmails > 0 
+    ? ((sentEmails + failedEmails) / totalEmails) * 100 
+    : 100;
+
+  const statusConfig = STATUS_CONFIG[currentCampaign.status] || STATUS_CONFIG.COMPLETED;
   const StatusIcon = statusConfig.icon;
 
-  const isComplete = campaign.status === "COMPLETED";
-  const successRate = campaign.sentEmails + campaign.failedEmails > 0
-    ? ((campaign.sentEmails / (campaign.sentEmails + campaign.failedEmails)) * 100).toFixed(1)
-    : 0;
+  const isComplete = currentCampaign.status === "COMPLETED";
+  const successRate = sentEmails + failedEmails > 0
+    ? ((sentEmails / (sentEmails + failedEmails)) * 100).toFixed(1)
+    : 100;
+
+  const handleFinish = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    resetCampaign();
+  };
 
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold flex items-center justify-center gap-2">
-          <Activity className="h-5 w-5 text-primary" />
-          Campaign Progress
+          {isComplete ? (
+            <PartyPopper className="h-5 w-5 text-green-600" />
+          ) : (
+            <Activity className="h-5 w-5 text-primary" />
+          )}
+          {isComplete ? "Campaign Complete!" : "Campaign Progress"}
         </h2>
         <p className="text-muted-foreground mt-1">
-          {campaignName || "Email Campaign"}
+          {currentCampaign.name || campaignName || "Email Campaign"}
         </p>
       </div>
 
@@ -148,60 +148,39 @@ export default function ProgressTracker() {
                 <StatusIcon className="h-3 w-3" />
                 {statusConfig.label}
               </Badge>
-              {campaign.status === "RUNNING" && (
+              {currentCampaign.status === "RUNNING" && (
                 <span className="text-sm text-muted-foreground animate-pulse">
                   Processing...
                 </span>
               )}
             </div>
-            {(campaign.status === "RUNNING" || campaign.status === "PAUSED") && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={togglePause}
-                className="gap-2"
-                data-testid="button-toggle-pause"
-              >
-                {campaign.status === "RUNNING" ? (
-                  <>
-                    <Pause className="h-4 w-4" />
-                    Pause
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4" />
-                    Resume
-                  </>
-                )}
-              </Button>
-            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Progress</span>
-              <span className="font-medium">{progress.toFixed(1)}%</span>
+              <span className="font-medium">{progress.toFixed(0)}%</span>
             </div>
             <Progress value={progress} className="h-3" />
           </div>
 
           <div className="grid grid-cols-4 gap-4">
             <div className="text-center p-4 rounded-md bg-muted/50">
-              <p className="text-3xl font-bold">{formatNumber(campaign.totalEmails)}</p>
+              <p className="text-3xl font-bold">{formatNumber(totalEmails)}</p>
               <p className="text-sm text-muted-foreground">Total</p>
             </div>
             <div className="text-center p-4 rounded-md bg-green-50 dark:bg-green-950/30">
-              <p className="text-3xl font-bold text-green-600">{formatNumber(campaign.sentEmails)}</p>
+              <p className="text-3xl font-bold text-green-600">{formatNumber(sentEmails)}</p>
               <p className="text-sm text-green-700 dark:text-green-400">Sent</p>
             </div>
             <div className="text-center p-4 rounded-md bg-red-50 dark:bg-red-950/30">
-              <p className="text-3xl font-bold text-red-600">{formatNumber(campaign.failedEmails)}</p>
+              <p className="text-3xl font-bold text-red-600">{formatNumber(failedEmails)}</p>
               <p className="text-sm text-red-700 dark:text-red-400">Failed</p>
             </div>
             <div className="text-center p-4 rounded-md bg-blue-50 dark:bg-blue-950/30">
               <p className="text-3xl font-bold text-blue-600">
-                {formatNumber(campaign.totalEmails - campaign.sentEmails - campaign.failedEmails)}
+                {formatNumber(totalEmails - sentEmails - failedEmails)}
               </p>
               <p className="text-sm text-blue-700 dark:text-blue-400">Pending</p>
             </div>
@@ -214,7 +193,10 @@ export default function ProgressTracker() {
                 Campaign Completed Successfully!
               </p>
               <p className="text-sm text-green-700 dark:text-green-500">
-                {successRate}% success rate ({campaign.sentEmails} sent, {campaign.failedEmails} failed)
+                {successRate}% success rate ({sentEmails} sent, {failedEmails} failed)
+              </p>
+              <p className="text-sm text-green-700 dark:text-green-500 mt-1">
+                {formatNumber(currentCampaign.creditsUsed || totalEmails)} credits used
               </p>
             </div>
           )}
@@ -224,18 +206,22 @@ export default function ProgressTracker() {
       <Card className="border-card-border">
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">Email Status Log</CardTitle>
-          <CardDescription>Real-time status updates</CardDescription>
+          <CardDescription>
+            {isComplete ? "Completed email deliveries" : "Real-time status updates"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-64">
-            {campaign.emailStatuses.length === 0 ? (
+            {emailStatuses.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Waiting for emails to process...</p>
+                <p>
+                  {isComplete ? "All emails processed successfully" : "Waiting for emails to process..."}
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
-                {campaign.emailStatuses.map((status, i) => (
+                {emailStatuses.map((status, i) => (
                   <div 
                     key={i} 
                     className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/30"
@@ -246,7 +232,7 @@ export default function ProgressTracker() {
                       ) : (
                         <XCircle className="h-4 w-4 text-red-600" />
                       )}
-                      <span className="text-sm font-mono">{status.email}</span>
+                      <span className="text-sm font-mono truncate max-w-[200px]">{status.email}</span>
                     </div>
                     <Badge 
                       variant="secondary" 
@@ -270,13 +256,13 @@ export default function ProgressTracker() {
       {isComplete && (
         <div className="flex justify-center gap-4 pt-4">
           <Link href="/app/dashboard">
-            <Button variant="outline" onClick={resetCampaign} data-testid="button-go-dashboard">
+            <Button variant="outline" onClick={handleFinish} data-testid="button-go-dashboard">
               <Home className="mr-2 h-4 w-4" />
               Go to Dashboard
             </Button>
           </Link>
           <Link href="/app/history">
-            <Button onClick={resetCampaign} data-testid="button-view-history">
+            <Button onClick={handleFinish} data-testid="button-view-history">
               <History className="mr-2 h-4 w-4" />
               View Campaign History
             </Button>
