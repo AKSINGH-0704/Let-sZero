@@ -529,13 +529,15 @@ export async function registerRoutes(httpServer, app) {
       const planWithPrices = getPlanWithPrices(plan, exchangeRate);
       
       const amountUsd = planWithPrices.priceUsd;
-      const amountLocal = currency === "INR" ? planWithPrices.priceInr : amountUsd;
+      const amountInr = planWithPrices.priceInr;
+      const amountLocal = currency === "INR" ? amountInr : amountUsd;
       
       const payment = await storage.createPayment({
         userId: req.user.id,
         planName: plan.name,
         credits: plan.credits,
         amountUsd,
+        amountInr,
         amountLocal,
         currency,
         exchangeRate: exchangeRate.toString(),

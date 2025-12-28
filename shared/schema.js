@@ -175,6 +175,7 @@ export const payments = pgTable("payments", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planName: text("plan_name").notNull(),
   credits: integer("credits").notNull(),
+  amountInr: integer("amount_inr").notNull(),
   amountUsd: integer("amount_usd").notNull(),
   amountLocal: integer("amount_local").notNull(),
   currency: text("currency").notNull().default("USD"),
