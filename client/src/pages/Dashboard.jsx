@@ -219,10 +219,19 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="text-center py-12">
-                  <Send className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground mb-4">No campaigns yet</p>
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-20 w-20 rounded-full bg-primary/5" />
+                    </div>
+                    <Send className="relative h-10 w-10 mx-auto text-muted-foreground/40" />
+                  </div>
+                  <p className="text-lg font-medium mb-1">No campaigns yet</p>
+                  <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                    Start engaging with your audience by creating your first email campaign
+                  </p>
                   <Link href="/app/campaigns/new">
-                    <Button variant="outline" size="sm" data-testid="button-create-first-campaign">
+                    <Button data-testid="button-create-first-campaign">
+                      <Plus className="mr-2 h-4 w-4" />
                       Create your first campaign
                     </Button>
                   </Link>

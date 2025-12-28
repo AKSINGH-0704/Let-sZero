@@ -429,14 +429,19 @@ export default function Users() {
               </div>
             ) : (
               <div className="text-center py-16">
-                <UsersIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-lg font-medium mb-2">No users found</p>
-                <p className="text-muted-foreground mb-6">
-                  Create your first user to get started
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-24 w-24 rounded-full bg-primary/5" />
+                  </div>
+                  <UsersIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
+                </div>
+                <p className="text-lg font-medium mb-2">No team members yet</p>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  Invite team members to collaborate on campaigns and manage credits across your organization.
                 </p>
                 <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
                   <Plus className="mr-2 h-4 w-4" />
-                  Create User
+                  Add Your First Team Member
                 </Button>
               </div>
             )}

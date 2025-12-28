@@ -325,14 +325,19 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
           <Card className="border-card-border">
             <CardContent className="py-16">
               <div className="text-center">
-                <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-lg font-medium mb-2">No templates found</p>
-                <p className="text-muted-foreground mb-6">
-                  Create your first email template to get started
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-24 w-24 rounded-full bg-primary/5" />
+                  </div>
+                  <FileText className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
+                </div>
+                <p className="text-lg font-medium mb-2">No templates yet</p>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  Templates help you save time by reusing email content. Create your first template to streamline your campaigns.
                 </p>
                 <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-template">
                   <Plus className="mr-2 h-4 w-4" />
-                  Create Template
+                  Create Your First Template
                 </Button>
               </div>
             </CardContent>

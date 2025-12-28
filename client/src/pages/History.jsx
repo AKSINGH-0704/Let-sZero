@@ -231,19 +231,30 @@ export default function History() {
               </div>
             ) : (
               <div className="text-center py-16">
-                <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-lg font-medium mb-2">No campaigns found</p>
-                <p className="text-muted-foreground mb-6">
-                  {searchQuery || statusFilter !== "all"
-                    ? "Try adjusting your filters"
-                    : "Create your first email campaign to get started"}
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-24 w-24 rounded-full bg-primary/5" />
+                  </div>
+                  <HistoryIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
+                </div>
+                <p className="text-lg font-medium mb-2">
+                  {searchQuery || statusFilter !== "all" 
+                    ? "No matching campaigns" 
+                    : "No campaigns yet"}
                 </p>
-                <Link href="/app/campaigns/new">
-                  <Button data-testid="button-create-first-campaign">
-                    <Send className="mr-2 h-4 w-4" />
-                    Create Campaign
-                  </Button>
-                </Link>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  {searchQuery || statusFilter !== "all"
+                    ? "Try adjusting your search terms or filters to find what you're looking for"
+                    : "Your campaign history will appear here once you send your first email campaign"}
+                </p>
+                {!(searchQuery || statusFilter !== "all") && (
+                  <Link href="/app/campaigns/new">
+                    <Button data-testid="button-create-first-campaign">
+                      <Send className="mr-2 h-4 w-4" />
+                      Create Your First Campaign
+                    </Button>
+                  </Link>
+                )}
               </div>
             )}
           </CardContent>
