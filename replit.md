@@ -74,3 +74,24 @@ Note: The application has dual schema files - `shared/schema.js` for runtime val
 
 ### Development Tools
 - **Replit Plugins**: Dev banner, cartographer, and runtime error overlay for Replit environment
+
+## Recent Changes
+
+### Navigation Updates (Dec 2024)
+- Added public routes: `/pricing`, `/contact`
+- Added authenticated route: `/app/payments` with Payments page in navbar
+- Updated Landing page header with Pricing and Contact links
+- Updated Footer with navigation links to Pricing, Contact, and Sign In
+
+### Payments & Pricing System (Dec 2024)
+- 6 pricing tiers: 3 pay-as-you-go (1K-10K credits), 3 bulk (50K-500K credits with discounts)
+- Payment initiation and completion flow with invoice tracking
+- Trial credits system: 5 free demo credits for new users
+
+### Multi-Format File Upload (Dec 2024)
+- CSV and Excel (.xlsx, .xls) file support with server-side parsing via xlsx package
+- File type badges, loading states, 10MB file size limit
+
+### Contact Form (Dec 2024)
+- Public contact page with multiple reason categories (Sales, Support, Billing, Partnership, Other)
+- Admin endpoint for viewing contact submissions

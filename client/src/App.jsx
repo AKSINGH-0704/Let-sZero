@@ -16,6 +16,9 @@ import Users from "@/pages/Users";
 import Audit from "@/pages/Audit";
 import Profile from "@/pages/Profile";
 import ResetPassword from "@/pages/ResetPassword";
+import Pricing from "@/pages/Pricing";
+import Payments from "@/pages/Payments";
+import Contact from "@/pages/Contact";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -69,6 +72,14 @@ function AppRoutes() {
         {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <Login />}
       </Route>
 
+      <Route path="/pricing">
+        {() => <Pricing />}
+      </Route>
+
+      <Route path="/contact">
+        {() => <Contact />}
+      </Route>
+
       <Route path="/app/dashboard">
         <ProtectedRoute>
           <Dashboard />
@@ -108,6 +119,18 @@ function AppRoutes() {
       <Route path="/app/profile">
         <ProtectedRoute>
           <Profile />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/payments/:rest*">
+        <ProtectedRoute>
+          <Payments />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/payments">
+        <ProtectedRoute>
+          <Payments />
         </ProtectedRoute>
       </Route>
 

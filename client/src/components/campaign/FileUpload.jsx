@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef } from "react";
 import { useCampaign } from "@/context/CampaignContext";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { 
   Table, 
   TableBody, 
@@ -11,48 +13,105 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle } from "lucide-react";
+import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { parseCSV, cn } from "@/lib/utils";
 
 export default function FileUpload() {
   const { setContacts, goNext, contacts } = useCampaign();
   const [file, setFile] = useState(null);
+  const [fileType, setFileType] = useState(null);
   const [preview, setPreview] = useState({ headers: [], rows: [] });
   const [error, setError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleBrowseClick = () => {
     fileInputRef.current?.click();
   };
 
-  const processFile = useCallback((file) => {
+  const getFileType = (fileName) => {
+    const ext = fileName.toLowerCase().split(".").pop();
+    if (ext === "csv" || ext === "txt") return "CSV";
+    if (ext === "xlsx" || ext === "xls") return "Excel";
+    return null;
+  };
+
+  const processFile = useCallback(async (file) => {
     setError("");
+    setIsLoading(true);
     
-    if (!file.name.endsWith(".csv") && !file.name.endsWith(".txt")) {
-      setError("Please upload a CSV file");
+    const type = getFileType(file.name);
+    if (!type) {
+      setError("Please upload a CSV or Excel file (.csv, .xlsx, .xls)");
+      setIsLoading(false);
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const { headers, rows } = parseCSV(text);
-        
-        if (headers.length === 0) {
-          setError("File appears to be empty or invalid");
-          return;
-        }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size must be less than 10MB");
+      setIsLoading(false);
+      return;
+    }
 
-        setFile(file);
-        setPreview({ headers, rows: rows.slice(0, 5) });
-        setContacts(rows);
-      } catch (err) {
-        setError("Failed to parse file. Please check the format.");
+    try {
+      if (type === "CSV") {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const text = e.target.result;
+            const { headers, rows } = parseCSV(text);
+            
+            if (headers.length === 0) {
+              setError("File appears to be empty or invalid");
+              setIsLoading(false);
+              return;
+            }
+
+            setFile(file);
+            setFileType("CSV");
+            setPreview({ headers, rows: rows.slice(0, 5) });
+            setContacts(rows);
+            setIsLoading(false);
+          } catch (err) {
+            setError("Failed to parse CSV file. Please check the format.");
+            setIsLoading(false);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const base64 = e.target.result.split(",")[1];
+            const response = await apiRequest("POST", "/api/parse-excel", {
+              fileData: base64,
+              fileName: file.name
+            });
+            const data = await response.json();
+            
+            if (!data.headers || data.headers.length === 0) {
+              setError("Excel file appears to be empty or invalid");
+              setIsLoading(false);
+              return;
+            }
+
+            setFile(file);
+            setFileType("Excel");
+            setPreview({ headers: data.headers, rows: data.rows.slice(0, 5) });
+            setContacts(data.rows);
+            setIsLoading(false);
+          } catch (err) {
+            setError("Failed to parse Excel file. Please check the format.");
+            setIsLoading(false);
+          }
+        };
+        reader.readAsDataURL(file);
       }
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setError("Failed to process file. Please try again.");
+      setIsLoading(false);
+    }
   }, [setContacts]);
 
   const handleDrop = useCallback((e) => {
@@ -82,6 +141,7 @@ export default function FileUpload() {
 
   const clearFile = () => {
     setFile(null);
+    setFileType(null);
     setPreview({ headers: [], rows: [] });
     setContacts([]);
     setError("");
@@ -94,11 +154,19 @@ export default function FileUpload() {
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold">Upload Your Contact List</h2>
         <p className="text-muted-foreground mt-1">
-          Upload a CSV file with your email contacts
+          Upload CSV or Excel files (.csv, .xlsx, .xls). Max size 10MB.
         </p>
       </div>
 
-      {!file ? (
+      {isLoading ? (
+        <div className="border-2 border-dashed rounded-lg p-12 text-center border-border">
+          <Loader2 className="h-12 w-12 mx-auto text-primary mb-4 animate-spin" />
+          <p className="text-lg font-medium mb-2">Processing your file...</p>
+          <p className="text-sm text-muted-foreground">
+            This may take a moment for larger files
+          </p>
+        </div>
+      ) : !file ? (
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -114,18 +182,23 @@ export default function FileUpload() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,.txt"
+            accept=".csv,.txt,.xlsx,.xls"
             onChange={handleFileSelect}
             className="hidden"
             data-testid="input-file-upload"
           />
           <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-lg font-medium mb-2">
-            Drag and drop your CSV file here
+            Drag and drop your file here
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            or click to browse files
+            Supports CSV and Excel files
           </p>
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Badge variant="secondary" className="font-mono text-xs">.csv</Badge>
+            <Badge variant="secondary" className="font-mono text-xs">.xlsx</Badge>
+            <Badge variant="secondary" className="font-mono text-xs">.xls</Badge>
+          </div>
           <Button 
             variant="outline" 
             type="button" 
@@ -147,7 +220,15 @@ export default function FileUpload() {
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium">{file.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{file.name}</p>
+                    <Badge 
+                      variant={fileType === "Excel" ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {fileType}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     {contacts.length} contacts found
                   </p>

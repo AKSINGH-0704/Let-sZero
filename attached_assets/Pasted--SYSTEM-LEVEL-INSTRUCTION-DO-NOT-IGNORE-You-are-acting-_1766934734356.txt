@@ -1,0 +1,291 @@
+🔴 SYSTEM-LEVEL INSTRUCTION (DO NOT IGNORE)
+
+You are acting as a Senior Full-Stack Engineer + Product Designer + SaaS Architect.
+You must modify the existing codebase, not just describe changes.
+You must implement UI, backend logic, and UX enhancements without breaking any existing features or flows.
+
+You must:
+
+Actively refactor code where required
+
+Add new pages, routes, components, APIs, schemas
+
+Improve UI/UX using professional SaaS design principles
+
+Use your own judgment to enhance visuals, spacing, hierarchy, and interaction quality
+
+Avoid placeholder-only solutions unless explicitly requested
+
+🎯 OBJECTIVE
+
+Upgrade the existing EmailFlow Pro application by implementing four major production-grade features while preserving all current functionality.
+
+The four features are:
+
+Multi-format file upload (CSV + Excel)
+
+Full Payments & Pricing system
+
+Free demo / trial credits
+
+Public Contact page
+
+All changes must align with enterprise SaaS standards (Zoho, ZeptoMail, Stripe, Linear-level quality).
+
+1️⃣ FILE UPLOAD: CSV + EXCEL SUPPORT
+REQUIREMENTS
+
+Extend the campaign upload step to accept:
+
+.csv
+
+.xlsx
+
+.xls
+
+Drag-and-drop must support all formats
+
+Auto-detect file type
+
+Excel files must be parsed server-side and normalized into row objects identical to CSV parsing
+
+Preserve the existing column mapping step
+
+Show file type badge (CSV / Excel) after upload
+
+Provide clear validation errors for unsupported files or malformed data
+
+UX ENHANCEMENTS
+
+Update copy text:
+
+“Upload CSV or Excel files (.csv, .xlsx, .xls). Max size 10MB.”
+
+Add subtle icons or badges indicating supported formats
+
+Maintain clean, minimal, professional layout
+
+2️⃣ PAYMENTS & PRICING SYSTEM (CORE BUSINESS FEATURE)
+PRICING MODEL (IMPLEMENT AS REAL DATA, NOT MOCKS)
+CREDIT DEFINITION
+
+1 credit = 1 email sent
+
+PAY-AS-YOU-GO PLANS
+Credits	Price	Cost per Email
+1,000	₹500	₹0.50
+5,000	₹2,250	₹0.45
+10,000	₹4,000	₹0.40
+BULK PLANS
+Credits	Price	Discount
+50,000	₹18,000	10%
+100,000	₹32,000	20%
+500,000	₹140,000	30%
+PAYMENT METHODS
+
+Design the system to support:
+
+UPI
+
+Credit Card
+
+Debit Card
+
+Net Banking
+
+(Implementation-ready for Stripe/Razorpay, even if initially mocked.)
+
+PAYMENT FLOW (STATE DIAGRAM LOGIC)
+
+Implement this exact flow in code:
+
+User selects plan
+
+System validates user role & permissions
+
+Payment session created
+
+Payment pending
+
+Payment success → credits added atomically
+
+Payment failed → no credits added
+
+Transaction logged in audit log
+
+Invoice generated and stored
+
+Updated credit balance reflected everywhere
+
+Ensure idempotency and atomic credit updates.
+
+UI / UX
+
+Create a Pricing page (public + authenticated)
+
+Create a Payments page (authenticated only)
+
+Show:
+
+Current credit balance
+
+Purchase history
+
+Downloadable invoices
+
+Add pricing comparison cards with clear CTAs
+
+Use visual hierarchy, spacing, gradients, and motion to match enterprise SaaS quality
+
+3️⃣ FREE DEMO / TRIAL CREDITS
+TRIAL RULES
+
+Every new user gets 5 free demo credits
+
+No payment method required
+
+Demo credits:
+
+Can send max 5 emails
+
+Are clearly labeled as “Trial”
+
+Cannot be transferred
+
+Once used:
+
+Campaign sending is blocked
+
+User sees a clear upgrade CTA
+
+UX
+
+Banner on dashboard:
+
+“You are using trial credits (5 emails). Upgrade to continue.”
+
+Clear messaging — no dark patterns
+
+4️⃣ CONTACT PAGE (PUBLIC + AUTHENTICATED)
+PUBLIC CONTACT PAGE
+
+Create /contact with:
+
+Professional header and copy
+
+Contact form fields:
+
+Name
+
+Work Email
+
+Company (optional)
+
+Reason (dropdown):
+
+Sales
+
+Support
+
+Billing
+
+Partnership
+
+Other
+
+Message
+
+Trust indicators (secure, no spam)
+
+Office hours & support email
+
+BACKEND BEHAVIOR
+
+Store submissions
+
+Send admin notification email
+
+Optional auto-reply confirmation to user
+
+Logged in audit trail
+
+📍 NAVIGATION & VISIBILITY RULES
+BEFORE LOGIN (Public)
+
+Landing page
+
+Pricing (view-only)
+
+Contact
+
+Features overview
+
+AFTER LOGIN
+
+Buy credits
+
+Use demo credits
+
+Upload files
+
+Campaigns
+
+Payments & invoices
+
+Contact support (pre-filled form)
+
+🎨 DESIGN & UX EXPECTATIONS (VERY IMPORTANT)
+
+You MUST:
+
+Reduce white empty spaces using:
+
+Abstract gradients
+
+Subtle illustrations
+
+Grid textures
+
+Feature callouts
+
+Add scroll indicators where pages overflow
+
+Fix overlapping stepper lines and text
+
+Improve visual depth (cards, shadows, hover states)
+
+Maintain dark/light theme compatibility
+
+Match Stripe / Zoho / Linear visual quality
+
+Use your own design intelligence to enhance layouts — do not limit yourself to existing styles.
+
+🧠 AI USAGE INSTRUCTION
+
+You are encouraged to:
+
+Use your own reasoning to improve UX beyond this prompt
+
+Apply best SaaS practices automatically
+
+Refactor components if needed
+
+Improve accessibility and responsiveness
+
+Avoid “done but unchanged” outcomes — changes must be visible and functional
+
+✅ COMPLETION CHECKLIST
+
+You are done ONLY when:
+
+CSV + Excel uploads work end-to-end
+
+Payments & pricing are functional and visible
+
+Demo credits enforce limits correctly
+
+Contact page submits and logs data
+
+UI clearly looks more premium than before
+
+No existing feature is broken

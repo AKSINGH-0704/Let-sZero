@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS = {
   CREDITS_ALLOCATED: "CREDITS_ALLOCATED",
   CREDITS_DEALLOCATED: "CREDITS_DEALLOCATED",
   CREDITS_USED: "CREDITS_USED",
+  CREDITS_PURCHASED: "CREDITS_PURCHASED",
   CAMPAIGN_CREATED: "CAMPAIGN_CREATED",
   CAMPAIGN_STARTED: "CAMPAIGN_STARTED",
   CAMPAIGN_PAUSED: "CAMPAIGN_PAUSED",
@@ -41,7 +42,26 @@ export const AUDIT_ACTIONS = {
   TEMPLATE_DELETED: "TEMPLATE_DELETED",
   CONTACT_IMPORTED: "CONTACT_IMPORTED",
   AI_PREVIEW_GENERATED: "AI_PREVIEW_GENERATED",
-  SPAM_ANALYSIS_RUN: "SPAM_ANALYSIS_RUN"
+  SPAM_ANALYSIS_RUN: "SPAM_ANALYSIS_RUN",
+  PAYMENT_INITIATED: "PAYMENT_INITIATED",
+  PAYMENT_SUCCESS: "PAYMENT_SUCCESS",
+  PAYMENT_FAILED: "PAYMENT_FAILED",
+  CONTACT_FORM_SUBMITTED: "CONTACT_FORM_SUBMITTED"
+};
+
+export const PAYMENT_STATUS = {
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  REFUNDED: "REFUNDED"
+};
+
+export const CONTACT_REASONS = {
+  SALES: "SALES",
+  SUPPORT: "SUPPORT",
+  BILLING: "BILLING",
+  PARTNERSHIP: "PARTNERSHIP",
+  OTHER: "OTHER"
 };
 
 export const users = pgTable("users", {
@@ -54,6 +74,9 @@ export const users = pgTable("users", {
   creditsReceived: integer("credits_received").notNull().default(0),
   creditsAllocated: integer("credits_allocated").notNull().default(0),
   creditsUsed: integer("credits_used").notNull().default(0),
+  trialCredits: integer("trial_credits").notNull().default(5),
+  trialCreditsUsed: integer("trial_credits_used").notNull().default(0),
+  isTrialUser: boolean("is_trial_user").notNull().default(true),
   mustResetPassword: boolean("must_reset_password").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -147,6 +170,35 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
+export const payments = pgTable("payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  planName: text("plan_name").notNull(),
+  credits: integer("credits").notNull(),
+  amountInr: integer("amount_inr").notNull(),
+  status: text("status").notNull().default(PAYMENT_STATUS.PENDING),
+  paymentMethod: text("payment_method"),
+  transactionId: text("transaction_id"),
+  invoiceNumber: text("invoice_number"),
+  invoiceUrl: text("invoice_url"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at")
+});
+
+export const contactSubmissions = pgTable("contact_submissions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  company: text("company"),
+  reason: text("reason").notNull(),
+  message: text("message").notNull(),
+  userId: uuid("user_id").references(() => users.id),
+  isRead: boolean("is_read").notNull().default(false),
+  respondedAt: timestamp("responded_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
@@ -217,3 +269,25 @@ export const aiPreviewSchema = z.object({
   body: z.string().min(1, "Body is required"),
   contacts: z.array(insertContactSchema).max(3)
 });
+
+export const contactSubmissionSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Valid email is required"),
+  company: z.string().optional(),
+  reason: z.enum(["SALES", "SUPPORT", "BILLING", "PARTNERSHIP", "OTHER"]),
+  message: z.string().min(10, "Message must be at least 10 characters")
+});
+
+export const purchaseCreditsSchema = z.object({
+  planId: z.string().min(1, "Plan is required"),
+  paymentMethod: z.enum(["UPI", "CARD", "NET_BANKING"]).optional()
+});
+
+export const PRICING_PLANS = {
+  payg_1000: { id: "payg_1000", name: "Starter", credits: 1000, priceInr: 500, costPerEmail: 0.50, type: "payg" },
+  payg_5000: { id: "payg_5000", name: "Growth", credits: 5000, priceInr: 2250, costPerEmail: 0.45, type: "payg" },
+  payg_10000: { id: "payg_10000", name: "Professional", credits: 10000, priceInr: 4000, costPerEmail: 0.40, type: "payg" },
+  bulk_50000: { id: "bulk_50000", name: "Business", credits: 50000, priceInr: 18000, discount: 10, type: "bulk" },
+  bulk_100000: { id: "bulk_100000", name: "Enterprise", credits: 100000, priceInr: 32000, discount: 20, type: "bulk" },
+  bulk_500000: { id: "bulk_500000", name: "Scale", credits: 500000, priceInr: 140000, discount: 30, type: "bulk" }
+};

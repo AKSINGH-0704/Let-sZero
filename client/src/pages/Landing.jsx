@@ -44,6 +44,16 @@ function HeroSection() {
             <span className="text-xl font-semibold text-white">EmailFlow Pro</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/pricing">
+              <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" data-testid="link-pricing-header">
+                Pricing
+              </Button>
+            </Link>
+            <Link href="/contact">
+              <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" data-testid="link-contact-header">
+                Contact
+              </Button>
+            </Link>
             <ThemeToggle />
             <Link href="/login">
               <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10" data-testid="link-login-header">
@@ -383,16 +393,31 @@ function CTASection() {
 function Footer() {
   return (
     <footer className="py-8 bg-slate-950 border-t border-white/10">
-      <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-lg flex items-center justify-center">
-            <Mail className="w-4 h-4 text-white" />
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-lg flex items-center justify-center">
+              <Mail className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-white/80 font-medium">EmailFlow Pro</span>
           </div>
-          <span className="text-white/80 font-medium">EmailFlow Pro</span>
+          <div className="flex items-center gap-6">
+            <Link href="/pricing" className="text-white/60 hover:text-white text-sm transition-colors" data-testid="link-pricing-footer">
+              Pricing
+            </Link>
+            <Link href="/contact" className="text-white/60 hover:text-white text-sm transition-colors" data-testid="link-contact-footer">
+              Contact
+            </Link>
+            <Link href="/login" className="text-white/60 hover:text-white text-sm transition-colors" data-testid="link-login-footer">
+              Sign In
+            </Link>
+          </div>
         </div>
-        <p className="text-white/40 text-sm">
-          Enterprise email marketing platform
-        </p>
+        <div className="text-center">
+          <p className="text-white/40 text-sm">
+            Enterprise email marketing platform
+          </p>
+        </div>
       </div>
     </footer>
   );

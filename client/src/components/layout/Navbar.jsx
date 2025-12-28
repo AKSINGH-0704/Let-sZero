@@ -23,7 +23,8 @@ import {
   History,
   Users,
   FileText,
-  Settings
+  Settings,
+  CreditCard
 } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ export default function Navbar() {
     { href: "/app/campaigns/new", label: "New Campaign", icon: Send },
     { href: "/app/history", label: "History", icon: History },
     { href: "/app/templates", label: "Templates", icon: FileText },
+    { href: "/app/payments", label: "Payments", icon: CreditCard },
   ];
 
   if (isAdmin) {

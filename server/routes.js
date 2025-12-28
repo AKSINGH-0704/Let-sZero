@@ -1,5 +1,6 @@
 import { storage } from "./storage.js";
-import { AUDIT_ACTIONS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, PRICING_PLANS, contactSubmissionSchema, PAYMENT_STATUS } from "../shared/schema.js";
+import * as XLSX from "xlsx";
 
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
@@ -484,6 +485,142 @@ export async function registerRoutes(httpServer, app) {
       });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/pricing/plans", async (req, res) => {
+    try {
+      res.json(Object.values(PRICING_PLANS));
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/credits/info", authMiddleware, async (req, res) => {
+    try {
+      const info = await storage.getTotalCreditsAvailable(req.user.id);
+      res.json(info);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/payments/initiate", authMiddleware, async (req, res) => {
+    try {
+      const { planId, paymentMethod } = req.body;
+      
+      const plan = PRICING_PLANS[planId];
+      if (!plan) {
+        return res.status(400).json({ message: "Invalid plan selected" });
+      }
+      
+      const payment = await storage.createPayment({
+        userId: req.user.id,
+        planName: plan.name,
+        credits: plan.credits,
+        amountInr: plan.priceInr,
+        paymentMethod: paymentMethod || "UPI",
+        status: PAYMENT_STATUS.PENDING
+      });
+      
+      res.json({ 
+        payment,
+        redirectUrl: `/app/payments/process/${payment.id}`
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/payments/:id/complete", authMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
+      
+      const payment = await storage.completePayment(id, transactionId);
+      const user = await storage.getUserById(req.user.id);
+      
+      res.json({ payment, user: storage.sanitizeUser(user) });
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/payments/:id/fail", authMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      
+      await storage.failPayment(id, reason || "Payment failed");
+      res.json({ message: "Payment marked as failed" });
+    } catch (error) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/payments", authMiddleware, async (req, res) => {
+    try {
+      const payments = await storage.getUserPayments(req.user.id);
+      res.json(payments);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const parsed = contactSubmissionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      
+      const submission = await storage.createContactSubmission(parsed.data);
+      res.status(201).json({ message: "Thank you for contacting us! We'll respond within 24 hours.", submission });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/contact-submissions", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      const submissions = await storage.getContactSubmissions({ limit: 100 });
+      res.json(submissions);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/parse-excel", authMiddleware, async (req, res) => {
+    try {
+      const { fileData, fileName } = req.body;
+      
+      if (!fileData) {
+        return res.status(400).json({ message: "No file data provided" });
+      }
+      
+      const buffer = Buffer.from(fileData, "base64");
+      const workbook = XLSX.read(buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      
+      if (jsonData.length === 0) {
+        return res.status(400).json({ message: "File is empty" });
+      }
+      
+      const headers = jsonData[0].map(h => String(h || "").trim());
+      const rows = jsonData.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((header, i) => {
+          obj[header] = row[i] !== undefined ? String(row[i]) : "";
+        });
+        return obj;
+      }).filter(row => Object.values(row).some(v => v));
+      
+      res.json({ headers, rows, fileName });
+    } catch (error) {
+      console.error("Excel parse error:", error);
+      res.status(400).json({ message: "Failed to parse Excel file. Please check the format." });
     }
   });
 

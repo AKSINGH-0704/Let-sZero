@@ -2,8 +2,8 @@ import { db } from "./db.js";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { 
   users, sessions, templates, contacts, campaigns, 
-  campaignEmails, creditTransactions, auditLogs,
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS
+  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions,
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS, PRICING_PLANS
 } from "../shared/schema.js";
 import crypto from "crypto";
 
@@ -567,7 +567,8 @@ export const storage = {
         password: adminPassword,
         role: USER_ROLES.ROOT_ADMIN,
         creditsReceived: 100000,
-        mustResetPassword: true
+        mustResetPassword: true,
+        isTrialUser: false
       });
       
       console.log("Root admin created - password reset required on first login");
@@ -576,5 +577,167 @@ export const storage = {
       console.error("Failed to initialize root admin:", err);
       return null;
     }
+  },
+
+  async createPayment(paymentData) {
+    const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const [payment] = await db.insert(payments).values({
+      ...paymentData,
+      invoiceNumber
+    }).returning();
+    
+    await this.createAuditLog({
+      userId: paymentData.userId,
+      action: AUDIT_ACTIONS.PAYMENT_INITIATED,
+      targetType: "payment",
+      targetId: payment.id,
+      details: { planName: paymentData.planName, credits: paymentData.credits, amountInr: paymentData.amountInr }
+    });
+    
+    return payment;
+  },
+
+  async completePayment(paymentId, transactionId) {
+    const payment = await this.getPayment(paymentId);
+    if (!payment) throw new Error("Payment not found");
+    
+    await db.transaction(async (tx) => {
+      await tx.update(payments)
+        .set({ 
+          status: PAYMENT_STATUS.SUCCESS, 
+          transactionId, 
+          completedAt: new Date() 
+        })
+        .where(eq(payments.id, paymentId));
+      
+      await tx.update(users)
+        .set({ 
+          creditsReceived: sql`credits_received + ${payment.credits}`,
+          isTrialUser: false,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, payment.userId));
+      
+      await tx.insert(creditTransactions).values({
+        userId: payment.userId,
+        type: "purchase",
+        amount: payment.credits,
+        balanceBefore: 0,
+        balanceAfter: payment.credits,
+        description: `Purchased ${payment.credits} credits - ${payment.planName}`
+      });
+    });
+    
+    await this.createAuditLog({
+      userId: payment.userId,
+      action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
+      targetType: "payment",
+      targetId: paymentId,
+      details: { credits: payment.credits, transactionId }
+    });
+    
+    return await this.getPayment(paymentId);
+  },
+
+  async failPayment(paymentId, reason) {
+    const payment = await this.getPayment(paymentId);
+    if (!payment) throw new Error("Payment not found");
+    
+    await db.update(payments)
+      .set({ status: PAYMENT_STATUS.FAILED })
+      .where(eq(payments.id, paymentId));
+    
+    await this.createAuditLog({
+      userId: payment.userId,
+      action: AUDIT_ACTIONS.PAYMENT_FAILED,
+      targetType: "payment",
+      targetId: paymentId,
+      details: { reason }
+    });
+  },
+
+  async getPayment(id) {
+    const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+    return payment || null;
+  },
+
+  async getUserPayments(userId) {
+    return await db.select().from(payments)
+      .where(eq(payments.userId, userId))
+      .orderBy(desc(payments.createdAt));
+  },
+
+  async createContactSubmission(data) {
+    const [submission] = await db.insert(contactSubmissions).values(data).returning();
+    
+    await this.createAuditLog({
+      userId: data.userId || null,
+      action: AUDIT_ACTIONS.CONTACT_FORM_SUBMITTED,
+      targetType: "contact_submission",
+      targetId: submission.id,
+      details: { reason: data.reason, email: data.email }
+    });
+    
+    return submission;
+  },
+
+  async getContactSubmissions(filters = {}) {
+    let query = db.select().from(contactSubmissions).orderBy(desc(contactSubmissions.createdAt));
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+    return await query;
+  },
+
+  async markContactSubmissionRead(id) {
+    const [submission] = await db.update(contactSubmissions)
+      .set({ isRead: true })
+      .where(eq(contactSubmissions.id, id))
+      .returning();
+    return submission;
+  },
+
+  async getTrialCreditsRemaining(userId) {
+    const user = await this.getUserById(userId);
+    if (!user) return 0;
+    return Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0));
+  },
+
+  async useTrialCredit(userId, campaignId) {
+    const user = await this.getUserById(userId);
+    if (!user) throw new Error("User not found");
+    
+    const remaining = (user.trialCredits || 5) - (user.trialCreditsUsed || 0);
+    if (remaining <= 0) {
+      throw new Error("No trial credits remaining");
+    }
+    
+    await db.update(users)
+      .set({ 
+        trialCreditsUsed: sql`trial_credits_used + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+    
+    return remaining - 1;
+  },
+
+  async getTotalCreditsAvailable(userId) {
+    const user = await this.getUserById(userId);
+    if (!user) return { paid: 0, trial: 0, total: 0 };
+    
+    const paidRemaining = Math.max(0, 
+      (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
+    );
+    const trialRemaining = user.isTrialUser 
+      ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
+      : 0;
+    
+    return {
+      paid: paidRemaining,
+      trial: trialRemaining,
+      total: paidRemaining + trialRemaining,
+      isTrialUser: user.isTrialUser
+    };
   }
 };
