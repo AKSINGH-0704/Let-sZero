@@ -23,9 +23,18 @@ import {
   Clock,
   Receipt,
   ArrowRight,
-  Loader2
+  Loader2,
+  Globe,
+  Smartphone
 } from "lucide-react";
 import { formatDate, formatNumber, cn } from "@/lib/utils";
+
+function formatCurrency(amount, currency) {
+  if (currency === "INR") {
+    return `₹${formatNumber(Math.round(amount))}`;
+  }
+  return `$${formatNumber(amount)}`;
+}
 
 function PaymentHistory() {
   const { data: payments, isLoading } = useQuery({
@@ -84,7 +93,8 @@ function PaymentHistory() {
             <TableHead>Invoice</TableHead>
             <TableHead>Plan</TableHead>
             <TableHead>Credits</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">Amount (USD)</TableHead>
+            <TableHead className="text-right">Local Amount</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Date</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -94,6 +104,9 @@ function PaymentHistory() {
           {payments.map((payment) => {
             const status = statusConfig[payment.status] || statusConfig.PENDING;
             const StatusIcon = status.icon;
+            const currency = payment.currency || "USD";
+            const amountUsd = payment.amountUsd || payment.amountInr || 0;
+            const amountLocal = payment.amountLocal || payment.amountInr || amountUsd;
             
             return (
               <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
@@ -107,7 +120,17 @@ function PaymentHistory() {
                   {formatNumber(payment.credits)}
                 </TableCell>
                 <TableCell className="text-right font-medium">
-                  ₹{formatNumber(payment.amountInr)}
+                  {formatCurrency(amountUsd, "USD")}
+                </TableCell>
+                <TableCell className="text-right">
+                  {currency !== "USD" && (
+                    <span className="text-muted-foreground">
+                      {formatCurrency(amountLocal, currency)}
+                    </span>
+                  )}
+                  {currency === "USD" && (
+                    <span className="text-muted-foreground">-</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge className={cn("gap-1", status.color)}>
@@ -142,6 +165,14 @@ function ProcessPayment({ paymentId }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  const { data: payment } = useQuery({
+    queryKey: ["/api/payments", paymentId],
+    queryFn: async () => {
+      const payments = await fetch("/api/payments").then(r => r.json());
+      return payments.find(p => p.id === paymentId);
+    }
+  });
+
   const completeMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/payments/${paymentId}/complete`);
@@ -171,6 +202,10 @@ function ProcessPayment({ paymentId }) {
     }
   });
 
+  const currency = payment?.currency || "USD";
+  const amountLocal = payment?.amountLocal || 0;
+  const paymentMethod = payment?.paymentMethod || "CARD";
+
   return (
     <AppLayout>
       <div className="max-w-md mx-auto py-12">
@@ -178,15 +213,48 @@ function ProcessPayment({ paymentId }) {
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
               <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <CreditCard className="h-8 w-8 text-primary" />
+                {currency === "INR" && paymentMethod === "UPI" ? (
+                  <Smartphone className="h-8 w-8 text-primary" />
+                ) : (
+                  <CreditCard className="h-8 w-8 text-primary" />
+                )}
               </div>
             </div>
             <CardTitle>Complete Your Payment</CardTitle>
             <CardDescription>
-              This is a demo payment flow. In production, this would redirect to a payment gateway.
+              {currency === "INR" 
+                ? "Pay with UPI, cards, or net banking"
+                : "Pay with international credit card"
+              }
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
+            {payment && (
+              <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Plan</span>
+                  <span className="font-medium">{payment.planName}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Credits</span>
+                  <span className="font-medium">{formatNumber(payment.credits)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-medium">{formatCurrency(amountLocal, currency)}</span>
+                </div>
+                {currency === "INR" && payment.exchangeRate && (
+                  <div className="text-xs text-muted-foreground pt-2 border-t border-border">
+                    Exchange rate: 1 USD = ₹{payment.exchangeRate}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="text-center text-sm text-muted-foreground">
+              This is a demo payment flow. In production, this would redirect to a payment gateway.
+            </div>
+
             <Button 
               className="w-full gap-2"
               onClick={() => completeMutation.mutate()}
@@ -250,14 +318,20 @@ export default function Payments() {
               Manage your credits and view payment history
             </p>
           </div>
-          <Button 
-            className="gap-2" 
-            onClick={() => setLocation("/pricing")}
-            data-testid="button-buy-credits"
-          >
-            Buy Credits
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Globe className="h-4 w-4" />
+              <span>USD/INR supported</span>
+            </div>
+            <Button 
+              className="gap-2" 
+              onClick={() => setLocation("/pricing")}
+              data-testid="button-buy-credits"
+            >
+              Buy Credits
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-4">

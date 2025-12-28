@@ -83,6 +83,15 @@ Note: The application has dual schema files - `shared/schema.js` for runtime val
 - Updated Landing page header with Pricing and Contact links
 - Updated Footer with navigation links to Pricing, Contact, and Sign In
 
+### Dual-Currency Payment System (Dec 2024)
+- **Base currency**: USD for all pricing logic, storage, and backend processing
+- **Display currencies**: USD (default) and INR (localized for Indian users)
+- Currency toggle on Pricing page with real-time price conversion
+- Exchange rate: 83.50 INR per USD (configurable via DEFAULT_EXCHANGE_RATE)
+- Payment records store: amount_usd, amount_local, currency, exchange_rate
+- Payment methods adapt by currency: USD (international cards), INR (UPI, cards, net banking)
+- Trust indicators and conversion transparency notes
+
 ### Payments & Pricing System (Dec 2024)
 - 6 pricing tiers: 3 pay-as-you-go (1K-10K credits), 3 bulk (50K-500K credits with discounts)
 - Payment initiation and completion flow with invoice tracking

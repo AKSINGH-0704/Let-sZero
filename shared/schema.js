@@ -175,7 +175,10 @@ export const payments = pgTable("payments", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planName: text("plan_name").notNull(),
   credits: integer("credits").notNull(),
-  amountInr: integer("amount_inr").notNull(),
+  amountUsd: integer("amount_usd").notNull(),
+  amountLocal: integer("amount_local").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  exchangeRate: text("exchange_rate"),
   status: text("status").notNull().default(PAYMENT_STATUS.PENDING),
   paymentMethod: text("payment_method"),
   transactionId: text("transaction_id"),
@@ -283,11 +286,39 @@ export const purchaseCreditsSchema = z.object({
   paymentMethod: z.enum(["UPI", "CARD", "NET_BANKING"]).optional()
 });
 
-export const PRICING_PLANS = {
-  payg_1000: { id: "payg_1000", name: "Starter", credits: 1000, priceInr: 500, costPerEmail: 0.50, type: "payg" },
-  payg_5000: { id: "payg_5000", name: "Growth", credits: 5000, priceInr: 2250, costPerEmail: 0.45, type: "payg" },
-  payg_10000: { id: "payg_10000", name: "Professional", credits: 10000, priceInr: 4000, costPerEmail: 0.40, type: "payg" },
-  bulk_50000: { id: "bulk_50000", name: "Business", credits: 50000, priceInr: 18000, discount: 10, type: "bulk" },
-  bulk_100000: { id: "bulk_100000", name: "Enterprise", credits: 100000, priceInr: 32000, discount: 20, type: "bulk" },
-  bulk_500000: { id: "bulk_500000", name: "Scale", credits: 500000, priceInr: 140000, discount: 30, type: "bulk" }
+export const SUPPORTED_CURRENCIES = {
+  USD: { code: "USD", symbol: "$", name: "US Dollar" },
+  INR: { code: "INR", symbol: "₹", name: "Indian Rupee" }
 };
+
+export const DEFAULT_EXCHANGE_RATE = 83.50;
+
+export const PRICING_PLANS = {
+  payg_1000: { id: "payg_1000", name: "Starter", credits: 1000, priceUsd: 6, costPerEmailUsd: 0.006, type: "payg" },
+  payg_5000: { id: "payg_5000", name: "Growth", credits: 5000, priceUsd: 27, costPerEmailUsd: 0.0054, type: "payg" },
+  payg_10000: { id: "payg_10000", name: "Professional", credits: 10000, priceUsd: 48, costPerEmailUsd: 0.0048, type: "payg" },
+  bulk_50000: { id: "bulk_50000", name: "Business", credits: 50000, priceUsd: 216, discount: 10, type: "bulk" },
+  bulk_100000: { id: "bulk_100000", name: "Enterprise", credits: 100000, priceUsd: 384, discount: 20, type: "bulk" },
+  bulk_500000: { id: "bulk_500000", name: "Scale", credits: 500000, priceUsd: 1680, discount: 30, type: "bulk" }
+};
+
+export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_EXCHANGE_RATE) {
+  if (toInr) {
+    return Math.round(amountUsd * exchangeRate);
+  }
+  return Math.round(amountUsd * 100) / 100;
+}
+
+export function getPlanWithPrices(plan, exchangeRate = DEFAULT_EXCHANGE_RATE) {
+  const priceInr = convertCurrency(plan.priceUsd, true, exchangeRate);
+  const costPerEmailInr = plan.costPerEmailUsd ? Math.round(plan.costPerEmailUsd * exchangeRate * 100) / 100 : null;
+  
+  return {
+    ...plan,
+    priceUsd: plan.priceUsd,
+    priceInr,
+    costPerEmailUsd: plan.costPerEmailUsd || null,
+    costPerEmailInr,
+    exchangeRate
+  };
+}

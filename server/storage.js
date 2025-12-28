@@ -591,7 +591,13 @@ export const storage = {
       action: AUDIT_ACTIONS.PAYMENT_INITIATED,
       targetType: "payment",
       targetId: payment.id,
-      details: { planName: paymentData.planName, credits: paymentData.credits, amountInr: paymentData.amountInr }
+      details: { 
+        planName: paymentData.planName, 
+        credits: paymentData.credits, 
+        amountUsd: paymentData.amountUsd,
+        amountLocal: paymentData.amountLocal,
+        currency: paymentData.currency
+      }
     });
     
     return payment;

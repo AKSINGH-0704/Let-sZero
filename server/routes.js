@@ -1,5 +1,5 @@
 import { storage } from "./storage.js";
-import { AUDIT_ACTIONS, PRICING_PLANS, contactSubmissionSchema, PAYMENT_STATUS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, PRICING_PLANS, contactSubmissionSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES } from "../shared/schema.js";
 import * as XLSX from "xlsx";
 
 async function authMiddleware(req, res, next) {
@@ -490,7 +490,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/pricing/plans", async (req, res) => {
     try {
-      res.json(Object.values(PRICING_PLANS));
+      const exchangeRate = DEFAULT_EXCHANGE_RATE;
+      const plans = Object.values(PRICING_PLANS).map(plan => getPlanWithPrices(plan, exchangeRate));
+      res.json({
+        plans,
+        exchangeRate,
+        currencies: SUPPORTED_CURRENCIES,
+        lastUpdated: new Date().toISOString()
+      });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -507,25 +514,40 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/payments/initiate", authMiddleware, async (req, res) => {
     try {
-      const { planId, paymentMethod } = req.body;
+      const { planId, paymentMethod, currency = "USD" } = req.body;
       
       const plan = PRICING_PLANS[planId];
       if (!plan) {
         return res.status(400).json({ message: "Invalid plan selected" });
       }
       
+      if (!SUPPORTED_CURRENCIES[currency]) {
+        return res.status(400).json({ message: "Unsupported currency" });
+      }
+      
+      const exchangeRate = DEFAULT_EXCHANGE_RATE;
+      const planWithPrices = getPlanWithPrices(plan, exchangeRate);
+      
+      const amountUsd = planWithPrices.priceUsd;
+      const amountLocal = currency === "INR" ? planWithPrices.priceInr : amountUsd;
+      
       const payment = await storage.createPayment({
         userId: req.user.id,
         planName: plan.name,
         credits: plan.credits,
-        amountInr: plan.priceInr,
-        paymentMethod: paymentMethod || "UPI",
+        amountUsd,
+        amountLocal,
+        currency,
+        exchangeRate: exchangeRate.toString(),
+        paymentMethod: paymentMethod || (currency === "INR" ? "UPI" : "CARD"),
         status: PAYMENT_STATUS.PENDING
       });
       
       res.json({ 
         payment,
-        redirectUrl: `/app/payments/process/${payment.id}`
+        redirectUrl: `/app/payments/process/${payment.id}`,
+        currency,
+        exchangeRate
       });
     } catch (error) {
       res.status(500).json({ message: error.message });

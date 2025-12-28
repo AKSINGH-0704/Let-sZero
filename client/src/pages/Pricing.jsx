@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { 
   Check, 
   Zap, 
@@ -15,26 +16,136 @@ import {
   Building2,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   Shield,
   CreditCard,
   Smartphone,
-  Loader2
+  Loader2,
+  Globe,
+  Info,
+  Mail
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
+
+function CurrencyToggle({ currency, onChange }) {
+  return (
+    <div className="flex items-center justify-center gap-2" data-testid="currency-toggle">
+      <span className={cn(
+        "text-sm font-medium transition-colors",
+        currency === "USD" ? "text-foreground" : "text-muted-foreground"
+      )}>
+        USD
+      </span>
+      <button
+        onClick={() => onChange(currency === "USD" ? "INR" : "USD")}
+        className={cn(
+          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+          currency === "INR" ? "bg-primary" : "bg-muted"
+        )}
+        data-testid="button-currency-switch"
+      >
+        <span
+          className={cn(
+            "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
+            currency === "INR" ? "translate-x-6" : "translate-x-1"
+          )}
+        />
+      </button>
+      <span className={cn(
+        "text-sm font-medium transition-colors",
+        currency === "INR" ? "text-foreground" : "text-muted-foreground"
+      )}>
+        INR
+      </span>
+    </div>
+  );
+}
+
+function PriceDisplay({ plan, currency, exchangeRate }) {
+  const symbol = currency === "INR" ? "₹" : "$";
+  const price = currency === "INR" ? plan.priceInr : plan.priceUsd;
+  const costPerEmail = currency === "INR" ? plan.costPerEmailInr : plan.costPerEmailUsd;
+  
+  return (
+    <div className="text-center">
+      <div className="mb-1">
+        <span className="text-4xl font-bold">{symbol}{formatNumber(price)}</span>
+      </div>
+      {costPerEmail && (
+        <p className="text-sm text-muted-foreground">
+          {symbol}{costPerEmail.toFixed(currency === "INR" ? 2 : 4)} per email
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PaymentMethodsDisplay({ currency }) {
+  if (currency === "INR") {
+    return (
+      <div className="flex flex-wrap justify-center gap-8">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Smartphone className="h-5 w-5" />
+          <span>UPI</span>
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <CreditCard className="h-5 w-5" />
+          <span>Credit Card</span>
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <CreditCard className="h-5 w-5" />
+          <span>Debit Card</span>
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Building2 className="h-5 w-5" />
+          <span>Net Banking</span>
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex flex-wrap justify-center gap-8">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <CreditCard className="h-5 w-5" />
+        <span>Visa</span>
+      </div>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <CreditCard className="h-5 w-5" />
+        <span>Mastercard</span>
+      </div>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <CreditCard className="h-5 w-5" />
+        <span>American Express</span>
+      </div>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Globe className="h-5 w-5" />
+        <span>International Cards</span>
+      </div>
+    </div>
+  );
+}
 
 export default function Pricing() {
   const { user, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [currency, setCurrency] = useState("USD");
 
-  const { data: plans, isLoading } = useQuery({
+  const { data: pricingData, isLoading } = useQuery({
     queryKey: ["/api/pricing/plans"]
   });
 
+  const plans = pricingData?.plans || [];
+  const exchangeRate = pricingData?.exchangeRate || 83.5;
+
   const purchaseMutation = useMutation({
     mutationFn: async (planId) => {
-      const res = await apiRequest("POST", "/api/payments/initiate", { planId });
+      const res = await apiRequest("POST", "/api/payments/initiate", { 
+        planId,
+        currency
+      });
       return res.json();
     },
     onSuccess: (data) => {
@@ -47,15 +158,15 @@ export default function Pricing() {
 
   const handleSelectPlan = (planId) => {
     if (!isAuthenticated) {
-      setLocation("/auth");
+      setLocation("/login");
       return;
     }
     setSelectedPlan(planId);
     purchaseMutation.mutate(planId);
   };
 
-  const paygPlans = plans?.filter(p => p.type === "payg") || [];
-  const bulkPlans = plans?.filter(p => p.type === "bulk") || [];
+  const paygPlans = plans.filter(p => p.type === "payg") || [];
+  const bulkPlans = plans.filter(p => p.type === "bulk") || [];
 
   const planIcons = {
     payg_1000: Zap,
@@ -68,16 +179,52 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2" data-testid="link-logo">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
+              <Mail className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <span className="text-lg font-semibold">EmailFlow Pro</span>
+          </Link>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            {isAuthenticated ? (
+              <Link href="/app/dashboard">
+                <Button variant="ghost" data-testid="link-dashboard">Dashboard</Button>
+              </Link>
+            ) : (
+              <Link href="/login">
+                <Button variant="ghost" data-testid="link-login">Sign In</Button>
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
+
       <div className="max-w-7xl mx-auto px-4 py-16">
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           <Badge variant="secondary" className="mb-4">Pricing</Badge>
           <h1 className="text-4xl font-bold tracking-tight mb-4">
             Simple, transparent pricing
           </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
             Pay only for what you use. No monthly fees, no hidden charges.
             1 credit = 1 email sent.
           </p>
+          
+          <div className="flex flex-col items-center gap-4">
+            <CurrencyToggle currency={currency} onChange={setCurrency} />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Info className="h-4 w-4" />
+              <span>
+                {currency === "INR" 
+                  ? `1 USD = ₹${exchangeRate.toFixed(2)} (indicative rate)`
+                  : "Switch to INR for local pricing"
+                }
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="mb-16">
@@ -132,12 +279,9 @@ export default function Pricing() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="text-center">
-                      <div className="mb-4">
-                        <span className="text-4xl font-bold">₹{formatNumber(plan.priceInr)}</span>
+                      <div className="mb-6">
+                        <PriceDisplay plan={plan} currency={currency} exchangeRate={exchangeRate} />
                       </div>
-                      <p className="text-sm text-muted-foreground mb-6">
-                        ₹{plan.costPerEmail} per email
-                      </p>
                       <ul className="space-y-3 text-sm text-left">
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-600" />
@@ -150,6 +294,10 @@ export default function Pricing() {
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-600" />
                           <span>Full analytics</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-green-600" />
+                          <span>AI personalization</span>
                         </li>
                       </ul>
                     </CardContent>
@@ -226,12 +374,12 @@ export default function Pricing() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="text-center">
-                      <div className="mb-4">
-                        <span className="text-4xl font-bold">₹{formatNumber(plan.priceInr)}</span>
+                      <div className="mb-6">
+                        <PriceDisplay plan={plan} currency={currency} exchangeRate={exchangeRate} />
+                        <p className="text-sm text-green-600 mt-2">
+                          Save {plan.discount}% compared to pay-as-you-go
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground mb-6">
-                        Save {plan.discount}% compared to pay-as-you-go
-                      </p>
                       <ul className="space-y-3 text-sm text-left">
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-600" />
@@ -244,6 +392,10 @@ export default function Pricing() {
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-600" />
                           <span>Dedicated account manager</span>
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <Check className="h-4 w-4 text-green-600" />
+                          <span>Custom integrations</span>
                         </li>
                       </ul>
                     </CardContent>
@@ -275,34 +427,65 @@ export default function Pricing() {
         <div className="bg-muted/50 rounded-lg p-8">
           <div className="text-center mb-8">
             <h3 className="text-xl font-semibold mb-2">Secure Payment Methods</h3>
-            <p className="text-muted-foreground">All transactions are encrypted and secure</p>
+            <p className="text-muted-foreground mb-4">
+              {currency === "USD" 
+                ? "Accept all major international credit cards"
+                : "Pay with UPI, cards, or net banking"
+              }
+            </p>
           </div>
-          <div className="flex flex-wrap justify-center gap-8">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Smartphone className="h-5 w-5" />
-              <span>UPI</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <CreditCard className="h-5 w-5" />
-              <span>Credit Card</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <CreditCard className="h-5 w-5" />
-              <span>Debit Card</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Building2 className="h-5 w-5" />
-              <span>Net Banking</span>
-            </div>
-          </div>
-          <div className="flex justify-center mt-6">
+          
+          <PaymentMethodsDisplay currency={currency} />
+          
+          <div className="flex flex-col items-center gap-3 mt-8">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Shield className="h-4 w-4" />
               <span>256-bit SSL encryption</span>
             </div>
+            <p className="text-xs text-muted-foreground text-center max-w-md">
+              {currency === "INR" 
+                ? "Billed in USD. Local currency shown for convenience at current exchange rates."
+                : "All transactions are processed securely in USD."
+              }
+            </p>
           </div>
         </div>
+
+        <div className="mt-16 text-center">
+          <h3 className="text-xl font-semibold mb-4">Need a custom plan?</h3>
+          <p className="text-muted-foreground mb-6 max-w-lg mx-auto">
+            For enterprise needs or custom volume requirements, contact our sales team for a tailored solution.
+          </p>
+          <Link href="/contact">
+            <Button variant="outline" className="gap-2" data-testid="button-contact-sales">
+              Contact Sales
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      <footer className="py-8 border-t border-border">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Mail className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <span className="font-medium">EmailFlow Pro</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <Link href="/" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-home-footer">
+              Home
+            </Link>
+            <Link href="/contact" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-contact-footer">
+              Contact
+            </Link>
+            <Link href="/login" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-login-footer">
+              Sign In
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
