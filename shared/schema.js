@@ -295,12 +295,11 @@ export const SUPPORTED_CURRENCIES = {
 export const DEFAULT_EXCHANGE_RATE = 83.50;
 
 export const PRICING_PLANS = {
-  payg_1000: { id: "payg_1000", name: "Starter", credits: 1000, priceUsd: 6, costPerEmailUsd: 0.006, type: "payg" },
-  payg_5000: { id: "payg_5000", name: "Growth", credits: 5000, priceUsd: 27, costPerEmailUsd: 0.0054, type: "payg" },
-  payg_10000: { id: "payg_10000", name: "Professional", credits: 10000, priceUsd: 48, costPerEmailUsd: 0.0048, type: "payg" },
-  bulk_50000: { id: "bulk_50000", name: "Business", credits: 50000, priceUsd: 216, discount: 10, type: "bulk" },
-  bulk_100000: { id: "bulk_100000", name: "Enterprise", credits: 100000, priceUsd: 384, discount: 20, type: "bulk" },
-  bulk_500000: { id: "bulk_500000", name: "Scale", credits: 500000, priceUsd: 1680, discount: 30, type: "bulk" }
+  trial: { id: "trial", name: "Trial", credits: 100, priceUsd: 0, priceInr: 0, isTrial: true, type: "trial" },
+  starter: { id: "starter", name: "Starter", credits: 1000, priceUsd: 2.39, priceInr: 199, type: "payg" },
+  growth: { id: "growth", name: "Growth", credits: 10000, priceUsd: 15.55, priceInr: 1299, isPopular: true, type: "payg" },
+  scale: { id: "scale", name: "Scale", credits: 50000, priceUsd: 59.95, priceInr: 4999, type: "bulk" },
+  enterprise: { id: "enterprise", name: "Enterprise", credits: null, priceUsd: null, priceInr: null, isCustom: true, type: "custom" }
 };
 
 export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_EXCHANGE_RATE) {
@@ -311,7 +310,7 @@ export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_
 }
 
 export function getPlanWithPrices(plan, exchangeRate = DEFAULT_EXCHANGE_RATE) {
-  const priceInr = convertCurrency(plan.priceUsd, true, exchangeRate);
+  const priceInr = plan.priceUsd !== null ? convertCurrency(plan.priceUsd, true, exchangeRate) : plan.priceInr || null;
   const costPerEmailInr = plan.costPerEmailUsd ? Math.round(plan.costPerEmailUsd * exchangeRate * 100) / 100 : null;
   
   return {

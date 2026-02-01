@@ -41,7 +41,7 @@ function BrandingPanel() {
           <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
             <Mail className="w-6 h-6 text-white" />
           </div>
-          <span className="text-2xl font-semibold text-white">EmailFlow Pro</span>
+          <span className="text-2xl font-semibold text-white">REPMAIL</span>
         </div>
 
         <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-5">
@@ -95,7 +95,7 @@ function MobileHeader() {
       </div>
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-6">
-          <Link href="/">
+          <Link href="/products/repmail">
             <Button variant="ghost" size="sm" className="gap-2 text-white/70 hover:text-white hover:bg-white/10" data-testid="link-back-home-mobile">
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -108,7 +108,7 @@ function MobileHeader() {
             <Mail className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">EmailFlow Pro</h1>
+            <h1 className="text-xl font-semibold text-white">REPMAIL</h1>
             <p className="text-sm text-white/60">Enterprise Email Platform</p>
           </div>
         </div>
@@ -199,10 +199,10 @@ export default function Login() {
         <FloatingVisual />
         
         <div className="hidden lg:flex items-center justify-between p-6 relative z-10">
-          <Link href="/">
+          <Link href="/products/repmail">
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" data-testid="link-back-home">
               <ArrowLeft className="h-4 w-4" />
-              Back to home
+              Back to RepMail
             </Button>
           </Link>
           <ThemeToggle />

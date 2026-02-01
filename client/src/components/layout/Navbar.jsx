@@ -57,7 +57,7 @@ export default function Navbar() {
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
               <Mail className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-semibold">EmailFlow Pro</span>
+            <span className="text-lg font-semibold">REPMAIL</span>
           </Link>
           
           <nav className="hidden md:flex items-center gap-1">

@@ -185,7 +185,7 @@ export default function Pricing() {
             <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
               <Mail className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-semibold">EmailFlow Pro</span>
+            <span className="text-lg font-semibold">REPMAIL</span>
           </Link>
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -471,7 +471,7 @@ export default function Pricing() {
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <Mail className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-medium">EmailFlow Pro</span>
+            <span className="font-medium">REPMAIL</span>
           </div>
           <div className="flex items-center gap-6">
             <Link href="/" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-home-footer">

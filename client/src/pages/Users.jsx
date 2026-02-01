@@ -151,24 +151,22 @@ export default function Users() {
     ? ["USER", "SUB_ADMIN"] 
     : ["USER"];
 
+  // ...existing logic and handlers above...
+  // UI below is replaced with the new layout structure and classes from UsersLayout.tsx, but all logic, handlers, and API calls remain byte-for-byte unchanged.
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-              <UsersIcon className="h-6 w-6" />
-              User Management
-            </h1>
-            <p className="text-muted-foreground">
-              Manage users and allocate credits
-            </p>
+            <h1 className="text-3xl font-bold text-slate-900">User Management</h1>
+            <p className="text-slate-600 mt-1">Manage team members and their permissions</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2" data-testid="button-create-user">
-                <Plus className="h-4 w-4" />
-                Create User
+              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-user">
+                <Plus className="w-5 h-5" />
+                Invite User
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -179,7 +177,7 @@ export default function Users() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="username">Username *</Label>
                   <Input
                     id="username"
@@ -187,9 +185,10 @@ export default function Users() {
                     onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
                     placeholder="Enter username"
                     data-testid="input-new-username"
+                    className="mt-1.5"
                   />
                 </div>
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="email">Email *</Label>
                   <Input
                     id="email"
@@ -198,9 +197,10 @@ export default function Users() {
                     onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
                     placeholder="Enter email"
                     data-testid="input-new-email"
+                    className="mt-1.5"
                   />
                 </div>
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="password">Password *</Label>
                   <Input
                     id="password"
@@ -209,9 +209,10 @@ export default function Users() {
                     onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
                     placeholder="Enter password"
                     data-testid="input-new-password"
+                    className="mt-1.5"
                   />
                 </div>
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="role">Role</Label>
                   <Select 
                     value={newUser.role} 
@@ -229,7 +230,7 @@ export default function Users() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="credits">Initial Credits</Label>
                   <Input
                     id="credits"
@@ -238,6 +239,7 @@ export default function Users() {
                     onChange={(e) => setNewUser(prev => ({ ...prev, credits: parseInt(e.target.value) || 0 }))}
                     placeholder="0"
                     data-testid="input-new-credits"
+                    className="mt-1.5"
                   />
                 </div>
               </div>
@@ -249,6 +251,7 @@ export default function Users() {
                   onClick={handleCreateUser}
                   disabled={createMutation.isPending}
                   data-testid="button-submit-create"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Create User
@@ -258,195 +261,196 @@ export default function Users() {
           </Dialog>
         </div>
 
-        <Card className="border-card-border">
-          <CardContent className="pt-6">
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <Skeleton className="h-10 w-10 rounded-full" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-48" />
-                    </div>
-                    <Skeleton className="h-6 w-20" />
-                    <Skeleton className="h-4 w-24" />
-                  </div>
-                ))}
-              </div>
-            ) : users?.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Received</TableHead>
-                      <TableHead className="text-right">Allocated</TableHead>
-                      <TableHead className="text-right">Used</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((user) => {
-                      const config = ROLE_CONFIG[user.role] || ROLE_CONFIG.USER;
-                      const available = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
-                      const isCurrentUser = user.id === currentUser?.id;
+        {/* Stats Row (optional, can be mapped to real stats if available) */}
+        {/* ...existing logic for stats if present... */}
 
-                      return (
-                        <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                                <User className="h-5 w-5 text-primary" />
-                              </div>
-                              <div>
-                                <p className="font-medium">{user.username}</p>
-                                <p className="text-sm text-muted-foreground">{user.email}</p>
-                              </div>
+        {/* Search & Filter (optional, if logic exists) */}
+        {/* ...existing logic for search/filter if present... */}
+
+        {/* Users Table - new layout, but logic preserved */}
+        <div className="bg-white dark:bg-slate-900/50 rounded-xl border border-gray-200 dark:border-slate-700/50 overflow-hidden mt-6 shadow-sm dark:backdrop-blur-sm">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 dark:border-slate-700/70 bg-gray-50 dark:bg-slate-800/30">
+                  <TableHead className="text-gray-700 dark:text-slate-400">User</TableHead>
+                  <TableHead className="text-gray-700 dark:text-slate-400">Role</TableHead>
+                  <TableHead className="text-right text-gray-700 dark:text-slate-400">Received</TableHead>
+                  <TableHead className="text-right text-gray-700 dark:text-slate-400">Allocated</TableHead>
+                  <TableHead className="text-right text-gray-700 dark:text-slate-400">Used</TableHead>
+                  <TableHead className="text-right text-gray-700 dark:text-slate-400">Available</TableHead>
+                  <TableHead className="text-right text-gray-700 dark:text-slate-400">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-gray-400 dark:text-slate-400">
+                      Loading users...
+                    </td>
+                  </tr>
+                ) : users?.length > 0 ? (
+                  users.map((user) => {
+                    const config = ROLE_CONFIG[user.role] || ROLE_CONFIG.USER;
+                    const available = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
+                    const isCurrentUser = user.id === currentUser?.id;
+                    return (
+                      <TableRow key={user.id} data-testid={`row-user-${user.id}`}
+                        className="border-b border-gray-100 dark:border-slate-700/30 hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-colors"
+                      >
+                        <TableCell>
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold">
+                              {user.username ? user.username[0] : ''}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={cn("gap-1", config.color)}>
-                              <Shield className="h-3 w-3" />
-                              {config.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatNumber(user.creditsReceived || 0)}
-                          </TableCell>
-                          <TableCell className="text-right text-yellow-600 font-medium">
-                            {formatNumber(user.creditsAllocated || 0)}
-                          </TableCell>
-                          <TableCell className="text-right text-red-600 font-medium">
-                            {formatNumber(user.creditsUsed || 0)}
-                          </TableCell>
-                          <TableCell className="text-right text-green-600 font-medium">
-                            {formatNumber(available)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Dialog 
-                                open={allocateUserId === user.id} 
-                                onOpenChange={(open) => {
-                                  if (!open) {
-                                    setAllocateUserId(null);
-                                    setAllocateCredits("");
-                                  }
-                                }}
-                              >
-                                <DialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => setAllocateUserId(user.id)}
-                                    disabled={isCurrentUser}
-                                    data-testid={`button-allocate-${user.id}`}
-                                  >
-                                    <Coins className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Allocate Credits</DialogTitle>
-                                    <DialogDescription>
-                                      Allocate credits to {user.username}
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <div className="py-4 space-y-4">
-                                    <div className="space-y-2">
-                                      <Label>Credits to Allocate</Label>
-                                      <Input
-                                        type="number"
-                                        value={allocateCredits}
-                                        onChange={(e) => setAllocateCredits(e.target.value)}
-                                        placeholder="Enter amount"
-                                        data-testid="input-allocate-credits"
-                                      />
-                                    </div>
-                                    <p className="text-sm text-muted-foreground">
-                                      Your available credits: {formatNumber(
-                                        (currentUser?.creditsReceived || 0) - 
-                                        (currentUser?.creditsAllocated || 0) - 
-                                        (currentUser?.creditsUsed || 0)
-                                      )}
-                                    </p>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">{user.username}</div>
+                              <div className="text-sm text-gray-500 dark:text-slate-400">{user.email}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={cn(config.color, "gap-1")}> 
+                            <Shield className="h-3 w-3" />
+                            {config.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatNumber(user.creditsReceived || 0)}
+                        </TableCell>
+                        <TableCell className="text-right text-yellow-600 font-medium">
+                          {formatNumber(user.creditsAllocated || 0)}
+                        </TableCell>
+                        <TableCell className="text-right text-red-600 font-medium">
+                          {formatNumber(user.creditsUsed || 0)}
+                        </TableCell>
+                        <TableCell className="text-right text-green-600 font-medium">
+                          {formatNumber(available)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Dialog 
+                              open={allocateUserId === user.id} 
+                              onOpenChange={(open) => {
+                                if (!open) {
+                                  setAllocateUserId(null);
+                                  setAllocateCredits("");
+                                }
+                              }}
+                            >
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setAllocateUserId(user.id)}
+                                  disabled={isCurrentUser}
+                                  data-testid={`button-allocate-${user.id}`}
+                                >
+                                  <Coins className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Allocate Credits</DialogTitle>
+                                  <DialogDescription>
+                                    Allocate credits to {user.username}
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="py-4 space-y-4">
+                                  <div className="space-y-2">
+                                    <Label>Credits to Allocate</Label>
+                                    <Input
+                                      type="number"
+                                      value={allocateCredits}
+                                      onChange={(e) => setAllocateCredits(e.target.value)}
+                                      placeholder="Enter amount"
+                                      data-testid="input-allocate-credits"
+                                    />
                                   </div>
-                                  <DialogFooter>
-                                    <Button variant="outline" onClick={() => setAllocateUserId(null)}>
-                                      Cancel
-                                    </Button>
-                                    <Button 
-                                      onClick={handleAllocateCredits}
-                                      disabled={allocateMutation.isPending}
-                                      data-testid="button-submit-allocate"
-                                    >
-                                      {allocateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                      Allocate
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    disabled={isCurrentUser || user.role === "ROOT_ADMIN"}
-                                    className="text-destructive hover:text-destructive"
-                                    data-testid={`button-delete-${user.id}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
+                                  <p className="text-sm text-muted-foreground">
+                                    Your available credits: {formatNumber(
+                                      (currentUser?.creditsReceived || 0) - 
+                                      (currentUser?.creditsAllocated || 0) - 
+                                      (currentUser?.creditsUsed || 0)
+                                    )}
+                                  </p>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setAllocateUserId(null)}>
+                                    Cancel
                                   </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete User</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete {user.username}? This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => deleteMutation.mutate(user.id)}
-                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    >
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <div className="text-center py-16">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-24 w-24 rounded-full bg-primary/5" />
-                  </div>
-                  <UsersIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
-                </div>
-                <p className="text-lg font-medium mb-2">No team members yet</p>
-                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                  Invite team members to collaborate on campaigns and manage credits across your organization.
-                </p>
-                <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Your First Team Member
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                                  <Button 
+                                    onClick={handleAllocateCredits}
+                                    disabled={allocateMutation.isPending}
+                                    data-testid="button-submit-allocate"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  >
+                                    {allocateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Allocate
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={isCurrentUser || user.role === "ROOT_ADMIN"}
+                                  className="text-destructive hover:text-destructive"
+                                  data-testid={`button-delete-${user.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete User</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete {user.username}? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteMutation.mutate(user.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="py-16 text-center">
+                      <div className="relative mb-6">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="h-24 w-24 rounded-full bg-primary/5" />
+                        </div>
+                        <UsersIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
+                      </div>
+                      <p className="text-lg font-medium mb-2">No team members yet</p>
+                      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                        Invite team members to collaborate on campaigns and manage credits across your organization.
+                      </p>
+                      <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Your First Team Member
+                      </Button>
+                    </td>
+                  </tr>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       </div>
     </AppLayout>
   );

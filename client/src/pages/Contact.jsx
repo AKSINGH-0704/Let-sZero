@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -35,19 +36,27 @@ const REASONS = [
   { value: "SUPPORT", label: "Technical Support", icon: Headphones, description: "Get help with technical issues" },
   { value: "BILLING", label: "Billing Question", icon: CreditCard, description: "Payment and invoice inquiries" },
   { value: "PARTNERSHIP", label: "Partnership", icon: Handshake, description: "Business collaboration opportunities" },
+  { value: "ENTERPRISE_PRICING", label: "Enterprise / Custom Pricing", icon: Building2, description: "Custom volumes and dedicated support" },
   { value: "OTHER", label: "Other", icon: HelpCircle, description: "General questions and feedback" }
 ];
 
 export default function Contact() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const [location] = useLocation();
   const [submitted, setSubmitted] = useState(false);
+  
+  // Parse query params for context from Payments page
+  const searchParams = new URLSearchParams(location.split('?')[1] || "");
+  const contextPlan = searchParams.get("plan");
+  const contextReason = searchParams.get("reason");
+  
   const [formData, setFormData] = useState({
     name: user?.username || "",
     email: user?.email || "",
     company: "",
-    reason: "",
-    message: ""
+    reason: contextReason === "enterprise" ? "ENTERPRISE_PRICING" : "",
+    message: contextPlan ? `I'm interested in enterprise pricing for the ${contextPlan} plan.` : ""
   });
 
   const submitMutation = useMutation({
@@ -227,8 +236,8 @@ export default function Contact() {
                     <p className="text-sm text-muted-foreground mb-2">
                       For general inquiries and support
                     </p>
-                    <a href="mailto:support@emailflow.pro" className="text-sm text-primary hover:underline">
-                      support@emailflow.pro
+                    <a href="mailto:support@repmail.pro" className="text-sm text-primary hover:underline">
+                      support@repmail.pro
                     </a>
                   </div>
                 </div>

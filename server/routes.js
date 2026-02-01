@@ -520,6 +520,35 @@ export async function registerRoutes(httpServer, app) {
       if (!plan) {
         return res.status(400).json({ message: "Invalid plan selected" });
       }
+
+      // Handle Trial plan - grant credits immediately
+      if (plan.isTrial) {
+        const payment = await storage.createPayment({
+          userId: req.user.id,
+          planName: plan.name,
+          credits: plan.credits,
+          amountUsd: 0,
+          amountInr: 0,
+          amountLocal: 0,
+          currency: "INR",
+          exchangeRate: "1",
+          paymentMethod: "FREE",
+          status: "COMPLETED"
+        });
+
+        // Add credits to user immediately
+        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_COMPLETED, {
+          paymentId: payment.id,
+          planName: plan.name
+        });
+
+        res.json({ 
+          payment,
+          redirectUrl: `/app/payments/process/${payment.id}`,
+          currency: "INR"
+        });
+        return;
+      }
       
       if (!SUPPORTED_CURRENCIES[currency]) {
         return res.status(400).json({ message: "Unsupported currency" });

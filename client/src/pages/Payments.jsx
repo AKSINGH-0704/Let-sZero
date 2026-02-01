@@ -1,5 +1,6 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
+import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,13 @@ import {
   ArrowRight,
   Loader2,
   Globe,
-  Smartphone
+  Smartphone,
+  Zap,
+  Star,
+  Check,
+  Shield,
+  DollarSign,
+  Gift
 } from "lucide-react";
 import { formatDate, formatNumber, cn } from "@/lib/utils";
 
@@ -295,106 +302,404 @@ function ProcessPayment({ paymentId }) {
 
 export default function Payments() {
   const [matchProcess, paramsProcess] = useRoute("/app/payments/process/:id");
+  const [currency, setCurrency] = useState("INR");
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedTier, setSelectedTier] = useState(null);
+  const USD_RATE = 83; // Fixed conversion rate for display only
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const { data: creditsInfo, isLoading: creditsLoading } = useQuery({
     queryKey: ["/api/credits/info"]
   });
 
+  const { data: pricingPlans } = useQuery({
+    queryKey: ["/api/pricing/plans"]
+  });
+
+  const initiateMutation = useMutation({
+    mutationFn: async (tierId) => {
+      const plan = pricingPlans?.plans?.find(p => p.id === tierId);
+      const res = await apiRequest("POST", "/api/payments/initiate", {
+        planId: tierId,
+        currency: "INR",
+        paymentMethod: "UPI"
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setShowConfirmModal(false);
+      setSelectedTier(null);
+      setLocation(data.redirectUrl);
+    },
+    onError: (err) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+
+  const handlePurchase = (tierId) => {
+    const plan = FIXED_PLANS.find(p => p.id === tierId);
+    
+    // Route custom plans to contact page
+    if (plan.isCustom) {
+      setLocation(`/contact?reason=enterprise&plan=${encodeURIComponent(plan.name)}`);
+      return;
+    }
+    
+    // Trial plan - grant credits directly (existing logic will handle it)
+    if (plan.isTrial) {
+      setSelectedTier(plan);
+      setShowConfirmModal(true);
+      return;
+    }
+    
+    // Paid plans - normal payment flow
+    setSelectedTier(plan);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmPurchase = () => {
+    if (selectedTier) {
+      initiateMutation.mutate(selectedTier.id);
+    }
+  };
+
+  const formatPrice = (plan) => {
+    // For custom plans
+    if (plan.isCustom) {
+      return "Custom pricing";
+    }
+    // For trial plan
+    if (plan.isTrial) {
+      return "Free";
+    }
+    // For paid plans - display in selected currency
+    if (currency === "USD") {
+      const usdPrice = (plan.priceINR / USD_RATE).toFixed(2);
+      return `$${usdPrice}`;
+    }
+    return `₹${plan.priceINR}`;
+  };
+
+  const formatPerCredit = (plan) => {
+    // Guard against missing data
+    if (!plan.credits || plan.isCustom || plan.isTrial) return "—";
+    if (currency === "USD") {
+      const pricePerCredit = (plan.priceINR / USD_RATE / plan.credits).toFixed(4);
+      return `$${pricePerCredit}`;
+    }
+    return `₹${(plan.priceINR / plan.credits).toFixed(2)}`;
+  };
+
   if (matchProcess && paramsProcess?.id) {
     return <ProcessPayment paymentId={paramsProcess.id} />;
   }
 
+  // Fixed pricing plans (hardcoded SaaS pricing - INR only)
+  const FIXED_PLANS = [
+    {
+      id: "trial",
+      name: "Free Trial",
+      credits: 1000,
+      priceINR: 0,
+      description: "Get started with email marketing",
+      isTrial: true
+    },
+    {
+      id: "starter",
+      name: "Starter",
+      credits: 3000,
+      priceINR: 549,
+      description: "Perfect for testing campaigns"
+    },
+    {
+      id: "growth",
+      name: "Growth",
+      credits: 15000,
+      priceINR: 1999,
+      description: "For growing teams and regular sends",
+      isPopular: true
+    },
+    {
+      id: "scale",
+      name: "Scale",
+      credits: 50000,
+      priceINR: 4999,
+      description: "High-volume sending"
+    },
+    {
+      id: "enterprise",
+      name: "Enterprise",
+      credits: null,
+      priceINR: null,
+      description: "Custom volumes with dedicated support",
+      isCustom: true
+    }
+  ];
+
+  const currentBalance = creditsInfo?.total || 0;
+  const plans = FIXED_PLANS;
+
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-              <CreditCard className="h-6 w-6" />
-              Payments & Credits
-            </h1>
-            <p className="text-muted-foreground">
-              Manage your credits and view payment history
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Globe className="h-4 w-4" />
-              <span>USD/INR supported</span>
+      <div className="space-y-12 py-8">
+        {/* Header */}
+        <div className="text-center max-w-2xl mx-auto">
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-4">Buy Email Credits</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-lg">
+            Choose the package that fits your needs. All credits are valid for the specified period and never expire early.
+          </p>
+        </div>
+
+        {/* Current Balance Card */}
+        <div className="max-w-md mx-auto w-full">
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-8 text-white shadow-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-indigo-100 font-medium mb-1">Current Balance</div>
+                <div className="text-4xl font-bold">{creditsLoading ? "..." : formatNumber(currentBalance)}</div>
+                <div className="text-sm text-indigo-100 mt-1">credits</div>
+              </div>
+              <CreditCard className="w-16 h-16 text-white/20" />
             </div>
-            <Button 
-              className="gap-2" 
-              onClick={() => setLocation("/pricing")}
-              data-testid="button-buy-credits"
-            >
-              Buy Credits
-              <ArrowRight className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card className="border-card-border">
-            <CardHeader className="pb-2">
-              <CardDescription>Total Available</CardDescription>
-              <CardTitle className="text-3xl">
-                {creditsLoading ? (
-                  <Skeleton className="h-9 w-24" />
-                ) : (
-                  formatNumber(creditsInfo?.total || 0)
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">credits</p>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-card-border">
-            <CardHeader className="pb-2">
-              <CardDescription>Paid Credits</CardDescription>
-              <CardTitle className="text-3xl text-green-600">
-                {creditsLoading ? (
-                  <Skeleton className="h-9 w-24" />
-                ) : (
-                  formatNumber(creditsInfo?.paid || 0)
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">purchased credits</p>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-card-border">
-            <CardHeader className="pb-2">
-              <CardDescription>Trial Credits</CardDescription>
-              <CardTitle className="text-3xl text-blue-600">
-                {creditsLoading ? (
-                  <Skeleton className="h-9 w-24" />
-                ) : (
-                  formatNumber(creditsInfo?.trial || 0)
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                {creditsInfo?.isTrialUser ? "demo credits remaining" : "trial completed"}
-              </p>
-            </CardContent>
-          </Card>
+        {/* Currency Toggle */}
+        <div className="flex justify-center">
+          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1.5 gap-1">
+            <button
+              className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                currency === "USD" 
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-md" 
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+              onClick={() => setCurrency("USD")}
+            >
+              <DollarSign className="w-4 h-4 inline mr-2" />
+              USD
+            </button>
+            <button
+              className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                currency === "INR" 
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-md" 
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+              onClick={() => setCurrency("INR")}
+            >
+              ₹ INR
+            </button>
+          </div>
         </div>
 
-        <Card className="border-card-border">
+        {/* Pricing Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-7xl mx-auto px-4">
+          {plans.map((plan) => {
+            return (
+              <div
+                key={plan.id}
+                className={cn(
+                  "relative rounded-2xl border-2 p-6 bg-white dark:bg-slate-900 transition-all hover:shadow-xl",
+                  plan.isPopular
+                    ? "border-indigo-500 shadow-xl lg:scale-105 lg:z-10"
+                    : "border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-700"
+                )}
+              >
+                {plan.isPopular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-indigo-600 text-white px-3 py-1 gap-1 shadow-lg">
+                      <Star className="w-3 h-3 fill-current" />
+                      Most Popular
+                    </Badge>
+                  </div>
+                )}
+
+                <div className="text-center mb-6 pt-4">
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{plan.name}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 min-h-[2.5rem]">{plan.description}</p>
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-4xl font-bold text-slate-900 dark:text-white">{formatPrice(plan)}</span>
+                  </div>
+                  {!plan.isCustom && (
+                    <div className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                      {formatPerCredit(plan)} per credit
+                    </div>
+                  )}
+                </div>
+
+                {!plan.isCustom && (
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-4 mb-6 text-center border border-indigo-100 dark:border-indigo-800">
+                    <Zap className="w-6 h-6 text-indigo-600 dark:text-indigo-400 mx-auto mb-2" />
+                    <div className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{formatNumber(plan.credits)}</div>
+                    <div className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">email credits</div>
+                  </div>
+                )}
+
+                <ul className="space-y-3 mb-6 min-h-[8rem]">
+                  {plan.isCustom ? (
+                    <li className="text-sm text-slate-600 dark:text-slate-400">
+                      <div className="font-medium mb-3">Perfect for:</div>
+                      <ul className="space-y-2">
+                        <li className="flex items-start gap-3">
+                          <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                          <span>Custom email volumes</span>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                          <span>SLAs and dedicated support</span>
+                        </li>
+                        <li className="flex items-start gap-3">
+                          <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                          <span>Tailored deliverability</span>
+                        </li>
+                      </ul>
+                    </li>
+                  ) : (
+                    <>
+                      <li className="flex items-start gap-3 text-sm">
+                        <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        <span className="text-slate-700 dark:text-slate-300">Unlimited send frequency</span>
+                      </li>
+                      <li className="flex items-start gap-3 text-sm">
+                        <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        <span className="text-slate-700 dark:text-slate-300">Advanced analytics</span>
+                      </li>
+                      <li className="flex items-start gap-3 text-sm">
+                        <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                        <span className="text-slate-700 dark:text-slate-300">24/7 customer support</span>
+                      </li>
+                      {plan.credits >= 10000 && (
+                        <li className="flex items-start gap-3 text-sm">
+                          <Check className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                          <span className="text-slate-700 dark:text-slate-300">API access</span>
+                        </li>
+                      )}
+                    </>
+                  )}
+                </ul>
+
+                <Button
+                  className={cn(
+                    "w-full gap-2 font-medium py-3",
+                    plan.isPopular
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                      : plan.isCustom
+                      ? "bg-slate-200 hover:bg-slate-300 text-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white"
+                      : "bg-slate-900 hover:bg-slate-800 text-white"
+                  )}
+                  onClick={() => handlePurchase(plan.id)}
+                  disabled={initiateMutation.isPending}
+                >
+                  {plan.isCustom ? "Contact Sales" : plan.isTrial ? "Start Free Trial" : "Buy Credits"}
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Trust Badges */}
+        <div className="flex flex-col md:flex-row justify-center items-center gap-8 text-slate-600 dark:text-slate-400 pt-8 px-4">
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+            <span className="text-sm font-medium">Secure Payment</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+            <span className="text-sm font-medium">All Cards Accepted</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+            <span className="text-sm font-medium">Instant Delivery</span>
+          </div>
+        </div>
+
+        {/* How Credits Work */}
+        <div className="max-w-4xl mx-auto w-full px-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-8 border border-slate-200 dark:border-slate-700">
+          <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-6">How Credits Work</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center md:text-left">
+              <div className="font-semibold text-slate-900 dark:text-white mb-2">1 Credit = 1 Email</div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Each email sent consumes one credit from your balance.</p>
+            </div>
+            <div className="text-center md:text-left">
+              <div className="font-semibold text-slate-900 dark:text-white mb-2">No Expiration</div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Credits remain valid for the entire validity period shown.</p>
+            </div>
+            <div className="text-center md:text-left">
+              <div className="font-semibold text-slate-900 dark:text-white mb-2">Instant Top-Up</div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Credits are added to your account immediately after purchase.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment History Section */}
+        <Card className="border-slate-200 dark:border-slate-700 max-w-6xl mx-auto w-full">
           <CardHeader>
-            <CardTitle className="text-lg">Payment History</CardTitle>
+            <CardTitle className="text-xl">Payment History</CardTitle>
             <CardDescription>View all your past transactions</CardDescription>
           </CardHeader>
           <CardContent>
             <PaymentHistory />
           </CardContent>
         </Card>
+
+        {/* Confirmation Modal */}
+        {showConfirmModal && selectedTier && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+            <Card className="w-full max-w-md">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <CardTitle>Confirm Purchase</CardTitle>
+                <button 
+                  className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-3 border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600 dark:text-slate-400">Package</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{selectedTier.name}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600 dark:text-slate-400">Credits</span>
+                    <span className="font-semibold text-indigo-600 dark:text-indigo-400">{formatNumber(selectedTier.credits)}</span>
+                  </div>
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-3 flex justify-between">
+                    <span className="font-semibold text-slate-900 dark:text-white">Total</span>
+                    <span className="text-2xl font-bold text-slate-900 dark:text-white">{formatPrice(selectedTier)}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={() => setShowConfirmModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+                    onClick={handleConfirmPurchase}
+                    disabled={initiateMutation.isPending}
+                  >
+                    {initiateMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : selectedTier?.isTrial ? (
+                      <Gift className="w-4 h-4" />
+                    ) : (
+                      <CreditCard className="w-4 h-4" />
+                    )}
+                    {selectedTier?.isTrial ? "Get Free Credits" : `Pay ${formatPrice(selectedTier)}`}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

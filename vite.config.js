@@ -24,6 +24,7 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      "@marketing": path.resolve(import.meta.dirname, "marketing"),
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
@@ -33,8 +34,19 @@ export default defineConfig({
   },
   server: {
     fs: {
-      strict: true,
-      deny: ["**/.*"],
+      strict: false,
+      allow: [
+        path.resolve(import.meta.dirname),
+        path.resolve(import.meta.dirname, "marketing"),
+      ],
     },
+    proxy: {
+      "/api": {
+        target: "http://localhost:8083",
+        changeOrigin: true,
+        credentials: true
+      }
+    }
   },
 });
+

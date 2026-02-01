@@ -1,11 +1,36 @@
-import { db } from "./db.js";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
-import { 
-  users, sessions, templates, contacts, campaigns, 
-  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions,
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS, PRICING_PLANS
-} from "../shared/schema.js";
+/**
+ * Storage Module - Unified Interface
+ * ===================================
+ * Automatically uses:
+ * - Real PostgreSQL storage when DATABASE_URL is provided
+ * - In-memory storage for DEV mode (same interface, same validations)
+ * 
+ * Zero code changes required to switch between modes.
+ */
+
+import { db, isDevMode } from "./db.js";
+import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
+
+// Import schema constants (always needed)
+import { 
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS 
+} from "../shared/schema.js";
+
+// Only import Drizzle-specific things if we have a real database
+let drizzleOps = null;
+let schemaImports = null;
+
+if (!isDevMode && db) {
+  drizzleOps = await import("drizzle-orm");
+  schemaImports = await import("../shared/schema.js");
+}
+
+const { eq, and, desc, gte, sql } = drizzleOps || {};
+const { 
+  users, sessions, templates, contacts, campaigns, 
+  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions
+} = schemaImports || {};
 
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
@@ -15,7 +40,8 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-export const storage = {
+// PostgreSQL-based storage implementation
+const dbStorage = {
   async createUser(userData) {
     const passwordHash = hashPassword(userData.password);
     const [user] = await db.insert(users).values({
@@ -747,3 +773,8 @@ export const storage = {
     };
   }
 };
+
+// Export the appropriate storage based on mode
+export const storage = isDevMode ? memoryStorage : dbStorage;
+
+console.log(`[STORAGE] Active adapter: ${isDevMode ? 'In-Memory (DEV)' : 'PostgreSQL (PRODUCTION)'}`);

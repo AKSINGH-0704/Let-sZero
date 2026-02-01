@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 
 const AuthContext = createContext(null);
 
@@ -9,20 +9,15 @@ export function AuthProvider({ children }) {
 
   const { data: user, isLoading, refetch } = useQuery({
     queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
     staleTime: Infinity,
-    meta: {
-      onError: () => {
-        setIsInitialized(true);
-      }
-    }
+    throwOnError: false
   });
 
   useEffect(() => {
-    if (!isLoading) {
-      setIsInitialized(true);
-    }
-  }, [isLoading]);
+    setIsInitialized(true);
+  }, []);
 
   const loginMutation = useMutation({
     mutationFn: async (credentials) => {
@@ -36,7 +31,12 @@ export function AuthProvider({ children }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/logout");
+      try {
+        await apiRequest("POST", "/api/auth/logout");
+      } catch (error) {
+        // Even if logout request fails, clear local state
+        console.error("Logout request failed, clearing local state anyway:", error);
+      }
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/auth/me"], null);

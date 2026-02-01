@@ -31,7 +31,7 @@ function BrandingPanel() {
           <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center">
             <Mail className="w-6 h-6 text-white" />
           </div>
-          <span className="text-2xl font-semibold text-white">EmailFlow Pro</span>
+          <span className="text-2xl font-semibold text-white">REPMAIL</span>
         </div>
 
         <h2 className="text-3xl xl:text-4xl font-bold text-white leading-tight mb-4">
@@ -156,7 +156,7 @@ export default function ResetPassword() {
               <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 mb-4">
                 <Mail className="h-7 w-7 text-white" />
               </div>
-              <h1 className="text-2xl font-semibold tracking-tight">EmailFlow Pro</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">REPMAIL</h1>
             </div>
 
             <div className="hidden lg:block">
