@@ -17,20 +17,16 @@ import {
   USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS 
 } from "../shared/schema.js";
 
-// Only import Drizzle-specific things if we have a real database
-let drizzleOps = null;
-let schemaImports = null;
+// Static imports - tree-shaking will handle unused code in prod
+import * as drizzleOps from "drizzle-orm";
+import * as schemaImports from "../shared/schema.js";
 
-if (!isDevMode && db) {
-  drizzleOps = await import("drizzle-orm");
-  schemaImports = await import("../shared/schema.js");
-}
-
-const { eq, and, desc, gte, sql } = drizzleOps || {};
+// Use imports only when not in dev mode
+const { eq, and, desc, gte, sql } = (!isDevMode && db) ? drizzleOps : {};
 const { 
   users, sessions, templates, contacts, campaigns, 
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions
-} = schemaImports || {};
+} = (!isDevMode && db) ? schemaImports : {};
 
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
