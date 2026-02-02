@@ -23,11 +23,37 @@ import {
   Bell,
   Eye,
   Code2,
-  Clock
+  Clock,
+  Send,
+  Target,
+  Users
 } from "lucide-react";
 
 export default function LandingExperience() {
   const [isProductsOpen, setIsProductsOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    company: "",
+    message: ""
+  });
+  const [formStatus, setFormStatus] = useState<"idle" | "success" | "error">("idle");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormStatus("success");
+    setTimeout(() => {
+      setFormData({ name: "", email: "", company: "", message: "" });
+      setFormStatus("idle");
+    }, 3000);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
 
   // MissionPremium color helper (preserved exactly)
   const getColorClasses = (color: string) => {
@@ -196,7 +222,7 @@ export default function LandingExperience() {
             <a href="#mission" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Mission
             </a>
-            <a href="#" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
+            <a href="#contact" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Contact
             </a>
           </div>
@@ -765,7 +791,7 @@ export default function LandingExperience() {
       {/* ============================================
           MISSION PREMIUM SECTION (EXACT COPY)
           ============================================ */}
-      <section className="relative w-full bg-[#0A0A0F] py-32 overflow-hidden">
+      <section id="mission" className="relative w-full bg-[#0A0A0F] py-32 overflow-hidden">
         {/* Ambient background */}
         <div className="absolute inset-0">
           <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
@@ -981,6 +1007,321 @@ export default function LandingExperience() {
                 "The best infrastructure is the kind you never think about—
                 <br />
                 <span className="text-white font-medium">because it simply works.</span>"
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ============================================
+          CONTACT SECTION (RESTORED)
+          ============================================ */}
+      <section id="contact" className="relative w-full bg-[#0A0A0F] py-32 overflow-hidden">
+        {/* Sophisticated gradient background */}
+        <div className="absolute inset-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0A0A0F] via-[#12121A] to-[#0A0A0F]" />
+          <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-cyan-600/5 rounded-full blur-[120px]" />
+        </div>
+
+        {/* Grid overlay */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
+
+        <div className="relative max-w-[1440px] mx-auto px-12">
+          {/* Section Header */}
+          <div className="max-w-5xl mx-auto mb-20">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-center"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                className="inline-flex items-center gap-3 mb-6"
+              >
+                <div className="w-12 h-px bg-gradient-to-r from-transparent via-violet-500/50 to-transparent" />
+                <span className="text-sm text-violet-400 tracking-wide" style={{ fontFamily: "'Inter', sans-serif" }}>
+                  GET IN TOUCH
+                </span>
+                <div className="w-12 h-px bg-gradient-to-r from-violet-500/50 via-transparent to-transparent" />
+              </motion.div>
+
+              <motion.h2
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7, delay: 0.2 }}
+                className="text-5xl font-semibold text-white mb-4 leading-tight"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                Let's talk about
+                <br />
+                <span className="bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">
+                  reducing work
+                </span>
+              </motion.h2>
+
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7, delay: 0.3 }}
+                className="text-base text-gray-500 leading-relaxed max-w-2xl mx-auto"
+                style={{ fontFamily: "'Inter', sans-serif" }}
+              >
+                Every conversation starts with clarity. Tell us what's slowing you down — we'll help you remove it.
+              </motion.p>
+            </motion.div>
+          </div>
+
+          {/* Primary Contact Zone - Split Layout */}
+          <div className="max-w-7xl mx-auto mb-24">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+              {/* Left Column - Context & Trust */}
+              <motion.div
+                initial={{ opacity: 0, x: -30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7, delay: 0.4 }}
+                className="lg:col-span-5 space-y-8"
+              >
+                <div>
+                  <h3 className="text-2xl font-semibold text-white mb-6" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    What happens after you reach out
+                  </h3>
+
+                  <div className="space-y-6">
+                    {[
+                      { icon: MessageSquare, title: "No sales pressure", description: "Honest conversations about whether we're a fit." },
+                      { icon: Target, title: "Real product discussion", description: "We'll talk about your workflow, not our features." },
+                      { icon: Shield, title: "Clear next steps", description: "No mystery. No runaround. Just clarity." }
+                    ].map((item, index) => (
+                      <motion.div
+                        key={item.title}
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.6, delay: 0.5 + index * 0.1 }}
+                        className="flex items-start gap-4 group"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/10 to-violet-600/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0 group-hover:border-violet-500/40 transition-colors">
+                          <item.icon className="w-5 h-5 text-violet-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-base font-medium text-white mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                            {item.title}
+                          </h4>
+                          <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
+                            {item.description}
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: 0.8 }}
+                  className="p-5 rounded-xl bg-white/[0.02] border border-white/5 backdrop-blur-sm"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <Clock className="w-4 h-4 text-cyan-400" />
+                    <span className="text-sm font-medium text-gray-400" style={{ fontFamily: "'Inter', sans-serif" }}>
+                      Response time
+                    </span>
+                  </div>
+                  <p className="text-base text-white font-medium" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    We usually respond within 24 hours
+                  </p>
+                  <p className="text-xs text-gray-600 mt-2" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    Built in public. Conversations stay private.
+                  </p>
+                </motion.div>
+              </motion.div>
+
+              {/* Right Column - Refined Form */}
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.7, delay: 0.4 }}
+                className="lg:col-span-7"
+              >
+                <div className="relative p-8 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl shadow-2xl">
+                  <div className="absolute -inset-[1px] bg-gradient-to-br from-violet-600/10 to-cyan-600/10 rounded-2xl blur-2xl opacity-50" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-violet-600/5 to-cyan-600/5 rounded-2xl" />
+
+                  <div className="relative">
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-semibold text-white mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        Start the conversation
+                      </h3>
+                      <p className="text-sm text-gray-500" style={{ fontFamily: "'Inter', sans-serif" }}>
+                        We'll get back to you as soon as possible
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                      <div>
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-400 mb-3" style={{ fontFamily: "'Inter', sans-serif" }}>
+                          Name *
+                        </label>
+                        <input
+                          type="text"
+                          id="name"
+                          name="name"
+                          required
+                          value={formData.name}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 focus:bg-white/[0.07] transition-all"
+                          style={{ fontFamily: "'Inter', sans-serif" }}
+                          placeholder="Your name"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-400 mb-3" style={{ fontFamily: "'Inter', sans-serif" }}>
+                          Email *
+                        </label>
+                        <input
+                          type="email"
+                          id="email"
+                          name="email"
+                          required
+                          value={formData.email}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 focus:bg-white/[0.07] transition-all"
+                          style={{ fontFamily: "'Inter', sans-serif" }}
+                          placeholder="your@email.com"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="company" className="block text-sm font-medium text-gray-400 mb-3" style={{ fontFamily: "'Inter', sans-serif" }}>
+                          Company <span className="text-gray-600">(optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="company"
+                          name="company"
+                          value={formData.company}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 focus:bg-white/[0.07] transition-all"
+                          style={{ fontFamily: "'Inter', sans-serif" }}
+                          placeholder="Your company"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="message" className="block text-sm font-medium text-gray-400 mb-3" style={{ fontFamily: "'Inter', sans-serif" }}>
+                          Message *
+                        </label>
+                        <textarea
+                          id="message"
+                          name="message"
+                          required
+                          value={formData.message}
+                          onChange={handleChange}
+                          rows={6}
+                          className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 focus:bg-white/[0.07] transition-all resize-none"
+                          style={{ fontFamily: "'Inter', sans-serif" }}
+                          placeholder="Tell us how we can help reduce your workload..."
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between pt-6">
+                        <motion.button
+                          type="submit"
+                          whileHover={{ scale: 1.02, y: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="group relative px-10 py-4 bg-white text-black rounded-xl font-semibold overflow-hidden transition-all hover:shadow-2xl hover:shadow-white/30"
+                          style={{ fontFamily: "'Inter', sans-serif" }}
+                        >
+                          <span className="relative z-10 flex items-center gap-2">
+                            Send message
+                            <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-r from-white via-gray-100 to-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </motion.button>
+
+                        {formStatus === "success" && (
+                          <motion.div
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="flex items-center gap-2 text-emerald-400"
+                            style={{ fontFamily: "'Inter', sans-serif" }}
+                          >
+                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-lg shadow-emerald-400/50" />
+                            <span className="text-sm font-medium">Message sent successfully!</span>
+                          </motion.div>
+                        )}
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* Async Contact Section */}
+          <div className="max-w-3xl mx-auto mb-16">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.7, delay: 0.6 }}
+              className="text-center"
+            >
+              <p className="text-base text-gray-500 mb-6" style={{ fontFamily: "'Inter', sans-serif" }}>
+                Prefer async communication? We do too.
+              </p>
+
+              <div className="inline-block p-6 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl">
+                <div className="flex items-center gap-5">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/10 to-violet-600/10 border border-violet-500/20 flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-violet-400" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm text-gray-500 mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>
+                      Direct email
+                    </p>
+                    <a 
+                      href="mailto:hello@letszero.com" 
+                      className="text-white hover:text-violet-400 transition-colors font-semibold text-lg group inline-flex items-center gap-2 relative"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      hello@letszero.com
+                      <ArrowUpRight className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                      <span className="absolute bottom-0 left-0 w-0 h-px bg-gradient-to-r from-violet-500 to-cyan-500 group-hover:w-full transition-all duration-300" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Trust Signal */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.7, delay: 0.7 }}
+            className="max-w-2xl mx-auto text-center"
+          >
+            <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
+              <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
+                We're building Lets ZERO to help teams work less, not more. 
+                <br />
+                <span className="text-white font-medium">Every conversation helps us build better tools.</span>
               </p>
             </div>
           </motion.div>
