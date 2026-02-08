@@ -303,7 +303,7 @@ export default function LandingExperience() {
               >
                 We build composable communication products for teams that need systems, 
                 not features. Starting with RepMail, every tool is designed for reliability 
-                at scale—transparent, modular, built to last.
+                at scale. Transparent, modular, built to last.
               </motion.p>
 
               {/* CTA Group */}
@@ -1004,7 +1004,7 @@ export default function LandingExperience() {
           >
             <div className="inline-block px-8 py-6 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
               <p className="text-lg text-gray-400 max-w-2xl" style={{ fontFamily: "'Inter', sans-serif" }}>
-                "The best infrastructure is the kind you never think about—
+                "The best infrastructure is the kind you never think about
                 <br />
                 <span className="text-white font-medium">because it simply works.</span>"
               </p>
@@ -1295,11 +1295,11 @@ export default function LandingExperience() {
                       Direct email
                     </p>
                     <a 
-                      href="mailto:hello@letszero.com" 
+                      href="mailto:support@letszero.in" 
                       className="text-white hover:text-violet-400 transition-colors font-semibold text-lg group inline-flex items-center gap-2 relative"
                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                     >
-                      hello@letszero.com
+                      support@letszero.in
                       <ArrowUpRight className="w-5 h-5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                       <span className="absolute bottom-0 left-0 w-0 h-px bg-gradient-to-r from-violet-500 to-cyan-500 group-hover:w-full transition-all duration-300" />
                     </a>

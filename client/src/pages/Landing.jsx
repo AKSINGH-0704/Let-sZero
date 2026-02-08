@@ -329,7 +329,7 @@ export default function Landing() {
             className="text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed"
             variants={fadeInUp}
           >
-            Send millions of emails with 99.9% deliverability. Advanced analytics, AI-powered personalization, and enterprise-grade security for serious businesses.
+            Send millions of emails with 99.9% deliverability. Get advanced analytics, AI-powered personalization, and enterprise-grade security for serious businesses.
           </motion.p>
           
           <motion.div 
@@ -374,7 +374,7 @@ export default function Landing() {
             </div>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>10,000 trial credits</span>
+              <span>500 trial free credits</span>
             </div>
           </motion.div>
         </motion.div>
@@ -664,7 +664,7 @@ export default function Landing() {
               </Button>
             </Link>
           </motion.div>
-          <p className="text-sm text-slate-500">No credit card required • 10,000 free credits • Cancel anytime</p>
+          <p className="text-sm text-slate-500">No credit card required • 500 trial free credits • Cancel anytime</p>
         </motion.div>
       </section>
 

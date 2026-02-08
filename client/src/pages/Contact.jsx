@@ -147,13 +147,13 @@ export default function Contact() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="email">Work Email *</Label>
+                      <Label htmlFor="email">Email *</Label>
                       <Input
                         id="email"
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                        placeholder="you@company.com"
+                        placeholder="you@example.com"
                         data-testid="input-contact-email"
                       />
                     </div>
@@ -236,8 +236,8 @@ export default function Contact() {
                     <p className="text-sm text-muted-foreground mb-2">
                       For general inquiries and support
                     </p>
-                    <a href="mailto:support@repmail.pro" className="text-sm text-primary hover:underline">
-                      support@repmail.pro
+                    <a href="mailto:support@letszero.in" className="text-sm text-primary hover:underline">
+                      support@letszero.in
                     </a>
                   </div>
                 </div>
