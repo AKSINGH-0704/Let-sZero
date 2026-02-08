@@ -103,6 +103,7 @@
     "vite": "^7.3.0"
   },
   "overrides": {
+    "esbuild": "0.27.2",
     "drizzle-kit": {
       "@esbuild-kit/esm-loader": "npm:tsx@^4.20.4"
     }
