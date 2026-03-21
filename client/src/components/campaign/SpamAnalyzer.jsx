@@ -8,17 +8,18 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  ArrowLeft, 
-  Shield, 
-  AlertTriangle, 
+import {
+  ArrowLeft,
+  Shield,
+  AlertTriangle,
   CheckCircle,
   XCircle,
   RefreshCw,
   Loader2,
   Lightbulb,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Sparkles
 } from "lucide-react";
 import { calculateSpamScore, cn } from "@/lib/utils";
 
@@ -280,6 +281,15 @@ export default function SpamAnalyzer() {
             })}
           </CardContent>
         </Card>
+      )}
+
+      {analysis?.summary && (
+        <Alert className="border-primary/20 bg-primary/5 dark:bg-primary/10">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <AlertDescription className="text-foreground">
+            <span className="font-medium text-primary">AI Analysis: </span>{analysis.summary}
+          </AlertDescription>
+        </Alert>
       )}
 
       {score > 60 && (

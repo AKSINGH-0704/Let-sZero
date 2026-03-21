@@ -25,7 +25,7 @@ import * as schemaImports from "../shared/schema.js";
 const { eq, and, desc, gte, sql } = (!isDevMode && db) ? drizzleOps : {};
 const { 
   users, sessions, templates, contacts, campaigns, 
-  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions
+  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist
 } = (!isDevMode && db) ? schemaImports : {};
 
 function hashPassword(password) {
@@ -50,7 +50,8 @@ const dbStorage = {
       creditsAllocated: 0,
       creditsUsed: 0,
       mustResetPassword: userData.mustResetPassword !== false,
-      isActive: true
+      isActive: true,
+      plan: userData.plan || "free"
     }).returning();
     return this.sanitizeUser(user);
   },
@@ -96,6 +97,7 @@ const dbStorage = {
     if (updates.creditsReceived !== undefined) allowedUpdates.creditsReceived = updates.creditsReceived;
     if (updates.creditsAllocated !== undefined) allowedUpdates.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) allowedUpdates.creditsUsed = updates.creditsUsed;
+    if (updates.plan) allowedUpdates.plan = updates.plan;
     allowedUpdates.updatedAt = new Date();
     
     const [user] = await db.update(users)
@@ -505,6 +507,12 @@ const dbStorage = {
     return campaign;
   },
 
+  async getCampaignsByStatus(status) {
+    return await db.select().from(campaigns)
+      .where(eq(campaigns.status, status))
+      .orderBy(desc(campaigns.createdAt));
+  },
+
   async createAuditLog(data) {
     try {
       await db.insert(auditLogs).values({
@@ -574,23 +582,25 @@ const dbStorage = {
 
   async initializeRootAdmin() {
     try {
-      const existingAdmin = await this.getUserByUsername("admin");
+      const adminUsername = process.env.ADMIN_USERNAME || "admin";
+      const adminPassword = process.env.ADMIN_PASSWORD || "changeme123";
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@repmail.io";
+
+      const existingAdmin = await this.getUserByUsername(adminUsername);
       if (existingAdmin) {
         console.log("Root admin already exists");
         return this.sanitizeUser(existingAdmin);
       }
-      
-      const adminPassword = process.env.ADMIN_PASSWORD || "changeme123";
-      const adminEmail = process.env.ADMIN_EMAIL || "admin@emailflow.pro";
-      
+
       const admin = await this.createUser({
-        username: "admin",
+        username: adminUsername,
         email: adminEmail,
         password: adminPassword,
         role: USER_ROLES.ROOT_ADMIN,
         creditsReceived: 100000,
         mustResetPassword: true,
-        isTrialUser: false
+        isTrialUser: false,
+        plan: "enterprise"
       });
       
       console.log("Root admin created - password reset required on first login");
@@ -723,6 +733,32 @@ const dbStorage = {
       .where(eq(contactSubmissions.id, id))
       .returning();
     return submission;
+  },
+
+  async addToWaitlist(data) {
+    try {
+      const [entry] = await db.insert(waitlist).values({
+        email: data.email.toLowerCase().trim(),
+        source: data.source || null
+      }).returning();
+      return entry;
+    } catch (err) {
+      if (err.code === '23505') {
+        throw new Error("DUPLICATE_EMAIL");
+      }
+      throw err;
+    }
+  },
+
+  async getWaitlistCount() {
+    const [result] = await db.select({ count: sql`count(*)` }).from(waitlist);
+    return parseInt(result.count, 10);
+  },
+
+  async getWaitlistEntries(limit = 100) {
+    return await db.select().from(waitlist)
+      .orderBy(desc(waitlist.createdAt))
+      .limit(limit);
   },
 
   async getTrialCreditsRemaining(userId) {

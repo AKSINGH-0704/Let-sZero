@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Redirect, Link } from "wouter";
+import { Redirect, Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -7,41 +7,44 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Mail, 
-  Loader2, 
-  AlertCircle, 
-  Eye, 
-  EyeOff, 
-  Brain, 
-  Coins, 
+import { useToast } from "@/hooks/use-toast";
+import {
+  Mail,
+  Loader2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Brain,
+  Coins,
   Users,
   FileCheck,
   Shield,
   ArrowLeft,
   Send,
   BarChart3,
-  Zap
+  Zap,
+  UserPlus,
+  ArrowRight,
+  LogIn
 } from "lucide-react";
 import { SiGoogle, SiLinkedin } from "react-icons/si";
 
 function BrandingPanel() {
   return (
-    <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+    <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 animate-in fade-in slide-in-from-left-4 duration-700">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+        <div
+          className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
 
       <div className="relative z-10 flex flex-col justify-center px-12 xl:px-20">
         <div className="flex items-center gap-3 mb-14">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
-            <Mail className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-2xl font-semibold text-white">REPMAIL</span>
+          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
         </div>
 
         <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-5">
@@ -56,30 +59,21 @@ function BrandingPanel() {
         </p>
 
         <div className="space-y-5">
-          <div className="flex items-center gap-4 group">
-            <div className="w-11 h-11 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 group-hover:border-white/20 transition-all duration-300">
-              <Brain className="w-5 h-5 text-cyan-400" />
+          {[
+            { icon: Brain, label: "AI Personalization" },
+            { icon: Users, label: "Team Hierarchy" },
+            { icon: Coins, label: "Credit-Based Controls" },
+            { icon: FileCheck, label: "Audit Logging" }
+          ].map(({ icon: Icon, label }) => (
+            <div key={label} className="flex items-center gap-4 group">
+              <div className="w-11 h-11 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 group-hover:border-white/20 transition-all duration-300">
+                <Icon className="w-5 h-5 text-cyan-400" />
+              </div>
+              <span className="text-lg text-white/80 group-hover:text-white transition-colors duration-300">
+                {label}
+              </span>
             </div>
-            <span className="text-lg text-white/80 group-hover:text-white transition-colors duration-300">AI Personalization</span>
-          </div>
-          <div className="flex items-center gap-4 group">
-            <div className="w-11 h-11 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 group-hover:border-white/20 transition-all duration-300">
-              <Users className="w-5 h-5 text-cyan-400" />
-            </div>
-            <span className="text-lg text-white/80 group-hover:text-white transition-colors duration-300">Team Hierarchy</span>
-          </div>
-          <div className="flex items-center gap-4 group">
-            <div className="w-11 h-11 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 group-hover:border-white/20 transition-all duration-300">
-              <Coins className="w-5 h-5 text-cyan-400" />
-            </div>
-            <span className="text-lg text-white/80 group-hover:text-white transition-colors duration-300">Credit-Based Controls</span>
-          </div>
-          <div className="flex items-center gap-4 group">
-            <div className="w-11 h-11 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 group-hover:border-white/20 transition-all duration-300">
-              <FileCheck className="w-5 h-5 text-cyan-400" />
-            </div>
-            <span className="text-lg text-white/80 group-hover:text-white transition-colors duration-300">Audit Logging</span>
-          </div>
+          ))}
         </div>
       </div>
     </div>
@@ -96,7 +90,11 @@ function MobileHeader() {
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-6">
           <Link href="/products/repmail">
-            <Button variant="ghost" size="sm" className="gap-2 text-white/70 hover:text-white hover:bg-white/10" data-testid="link-back-home-mobile">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-white/70 hover:text-white hover:bg-white/10"
+            >
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
@@ -104,11 +102,8 @@ function MobileHeader() {
           <ThemeToggle />
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
-            <Mail className="w-6 h-6 text-white" />
-          </div>
+          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
           <div>
-            <h1 className="text-xl font-semibold text-white">REPMAIL</h1>
             <p className="text-sm text-white/60">Enterprise Email Platform</p>
           </div>
         </div>
@@ -164,21 +159,48 @@ function FloatingVisual() {
 
       <div className="absolute top-16 left-1/4 w-64 h-64 bg-gradient-to-br from-primary/5 to-transparent rounded-full blur-3xl" />
       <div className="absolute bottom-16 right-1/4 w-72 h-72 bg-gradient-to-tl from-primary/5 to-transparent rounded-full blur-3xl" />
-      
       <div className="absolute inset-0 bg-[linear-gradient(rgba(var(--primary-rgb,99,102,241),0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(var(--primary-rgb,99,102,241),0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black_70%)]" />
     </div>
   );
 }
 
-export default function Login() {
-  const { login, isLoggingIn, loginError, isAuthenticated } = useAuth();
+function TabSwitcher({ activeTab, onChange }) {
+  return (
+    <div className="flex bg-muted/50 rounded-lg p-1 gap-1">
+      <button
+        type="button"
+        onClick={() => onChange("signin")}
+        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200 ${
+          activeTab === "signin"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <LogIn className="h-3.5 w-3.5" />
+        Sign In
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("request")}
+        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200 ${
+          activeTab === "request"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <UserPlus className="h-3.5 w-3.5" />
+        Request Access
+      </button>
+    </div>
+  );
+}
+
+function SignInForm({ login, isLoggingIn, loginError }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-
-  if (isAuthenticated) {
-    return <Redirect to="/app/dashboard" />;
-  }
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -189,18 +211,229 @@ export default function Login() {
     }
   };
 
+  const handleOAuthRedirect = (provider) => {
+    toast({
+      title: `${provider} sign-in coming soon`,
+      description: "Redirecting you to Request Access to get started.",
+      duration: 3000
+    });
+    setTimeout(() => navigate("/early-access"), 1000);
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {loginError && (
+          <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-300">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {loginError.message || "Invalid credentials. Please try again."}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="username" className="text-sm font-medium">
+            Username
+          </Label>
+          <Input
+            id="username"
+            type="text"
+            placeholder="Enter your username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            disabled={isLoggingIn}
+            className="h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
+            data-testid="input-username"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password" className="text-sm font-medium">
+              Password
+            </Label>
+            <Link href="/contact">
+              <span className="text-xs text-muted-foreground hover:text-primary transition-colors duration-200 cursor-pointer">
+                Forgot password?
+              </span>
+            </Link>
+          </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isLoggingIn}
+              className="pr-10 h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
+              data-testid="input-password"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+              onClick={() => setShowPassword(!showPassword)}
+              tabIndex={-1}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          className="w-full h-11 text-base font-medium transition-all duration-200 hover:shadow-lg hover:shadow-primary/25"
+          disabled={isLoggingIn}
+          data-testid="button-login"
+        >
+          {isLoggingIn ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Signing in...
+            </>
+          ) : (
+            "Sign In"
+          )}
+        </Button>
+      </form>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="px-3 bg-card text-muted-foreground">or continue with</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 gap-2 hover:bg-muted/50 transition-all duration-200"
+          onClick={() => handleOAuthRedirect("Google")}
+          data-testid="button-google"
+        >
+          <SiGoogle className="h-4 w-4" />
+          <span>Google</span>
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 gap-2 hover:bg-muted/50 transition-all duration-200"
+          onClick={() => handleOAuthRedirect("LinkedIn")}
+          data-testid="button-linkedin"
+        >
+          <SiLinkedin className="h-4 w-4" />
+          <span>LinkedIn</span>
+        </Button>
+      </div>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Don&apos;t have an account?{" "}
+        <Link href="/early-access">
+          <span className="text-primary hover:underline cursor-pointer font-medium">
+            Request Access
+          </span>
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function RequestAccessPanel({ onSignIn }) {
+  const [, navigate] = useLocation();
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-300">
+      <div className="flex flex-col items-center text-center py-4">
+        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-5">
+          <UserPlus className="w-8 h-8 text-primary" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">Get started with RepMail</h3>
+        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+          RepMail is an invite-only platform. Submit your details for admin review — our team will
+          reach out within 24 hours.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50">
+          <Shield className="w-4 h-4 text-primary/70 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Admin-provisioned accounts</p>
+            <p className="text-xs text-muted-foreground">
+              All accounts are reviewed and approved by our team for security.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 border border-border/50">
+          <Zap className="w-4 h-4 text-primary/70 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Quick setup</p>
+            <p className="text-xs text-muted-foreground">
+              Once approved, you&apos;ll receive credentials and 5 free trial credits to get started.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <Button
+        className="w-full h-11 text-base font-medium gap-2 transition-all duration-200 hover:shadow-lg hover:shadow-primary/25"
+        onClick={() => navigate("/early-access")}
+        data-testid="button-request-access"
+      >
+        Request Access
+        <ArrowRight className="h-4 w-4" />
+      </Button>
+
+      <p className="text-center text-xs text-muted-foreground">
+        Already have an account?{" "}
+        <button
+          type="button"
+          className="text-primary hover:underline font-medium"
+          onClick={onSignIn}
+        >
+          Sign In
+        </button>
+      </p>
+    </div>
+  );
+}
+
+export default function Login() {
+  const { login, isLoggingIn, loginError, isAuthenticated } = useAuth();
+  const [activeTab, setActiveTab] = useState("signin");
+
+  if (isAuthenticated) {
+    return <Redirect to="/app/dashboard" />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
       <BrandingPanel />
-
       <MobileHeader />
 
       <div className="flex-1 flex flex-col lg:w-1/2 relative">
         <FloatingVisual />
-        
+
         <div className="hidden lg:flex items-center justify-between p-6 relative z-10">
           <Link href="/products/repmail">
-            <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" data-testid="link-back-home">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-muted-foreground"
+              data-testid="link-back-home"
+            >
               <ArrowLeft className="h-4 w-4" />
               Back to RepMail
             </Button>
@@ -210,129 +443,34 @@ export default function Login() {
 
         <div className="flex-1 flex items-center justify-center px-6 py-8 lg:py-0 relative z-10">
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="hidden lg:block mb-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Sign in to your account</h1>
-              <p className="text-muted-foreground mt-1">
-                Access your campaigns, analytics, and team settings
+            <div className="hidden lg:block mb-2">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {activeTab === "signin" ? "Sign in to your account" : "Join RepMail"}
+              </h1>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {activeTab === "signin"
+                  ? "Access your campaigns, analytics, and team settings."
+                  : "Request access to the platform — our team reviews all applications."}
               </p>
             </div>
 
             <Card className="border-card-border shadow-2xl shadow-black/5 dark:shadow-black/20 rounded-xl overflow-hidden backdrop-blur-sm bg-card/95">
-              <CardContent className="pt-8 pb-6 px-6">
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  {loginError && (
-                    <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-300">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {loginError.message || "Invalid credentials. Please try again."}
-                      </AlertDescription>
-                    </Alert>
-                  )}
+              <CardContent className="pt-6 pb-6 px-6 space-y-5">
+                <TabSwitcher activeTab={activeTab} onChange={setActiveTab} />
 
-                  <div className="space-y-2">
-                    <Label htmlFor="username" className="text-sm font-medium">Username</Label>
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="Enter your username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                      disabled={isLoggingIn}
-                      className="h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
-                      data-testid="input-username"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        disabled={isLoggingIn}
-                        className="pr-10 h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
-                        data-testid="input-password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                        onClick={() => setShowPassword(!showPassword)}
-                        tabIndex={-1}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Eye className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="w-full h-11 text-base font-medium transition-all duration-200 hover:shadow-lg hover:shadow-primary/25"
-                    disabled={isLoggingIn}
-                    data-testid="button-login"
-                  >
-                    {isLoggingIn ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Signing in...
-                      </>
-                    ) : (
-                      "Sign In"
-                    )}
-                  </Button>
-                </form>
-
-                <div className="relative my-6">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-border"></div>
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-3 bg-card text-muted-foreground">or continue with</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Button 
-                    variant="outline" 
-                    className="h-11 gap-2 relative" 
-                    disabled
-                    data-testid="button-google"
-                  >
-                    <SiGoogle className="h-4 w-4" />
-                    <span>Google</span>
-                    <Badge variant="secondary" className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">Soon</Badge>
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    className="h-11 gap-2 relative" 
-                    disabled
-                    data-testid="button-linkedin"
-                  >
-                    <SiLinkedin className="h-4 w-4" />
-                    <span>LinkedIn</span>
-                    <Badge variant="secondary" className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">Soon</Badge>
-                  </Button>
-                </div>
-
-                <div className="mt-6 pt-5 border-t border-border">
-                  <p className="text-xs text-center text-muted-foreground">
-                    Demo credentials: <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-foreground">admin / changeme123</span>
-                  </p>
-                </div>
+                {activeTab === "signin" ? (
+                  <SignInForm
+                    login={login}
+                    isLoggingIn={isLoggingIn}
+                    loginError={loginError}
+                  />
+                ) : (
+                  <RequestAccessPanel onSignIn={() => setActiveTab("signin")} />
+                )}
               </CardContent>
             </Card>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Shield className="h-3.5 w-3.5 text-primary/70" />

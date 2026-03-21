@@ -182,10 +182,7 @@ export default function Pricing() {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" data-testid="link-logo">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-              <Mail className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-semibold">REPMAIL</span>
+            <img src="/repmail-logo.png" alt="RepMail" className="h-14 w-auto" style={{ objectFit: "contain" }} />
           </Link>
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -468,10 +465,7 @@ export default function Pricing() {
       <footer className="py-8 border-t border-border">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Mail className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <span className="font-medium">REPMAIL</span>
+            <img src="/repmail-logo.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
           </div>
           <div className="flex items-center gap-6">
             <Link href="/" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-home-footer">

@@ -81,7 +81,8 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  lastLoginAt: timestamp("last_login_at")
+  lastLoginAt: timestamp("last_login_at"),
+  plan: text("plan").notNull().default("free")
 });
 
 export const sessions = pgTable("sessions", {
@@ -203,6 +204,18 @@ export const contactSubmissions = pgTable("contact_submissions", {
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
+export const waitlist = pgTable("waitlist", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique(),
+  source: text("source"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+});
+
+export const waitlistSchema = z.object({
+  email: z.string().email("Valid email is required"),
+  source: z.string().optional()
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
@@ -294,12 +307,87 @@ export const SUPPORTED_CURRENCIES = {
 
 export const DEFAULT_EXCHANGE_RATE = 83.50;
 
+// ─── Credit-Based Pricing System ─────────────────────────────────────────────
+
+export const CREDIT_TIERS = [
+  { min: 3000,   max: 9999,   perCredit: 0.13, prevRate: null },
+  { min: 10000,  max: 29999,  perCredit: 0.12, prevRate: 0.13 },
+  { min: 30000,  max: 99999,  perCredit: 0.11, prevRate: 0.12 },
+  { min: 100000, max: 300000, perCredit: 0.10, prevRate: 0.11 },
+];
+
+export const TEAM_PRICING = {
+  monthly: 99,   // INR per user per month
+  annual:  79,   // INR per user per month (billed annually)
+  minUsers: 3,
+  maxUsers: 15,
+};
+
+export const FREE_TRIAL_CREDITS    = 500;
+export const CREDIT_VALIDITY_MONTHS = 6;
+export const MIN_CREDIT_PURCHASE   = 3000;
+
+/**
+ * Calculate price and bonus credits for a given credit amount.
+ * Bonus formula: floor(credits × (prevRate - currentRate) / currentRate)
+ * This represents the "savings reinvested as bonus credits" at the current rate.
+ */
+export function calculateCreditPurchase(credits) {
+  const tier = CREDIT_TIERS.find(t => credits >= t.min && credits <= t.max);
+  if (!tier) return null;
+  const priceINR = Math.round(credits * tier.perCredit);
+  const bonus = tier.prevRate
+    ? Math.floor(credits * (tier.prevRate - tier.perCredit) / tier.perCredit)
+    : 0;
+  return {
+    credits,
+    priceINR,
+    priceUSD: +(priceINR / DEFAULT_EXCHANGE_RATE).toFixed(2),
+    bonusCredits: bonus,
+    totalCredits: credits + bonus,
+    perCreditINR: tier.perCredit,
+  };
+}
+
 export const PRICING_PLANS = {
-  trial: { id: "trial", name: "Trial", credits: 100, priceUsd: 0, priceInr: 0, isTrial: true, type: "trial" },
-  starter: { id: "starter", name: "Starter", credits: 1000, priceUsd: 2.39, priceInr: 199, type: "payg" },
-  growth: { id: "growth", name: "Growth", credits: 10000, priceUsd: 15.55, priceInr: 1299, isPopular: true, type: "payg" },
-  scale: { id: "scale", name: "Scale", credits: 50000, priceUsd: 59.95, priceInr: 4999, type: "bulk" },
-  enterprise: { id: "enterprise", name: "Enterprise", credits: null, priceUsd: null, priceInr: null, isCustom: true, type: "custom" }
+  trial: {
+    id: "trial", name: "Free Trial",
+    credits: 500, bonusCredits: 0, totalCredits: 500,
+    priceUsd: 0, priceInr: 0,
+    isTrial: true, type: "trial",
+  },
+  starter: {
+    id: "starter", name: "Starter",
+    credits: 3000, bonusCredits: 0, totalCredits: 3000,
+    priceUsd: +(390 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 390,
+    type: "payg",
+  },
+  growth: {
+    id: "growth", name: "Growth",
+    credits: 15000, bonusCredits: 1250, totalCredits: 16250,
+    priceUsd: +(1800 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 1800,
+    isPopular: true, type: "payg",
+  },
+  scale: {
+    id: "scale", name: "Scale",
+    credits: 50000, bonusCredits: 4545, totalCredits: 54545,
+    priceUsd: +(5500 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 5500,
+    type: "bulk",
+  },
+  enterprise: {
+    id: "enterprise", name: "Enterprise",
+    credits: null, bonusCredits: null, totalCredits: null,
+    priceUsd: null, priceInr: null,
+    isCustom: true, type: "custom",
+  },
+};
+
+export const PLAN_LIMITS = {
+  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, canExportAudit: false, label: "Free Trial"  },
+  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        maxTeamMembers: 1,        canSchedule: true,  canExportAudit: false, label: "Starter"     },
+  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       maxTeamMembers: 5,        canSchedule: true,  canExportAudit: false, label: "Growth"      },
+  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       maxTeamMembers: 10,       canSchedule: true,  canExportAudit: true,  label: "Scale"       },
+  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, maxTeamMembers: Infinity, canSchedule: true,  canExportAudit: true,  label: "Enterprise"  },
 };
 
 export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_EXCHANGE_RATE) {
@@ -312,13 +400,15 @@ export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_
 export function getPlanWithPrices(plan, exchangeRate = DEFAULT_EXCHANGE_RATE) {
   const priceInr = plan.priceUsd !== null ? convertCurrency(plan.priceUsd, true, exchangeRate) : plan.priceInr || null;
   const costPerEmailInr = plan.costPerEmailUsd ? Math.round(plan.costPerEmailUsd * exchangeRate * 100) / 100 : null;
-  
+
   return {
     ...plan,
     priceUsd: plan.priceUsd,
     priceInr,
+    bonusCredits: plan.bonusCredits ?? 0,
+    totalCredits: plan.totalCredits ?? plan.credits,
     costPerEmailUsd: plan.costPerEmailUsd || null,
     costPerEmailInr,
-    exchangeRate
+    exchangeRate,
   };
 }

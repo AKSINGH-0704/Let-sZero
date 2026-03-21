@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { 
+import {
   FileText,
   Search,
   Filter,
@@ -31,7 +32,8 @@ import {
   UserMinus,
   LogIn,
   LogOut,
-  Settings
+  Settings,
+  Download
 } from "lucide-react";
 import { formatDate, cn } from "@/lib/utils";
 
@@ -70,9 +72,34 @@ function formatDetails(details) {
   return parts.length > 0 ? parts.join(", ") : JSON.stringify(details);
 }
 
+const AUDIT_PLAN_LIMITS = {
+  free: { canExportAudit: false }, starter: { canExportAudit: false },
+  growth: { canExportAudit: false }, scale: { canExportAudit: true },
+  enterprise: { canExportAudit: true },
+};
+
 export default function Audit() {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+
+  const canExport = user?.plan && (AUDIT_PLAN_LIMITS[user.plan]?.canExportAudit ?? false);
+
+  const handleExport = async () => {
+    try {
+      const response = await fetch("/api/audit-logs/export", { credentials: "include" });
+      if (!response.ok) throw new Error("Export failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-logs-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export error:", err);
+    }
+  };
 
   const { data: logs, isLoading } = useQuery({
     queryKey: ["/api/audit-logs"]
@@ -103,6 +130,22 @@ export default function Audit() {
 
         <Card className="border-card-border">
           <CardHeader className="pb-4">
+            <div className="flex items-center justify-between mb-3">
+              <CardTitle className="text-base">Logs</CardTitle>
+              {canExport ? (
+                <button
+                  onClick={handleExport}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-cyan-500/15 text-cyan-400 rounded-lg hover:bg-cyan-500/25 border border-cyan-500/20 transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Export CSV
+                </button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Export available on Scale+.{" "}
+                  <a href="/app/payments" className="text-cyan-400 hover:text-cyan-300 underline">Upgrade</a>
+                </span>
+              )}
+            </div>
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

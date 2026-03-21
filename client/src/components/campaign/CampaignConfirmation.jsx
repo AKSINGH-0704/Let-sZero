@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   Send,
   Users,
   Coins,
@@ -23,7 +23,9 @@ import {
   AlertTriangle,
   CheckCircle,
   Loader2,
-  Shield
+  Shield,
+  ArrowRight,
+  Calendar
 } from "lucide-react";
 import { formatNumber, calculateCreditsRemaining, replacePlaceholders } from "@/lib/utils";
 
@@ -46,6 +48,8 @@ export default function CampaignConfirmation() {
   const [name, setName] = useState(campaignName || `Campaign ${new Date().toLocaleDateString()}`);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState("");
 
   const creditsRequired = contacts.length;
   const creditsAvailable = calculateCreditsRemaining(
@@ -73,7 +77,7 @@ export default function CampaignConfirmation() {
         category: contact[columnMapping.category]
       }));
 
-      const res = await apiRequest("POST", "/api/campaigns", {
+      const payload = {
         name,
         template: {
           subject: template.subject,
@@ -81,7 +85,12 @@ export default function CampaignConfirmation() {
         },
         contacts: mappedContacts,
         totalEmails: contacts.length
-      });
+      };
+      if (isScheduled && scheduledAt) {
+        payload.scheduledAt = new Date(scheduledAt).toISOString();
+      }
+
+      const res = await apiRequest("POST", "/api/campaigns", payload);
       return res.json();
     },
     onSuccess: (data) => {
@@ -98,7 +107,16 @@ export default function CampaignConfirmation() {
       setStep(7);
     },
     onError: (err) => {
-      setError(err.message || "Failed to start campaign");
+      let msg = err.message;
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed.error === "PLAN_LIMIT") {
+          setError(parsed.message + " Visit /app/payments to upgrade.");
+          return;
+        }
+        msg = parsed.message || msg;
+      } catch {}
+      setError(msg || "Failed to start campaign");
     }
   });
 
@@ -111,7 +129,11 @@ export default function CampaignConfirmation() {
       setError("Please confirm you want to send this campaign");
       return;
     }
-    if (!hasEnoughCredits) {
+    if (isScheduled && !scheduledAt) {
+      setError("Please select a date and time to schedule the campaign");
+      return;
+    }
+    if (!isScheduled && !hasEnoughCredits) {
       setError("Insufficient credits to send this campaign");
       return;
     }
@@ -151,6 +173,41 @@ export default function CampaignConfirmation() {
                   data-testid="input-campaign-name"
                 />
               </div>
+
+              {/* Campaign Scheduling */}
+              {user?.plan && user.plan !== "free" ? (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 text-sm text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isScheduled}
+                      onChange={(e) => { setIsScheduled(e.target.checked); if (!e.target.checked) setScheduledAt(""); }}
+                      className="rounded border-gray-600"
+                    />
+                    <Calendar className="h-4 w-4" />
+                    Schedule for later
+                  </label>
+                  {isScheduled && (
+                    <div className="mt-2">
+                      <input
+                        type="datetime-local"
+                        value={scheduledAt}
+                        onChange={(e) => setScheduledAt(e.target.value)}
+                        min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)}
+                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Campaign will send automatically at this time.</p>
+                    </div>
+                  )}
+                </div>
+              ) : user?.plan === "free" ? (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <p className="text-sm text-amber-400">
+                    Campaign scheduling is available on Starter plan and above.{" "}
+                    <a href="/app/payments" className="underline">Upgrade now</a>
+                  </p>
+                </div>
+              ) : null}
 
               <Separator />
 
@@ -218,6 +275,12 @@ export default function CampaignConfirmation() {
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
                     You need {formatNumber(creditsRequired - creditsAvailable)} more credits to send this campaign.
+                    <a
+                      href="/app/payments"
+                      className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
+                    >
+                      Buy more credits <ArrowRight className="w-3 h-3" />
+                    </a>
                   </AlertDescription>
                 </Alert>
               )}
@@ -295,13 +358,18 @@ export default function CampaignConfirmation() {
         </Button>
         <Button 
           onClick={handleSend}
-          disabled={!confirmed || !hasEnoughCredits || sendMutation.isPending}
+          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || sendMutation.isPending}
           data-testid="button-send-campaign"
         >
           {sendMutation.isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Starting Campaign...
+            </>
+          ) : isScheduled ? (
+            <>
+              <Calendar className="mr-2 h-4 w-4" />
+              Schedule Campaign
             </>
           ) : (
             <>

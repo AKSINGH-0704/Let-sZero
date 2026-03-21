@@ -36,7 +36,8 @@ const store = {
   creditTransactions: new Map(),
   auditLogs: new Map(),
   payments: new Map(),
-  contactSubmissions: new Map()
+  contactSubmissions: new Map(),
+  waitlist: new Map()
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -78,6 +79,7 @@ export const memoryStorage = {
       isTrialUser: userData.isTrialUser !== false,
       mustResetPassword: userData.mustResetPassword !== false,
       isActive: true,
+      plan: userData.plan || "free",
       createdAt: now,
       updatedAt: now,
       lastLoginAt: null
@@ -137,6 +139,7 @@ export const memoryStorage = {
     if (updates.creditsReceived !== undefined) user.creditsReceived = updates.creditsReceived;
     if (updates.creditsAllocated !== undefined) user.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) user.creditsUsed = updates.creditsUsed;
+    if (updates.plan) user.plan = updates.plan;
     user.updatedAt = new Date();
     
     return this.sanitizeUser(user);
@@ -528,6 +531,10 @@ export const memoryStorage = {
     return campaign;
   },
 
+  async getCampaignsByStatus(status) {
+    return toSortedArray(store.campaigns).filter(c => c.status === status);
+  },
+
   async getCampaigns(userId = null, isRootAdmin = false) {
     let result = toSortedArray(store.campaigns);
     if (!isRootAdmin && userId) {
@@ -655,23 +662,25 @@ export const memoryStorage = {
   // ==================== ADMIN INITIALIZATION ====================
   async initializeRootAdmin() {
     try {
-      const existingAdmin = await this.getUserByUsername("admin");
+      const adminUsername = process.env.ADMIN_USERNAME || "admin";
+      const adminPassword = process.env.ADMIN_PASSWORD || "changeme123";
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@repmail.io";
+
+      const existingAdmin = await this.getUserByUsername(adminUsername);
       if (existingAdmin) {
         console.log("[DEV MODE] Root admin already exists");
         return this.sanitizeUser(existingAdmin);
       }
-      
-      const adminPassword = process.env.ADMIN_PASSWORD || "changeme123";
-      const adminEmail = process.env.ADMIN_EMAIL || "admin@emailflow.pro";
-      
+
       const admin = await this.createUser({
-        username: "admin",
+        username: adminUsername,
         email: adminEmail,
         password: adminPassword,
         role: USER_ROLES.ROOT_ADMIN,
         creditsReceived: 100000,
         mustResetPassword: true,
-        isTrialUser: false
+        isTrialUser: false,
+        plan: "enterprise"
       });
       
       console.log("[DEV MODE] Root admin created - password reset required on first login");
@@ -833,6 +842,35 @@ export const memoryStorage = {
       submission.isRead = true;
     }
     return submission;
+  },
+
+  // ==================== WAITLIST OPERATIONS ====================
+  async addToWaitlist(data) {
+    // Check for duplicate email
+    for (const entry of store.waitlist.values()) {
+      if (entry.email.toLowerCase() === data.email.toLowerCase()) {
+        throw new Error("DUPLICATE_EMAIL");
+      }
+    }
+    
+    const id = generateUUID();
+    const entry = {
+      id,
+      email: data.email.toLowerCase().trim(),
+      source: data.source || null,
+      createdAt: new Date()
+    };
+    
+    store.waitlist.set(id, entry);
+    return entry;
+  },
+
+  async getWaitlistCount() {
+    return store.waitlist.size;
+  },
+
+  async getWaitlistEntries(limit = 100) {
+    return toSortedArray(store.waitlist).slice(0, limit);
   },
 
   // ==================== TRIAL CREDIT OPERATIONS ====================

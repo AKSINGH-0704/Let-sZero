@@ -21,6 +21,7 @@ import PublicPricing from "@/pages/PublicPricing";
 import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";
 import NotFound from "@/pages/not-found";
+import WaitlistLanding from "@/pages/WaitlistLanding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -68,6 +69,10 @@ function AppRoutes() {
     <Switch>
       <Route path="/">
         {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <LandingExperience />}
+      </Route>
+
+      <Route path="/early-access">
+        {() => <WaitlistLanding />}
       </Route>
 
       <Route path="/products/repmail">

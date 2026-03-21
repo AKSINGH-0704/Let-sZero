@@ -1,6 +1,30 @@
 import express from "express";
-import { registerRoutes } from "./routes.js";
+import { registerRoutes, executeCampaign } from "./routes.js";
+import { storage } from "./storage.js";
 import { createServer } from "http";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+// Load .env file manually (no dotenv dependency needed)
+try {
+  const envPath = resolve(process.cwd(), ".env");
+  const envContent = readFileSync(envPath, "utf8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (key && !(key in process.env)) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+} catch {
+  // No .env file found — using system environment variables (e.g., Railway)
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -74,7 +98,51 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Block RepMail routes on production when REPMAIL_PUBLIC is not "true"
+  app.use((req, res, next) => {
+    const isRepmailPublic = process.env.REPMAIL_PUBLIC === "true";
+
+    if (isRepmailPublic) return next();
+    if (process.env.NODE_ENV !== "production") return next();
+
+    const allowedPaths = [
+      '/',
+      '/early-access',
+      '/contact',
+      '/api/waitlist',
+      '/api/contact',
+    ];
+
+    const isAllowed = allowedPaths.some(path => req.path === path);
+    const isStaticFile = /\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map)$/i.test(req.path);
+    const isAsset = req.path.startsWith('/assets');
+
+    if (isAllowed || isStaticFile || isAsset) return next();
+
+    if (req.path.startsWith('/api/')) {
+      return res.status(403).json({ message: "RepMail is currently in private beta. Join the waitlist at /early-access" });
+    }
+
+    return res.redirect('/early-access');
+  });
+
   await registerRoutes(httpServer, app);
+
+  // Campaign scheduler — executes PENDING campaigns when their scheduledAt time arrives
+  setInterval(async () => {
+    try {
+      const pendingCampaigns = await storage.getCampaignsByStatus("PENDING");
+      const now = new Date();
+      for (const campaign of pendingCampaigns) {
+        if (campaign.scheduledAt && new Date(campaign.scheduledAt) <= now) {
+          console.log(`[SCHEDULER] Executing scheduled campaign: ${campaign.id}`);
+          await executeCampaign(campaign.id, campaign.userId);
+        }
+      }
+    } catch (err) {
+      console.error("[SCHEDULER] Error:", err.message);
+    }
+  }, 30000);
 
   app.use((err, _req, res, _next) => {
     const status = err.status || err.statusCode || 500;

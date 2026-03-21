@@ -249,15 +249,45 @@ export default function Landing() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center space-x-2">
-          <motion.div 
-            className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-500/25"
-            whileHover={{ scale: 1.05, rotate: 5 }}
-            whileTap={{ scale: 0.95 }}
+        <div className="flex items-center gap-3">
+          <motion.div
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            className="flex items-center gap-3"
           >
-            <Zap className="w-6 h-6 text-white" />
+            <img
+              src="/repmail-logo.png"
+              alt="RepMail"
+              className="h-10 w-auto rounded-lg"
+              style={{ objectFit: "contain" }}
+            />
+            <div className="flex flex-col leading-none">
+              <span style={{
+                fontSize: "11px",
+                fontWeight: 600,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                background: "linear-gradient(90deg, #00E5C8, #60A5FA)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                fontFamily: "'Inter', sans-serif",
+                marginBottom: "3px"
+              }}>
+                by LetsZero
+              </span>
+              <span style={{
+                fontSize: "20px",
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+                color: "#FFFFFF",
+                fontFamily: "'Space Grotesk', 'Inter', sans-serif",
+                lineHeight: 1
+              }}>
+                RepMail
+              </span>
+            </div>
           </motion.div>
-          <span className="text-2xl font-bold text-white">REPMAIL</span>
         </div>
         <div className="flex items-center space-x-3">
           <Link href="/pricing">
@@ -292,6 +322,16 @@ export default function Landing() {
                 className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-lg shadow-cyan-500/25 transition-all"
               >
                 Get Started
+              </Button>
+            </Link>
+          </motion.div>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <Link href="/early-access">
+              <Button 
+                variant="outline"
+                className="border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-400 backdrop-blur-sm transition-all"
+              >
+                Request Early Access
               </Button>
             </Link>
           </motion.div>
@@ -679,10 +719,13 @@ export default function Landing() {
       <footer className="relative z-10 container mx-auto px-6 py-12 border-t border-white/10">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-400 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-gradient-to-br from-cyan-400 to-indigo-600 rounded flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
-            <span>© 2026 REPMAIL. All rights reserved.</span>
+            <img
+              src="/repmail-logo.png"
+              alt="RepMail"
+              className="h-10 w-auto rounded"
+              style={{ objectFit: "contain" }}
+            />
+            <span>© 2026 RepMail by LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center space-x-6">
             <a href="#privacy" className="hover:text-white transition-colors">Privacy</a>

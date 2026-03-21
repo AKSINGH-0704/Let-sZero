@@ -96,7 +96,16 @@ export default function Users() {
       toast({ title: "User created successfully" });
     },
     onError: (err) => {
-      toast({ title: "Failed to create user", description: err.message, variant: "destructive" });
+      let msg = err.message;
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed.error === "PLAN_LIMIT") {
+          toast({ title: "Plan limit reached", description: parsed.message + " Go to /app/payments to upgrade.", variant: "destructive" });
+          return;
+        }
+        msg = parsed.message || msg;
+      } catch {}
+      toast({ title: "Failed to create user", description: msg, variant: "destructive" });
     }
   });
 

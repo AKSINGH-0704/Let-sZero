@@ -1,17 +1,28 @@
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { 
-  User, 
-  Mail, 
-  Shield, 
+import {
+  User,
+  Mail,
+  Shield,
   Coins,
-  Calendar
+  Calendar,
+  Zap,
+  ArrowRight
 } from "lucide-react";
 import { formatNumber, formatDate, getInitials, calculateCreditsRemaining } from "@/lib/utils";
+
+const PROFILE_PLAN_LIMITS = {
+  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, label: "Free Trial"  },
+  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        maxTeamMembers: 1,        canSchedule: true,  label: "Starter"     },
+  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       maxTeamMembers: 5,        canSchedule: true,  label: "Growth"      },
+  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       maxTeamMembers: 10,       canSchedule: true,  label: "Scale"       },
+  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, maxTeamMembers: Infinity, canSchedule: true,  label: "Enterprise"  },
+};
 
 const ROLE_CONFIG = {
   ROOT_ADMIN: { label: "Root Admin", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" },
@@ -21,6 +32,9 @@ const ROLE_CONFIG = {
 
 export default function Profile() {
   const { user } = useAuth();
+
+  const { data: templates } = useQuery({ queryKey: ["/api/templates"] });
+  const { data: campaigns } = useQuery({ queryKey: ["/api/campaigns"] });
 
   if (!user) return null;
 
@@ -100,6 +114,54 @@ export default function Profile() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Plan Info Card */}
+        {(() => {
+          const plan = user.plan || "free";
+          const limits = PROFILE_PLAN_LIMITS[plan] || PROFILE_PLAN_LIMITS.free;
+          const templateCount = templates?.length || 0;
+          const activeCampaignCount = (campaigns || []).filter(c => ["RUNNING","PENDING","DRAFT"].includes(c.status)).length;
+          const maxT = limits.maxTemplates === Infinity ? "Unlimited" : limits.maxTemplates;
+          const maxC = limits.maxActiveCampaigns === Infinity ? "Unlimited" : limits.maxActiveCampaigns;
+          return (
+            <Card className="border-card-border">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" />
+                  Your Plan
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xl font-semibold">{limits.label}</span>
+                  {plan !== "enterprise" && (
+                    <a href="/app/payments" className="inline-flex items-center gap-1 text-sm text-cyan-500 hover:text-cyan-400">
+                      Upgrade Plan <ArrowRight className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Saved Templates</span>
+                    <span className="text-foreground font-medium">{templateCount} / {maxT}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <span>Active Campaigns</span>
+                    <span className="text-foreground font-medium">{activeCampaignCount} / {maxC}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <span>Campaign Scheduling</span>
+                    <span className={`font-medium ${limits.canSchedule ? "text-green-500" : "text-muted-foreground"}`}>
+                      {limits.canSchedule ? "Enabled" : "Not available"}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         <Card className="border-card-border">
           <CardHeader className="pb-4">

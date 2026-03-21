@@ -5,16 +5,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { 
-  AlertCircle, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Mail, 
-  Shield, 
+import {
+  AlertCircle,
+  Lock,
+  Eye,
+  EyeOff,
+  Mail,
+  Shield,
   CheckCircle2,
   FileCheck,
-  Users
+  Users,
+  Sparkles
 } from "lucide-react";
 
 function BrandingPanel() {
@@ -22,27 +23,27 @@ function BrandingPanel() {
     <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/3 right-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+        <div
+          className="absolute bottom-1/3 right-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px]" />
       </div>
 
       <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16">
         <div className="flex items-center gap-3 mb-10">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-cyan-500 rounded-xl flex items-center justify-center">
-            <Mail className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-2xl font-semibold text-white">REPMAIL</span>
+          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
         </div>
 
         <h2 className="text-3xl xl:text-4xl font-bold text-white leading-tight mb-4">
-          Secure your account
+          Set up your account
           <span className="block bg-gradient-to-r from-indigo-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-            with a new password
+            just one more step
           </span>
         </h2>
 
         <p className="text-white/60 text-lg mb-10 leading-relaxed max-w-md">
-          For your security, we require you to set a new password before accessing the platform.
+          Welcome to RepMail. Create a secure password to protect your account and get started.
         </p>
 
         <div className="space-y-4">
@@ -51,8 +52,8 @@ function BrandingPanel() {
             { icon: FileCheck, label: "Audit Compliance", desc: "All changes are logged" },
             { icon: Users, label: "Role Protection", desc: "Secure access controls" }
           ].map((feature) => (
-            <div 
-              key={feature.label} 
+            <div
+              key={feature.label}
               className="flex items-center gap-4 text-white/70 transition-colors duration-200 hover:text-white/90"
             >
               <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
@@ -72,11 +73,10 @@ function BrandingPanel() {
 
 export default function ResetPassword() {
   const { user, resetPassword, isResettingPassword, resetPasswordError, logout } = useAuth();
-  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
@@ -85,7 +85,7 @@ export default function ResetPassword() {
     setError("");
 
     if (newPassword.length < 6) {
-      setError("New password must be at least 6 characters");
+      setError("Password must be at least 6 characters");
       return;
     }
 
@@ -95,10 +95,11 @@ export default function ResetPassword() {
     }
 
     try {
-      await resetPassword(currentPassword, newPassword);
+      // Pass empty string as currentPassword — backend skips validation when mustResetPassword is true
+      await resetPassword("", newPassword);
       setSuccess(true);
     } catch (err) {
-      setError(err.message || "Failed to reset password");
+      setError(err.message || "Failed to set password. Please try again.");
     }
   };
 
@@ -106,7 +107,7 @@ export default function ResetPassword() {
     return (
       <div className="min-h-screen flex bg-background">
         <BrandingPanel />
-        
+
         <div className="flex-1 flex flex-col lg:w-[55%]">
           <div className="flex items-center justify-end p-4 sm:p-6">
             <ThemeToggle />
@@ -119,14 +120,14 @@ export default function ResetPassword() {
                   <div className="mx-auto w-14 h-14 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
                     <CheckCircle2 className="w-7 h-7 text-green-600 dark:text-green-400" />
                   </div>
-                  <CardTitle className="text-2xl">Password Updated</CardTitle>
+                  <CardTitle className="text-2xl">You&apos;re all set!</CardTitle>
                   <CardDescription className="text-base">
-                    Your password has been successfully updated. You can now continue using the application.
+                    Your password has been set successfully. You can now access all RepMail features.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-2">
-                  <Button 
-                    className="w-full h-11 text-base" 
+                  <Button
+                    className="w-full h-11 text-base"
                     onClick={() => window.location.reload()}
                     data-testid="button-continue"
                   >
@@ -152,38 +153,40 @@ export default function ResetPassword() {
 
         <div className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-12">
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Mobile logo */}
             <div className="lg:hidden flex flex-col items-center mb-6">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 mb-4">
-                <Mail className="h-7 w-7 text-white" />
-              </div>
-              <h1 className="text-2xl font-semibold tracking-tight">REPMAIL</h1>
+              <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto mb-2" style={{ objectFit: "contain" }} />
             </div>
 
+            {/* Desktop heading */}
             <div className="hidden lg:block">
-              <h1 className="text-2xl font-semibold tracking-tight">Password Reset Required</h1>
-              <p className="text-muted-foreground mt-1">
-                For security reasons, you must change your password before continuing.
+              <div className="flex items-center gap-2 mb-1">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <h1 className="text-2xl font-semibold tracking-tight">Set Your Password</h1>
+              </div>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Welcome to RepMail
+                {user ? `, ${user.username}` : ""}! Please create a secure password to get started.
               </p>
             </div>
 
             <Card className="border-card-border shadow-lg">
+              {/* Mobile card header */}
               <CardHeader className="lg:hidden text-center pb-4">
                 <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                   <Lock className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-xl">Password Reset Required</CardTitle>
+                <CardTitle className="text-xl">Set Your Password</CardTitle>
                 <CardDescription>
-                  For security reasons, you must change your password.
-                  {user && <span className="block mt-2 font-medium text-foreground">Logged in as: {user.username}</span>}
+                  Create a secure password to access your account.
+                  {user && (
+                    <span className="block mt-2 font-medium text-foreground">
+                      Account: {user.username}
+                    </span>
+                  )}
                 </CardDescription>
               </CardHeader>
-              <div className="hidden lg:block px-6 pt-6 pb-2">
-                {user && (
-                  <p className="text-sm text-muted-foreground">
-                    Logged in as: <span className="font-medium text-foreground">{user.username}</span>
-                  </p>
-                )}
-              </div>
+
               <CardContent className="pt-4">
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {(error || resetPasswordError) && (
@@ -194,31 +197,6 @@ export default function ResetPassword() {
                   )}
 
                   <div className="space-y-2">
-                    <Label htmlFor="currentPassword">Current Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="currentPassword"
-                        type={showCurrentPassword ? "text" : "password"}
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Enter current password"
-                        required
-                        className="h-11 transition-shadow duration-200 focus:shadow-md"
-                        data-testid="input-current-password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                      >
-                        {showCurrentPassword ? <EyeOff className="w-4 h-4 text-muted-foreground" /> : <Eye className="w-4 h-4 text-muted-foreground" />}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label htmlFor="newPassword">New Password</Label>
                     <div className="relative">
                       <Input
@@ -226,9 +204,9 @@ export default function ResetPassword() {
                         type={showNewPassword ? "text" : "password"}
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Enter new password (min 6 characters)"
+                        placeholder="At least 6 characters"
                         required
-                        className="h-11 transition-shadow duration-200 focus:shadow-md"
+                        className="h-11 pr-10 transition-shadow duration-200 focus:shadow-md"
                         data-testid="input-new-password"
                       />
                       <Button
@@ -238,49 +216,68 @@ export default function ResetPassword() {
                         className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
                         onClick={() => setShowNewPassword(!showNewPassword)}
                       >
-                        {showNewPassword ? <EyeOff className="w-4 h-4 text-muted-foreground" /> : <Eye className="w-4 h-4 text-muted-foreground" />}
+                        {showNewPassword ? (
+                          <EyeOff className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        )}
                       </Button>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      required
-                      className="h-11 transition-shadow duration-200 focus:shadow-md"
-                      data-testid="input-confirm-password"
-                    />
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Re-enter your password"
+                        required
+                        className="h-11 pr-10 transition-shadow duration-200 focus:shadow-md"
+                        data-testid="input-confirm-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
 
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 text-base transition-all duration-200" 
+                  <Button
+                    type="submit"
+                    className="w-full h-11 text-base transition-all duration-200 hover:shadow-lg hover:shadow-primary/25"
                     disabled={isResettingPassword}
                     data-testid="button-reset-password"
                   >
                     {isResettingPassword ? (
                       <>
                         <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                        Updating...
+                        Setting password...
                       </>
                     ) : (
-                      "Update Password"
+                      "Set Password & Continue"
                     )}
                   </Button>
 
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    className="w-full" 
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full text-muted-foreground"
                     onClick={logout}
                     data-testid="button-logout"
                   >
-                    Logout
+                    Sign out instead
                   </Button>
                 </form>
               </CardContent>

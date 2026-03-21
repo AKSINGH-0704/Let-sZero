@@ -72,6 +72,19 @@ function getStatusBadge(status) {
   return variants[status] || variants.PENDING;
 }
 
+const PLAN_BADGE_STYLES = {
+  free:       "bg-gray-500/20 text-gray-400 border border-gray-500/30",
+  starter:    "bg-cyan-500/15 text-cyan-400 border border-cyan-500/25",
+  growth:     "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
+  scale:      "bg-cyan-500/15 text-cyan-300 border border-cyan-400/25",
+  enterprise: "bg-violet-500/15 text-violet-400 border border-violet-500/25",
+};
+
+const PLAN_LABELS = {
+  free: "Free Trial", starter: "Starter", growth: "Growth",
+  scale: "Scale", enterprise: "Enterprise",
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
 
@@ -114,7 +127,14 @@ export default function Dashboard() {
         {/* Header */}
         <motion.div className="flex items-start justify-between" variants={itemVariants}>
           <div>
-            <h1 className="text-3xl font-semibold text-foreground mb-2">Dashboard</h1>
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-3xl font-semibold text-foreground">Dashboard</h1>
+              {user?.plan && (
+                <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
+                  {PLAN_LABELS[user.plan] || "Free Trial"}
+                </span>
+              )}
+            </div>
             <p className="text-muted-foreground">
               {statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
             </p>

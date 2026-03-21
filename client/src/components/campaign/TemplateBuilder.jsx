@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,13 +10,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { 
-  ArrowLeft, 
-  AlertCircle, 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/collapsible";
+import {
+  ArrowLeft,
+  AlertCircle,
   Code,
   Eye,
   Mail,
-  Type
+  Type,
+  Sparkles,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Wand2
 } from "lucide-react";
 import { replacePlaceholders, cn } from "@/lib/utils";
 
@@ -23,6 +42,13 @@ const PLACEHOLDERS = [
   { key: "{{email}}", label: "Email", description: "Recipient's email" },
   { key: "{{company}}", label: "Company", description: "Recipient's company" },
   { key: "{{category}}", label: "Category", description: "Recipient's category" }
+];
+
+const AI_TONES = [
+  { value: "professional", label: "Professional" },
+  { value: "friendly", label: "Friendly" },
+  { value: "formal", label: "Formal" },
+  { value: "casual", label: "Casual" }
 ];
 
 export default function TemplateBuilder() {
@@ -34,6 +60,33 @@ export default function TemplateBuilder() {
   });
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("edit");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiTone, setAiTone] = useState("professional");
+  const [aiError, setAiError] = useState("");
+
+  const generateTemplateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/ai/generate-template", {
+        prompt: aiPrompt,
+        tone: aiTone
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setLocalTemplate(prev => ({
+        ...prev,
+        subject: data.subject || prev.subject,
+        body: data.body || prev.body
+      }));
+      setAiOpen(false);
+      setAiError("");
+      setActiveTab("edit");
+    },
+    onError: (err) => {
+      setAiError(err.message || "Failed to generate template. Please try again.");
+    }
+  });
 
   const sampleContact = contacts[0] || {};
   const mappedData = {
@@ -90,6 +143,101 @@ export default function TemplateBuilder() {
           Compose your email with dynamic placeholders
         </p>
       </div>
+
+      {/* AI Template Generator */}
+      <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-between h-auto py-3 px-4 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 transition-all duration-200"
+            data-testid="button-ai-generate-toggle"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-sm">Generate with AI</p>
+                <p className="text-xs text-muted-foreground">Describe your campaign goal — GPT-4o writes the template</p>
+              </div>
+            </div>
+            {aiOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 mt-2">
+            <CardContent className="pt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="ai-prompt" className="text-sm font-medium">
+                  What is this campaign about?
+                </Label>
+                <Textarea
+                  id="ai-prompt"
+                  placeholder="e.g., Cold outreach to fintech founders introducing our AI-powered email marketing platform and offering a free demo"
+                  value={aiPrompt}
+                  onChange={(e) => { setAiPrompt(e.target.value); setAiError(""); }}
+                  className="min-h-[80px] text-sm resize-none bg-background"
+                  disabled={generateTemplateMutation.isPending}
+                  data-testid="input-ai-prompt"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-1">
+                  <Label className="text-sm font-medium whitespace-nowrap">Tone:</Label>
+                  <Select
+                    value={aiTone}
+                    onValueChange={setAiTone}
+                    disabled={generateTemplateMutation.isPending}
+                  >
+                    <SelectTrigger className="w-36 h-9 bg-background" data-testid="select-ai-tone">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AI_TONES.map(t => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={() => generateTemplateMutation.mutate()}
+                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-ai-generate"
+                >
+                  {generateTemplateMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4" />
+                      Generate
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {aiError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-sm">{aiError}</AlertDescription>
+                </Alert>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                The generated template will replace your current subject and body. You can edit it freely afterwards.
+              </p>
+            </CardContent>
+          </Card>
+        </CollapsibleContent>
+      </Collapsible>
 
       <div className="grid lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3 space-y-4">

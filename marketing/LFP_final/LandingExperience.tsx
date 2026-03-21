@@ -129,16 +129,21 @@ export default function LandingExperience() {
           ============================================ */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-2xl bg-[#0A0A0F]/90 border-b border-white/5">
         <div className="max-w-[1440px] mx-auto px-12 h-20 flex items-center justify-between">
-          {/* Logo and Platform Name */}
+          {/* Logo + Brand */}
           <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9">
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-500 via-violet-600 to-purple-700 rounded-xl" />
-              <div className="absolute inset-[2px] bg-[#0A0A0F] rounded-[10px]" />
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-500/50 to-transparent rounded-xl" />
+            <img
+              src="/letszero-logo.png"
+              alt="LetsZero"
+              style={{ height: "64px", width: "auto", objectFit: "contain", borderRadius: "10px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
+            />
+            <div className="flex flex-col leading-none">
+              <span style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", marginBottom: "4px" }}>
+                Zero Noise
+              </span>
+              <span style={{ fontSize: "18px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.01em" }}>
+                LetsZero
+              </span>
             </div>
-            <span className="text-white text-lg font-semibold tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-              Lets ZERO
-            </span>
           </div>
 
           {/* Navigation Menu */}
@@ -227,14 +232,21 @@ export default function LandingExperience() {
             </a>
           </div>
 
-          {/* Action Buttons - Only Explore RepMail */}
+          {/* Action Buttons */}
           <div className="flex items-center gap-3">
             <button 
               onClick={() => window.location.href = '/products/repmail'}
-              className="px-5 py-2.5 text-sm bg-white text-black rounded-xl transition-all hover:shadow-lg hover:shadow-white/20 font-medium" 
+              className="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all" 
               style={{ fontFamily: "'Inter', sans-serif" }}
             >
               Explore RepMail
+            </button>
+            <button 
+              onClick={() => window.location.href = '/early-access'}
+              className="px-5 py-2.5 text-sm bg-white text-black rounded-xl transition-all hover:shadow-lg hover:shadow-white/20 font-medium" 
+              style={{ fontFamily: "'Inter', sans-serif" }}
+            >
+              Request Early Access
             </button>
           </div>
         </div>
@@ -1074,7 +1086,7 @@ export default function LandingExperience() {
                 className="text-base text-gray-500 leading-relaxed max-w-2xl mx-auto"
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
-                Every conversation starts with clarity. Tell us what's slowing you down — we'll help you remove it.
+                Every conversation starts with clarity. Tell us what's slowing you down, and we'll help you remove it.
               </motion.p>
             </motion.div>
           </div>
@@ -1319,7 +1331,7 @@ export default function LandingExperience() {
           >
             <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
               <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                We're building Lets ZERO to help teams work less, not more. 
+                We're building LetsZero to help teams work less, not more. 
                 <br />
                 <span className="text-white font-medium">Every conversation helps us build better tools.</span>
               </p>

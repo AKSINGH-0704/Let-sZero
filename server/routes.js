@@ -1,6 +1,7 @@
 import { storage } from "./storage.js";
-import { AUDIT_ACTIONS, PRICING_PLANS, contactSubmissionSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES } from "../shared/schema.js";
+import { AUDIT_ACTIONS, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
+import { generatePreviews, analyzeSpam, generateTemplate } from "./ai.js";
 
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
@@ -39,6 +40,48 @@ function rootAdminMiddleware(req, res, next) {
     return res.status(403).json({ message: "Forbidden" });
   }
   next();
+}
+
+// Reusable campaign execution — used by both immediate send and scheduler
+export async function executeCampaign(campaignId, userId) {
+  const campaign = await storage.getCampaign(campaignId);
+  if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
+
+  const canStart = await storage.canStartCampaign(userId, campaign.totalEmails);
+  if (!canStart.allowed) {
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: canStart
+    });
+    throw new Error(canStart.reason);
+  }
+
+  await storage.updateCampaign(campaignId, { status: "RUNNING", startedAt: new Date() });
+
+  for (let i = 0; i < campaign.totalEmails; i++) {
+    await storage.deductCreditAtomic(userId, campaignId, `Email ${i + 1} of campaign ${campaign.name}`);
+  }
+
+  await storage.updateCampaign(campaignId, {
+    sentEmails: campaign.totalEmails,
+    creditsUsed: campaign.totalEmails,
+    status: "COMPLETED",
+    completedAt: new Date()
+  });
+
+  await storage.createAuditLog({
+    userId,
+    action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
+    targetType: "campaign",
+    targetId: campaignId,
+    details: { name: campaign.name, sentEmails: campaign.totalEmails }
+  });
+
+  return await storage.getCampaign(campaignId);
 }
 
 export async function registerRoutes(httpServer, app) {
@@ -112,16 +155,22 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/auth/reset-password", authMiddleware, async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body;
-      
-      const user = await storage.getUserByUsername(req.user.username);
-      const isValid = await storage.validatePassword(user, currentPassword);
-      
-      if (!isValid) {
-        return res.status(400).json({ message: "Current password is incorrect" });
+
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters" });
       }
-      
+
+      // Skip current password check on forced first-login reset (user just authenticated moments ago)
+      if (!req.user.mustResetPassword) {
+        const user = await storage.getUserByUsername(req.user.username);
+        const isValid = await storage.validatePassword(user, currentPassword);
+        if (!isValid) {
+          return res.status(400).json({ message: "Current password is incorrect" });
+        }
+      }
+
       await storage.updatePassword(req.user.id, newPassword);
-      
+
       res.json({ message: "Password updated successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -151,7 +200,21 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const { username, email, password, role, credits } = req.body;
-      
+
+      // Plan limit check — team members
+      const childUsers = await storage.getChildUsers(req.user.id);
+      const activeChildren = childUsers.filter(u => u.isActive);
+      const userLimits = PLAN_LIMITS[req.user.plan || "free"];
+      if (activeChildren.length >= userLimits.maxTeamMembers) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: `Your ${userLimits.label} plan allows up to ${userLimits.maxTeamMembers} team members. Upgrade your plan to add more.`,
+          currentPlan: req.user.plan || "free",
+          limit: userLimits.maxTeamMembers,
+          current: activeChildren.length,
+        });
+      }
+
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(400).json({ message: "Username already exists" });
@@ -172,7 +235,8 @@ export async function registerRoutes(httpServer, app) {
         role: role || "USER",
         parentId: req.user.id,
         creditsReceived: 0,
-        mustResetPassword: true
+        mustResetPassword: true,
+        plan: req.user.plan || "free"
       });
 
       if (credits && credits > 0) {
@@ -203,7 +267,14 @@ export async function registerRoutes(httpServer, app) {
       }
 
       await storage.allocateCredits(req.user.id, id, credits, req.user.id);
-      
+
+      // Sync child's plan to admin's plan
+      const adminPlan = req.user.plan || "free";
+      const childUser = await storage.getUserById(id);
+      if (childUser && childUser.plan !== adminPlan) {
+        await storage.updateUser(childUser.id, { plan: adminPlan });
+      }
+
       const updatedUser = await storage.getUserById(id);
       res.json(updatedUser);
     } catch (error) {
@@ -261,8 +332,49 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/campaigns", authMiddleware, async (req, res) => {
     try {
-      const { name, template, contacts, totalEmails } = req.body;
-      
+      const { name, template, contacts, totalEmails, scheduledAt } = req.body;
+
+      // Plan limit check — count active campaigns
+      const userCampaigns = await storage.getCampaigns(req.user.id, false);
+      const activeCampaigns = userCampaigns.filter(c => ["RUNNING", "PENDING", "DRAFT"].includes(c.status));
+      const campaignLimits = PLAN_LIMITS[req.user.plan || "free"];
+      if (activeCampaigns.length >= campaignLimits.maxActiveCampaigns) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: `Your ${campaignLimits.label} plan allows up to ${campaignLimits.maxActiveCampaigns} active campaigns. Wait for current campaigns to complete or upgrade your plan.`,
+          currentPlan: req.user.plan || "free",
+          limit: campaignLimits.maxActiveCampaigns,
+          current: activeCampaigns.length,
+        });
+      }
+
+      // Scheduling check
+      if (scheduledAt && !campaignLimits.canSchedule) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: "Campaign scheduling is available on Starter plan and above.",
+          currentPlan: req.user.plan || "free",
+        });
+      }
+
+      if (scheduledAt) {
+        const scheduledTime = new Date(scheduledAt);
+        if (isNaN(scheduledTime.getTime()) || scheduledTime <= new Date()) {
+          return res.status(400).json({ message: "Scheduled time must be a valid future date." });
+        }
+        const campaign = await storage.createCampaign({
+          name,
+          userId: req.user.id,
+          totalEmails,
+          templateSnapshot: template,
+          contactIds: contacts?.map(c => c.id) || [],
+          status: "PENDING",
+          scheduledAt: scheduledTime,
+        });
+        return res.status(201).json({ ...campaign, message: `Campaign scheduled for ${scheduledTime.toISOString()}` });
+      }
+
+      // Immediate execution — check credits first
       const canStart = await storage.canStartCampaign(req.user.id, totalEmails);
       if (!canStart.allowed) {
         await storage.createAuditLog({
@@ -279,30 +391,11 @@ export async function registerRoutes(httpServer, app) {
         totalEmails,
         templateSnapshot: template,
         contactIds: contacts?.map(c => c.id) || [],
-        status: "RUNNING"
+        status: "DRAFT"
       });
 
-      for (let i = 0; i < totalEmails; i++) {
-        await storage.deductCreditAtomic(req.user.id, campaign.id, `Email ${i + 1} of campaign ${name}`);
-      }
-
-      await storage.updateCampaign(campaign.id, {
-        sentEmails: totalEmails,
-        creditsUsed: totalEmails,
-        status: "COMPLETED",
-        completedAt: new Date()
-      });
-
-      await storage.createAuditLog({
-        userId: req.user.id,
-        action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
-        targetType: "campaign",
-        targetId: campaign.id,
-        details: { name, sentEmails: totalEmails }
-      });
-
-      const updatedCampaign = await storage.getCampaign(campaign.id);
-      res.status(201).json(updatedCampaign);
+      const completedCampaign = await executeCampaign(campaign.id, req.user.id);
+      res.status(201).json(completedCampaign);
     } catch (error) {
       res.status(400).json({ message: error.message });
     }
@@ -344,6 +437,20 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/templates", authMiddleware, async (req, res) => {
     try {
       const { name, subject, body } = req.body;
+
+      // Plan limit check
+      const userTemplates = await storage.getTemplates(req.user.id);
+      const templateLimits = PLAN_LIMITS[req.user.plan || "free"];
+      if (userTemplates.length >= templateLimits.maxTemplates) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: `Your ${templateLimits.label} plan allows up to ${templateLimits.maxTemplates} templates. Delete an existing template or upgrade your plan.`,
+          currentPlan: req.user.plan || "free",
+          limit: templateLimits.maxTemplates,
+          current: userTemplates.length,
+        });
+      }
+
       const template = await storage.createTemplate({
         name,
         subject,
@@ -380,10 +487,10 @@ export async function registerRoutes(httpServer, app) {
   app.get("/api/audit-logs", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
       const { userId, action, limit } = req.query;
-      const logs = await storage.getAuditLogs({ 
-        userId, 
-        action, 
-        limit: limit ? parseInt(limit) : 100 
+      const logs = await storage.getAuditLogs({
+        userId,
+        action,
+        limit: limit ? parseInt(limit) : 100
       });
       res.json(logs);
     } catch (error) {
@@ -391,16 +498,80 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  app.get("/api/audit-logs/export", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      const exportLimits = PLAN_LIMITS[req.user.plan || "free"];
+      if (!exportLimits.canExportAudit) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: "Audit log export is available on Scale plan and above.",
+          currentPlan: req.user.plan || "free",
+        });
+      }
+
+      const logs = await storage.getAuditLogs({ limit: 10000 });
+
+      const headers = '"Timestamp","User ID","Username","Action","Target Type","Target ID","Details"\n';
+      const rows = logs.map(log => {
+        const details = log.details ? JSON.stringify(log.details).replace(/"/g, '""') : "";
+        return `"${log.createdAt || ""}","${log.userId || ""}","${log.username || ""}","${log.action || ""}","${log.targetType || ""}","${log.targetId || ""}","${details}"`;
+      }).join("\n");
+
+      const date = new Date().toISOString().split("T")[0];
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename=audit-logs-${date}.csv`);
+      res.send(headers + rows);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/users/team-usage", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const children = await storage.getChildUsers(req.user.id);
+
+      const teamUsage = children.map(child => ({
+        id: child.id,
+        username: child.username,
+        email: child.email,
+        role: child.role,
+        creditsReceived: child.creditsReceived,
+        creditsUsed: child.creditsUsed,
+        creditsRemaining: child.creditsRemaining,
+        isActive: child.isActive,
+      }));
+
+      res.json({
+        totalMembers: children.length,
+        activeMembers: children.filter(c => c.isActive).length,
+        totalCreditsDistributed: children.reduce((sum, c) => sum + (c.creditsReceived || 0), 0),
+        totalCreditsUsed: children.reduce((sum, c) => sum + (c.creditsUsed || 0), 0),
+        members: teamUsage,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/ai/preview", authMiddleware, async (req, res) => {
     try {
-      const { subject, body, contacts } = req.body;
-      
+      const { subject, body, contacts, tone } = req.body;
+
       await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.AI_PREVIEW_GENERATED,
-        details: { contactCount: contacts?.length || 0 }
+        details: { contactCount: contacts?.length || 0, tone: tone || "professional" }
       });
-      
+
+      // Try OpenAI GPT-4o first
+      try {
+        const previews = await generatePreviews(subject, body, contacts || [], tone || "professional");
+        return res.json({ previews, aiPowered: true });
+      } catch (aiErr) {
+        console.log("[AI] Preview falling back to placeholder replacement:", aiErr.message);
+      }
+
+      // Fallback: plain placeholder replacement
       const previews = (contacts || []).map(contact => {
         const data = {
           name: contact.name || "Valued Customer",
@@ -408,19 +579,16 @@ export async function registerRoutes(httpServer, app) {
           company: contact.company || "Your Company",
           category: contact.category || "General"
         };
-        
-        const replacePlaceholders = (text) => {
-          return text.replace(/\{\{(\w+)\}\}/g, (match, key) => data[key] || match);
-        };
-        
+        const replacePlaceholders = (text) =>
+          text.replace(/\{\{(\w+)\}\}/g, (match, key) => data[key] || match);
         return {
           contact: data,
           subject: replacePlaceholders(subject),
           body: replacePlaceholders(body)
         };
       });
-      
-      res.json({ previews });
+
+      res.json({ previews, aiPowered: false });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -429,62 +597,63 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/ai/spam-analysis", authMiddleware, async (req, res) => {
     try {
       const { subject, body } = req.body;
-      
+
       await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.SPAM_ANALYSIS_RUN,
         details: { subjectLength: subject?.length, bodyLength: body?.length }
       });
-      
+
+      // Try OpenAI GPT-4o first
+      try {
+        const result = await analyzeSpam(subject, body);
+        return res.json({ ...result, aiPowered: true });
+      } catch (aiErr) {
+        console.log("[AI] Spam analysis falling back to keyword matching:", aiErr.message);
+      }
+
+      // Fallback: keyword-based scoring
       const spamWords = [
         "free", "winner", "click here", "buy now", "limited time",
         "act now", "urgent", "congratulations", "guarantee", "no obligation",
         "risk free", "special offer", "exclusive deal", "you won", "cash"
       ];
-      
       const text = (subject + " " + body).toLowerCase();
       let score = 0;
       const riskyWords = [];
-      
       spamWords.forEach(word => {
-        if (text.includes(word)) {
-          score += 5;
-          riskyWords.push(word);
-        }
+        if (text.includes(word)) { score += 5; riskyWords.push(word); }
       });
-      
-      if (subject === subject.toUpperCase() && subject.length > 5) {
-        score += 15;
-      }
-      
+      if (subject === subject.toUpperCase() && subject.length > 5) score += 15;
       const exclamationCount = (text.match(/!/g) || []).length;
       score += exclamationCount * 2;
-      
       const alternatives = {
-        "free": "complimentary",
-        "winner": "selected participant",
-        "click here": "learn more",
-        "buy now": "explore options",
-        "limited time": "time-sensitive",
-        "act now": "consider this opportunity",
-        "urgent": "important",
-        "congratulations": "we're pleased to inform you",
-        "guarantee": "assurance",
-        "no obligation": "no commitment required"
+        "free": "complimentary", "winner": "selected participant",
+        "click here": "learn more", "buy now": "explore options",
+        "limited time": "time-sensitive", "act now": "consider this opportunity",
+        "urgent": "important", "congratulations": "we're pleased to inform you",
+        "guarantee": "assurance", "no obligation": "no commitment required"
       };
-      
       const suggestions = riskyWords.map(word => ({
-        original: word,
-        suggestion: alternatives[word] || word
+        original: word, suggestion: alternatives[word] || word
       }));
-      
-      res.json({
-        score: Math.min(score, 100),
-        riskyWords,
-        suggestions
-      });
+      res.json({ score: Math.min(score, 100), riskyWords, suggestions, aiPowered: false });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/ai/generate-template", authMiddleware, async (req, res) => {
+    try {
+      const { prompt, tone } = req.body;
+      if (!prompt || !prompt.trim()) {
+        return res.status(400).json({ message: "Prompt is required" });
+      }
+      const template = await generateTemplate(prompt.trim(), tone || "professional");
+      res.json(template);
+    } catch (error) {
+      console.error("[AI] generate-template error:", error.message);
+      res.status(500).json({ message: "Template generation failed. Please write your template manually." });
     }
   });
 
@@ -496,7 +665,12 @@ export async function registerRoutes(httpServer, app) {
         plans,
         exchangeRate,
         currencies: SUPPORTED_CURRENCIES,
-        lastUpdated: new Date().toISOString()
+        creditTiers: CREDIT_TIERS,
+        teamPricing: TEAM_PRICING,
+        freeTrialCredits: FREE_TRIAL_CREDITS,
+        creditValidityMonths: CREDIT_VALIDITY_MONTHS,
+        minCreditPurchase: MIN_CREDIT_PURCHASE,
+        lastUpdated: new Date().toISOString(),
       });
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -589,10 +763,32 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { id } = req.params;
       const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-      
+
       const payment = await storage.completePayment(id, transactionId);
-      const user = await storage.getUserById(req.user.id);
-      
+      let user = await storage.getUserById(req.user.id);
+
+      // Plan upgrade — only upgrade, never downgrade
+      const planMapping = {
+        "free trial": "free", "starter": "starter",
+        "growth": "growth", "scale": "scale", "enterprise": "enterprise"
+      };
+      const newPlan = planMapping[(payment.planName || "").toLowerCase()] || "free";
+      const planRank = { free: 0, starter: 1, growth: 2, scale: 3, enterprise: 4 };
+      const currentPlan = user.plan || "free";
+      if ((planRank[newPlan] ?? 0) > (planRank[currentPlan] ?? 0)) {
+        await storage.updateUser(user.id, { plan: newPlan });
+        user = await storage.getUserById(user.id);
+        // Cascade plan to children and grandchildren
+        const children = await storage.getChildUsers(user.id);
+        for (const child of children) {
+          await storage.updateUser(child.id, { plan: newPlan });
+          const grandchildren = await storage.getChildUsers(child.id);
+          for (const gc of grandchildren) {
+            await storage.updateUser(gc.id, { plan: newPlan });
+          }
+        }
+      }
+
       res.json({ payment, user: storage.sanitizeUser(user) });
     } catch (error) {
       res.status(400).json({ message: error.message });
@@ -631,6 +827,28 @@ export async function registerRoutes(httpServer, app) {
       res.status(201).json({ message: "Thank you for contacting us! We'll respond within 24 hours.", submission });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ==================== WAITLIST ====================
+  app.post("/api/waitlist", async (req, res) => {
+    try {
+      const parsed = waitlistSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+
+      const entry = await storage.addToWaitlist(parsed.data);
+      res.status(201).json({ 
+        message: "You're on the list. We'll be in touch.",
+        id: entry.id 
+      });
+    } catch (error) {
+      if (error.message === "DUPLICATE_EMAIL") {
+        return res.status(409).json({ message: "This email is already on the waitlist." });
+      }
+      console.error("Waitlist error:", error);
+      res.status(500).json({ message: "Something went wrong. Please try again." });
     }
   });
 
