@@ -721,7 +721,7 @@ export default function PublicPricing() {
 
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <section
-        className="relative pt-24 pb-16 px-6 text-center overflow-hidden"
+        className="relative pt-24 pb-16 px-4 sm:px-6 text-center overflow-hidden"
         style={{
           background: "#06060B",
           backgroundImage: [
@@ -805,7 +805,7 @@ export default function PublicPricing() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl md:text-6xl lg:text-7xl font-extrabold leading-tight mb-6"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-extrabold leading-tight mb-6"
             style={{
               fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif",
               background: "linear-gradient(135deg, #FFFFFF 0%, #C0C0D0 55%, #8888A0 100%)",
@@ -924,7 +924,7 @@ export default function PublicPricing() {
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-2xl p-8 md:p-10"
+            className="rounded-2xl p-4 sm:p-8 md:p-10"
             style={{
               background: "rgba(12,12,20,0.8)",
               backdropFilter: "blur(16px)",
@@ -1744,6 +1744,8 @@ export default function PublicPricing() {
             className="rounded-xl overflow-hidden"
             style={{ border: "1px solid #1A1A2E" }}
           >
+            <div className="overflow-x-auto">
+            <div style={{ minWidth: "440px" }}>
             {/* Table header */}
             <div
               className="grid grid-cols-4 gap-4 px-6 py-3.5"
@@ -1850,6 +1852,8 @@ export default function PublicPricing() {
                 </Link>
               </div>
             </div>
+            </div>{/* end minWidth */}
+            </div>{/* end overflow-x-auto */}
           </motion.div>
         </div>
       </section>
