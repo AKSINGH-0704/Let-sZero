@@ -1,22 +1,22 @@
 /**
  * LANDING PAGE EXPERIENCE - COMPLETE MONOLITHIC COMPONENT
- * 
+ *
  * Extracted from: src/app/App.tsx + all section components
- * 
+ *
  * This file contains the ENTIRE landing page experience in a single component.
  * All sections, animations, gradients, and visual effects are preserved exactly as-is.
- * 
+ *
  * NO SIMPLIFICATIONS - NO REFACTORING - PIXEL PERFECT PRESERVATION
  */
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  ChevronDown, 
-  ArrowUpRight, 
-  Sparkles, 
-  Database, 
-  Zap, 
+import {
+  ChevronDown,
+  ArrowUpRight,
+  Sparkles,
+  Database,
+  Zap,
   Shield,
   Mail,
   MessageSquare,
@@ -26,11 +26,14 @@ import {
   Clock,
   Send,
   Target,
-  Users
+  Users,
+  Menu,
+  X
 } from "lucide-react";
 
 export default function LandingExperience() {
   const [isProductsOpen, setIsProductsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -123,39 +126,40 @@ export default function LandingExperience() {
   ];
 
   return (
-    <div className="min-h-screen w-full bg-[#0A0A0F]">
+    <div className="min-h-screen w-full bg-[#0A0A0F] overflow-x-hidden">
       {/* ============================================
           NAVIGATION SECTION (EXACT COPY)
           ============================================ */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-2xl bg-[#0A0A0F]/90 border-b border-white/5">
-        <div className="max-w-[1440px] mx-auto px-12 h-20 flex items-center justify-between">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12 h-16 md:h-20 flex items-center justify-between">
           {/* Logo + Brand */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <img
               src="/letszero-logo.png"
               alt="LetsZero"
-              style={{ height: "64px", width: "auto", objectFit: "contain", borderRadius: "10px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
+              style={{ height: "36px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
+              className="md:h-[48px] lg:h-[64px]"
             />
             <div className="flex flex-col leading-none">
-              <span style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", marginBottom: "4px" }}>
+              <span className="hidden sm:block" style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", marginBottom: "4px" }}>
                 Zero Noise
               </span>
-              <span style={{ fontSize: "18px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.01em" }}>
+              <span style={{ fontSize: "16px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.01em" }}>
                 LetsZero
               </span>
             </div>
           </div>
 
-          {/* Navigation Menu */}
-          <div className="flex items-center gap-10">
+          {/* Desktop Navigation Menu */}
+          <div className="hidden md:flex items-center gap-10">
             <a href="#" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Home
             </a>
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsProductsOpen(!isProductsOpen)}
                 onBlur={() => setTimeout(() => setIsProductsOpen(false), 150)}
-                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors" 
+                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
                 Products
@@ -170,7 +174,6 @@ export default function LandingExperience() {
                     transition={{ duration: 0.15 }}
                     className="absolute top-full left-0 mt-2 w-64 p-2 rounded-xl bg-[#0A0A0F]/95 border border-white/10 backdrop-blur-xl shadow-2xl z-50"
                   >
-                    {/* RepMail - Live */}
                     <button
                       onClick={() => window.location.href = '/products/repmail'}
                       className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-left group"
@@ -186,8 +189,6 @@ export default function LandingExperience() {
                         <span className="text-xs text-gray-500">Enterprise Email Infrastructure</span>
                       </div>
                     </button>
-                    
-                    {/* MessageHub - Coming Soon */}
                     <div className="w-full flex items-center gap-3 p-3 rounded-lg opacity-60 cursor-not-allowed">
                       <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
                         <MessageSquare className="w-5 h-5 text-gray-500" />
@@ -203,8 +204,6 @@ export default function LandingExperience() {
                         <span className="text-xs text-gray-600">Unified Messaging Platform</span>
                       </div>
                     </div>
-                    
-                    {/* NotifyStream - Coming Soon */}
                     <div className="w-full flex items-center gap-3 p-3 rounded-lg opacity-60 cursor-not-allowed">
                       <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
                         <Bell className="w-5 h-5 text-gray-500" />
@@ -232,30 +231,95 @@ export default function LandingExperience() {
             </a>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-3">
-            <button 
+          {/* Desktop Action Buttons */}
+          <div className="hidden md:flex items-center gap-3">
+            <button
               onClick={() => window.location.href = '/products/repmail'}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all" 
+              className="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all"
               style={{ fontFamily: "'Inter', sans-serif" }}
             >
               Explore RepMail
             </button>
-            <button 
+            <button
               onClick={() => window.location.href = '/early-access'}
-              className="px-5 py-2.5 text-sm bg-white text-black rounded-xl transition-all hover:shadow-lg hover:shadow-white/20 font-medium" 
+              className="px-5 py-2.5 text-sm bg-white text-black rounded-xl transition-all hover:shadow-lg hover:shadow-white/20 font-medium"
               style={{ fontFamily: "'Inter', sans-serif" }}
             >
               Request Early Access
             </button>
           </div>
+
+          {/* Mobile Hamburger */}
+          <button
+            className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
+
+        {/* Mobile Menu Slide-Down */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="md:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]/98 backdrop-blur-xl"
+            >
+              <div className="px-4 py-4 space-y-1">
+                <a href="#" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Home
+                </a>
+                <button onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium text-left"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
+                    <Mail className="w-3.5 h-3.5 text-cyan-400" />
+                  </div>
+                  RepMail
+                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
+                </button>
+                <a href="#mission" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Mission
+                </a>
+                <a href="#contact" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Contact
+                </a>
+                <div className="pt-3 pb-1 space-y-2 border-t border-white/5 mt-2">
+                  <button
+                    onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
+                    className="w-full px-4 py-3 text-sm text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-all text-left font-medium"
+                    style={{ fontFamily: "'Inter', sans-serif" }}
+                  >
+                    Explore RepMail
+                  </button>
+                  <button
+                    onClick={() => { window.location.href = '/early-access'; setMobileMenuOpen(false); }}
+                    className="w-full px-4 py-3 text-sm bg-white text-black rounded-xl font-semibold transition-all hover:bg-gray-100"
+                    style={{ fontFamily: "'Inter', sans-serif" }}
+                  >
+                    Request Early Access
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
       {/* ============================================
           HERO PREMIUM SECTION (EXACT COPY)
           ============================================ */}
-      <section className="relative w-full min-h-screen bg-[#0A0A0F] overflow-hidden pt-20">
+      <section className="relative w-full min-h-screen bg-[#0A0A0F] overflow-hidden pt-16 md:pt-20">
         {/* Sophisticated gradient background */}
         <div className="absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-br from-[#0A0A0F] via-[#12121A] to-[#0A0A0F]" />
@@ -266,11 +330,11 @@ export default function LandingExperience() {
         {/* Grid overlay */}
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
 
-        <div className="relative max-w-[1440px] mx-auto px-12 py-20">
+        <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12 py-10 md:py-20">
           {/* Asymmetric Grid Layout */}
-          <div className="grid grid-cols-12 gap-8 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left Column - Primary Content (spans 7 columns) */}
-            <div className="col-span-7 pt-12">
+            <div className="col-span-1 lg:col-span-7 pt-6 md:pt-12">
               {/* Status badge */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -294,13 +358,13 @@ export default function LandingExperience() {
                 className="mb-8"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
-                <span className="block text-[72px] leading-[0.95] font-semibold text-white mb-2">
+                <span className="block text-[clamp(36px,8vw,72px)] leading-[0.95] font-semibold text-white mb-2">
                   Communication
                 </span>
-                <span className="block text-[72px] leading-[0.95] font-semibold bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+                <span className="block text-[clamp(36px,8vw,72px)] leading-[0.95] font-semibold bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
                   infrastructure
                 </span>
-                <span className="block text-[72px] leading-[0.95] font-semibold text-white">
+                <span className="block text-[clamp(36px,8vw,72px)] leading-[0.95] font-semibold text-white">
                   without compromise
                 </span>
               </motion.h1>
@@ -310,11 +374,11 @@ export default function LandingExperience() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.2 }}
-                className="text-lg text-gray-400 mb-12 max-w-xl leading-relaxed"
+                className="text-sm sm:text-base lg:text-lg text-gray-400 mb-8 md:mb-12 max-w-xl leading-relaxed"
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
-                We build composable communication products for teams that need systems, 
-                not features. Starting with RepMail, every tool is designed for reliability 
+                We build composable communication products for teams that need systems,
+                not features. Starting with RepMail, every tool is designed for reliability
                 at scale. Transparent, modular, built to last.
               </motion.p>
 
@@ -323,18 +387,18 @@ export default function LandingExperience() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.3 }}
-                className="flex items-center gap-4 mb-20"
+                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-10 md:mb-20"
               >
-                <button 
+                <button
                   onClick={() => window.location.href = '/products/repmail'}
-                  className="group relative px-6 py-3.5 bg-white text-black rounded-xl font-medium overflow-hidden transition-all hover:shadow-xl hover:shadow-white/20"
+                  className="group relative px-6 py-3.5 bg-white text-black rounded-xl font-medium overflow-hidden transition-all hover:shadow-xl hover:shadow-white/20 text-center"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
-                  <span className="relative z-10 flex items-center gap-2">
+                  <span className="relative z-10 flex items-center justify-center gap-2">
                     Explore RepMail
                     <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </span>
                 </button>
-                <button className="px-6 py-3.5 text-gray-300 hover:text-white rounded-xl font-medium border border-white/10 hover:border-white/20 transition-all backdrop-blur-sm"
+                <button className="px-6 py-3.5 text-gray-300 hover:text-white rounded-xl font-medium border border-white/10 hover:border-white/20 transition-all backdrop-blur-sm text-center"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   View All Products
                 </button>
@@ -364,7 +428,7 @@ export default function LandingExperience() {
             </div>
 
             {/* Right Column - Visual Elements (spans 5 columns) */}
-            <div className="col-span-5 relative h-[700px]">
+            <div className="hidden lg:block lg:col-span-5 relative h-[700px]">
               {/* Floating UI Fragment 1 - Email Stats */}
               <motion.div
                 initial={{ opacity: 0, x: 40, y: 20 }}
@@ -387,7 +451,7 @@ export default function LandingExperience() {
                     </span>
                   </div>
                   <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                    <motion.div 
+                    <motion.div
                       className="h-full bg-gradient-to-r from-amber-400 to-orange-400"
                       initial={{ width: 0 }}
                       animate={{ width: "87%" }}
@@ -465,14 +529,14 @@ export default function LandingExperience() {
 
               {/* Background geometric element */}
               <motion.div
-                animate={{ 
+                animate={{
                   rotate: [0, 5, 0],
                   scale: [1, 1.05, 1]
                 }}
-                transition={{ 
-                  duration: 20, 
+                transition={{
+                  duration: 20,
                   repeat: Infinity,
-                  ease: "easeInOut" 
+                  ease: "easeInOut"
                 }}
                 className="absolute top-0 left-0 w-96 h-96 border border-white/5 rounded-3xl transform -rotate-12"
               />
@@ -484,9 +548,9 @@ export default function LandingExperience() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.6 }}
-            className="mt-32 pt-12 border-t border-white/5"
+            className="mt-10 sm:mt-20 lg:mt-32 pt-6 sm:pt-12 border-t border-white/5"
           >
-            <div className="grid grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8">
               <div>
                 <div className="text-xs text-gray-600 mb-2" style={{ fontFamily: "'Inter', sans-serif" }}>
                   TRUSTED BY
@@ -534,7 +598,7 @@ export default function LandingExperience() {
           <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
         </div>
 
-        <div className="relative max-w-[1440px] mx-auto px-12">
+        <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12">
           {/* Section Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -549,11 +613,11 @@ export default function LandingExperience() {
                 PRODUCT ECOSYSTEM
               </span>
             </div>
-            <h2 className="text-5xl font-semibold text-white mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-white mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
               Built for teams that scale
             </h2>
             <p className="text-lg text-gray-500 max-w-2xl" style={{ fontFamily: "'Inter', sans-serif" }}>
-              A suite of composable communication tools designed for reliability, 
+              A suite of composable communication tools designed for reliability,
               transparency, and long-term infrastructure thinking.
             </p>
           </motion.div>
@@ -597,14 +661,14 @@ export default function LandingExperience() {
             </svg>
 
             {/* Product Nodes - Asymmetric Layout */}
-            <div className="relative grid grid-cols-12 gap-6">
+            <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* RepMail - LIVE (Dominant, spans more columns) */}
               <motion.div
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.7, delay: 0.2 }}
-                className="col-span-6 relative z-10"
+                className="col-span-1 lg:col-span-6 relative z-10"
               >
                 <motion.div
                   whileHover={{ y: -12, transition: { duration: 0.4 } }}
@@ -668,27 +732,27 @@ export default function LandingExperience() {
                       RepMail
                     </h3>
                     <p className="text-base text-gray-400 mb-6 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                      Enterprise-grade email infrastructure designed for reliability, 
-                      observability, and scale. Real-time analytics, automated deliverability 
+                      Enterprise-grade email infrastructure designed for reliability,
+                      observability, and scale. Real-time analytics, automated deliverability
                       optimization, and transparent reporting built in.
                     </p>
 
                     {/* Metrics */}
-                    <div className="grid grid-cols-3 gap-4 mb-6 pb-6 border-b border-white/5">
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 pb-6 border-b border-white/5">
                       <div>
-                        <div className="text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                           99.98%
                         </div>
                         <div className="text-xs text-gray-600">Uptime</div>
                       </div>
                       <div>
-                        <div className="text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                           &lt;50ms
                         </div>
                         <div className="text-xs text-gray-600">Latency</div>
                       </div>
                       <div>
-                        <div className="text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                           1.2B+
                         </div>
                         <div className="text-xs text-gray-600">Delivered</div>
@@ -696,9 +760,9 @@ export default function LandingExperience() {
                     </div>
 
                     {/* CTA */}
-                    <button 
+                    <button
                       onClick={() => window.location.href = '/products/repmail'}
-                      className="group/btn w-full px-5 py-3.5 bg-white text-black rounded-xl font-medium flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-white/20 transition-all" 
+                      className="group/btn w-full px-5 py-3.5 bg-white text-black rounded-xl font-medium flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-white/20 transition-all"
                       style={{ fontFamily: "'Inter', sans-serif" }}
                     >
                       Explore RepMail
@@ -714,7 +778,7 @@ export default function LandingExperience() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.7, delay: 0.4 }}
-                className="col-span-5 col-start-8 relative z-10"
+                className="col-span-1 lg:col-span-5 lg:col-start-8 relative z-10"
               >
                 <motion.div
                   whileHover={{ y: -8, scale: 1.02, transition: { duration: 0.4 } }}
@@ -745,7 +809,7 @@ export default function LandingExperience() {
                       MessageHub
                     </h3>
                     <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                      Unified messaging platform with advanced routing, 
+                      Unified messaging platform with advanced routing,
                       workflow automation, and team collaboration built for scale.
                     </p>
                   </div>
@@ -758,7 +822,7 @@ export default function LandingExperience() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.7, delay: 0.6 }}
-                className="col-span-5 col-start-8 relative z-10"
+                className="col-span-1 lg:col-span-5 lg:col-start-8 relative z-10"
               >
                 <motion.div
                   whileHover={{ y: -8, scale: 1.02, transition: { duration: 0.4 } }}
@@ -789,7 +853,7 @@ export default function LandingExperience() {
                       NotifyStream
                     </h3>
                     <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                      Multi-channel notification engine designed for compliance, 
+                      Multi-channel notification engine designed for compliance,
                       intelligent delivery, and observability at enterprise scale.
                     </p>
                   </div>
@@ -832,9 +896,9 @@ export default function LandingExperience() {
           </div>
         </div>
 
-        <div className="relative max-w-[1440px] mx-auto px-12">
+        <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12">
           {/* Central Mission Statement */}
-          <div className="relative max-w-4xl mx-auto text-center mb-32">
+          <div className="relative max-w-4xl mx-auto text-center mb-12 sm:mb-20 lg:mb-32">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -856,7 +920,7 @@ export default function LandingExperience() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7, delay: 0.1 }}
-              className="text-6xl font-semibold text-white mb-8 leading-tight"
+              className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-semibold text-white mb-6 md:mb-8 leading-tight"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
               Building infrastructure
@@ -871,18 +935,18 @@ export default function LandingExperience() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.7, delay: 0.2 }}
-              className="text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto"
+              className="text-base sm:text-lg lg:text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto"
               style={{ fontFamily: "'Inter', sans-serif" }}
             >
-              We're building a suite of communication products on principles that matter: 
-              reliability over hype, transparency over obscurity, and long-term infrastructure 
-              thinking over short-term feature chasing. Every product is designed to scale with 
+              We're building a suite of communication products on principles that matter:
+              reliability over hype, transparency over obscurity, and long-term infrastructure
+              thinking over short-term feature chasing. Every product is designed to scale with
               your organization and remain dependable for years.
             </motion.p>
           </div>
 
-          {/* Constellation Layout - Value Pillars */}
-          <div className="relative h-[600px]">
+          {/* Constellation Layout - Value Pillars (desktop only) */}
+          <div className="relative h-[600px] hidden lg:block">
             {/* Connecting Lines SVG */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
               {/* Diagonal cross connections */}
@@ -1006,13 +1070,41 @@ export default function LandingExperience() {
             })}
           </div>
 
+          {/* Mobile/Tablet Pillar Grid (shown below lg, hidden on desktop) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:hidden mb-8">
+            {pillars.map((pillar, index) => {
+              const Icon = pillar.icon;
+              const colorClasses = getColorClasses(pillar.color);
+              return (
+                <motion.div
+                  key={pillar.title}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: index * 0.1 }}
+                  className="relative p-5 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl"
+                >
+                  <div className={`w-12 h-12 mb-4 rounded-xl bg-gradient-to-br ${colorClasses.iconBg} border ${colorClasses.iconBorder} flex items-center justify-center`}>
+                    <Icon className={`w-6 h-6 ${colorClasses.iconText}`} />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    {pillar.title}
+                  </h3>
+                  <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
+                    {pillar.description}
+                  </p>
+                </motion.div>
+              );
+            })}
+          </div>
+
           {/* Bottom Commitment Statement */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, delay: 1 }}
-            className="mt-32 text-center"
+            className="mt-8 lg:mt-32 text-center"
           >
             <div className="inline-block px-8 py-6 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
               <p className="text-lg text-gray-400 max-w-2xl" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -1039,7 +1131,7 @@ export default function LandingExperience() {
         {/* Grid overlay */}
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
 
-        <div className="relative max-w-[1440px] mx-auto px-12">
+        <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12">
           {/* Section Header */}
           <div className="max-w-5xl mx-auto mb-20">
             <motion.div
@@ -1068,7 +1160,7 @@ export default function LandingExperience() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.7, delay: 0.2 }}
-                className="text-5xl font-semibold text-white mb-4 leading-tight"
+                className="text-3xl sm:text-4xl lg:text-5xl font-semibold text-white mb-4 leading-tight"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
                 Let's talk about
@@ -1167,7 +1259,7 @@ export default function LandingExperience() {
                 transition={{ duration: 0.7, delay: 0.4 }}
                 className="lg:col-span-7"
               >
-                <div className="relative p-8 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl shadow-2xl">
+                <div className="relative p-5 sm:p-8 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl shadow-2xl">
                   <div className="absolute -inset-[1px] bg-gradient-to-br from-violet-600/10 to-cyan-600/10 rounded-2xl blur-2xl opacity-50" />
                   <div className="absolute inset-0 bg-gradient-to-br from-violet-600/5 to-cyan-600/5 rounded-2xl" />
 
@@ -1249,12 +1341,12 @@ export default function LandingExperience() {
                         />
                       </div>
 
-                      <div className="flex items-center justify-between pt-6">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-6">
                         <motion.button
                           type="submit"
                           whileHover={{ scale: 1.02, y: -2 }}
                           whileTap={{ scale: 0.98 }}
-                          className="group relative px-10 py-4 bg-white text-black rounded-xl font-semibold overflow-hidden transition-all hover:shadow-2xl hover:shadow-white/30"
+                          className="group relative w-full sm:w-auto px-10 py-4 bg-white text-black rounded-xl font-semibold overflow-hidden transition-all hover:shadow-2xl hover:shadow-white/30"
                           style={{ fontFamily: "'Inter', sans-serif" }}
                         >
                           <span className="relative z-10 flex items-center gap-2">
@@ -1297,7 +1389,7 @@ export default function LandingExperience() {
                 Prefer async communication? We do too.
               </p>
 
-              <div className="inline-block p-6 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl">
+              <div className="inline-block w-full max-w-sm p-6 rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 backdrop-blur-xl">
                 <div className="flex items-center gap-5">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/10 to-violet-600/10 border border-violet-500/20 flex items-center justify-center">
                     <Mail className="w-6 h-6 text-violet-400" />
@@ -1306,8 +1398,8 @@ export default function LandingExperience() {
                     <p className="text-sm text-gray-500 mb-1" style={{ fontFamily: "'Inter', sans-serif" }}>
                       Direct email
                     </p>
-                    <a 
-                      href="mailto:support@letszero.in" 
+                    <a
+                      href="mailto:support@letszero.in"
                       className="text-white hover:text-violet-400 transition-colors font-semibold text-lg group inline-flex items-center gap-2 relative"
                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                     >
@@ -1331,7 +1423,7 @@ export default function LandingExperience() {
           >
             <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
               <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                We're building LetsZero to help teams work less, not more. 
+                We're building LetsZero to help teams work less, not more.
                 <br />
                 <span className="text-white font-medium">Every conversation helps us build better tools.</span>
               </p>
