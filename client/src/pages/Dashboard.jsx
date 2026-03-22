@@ -125,10 +125,10 @@ export default function Dashboard() {
         animate="show"
       >
         {/* Header */}
-        <motion.div className="flex items-start justify-between" variants={itemVariants}>
+        <motion.div className="flex flex-wrap items-start justify-between gap-4" variants={itemVariants}>
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-semibold text-foreground">Dashboard</h1>
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Dashboard</h1>
               {user?.plan && (
                 <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
                   {PLAN_LABELS[user.plan] || "Free Trial"}
@@ -139,8 +139,8 @@ export default function Dashboard() {
               {statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <select className="px-4 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
+          <div className="flex flex-wrap items-center gap-3">
+            <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
               <option>Last 30 days</option>
               <option>Last 90 days</option>
               <option>This year</option>
@@ -148,7 +148,8 @@ export default function Dashboard() {
             <Link href="/app/campaigns/new">
               <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
                 <Plus className="h-4 w-4" />
-                New Campaign
+                <span className="hidden sm:inline">New Campaign</span>
+                <span className="sm:hidden">New</span>
               </Button>
             </Link>
           </div>
@@ -156,7 +157,7 @@ export default function Dashboard() {
 
         {/* Credit Balance Card */}
         <motion.div 
-          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-cyan-900 to-slate-800 p-8 shadow-lg group"
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-cyan-900 to-slate-800 p-4 sm:p-6 md:p-8 shadow-lg group"
           variants={itemVariants}
           whileHover={{ scale: 1.01, transition: { duration: 0.2 } }}
         >
@@ -166,7 +167,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-slate-200 text-sm mb-1">Available Credits</p>
                 <motion.h2 
-                  className="text-5xl font-semibold text-white"
+                  className="text-3xl sm:text-4xl md:text-5xl font-semibold text-white"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
@@ -186,24 +187,24 @@ export default function Dashboard() {
                 <DollarSign className="w-6 h-6 text-white" />
               </motion.div>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
               <div>
                 <p className="text-slate-200 text-sm mb-1">Used This Month</p>
-                <p className="text-xl font-medium text-white">
+                <p className="text-lg sm:text-xl font-medium text-white">
                   {statsLoading ? '...' : formatNumber(user?.creditsUsed || 0)}
                 </p>
               </div>
-              <div className="h-8 w-px bg-white/20"></div>
+              <div className="hidden sm:block h-8 w-px bg-white/20"></div>
               <div>
                 <p className="text-slate-200 text-sm mb-1">Total Credits</p>
-                <p className="text-xl font-medium text-white">
+                <p className="text-lg sm:text-xl font-medium text-white">
                   {statsLoading ? '...' : formatNumber(user?.creditsReceived || 0)}
                 </p>
               </div>
               <div className="flex-1"></div>
               <Link href="/app/payments">
-                <motion.button 
-                  className="px-6 py-3 bg-white text-cyan-900 rounded-lg hover:bg-white/90 transition-all font-medium shadow-lg hover:shadow-xl"
+                <motion.button
+                  className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-cyan-900 rounded-lg hover:bg-white/90 transition-all font-medium shadow-lg hover:shadow-xl text-sm sm:text-base"
                   whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -377,7 +378,7 @@ export default function Dashboard() {
               </div>
             </div>
             <motion.div 
-              className="h-80"
+              className="h-56 sm:h-80"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5, delay: 0.3 }}
@@ -511,8 +512,8 @@ export default function Dashboard() {
               </table>
             </div>
           ) : recentCampaigns?.length > 0 ? (
-            <div className="overflow-hidden rounded-lg border border-border">
-              <table className="w-full">
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full min-w-[560px]">
                 <thead className="bg-muted">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Campaign</th>

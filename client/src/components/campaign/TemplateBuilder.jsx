@@ -239,7 +239,7 @@ export default function TemplateBuilder() {
         </CollapsibleContent>
       </Collapsible>
 
-      <div className="grid lg:grid-cols-5 gap-6">
+      <div className="grid lg:grid-cols-5 gap-4 lg:gap-6">
         <div className="lg:col-span-3 space-y-4">
           <Card className="border-card-border">
             <CardHeader className="pb-4">
@@ -351,7 +351,7 @@ Your Team"
         </div>
 
         <div className="lg:col-span-2">
-          <Card className="border-card-border sticky top-24">
+          <Card className="border-card-border lg:sticky lg:top-24">
             <CardHeader className="pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Type className="h-4 w-4" />

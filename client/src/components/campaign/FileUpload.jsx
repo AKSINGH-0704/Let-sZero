@@ -159,8 +159,8 @@ export default function FileUpload() {
       </div>
 
       {isLoading ? (
-        <div className="border-2 border-dashed rounded-lg p-12 text-center border-border">
-          <Loader2 className="h-12 w-12 mx-auto text-primary mb-4 animate-spin" />
+        <div className="border-2 border-dashed rounded-lg p-6 sm:p-12 text-center border-border">
+          <Loader2 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-primary mb-4 animate-spin" />
           <p className="text-lg font-medium mb-2">Processing your file...</p>
           <p className="text-sm text-muted-foreground">
             This may take a moment for larger files
@@ -172,7 +172,7 @@ export default function FileUpload() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           className={cn(
-            "border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer",
+            "border-2 border-dashed rounded-lg p-6 sm:p-8 md:p-12 text-center transition-colors cursor-pointer",
             isDragOver 
               ? "border-primary bg-primary/5" 
               : "border-border hover:border-primary/50"
@@ -187,8 +187,8 @@ export default function FileUpload() {
             className="hidden"
             data-testid="input-file-upload"
           />
-          <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <p className="text-lg font-medium mb-2">
+          <Upload className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-base sm:text-lg font-medium mb-2">
             Drag and drop your file here
           </p>
           <p className="text-sm text-muted-foreground mb-4">

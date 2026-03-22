@@ -165,7 +165,7 @@ export default function ProgressTracker() {
             <Progress value={progress} className="h-3" />
           </div>
 
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div className="text-center p-4 rounded-md bg-muted/50">
               <p className="text-3xl font-bold">{formatNumber(totalEmails)}</p>
               <p className="text-sm text-muted-foreground">Total</p>
@@ -232,7 +232,7 @@ export default function ProgressTracker() {
                       ) : (
                         <XCircle className="h-4 w-4 text-red-600" />
                       )}
-                      <span className="text-sm font-mono truncate max-w-[200px]">{status.email}</span>
+                      <span className="text-sm font-mono truncate max-w-[140px] sm:max-w-[200px]">{status.email}</span>
                     </div>
                     <Badge 
                       variant="secondary" 

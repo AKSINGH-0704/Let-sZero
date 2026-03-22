@@ -1130,7 +1130,7 @@ export default function Payments() {
         />
 
         {/* Main content */}
-        <div className="relative z-10 px-6 py-10 max-w-7xl mx-auto space-y-14">
+        <div className="relative z-10 px-4 sm:px-6 py-10 max-w-7xl mx-auto space-y-14">
 
           {/* ── Credit Balance Card ──────────────────────────────────────── */}
           <motion.div

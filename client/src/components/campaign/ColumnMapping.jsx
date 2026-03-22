@@ -100,8 +100,8 @@ export default function ColumnMapping() {
             const isValid = !field.required || selectedValue;
 
             return (
-              <div key={field.key} className="flex items-center gap-4">
-                <div className="flex items-center gap-3 w-48">
+              <div key={field.key} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-3 w-full sm:w-48 shrink-0">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
                     <Icon className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -112,7 +112,7 @@ export default function ColumnMapping() {
                     </Label>
                   </div>
                 </div>
-                <div className="flex-1 max-w-xs">
+                <div className="w-full sm:flex-1 sm:max-w-xs">
                   <Select
                     value={selectedValue || "none"}
                     onValueChange={(value) => handleMappingChange(field.key, value)}
@@ -130,7 +130,7 @@ export default function ColumnMapping() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="w-8">
+                <div className="hidden sm:block w-8">
                   {isValid && selectedValue && (
                     <CheckCircle className="h-5 w-5 text-green-600" />
                   )}
@@ -154,7 +154,7 @@ export default function ColumnMapping() {
                   className="flex items-center gap-4 p-3 rounded-md bg-muted/50"
                 >
                   <span className="text-sm font-medium w-8">{i + 1}.</span>
-                  <div className="flex-1 grid grid-cols-4 gap-4 text-sm">
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Email:</span>{" "}
                       <span className="font-medium">

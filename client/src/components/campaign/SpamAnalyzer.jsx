@@ -115,7 +115,7 @@ export default function SpamAnalyzer() {
         </p>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-2">
@@ -161,7 +161,7 @@ export default function SpamAnalyzer() {
               <Progress value={score} className="h-2" />
             </div>
 
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
               <div className="p-3 rounded-md bg-green-50 dark:bg-green-950/30">
                 <p className="text-lg font-bold text-green-600">0-30</p>
                 <p className="text-xs text-green-700 dark:text-green-400">Safe</p>

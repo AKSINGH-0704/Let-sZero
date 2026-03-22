@@ -680,7 +680,7 @@ export default function PublicPricing() {
           borderBottom: "1px solid rgba(26,26,46,0.8)",
         }}
       >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/products/repmail" className="flex items-center group">
             <img src="/repmail-logo.png" alt="RepMail" className="h-14 w-auto" style={{ objectFit: "contain" }} />
           </Link>
@@ -918,7 +918,7 @@ export default function PublicPricing() {
       </div>
 
       {/* ── Credit Estimator ──────────────────────────────────────────────── */}
-      <section id="credit-estimator" className="relative px-6 pb-24" style={{ background: "#06060B", zIndex: 2 }}>
+      <section id="credit-estimator" className="relative px-4 sm:px-6 pb-24" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-5xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 40 }}
@@ -1188,7 +1188,7 @@ export default function PublicPricing() {
       </div>
 
       {/* ── Plan Cards ────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pb-32" style={{ background: "#06060B", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 pb-32" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial="hidden"
@@ -1543,7 +1543,7 @@ export default function PublicPricing() {
       </div>
 
       {/* ── How Credits Work ──────────────────────────────────────────────── */}
-      <section className="relative px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
         <div className="max-w-5xl mx-auto">
           <motion.div
             initial="hidden"
@@ -1628,7 +1628,7 @@ export default function PublicPricing() {
       </section>
 
       {/* ── Free Trial Banner ─────────────────────────────────────────────── */}
-      <section className="relative px-6 py-24" style={{ background: "#06060B", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 40, scale: 0.97 }}
@@ -1708,7 +1708,7 @@ export default function PublicPricing() {
       </div>
 
       {/* ── Volume Discount Table ─────────────────────────────────────────── */}
-      <section className="relative px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial="hidden"
@@ -1856,7 +1856,7 @@ export default function PublicPricing() {
 
       {/* ── Teams section moved into the Teams tab above ─────────────────── */}
       {false && (
-      <section className="relative px-6 py-24" style={{ background: "#06060B", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial="hidden"
@@ -2170,7 +2170,7 @@ export default function PublicPricing() {
       </section>
 
       {/* ── Dedicated IP Add-On ───────────────────────────────────────────── */}
-      <section className="relative px-6 py-16" style={{ background: "#06060B", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-16" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-3xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -2229,7 +2229,7 @@ export default function PublicPricing() {
       </section>
 
       {/* ── FAQ ───────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>
         <div className="max-w-3xl mx-auto">
           <motion.div
             initial="hidden"
@@ -2369,7 +2369,7 @@ export default function PublicPricing() {
       </section>
 
       {/* ── Trust Indicators ──────────────────────────────────────────────── */}
-      <section className="relative px-6 py-8" style={{ background: "#06060B", borderTop: "1px solid #1A1A2E", zIndex: 2 }}>
+      <section className="relative px-4 sm:px-6 py-8" style={{ background: "#06060B", borderTop: "1px solid #1A1A2E", zIndex: 2 }}>
         <div className="max-w-3xl mx-auto flex flex-wrap justify-center gap-8">
           {[
             { icon: <Shield className="w-4 h-4" />, label: "Secure Payment" },
@@ -2386,7 +2386,7 @@ export default function PublicPricing() {
       </section>
 
       {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <footer className="relative px-6 py-8" style={{ background: "#06060B", borderTop: "1px solid #1A1A2E", zIndex: 2 }}>
+      <footer className="relative px-4 sm:px-6 py-8" style={{ background: "#06060B", borderTop: "1px solid #1A1A2E", zIndex: 2 }}>
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center">
             <img src="/repmail-logo.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
