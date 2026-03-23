@@ -284,16 +284,18 @@ export default function LandingExperience() {
                   RepMail
                   <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
                 </button>
-                <a href="#mission" onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('mission')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium w-full text-left"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   Mission
-                </a>
-                <a href="#contact" onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                </button>
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium w-full text-left"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   Contact
-                </a>
+                </button>
                 <div className="pt-3 pb-1 space-y-2 border-t border-white/5 mt-2">
                   <button
                     onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
@@ -321,14 +323,14 @@ export default function LandingExperience() {
           ============================================ */}
       <section className="relative w-full min-h-screen bg-[#0A0A0F] overflow-hidden pt-16 md:pt-20">
         {/* Sophisticated gradient background */}
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-br from-[#0A0A0F] via-[#12121A] to-[#0A0A0F]" />
           <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
           <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-amber-600/5 rounded-full blur-[120px]" />
         </div>
 
         {/* Grid overlay */}
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
+        <div className="absolute inset-0 pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
 
         <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12 py-10 md:py-20">
           {/* Asymmetric Grid Layout */}
@@ -398,7 +400,9 @@ export default function LandingExperience() {
                     <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </span>
                 </button>
-                <button className="px-6 py-3.5 text-gray-300 hover:text-white rounded-xl font-medium border border-white/10 hover:border-white/20 transition-all backdrop-blur-sm text-center"
+                <button
+                  onClick={() => { document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); }}
+                  className="px-6 py-3.5 text-gray-300 hover:text-white rounded-xl font-medium border border-white/10 hover:border-white/20 transition-all backdrop-blur-sm text-center cursor-pointer"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   View All Products
                 </button>
@@ -591,9 +595,9 @@ export default function LandingExperience() {
       {/* ============================================
           PRODUCT SUITE PREMIUM SECTION (EXACT COPY)
           ============================================ */}
-      <section className="relative w-full bg-[#0A0A0F] py-20 overflow-hidden">
+      <section id="products" className="relative w-full bg-[#0A0A0F] py-20 overflow-hidden">
         {/* Ambient background */}
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/3 w-[500px] h-[500px] bg-cyan-600/5 rounded-full blur-[120px]" />
           <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
         </div>
@@ -869,13 +873,13 @@ export default function LandingExperience() {
           ============================================ */}
       <section id="mission" className="relative w-full bg-[#0A0A0F] py-32 overflow-hidden">
         {/* Ambient background */}
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
           <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-cyan-600/5 rounded-full blur-[120px]" />
         </div>
 
         {/* Radial grid */}
-        <div className="absolute inset-0 opacity-20">
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
             {[...Array(8)].map((_, i) => (
               <motion.div
@@ -1122,14 +1126,14 @@ export default function LandingExperience() {
           ============================================ */}
       <section id="contact" className="relative w-full bg-[#0A0A0F] py-32 overflow-hidden">
         {/* Sophisticated gradient background */}
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-br from-[#0A0A0F] via-[#12121A] to-[#0A0A0F]" />
           <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px]" />
           <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-cyan-600/5 rounded-full blur-[120px]" />
         </div>
 
         {/* Grid overlay */}
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
+        <div className="absolute inset-0 pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNTUsMjU1LDI1NSwwLjAyKSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40" />
 
         <div className="relative max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12">
           {/* Section Header */}
