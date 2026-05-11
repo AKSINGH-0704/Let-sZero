@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -51,8 +51,10 @@ export default function CampaignConfirmation() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
 
+  const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
+
   const creditsRequired = contacts.length;
-  const creditsAvailable = calculateCreditsRemaining(
+  const creditsAvailable = creditsInfo?.total ?? calculateCreditsRemaining(
     user?.creditsReceived || 0,
     user?.creditsAllocated || 0,
     user?.creditsUsed || 0
@@ -80,6 +82,7 @@ export default function CampaignConfirmation() {
       const payload = {
         name,
         template: {
+          name: template.name,
           subject: template.subject,
           body: template.body
         },

@@ -981,9 +981,12 @@ export default function Payments() {
       return res.json();
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       setShowConfirmModal(false);
       setSelectedTier(null);
-      setLocation(data.redirectUrl);
+      setLocation(data.redirectUrl || "/app/payments");
     },
     onError: (err) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });

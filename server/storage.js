@@ -11,10 +11,13 @@
 import { db, isDevMode } from "./db.js";
 import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 // Import schema constants (always needed)
-import { 
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS 
+import {
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
+  CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
+  INACTIVITY_THRESHOLDS
 } from "../shared/schema.js";
 
 // Static imports - tree-shaking will handle unused code in prod
@@ -22,15 +25,12 @@ import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
 
 // Use imports only when not in dev mode
-const { eq, and, desc, gte, sql } = (!isDevMode && db) ? drizzleOps : {};
-const { 
-  users, sessions, templates, contacts, campaigns, 
-  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist
+const { eq, and, desc, gte, sql, lt } = (!isDevMode && db) ? drizzleOps : {};
+const {
+  users, sessions, templates, contacts, campaigns,
+  campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
+  suppressions, aiUsageLogs, invites, snsEvents
 } = (!isDevMode && db) ? schemaImports : {};
-
-function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
-}
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -39,7 +39,7 @@ function generateToken() {
 // PostgreSQL-based storage implementation
 const dbStorage = {
   async createUser(userData) {
-    const passwordHash = hashPassword(userData.password);
+    const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
     const [user] = await db.insert(users).values({
       username: userData.username,
       email: userData.email,
@@ -70,13 +70,39 @@ const dbStorage = {
     return user || null;
   },
 
+  async getUserByEmail(email) {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || null;
+  },
+
   async validatePassword(user, password) {
-    const hash = hashPassword(password);
-    return user.passwordHash === hash;
+    const hash = user.passwordHash;
+    if (!hash) return false;
+
+    // Modern bcrypt hash
+    if (hash.startsWith("$2b$") || hash.startsWith("$2a$")) {
+      return bcrypt.compare(password, hash);
+    }
+
+    // Legacy SHA-256 hash — verify, then transparently migrate to bcrypt
+    const sha256 = crypto.createHash("sha256").update(password).digest("hex");
+    if (sha256 !== hash) return false;
+
+    try {
+      const newHash = await bcrypt.hash(password, 12);
+      await db.update(users)
+        .set({ passwordHash: newHash, updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+      console.log(`[AUTH] Migrated password hash for user ${user.username} from SHA-256 to bcrypt`);
+    } catch (migErr) {
+      console.error(`[AUTH] Password migration failed for user ${user.id}:`, migErr.message);
+    }
+
+    return true;
   },
 
   async updatePassword(userId, newPassword) {
-    const passwordHash = hashPassword(newPassword);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
     await db.update(users)
       .set({ passwordHash, mustResetPassword: false, updatedAt: new Date() })
       .where(eq(users.id, userId));
@@ -132,6 +158,19 @@ const dbStorage = {
     return result.map(u => this.sanitizeUser(u));
   },
 
+  async getActiveChildren(parentId) {
+    const result = await db.select().from(users)
+      .where(and(eq(users.parentId, parentId), eq(users.isActive, true)))
+      .orderBy(desc(users.createdAt));
+    return result.map(u => this.sanitizeUser(u));
+  },
+
+  async reassignChildren(oldParentId, newParentId) {
+    await db.update(users)
+      .set({ parentId: newParentId, updatedAt: new Date() })
+      .where(eq(users.parentId, oldParentId));
+  },
+
   sanitizeUser(user) {
     if (!user) return null;
     const { passwordHash, ...sanitized } = user;
@@ -170,7 +209,8 @@ const dbStorage = {
   },
 
   async deleteUserSessions(userId) {
-    await db.delete(sessions).where(eq(sessions.userId, userId));
+    const deleted = await db.delete(sessions).where(eq(sessions.userId, userId)).returning({ id: sessions.id });
+    return deleted.length;
   },
 
   async canAllocateCredits(fromUserId, amount) {
@@ -257,16 +297,59 @@ const dbStorage = {
     return { success: true, amount };
   },
 
+  async reclaimCredits(childId, parentId, amount) {
+    const child = await this.getUserById(childId);
+    const parent = await this.getUserById(parentId);
+    if (!child || !parent) throw new Error("User not found");
+
+    const childBalanceBefore = child.creditsReceived;
+    const parentBalanceBefore = parent.creditsAllocated;
+
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({ creditsReceived: sql`credits_received - ${amount}`, updatedAt: new Date() })
+        .where(eq(users.id, childId));
+
+      await tx.update(users)
+        .set({ creditsAllocated: sql`credits_allocated - ${amount}`, updatedAt: new Date() })
+        .where(eq(users.id, parentId));
+
+      await tx.insert(creditTransactions).values({
+        userId: childId,
+        type: "reclaim_out",
+        amount: -amount,
+        balanceBefore: childBalanceBefore,
+        balanceAfter: childBalanceBefore - amount,
+        fromUserId: childId,
+        toUserId: parentId,
+        description: `${amount} credits reclaimed on account deactivation`,
+      });
+
+      await tx.insert(creditTransactions).values({
+        userId: parentId,
+        type: "reclaim_in",
+        amount,
+        balanceBefore: parentBalanceBefore,
+        balanceAfter: parentBalanceBefore - amount,
+        fromUserId: childId,
+        toUserId: parentId,
+        description: `${amount} credits reclaimed from ${child.username} on deactivation`,
+      });
+    });
+
+    return { amount };
+  },
+
   async useCredits(userId, amount) {
     const user = await this.getUserById(userId);
     if (!user) throw new Error("User not found");
-    
+
     if (user.creditsRemaining < amount) {
       throw new Error("Insufficient credits");
     }
-    
+
     const [updated] = await db.update(users)
-      .set({ 
+      .set({
         creditsUsed: sql`credits_used + ${amount}`,
         updatedAt: new Date()
       })
@@ -277,59 +360,96 @@ const dbStorage = {
   },
 
   async deductCreditAtomic(userId, campaignId, description = "Email sent") {
+    let credited = false;
+
+    // Paid credits — WHERE clause enforces balance check atomically with the write.
+    // If the row is not returned, credits were exhausted at write time (no TOCTOU gap).
+    await db.transaction(async (tx) => {
+      const [updated] = await tx.update(users)
+        .set({ creditsUsed: sql`credits_used + 1`, updatedAt: new Date() })
+        .where(and(
+          eq(users.id, userId),
+          sql`(credits_received - credits_allocated - credits_used) >= 1`
+        ))
+        .returning({ creditsUsed: users.creditsUsed });
+
+      if (updated) {
+        credited = true;
+        await tx.insert(creditTransactions).values({
+          userId, type: "usage", amount: -1,
+          balanceBefore: updated.creditsUsed - 1,
+          balanceAfter: updated.creditsUsed,
+          campaignId, description,
+        });
+      }
+    });
+
+    if (!credited) {
+      // Paid credits exhausted — try trial credits
+      await db.transaction(async (tx) => {
+        const [updated] = await tx.update(users)
+          .set({ trialCreditsUsed: sql`trial_credits_used + 1`, updatedAt: new Date() })
+          .where(and(
+            eq(users.id, userId),
+            eq(users.isTrialUser, true),
+            sql`(trial_credits - trial_credits_used) >= 1`
+          ))
+          .returning({ trialCreditsUsed: users.trialCreditsUsed });
+
+        if (updated) {
+          credited = true;
+          await tx.insert(creditTransactions).values({
+            userId, type: "trial_usage", amount: -1,
+            balanceBefore: updated.trialCreditsUsed - 1,
+            balanceAfter: updated.trialCreditsUsed,
+            campaignId, description,
+          });
+        }
+      });
+    }
+
+    if (!credited) throw new Error("Insufficient credits");
+
+    await this.createAuditLog({
+      userId, action: AUDIT_ACTIONS.CREDITS_USED,
+      targetType: "campaign", targetId: campaignId,
+      details: { creditsUsed: 1 },
+    });
+
+    return true;
+  },
+
+  async addCredits(userId, amount, action, details = {}) {
     const user = await this.getUserById(userId);
     if (!user) throw new Error("User not found");
-    
-    if (user.creditsRemaining < 1) {
-      throw new Error("Insufficient credits");
-    }
-    
-    const balanceBefore = user.creditsUsed;
-    
-    await db.transaction(async (tx) => {
-      await tx.update(users)
-        .set({ 
-          creditsUsed: sql`credits_used + 1`,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, userId));
-      
-      await tx.insert(creditTransactions).values({
-        userId,
-        type: "usage",
-        amount: -1,
-        balanceBefore,
-        balanceAfter: balanceBefore + 1,
-        campaignId,
-        description
-      });
-    });
-    
+    await db.update(users)
+      .set({ creditsReceived: sql`credits_received + ${amount}`, updatedAt: new Date() })
+      .where(eq(users.id, userId));
     await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CREDITS_USED,
-      targetType: "campaign",
-      targetId: campaignId,
-      details: { creditsUsed: 1 }
+      userId, action: action || AUDIT_ACTIONS.CREDITS_PURCHASED,
+      details: { amount, ...details }
     });
-    
-    return true;
   },
 
   async canStartCampaign(userId, emailCount) {
     const user = await this.getUserById(userId);
     if (!user) return { allowed: false, reason: "User not found" };
-    
-    if (user.creditsRemaining < emailCount) {
-      return { 
-        allowed: false, 
-        reason: `Insufficient credits. Need ${emailCount}, have ${user.creditsRemaining}`,
+
+    const trialRemaining = user.isTrialUser
+      ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
+      : 0;
+    const totalAvailable = (user.creditsRemaining || 0) + trialRemaining;
+
+    if (totalAvailable < emailCount) {
+      return {
+        allowed: false,
+        reason: `Insufficient credits. Need ${emailCount}, have ${totalAvailable}`,
         creditsNeeded: emailCount,
-        creditsAvailable: user.creditsRemaining
+        creditsAvailable: totalAvailable
       };
     }
-    
-    return { allowed: true, creditsAvailable: user.creditsRemaining };
+
+    return { allowed: true, creditsAvailable: totalAvailable };
   },
 
   async getCreditTransactions(userId, limit = 50) {
@@ -387,13 +507,42 @@ const dbStorage = {
   },
 
   async createContact(contactData) {
-    const [contact] = await db.insert(contacts).values(contactData).returning();
+    const values = { ...contactData, email: contactData.email?.toLowerCase().trim() };
+    const [contact] = await db
+      .insert(contacts)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [contacts.userId, contacts.email],
+        set: {
+          name: sql`excluded.name`,
+          company: sql`excluded.company`,
+          category: sql`excluded.category`,
+          customFields: sql`excluded.custom_fields`,
+        },
+      })
+      .returning();
     return contact;
   },
 
   async createContacts(contactsData) {
     if (contactsData.length === 0) return [];
-    const result = await db.insert(contacts).values(contactsData).returning();
+    const values = contactsData.map((d) => ({
+      ...d,
+      email: d.email?.toLowerCase().trim(),
+    }));
+    const result = await db
+      .insert(contacts)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [contacts.userId, contacts.email],
+        set: {
+          name: sql`excluded.name`,
+          company: sql`excluded.company`,
+          category: sql`excluded.category`,
+          customFields: sql`excluded.custom_fields`,
+        },
+      })
+      .returning();
     await this.createAuditLog({
       userId: contactsData[0].userId,
       action: AUDIT_ACTIONS.CONTACT_IMPORTED,
@@ -435,7 +584,8 @@ const dbStorage = {
         .where(eq(campaigns.userId, userId))
         .orderBy(desc(campaigns.createdAt));
     }
-    return await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+    // Caller must provide userId or isRootAdmin=true — returning nothing is safer than returning everything
+    return [];
   },
 
   async getCampaign(id) {
@@ -530,54 +680,200 @@ const dbStorage = {
   },
 
   async getAuditLogs(filters = {}) {
-    let result;
-    
-    if (filters.userId) {
-      result = await db.select({
-        id: auditLogs.id,
-        userId: auditLogs.userId,
-        action: auditLogs.action,
-        targetType: auditLogs.targetType,
-        targetId: auditLogs.targetId,
-        details: auditLogs.details,
-        ipAddress: auditLogs.ipAddress,
-        createdAt: auditLogs.createdAt,
-        username: users.username
-      })
-      .from(auditLogs)
-      .leftJoin(users, eq(auditLogs.userId, users.id))
-      .where(eq(auditLogs.userId, filters.userId))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(filters.limit || 100);
-    } else {
-      result = await db.select({
-        id: auditLogs.id,
-        userId: auditLogs.userId,
-        action: auditLogs.action,
-        targetType: auditLogs.targetType,
-        targetId: auditLogs.targetId,
-        details: auditLogs.details,
-        ipAddress: auditLogs.ipAddress,
-        createdAt: auditLogs.createdAt,
-        username: users.username
-      })
-      .from(auditLogs)
-      .leftJoin(users, eq(auditLogs.userId, users.id))
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(filters.limit || 100);
-    }
-    
+    const conditions = [];
+    if (filters.userId) conditions.push(eq(auditLogs.userId, filters.userId));
+    if (filters.action) conditions.push(eq(auditLogs.action, filters.action));
+    if (filters.targetId) conditions.push(eq(auditLogs.targetId, filters.targetId));
+
+    const result = await db.select({
+      id: auditLogs.id,
+      userId: auditLogs.userId,
+      action: auditLogs.action,
+      targetType: auditLogs.targetType,
+      targetId: auditLogs.targetId,
+      details: auditLogs.details,
+      ipAddress: auditLogs.ipAddress,
+      createdAt: auditLogs.createdAt,
+      username: users.username
+    })
+    .from(auditLogs)
+    .leftJoin(users, eq(auditLogs.userId, users.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(filters.limit || 100);
+
     return result;
+  },
+
+  async createAiUsageLog(data) {
+    const [log] = await db.insert(aiUsageLogs).values({
+      userId: data.userId,
+      endpoint: data.endpoint,
+      model: data.model,
+      inputTokens: data.inputTokens,
+      outputTokens: data.outputTokens,
+      estimatedCostUsd: Number(data.estimatedCostUsd).toFixed(6),
+      cached: data.cached ?? false,
+      latencyMs: data.latencyMs ?? null,
+      requestHash: data.requestHash ?? null,
+    }).returning();
+    return log;
   },
 
   async getDashboardStats(userId, isRootAdmin) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
-    return {
+    const base = {
       totalCampaigns: campaignsList.length,
       activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
       totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
     };
+
+    if (!isRootAdmin) return base;
+
+    // AI cost analytics — root admin only
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // All AI analytics queries are scoped to the last 30 days — prevents full-table scans
+    // as the table grows and keeps metrics operationally relevant.
+    const [totals] = await db.select({
+      totalCostUsd: sql`COALESCE(SUM(${aiUsageLogs.estimatedCostUsd}), 0)`,
+      totalCalls: sql`COUNT(*)`,
+      cachedCalls: sql`SUM(CASE WHEN ${aiUsageLogs.cached} THEN 1 ELSE 0 END)`,
+    }).from(aiUsageLogs).where(gte(aiUsageLogs.createdAt, thirtyDaysAgo));
+
+    const byEndpoint = await db.select({
+      endpoint: aiUsageLogs.endpoint,
+      totalCost: sql`COALESCE(SUM(${aiUsageLogs.estimatedCostUsd}), 0)`,
+      totalCalls: sql`COUNT(*)`,
+      cacheHits: sql`SUM(CASE WHEN ${aiUsageLogs.cached} THEN 1 ELSE 0 END)`,
+      avgLatencyMs: sql`AVG(CASE WHEN NOT ${aiUsageLogs.cached} AND ${aiUsageLogs.latencyMs} > 0 THEN ${aiUsageLogs.latencyMs} END)`,
+    }).from(aiUsageLogs).where(gte(aiUsageLogs.createdAt, thirtyDaysAgo)).groupBy(aiUsageLogs.endpoint);
+
+    const topSpenders = await db.select({
+      userId: aiUsageLogs.userId,
+      username: users.username,
+      totalCost: sql`COALESCE(SUM(${aiUsageLogs.estimatedCostUsd}), 0)`,
+      totalCalls: sql`COUNT(*)`,
+    }).from(aiUsageLogs)
+      .innerJoin(users, eq(aiUsageLogs.userId, users.id))
+      .where(gte(aiUsageLogs.createdAt, thirtyDaysAgo))
+      .groupBy(aiUsageLogs.userId, users.username)
+      .orderBy(sql`SUM(${aiUsageLogs.estimatedCostUsd}) DESC`)
+      .limit(10);
+
+    const totalCalls = Number(totals.totalCalls) || 0;
+    const cachedCalls = Number(totals.cachedCalls) || 0;
+
+    return {
+      ...base,
+      aiStats: {
+        totalAiCostUsd: parseFloat(totals.totalCostUsd) || 0,
+        aiCostLast30Days: parseFloat(totals.totalCostUsd) || 0,
+        totalAiCalls: totalCalls,
+        cacheHitRate: totalCalls > 0 ? ((cachedCalls / totalCalls) * 100).toFixed(1) : "0.0",
+        aiCostByEndpoint: byEndpoint.map(r => ({
+          endpoint: r.endpoint,
+          totalCost: parseFloat(r.totalCost) || 0,
+          totalCalls: Number(r.totalCalls) || 0,
+          cacheHits: Number(r.cacheHits) || 0,
+          avgLatencyMs: r.avgLatencyMs !== null ? Math.round(parseFloat(r.avgLatencyMs)) : null,
+        })),
+        topAiSpenders: topSpenders.map(r => ({
+          userId: r.userId,
+          username: r.username,
+          totalCost: parseFloat(r.totalCost) || 0,
+          totalCalls: Number(r.totalCalls) || 0,
+        })),
+      },
+    };
+  },
+
+  async getTeamStats(parentId) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // Single aggregation query across active child users
+    const [userAgg] = await db.select({
+      totalMembers:               sql`COUNT(*)`,
+      totalTeamCreditsUsed:       sql`COALESCE(SUM(${users.creditsUsed}), 0)`,
+      totalTeamAiGenerationsToday:sql`COALESCE(SUM(${users.aiGenerationsToday}), 0)`,
+      creditsAllocatedToTeam:     sql`COALESCE(SUM(${users.creditsReceived}), 0)`,
+      creditsRemainingInTeam:     sql`COALESCE(SUM(${users.creditsReceived} - ${users.creditsAllocated} - ${users.creditsUsed}), 0)`,
+    }).from(users).where(and(eq(users.parentId, parentId), eq(users.isActive, true)));
+
+    // Campaign aggregates for all active children (subquery in WHERE avoids fetching IDs first)
+    const [campaignAgg] = await db.select({
+      totalTeamCampaigns: sql`COUNT(*)`,
+      activeThisWeek:     sql`COUNT(DISTINCT CASE WHEN ${campaigns.createdAt} >= ${sevenDaysAgo} THEN ${campaigns.userId} END)`,
+    }).from(campaigns).where(
+      sql`${campaigns.userId} IN (SELECT id FROM users WHERE parent_id = ${parentId} AND is_active = true)`
+    );
+
+    return {
+      totalTeamMembers:            parseInt(userAgg?.totalMembers             || 0),
+      activeThisWeek:              parseInt(campaignAgg?.activeThisWeek       || 0),
+      totalTeamCampaigns:          parseInt(campaignAgg?.totalTeamCampaigns   || 0),
+      totalTeamCreditsUsed:        parseInt(userAgg?.totalTeamCreditsUsed     || 0),
+      totalTeamAiGenerationsToday: parseInt(userAgg?.totalTeamAiGenerationsToday || 0),
+      creditsAllocatedToTeam:      parseInt(userAgg?.creditsAllocatedToTeam   || 0),
+      creditsRemainingInTeam:      parseInt(userAgg?.creditsRemainingInTeam   || 0),
+    };
+  },
+
+  async getUsersWithStats(parentId, isRootAdmin = false) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // 1. Fetch users
+    const userRows = isRootAdmin
+      ? await db.select().from(users).orderBy(desc(users.createdAt))
+      : await db.select().from(users).where(eq(users.parentId, parentId)).orderBy(desc(users.createdAt));
+
+    if (userRows.length === 0) return [];
+
+    const userIds = userRows.map(u => u.id);
+
+    // 2. Campaign stats per user — one aggregation query with inArray
+    const statsRows = await db.select({
+      userId:          campaigns.userId,
+      total:           sql`COUNT(*)`,
+      lastAt:          sql`MAX(${campaigns.createdAt})`,
+      activeRecently:  sql`BOOL_OR(${campaigns.createdAt} >= ${sevenDaysAgo})`,
+      runningReserved: sql`COALESCE(SUM(CASE WHEN ${campaigns.status} = 'RUNNING' THEN ${campaigns.totalEmails} - ${campaigns.sentEmails} ELSE 0 END), 0)`,
+    }).from(campaigns)
+      .where(drizzleOps.inArray(campaigns.userId, userIds))
+      .groupBy(campaigns.userId);
+
+    const statsByUserId = Object.fromEntries(statsRows.map(r => [r.userId, r]));
+
+    // 3. Resolve parent's plan once to apply AI limit inheritance for free-tier children
+    const parentEffectivePlan = await this.getEffectivePlan(parentId);
+
+    // 4. Merge
+    const now = Date.now();
+    const reclaimAfterWarningMs = (INACTIVITY_THRESHOLDS.RECLAIM_ELIGIBLE_DAYS - INACTIVITY_THRESHOLDS.WARNING_DAYS) * 86400000;
+    return userRows.map(u => {
+      const s = statsByUserId[u.id] || {};
+      const childPlan = (u.plan && u.plan !== "free") ? u.plan : parentEffectivePlan;
+      const { passwordHash, ...safe } = u;
+      const creditsRemaining = (u.creditsReceived || 0) - (u.creditsAllocated || 0) - (u.creditsUsed || 0);
+      const runningReserved = parseInt(s.runningReserved || 0);
+      return {
+        ...safe,
+        creditsRemaining,
+        safeReclaimable:     Math.max(0, creditsRemaining - runningReserved),
+        totalCampaigns:      parseInt(s.total || 0),
+        lastCampaignAt:      s.lastAt || null,
+        isActiveThisWeek:    s.activeRecently || false,
+        aiGenerationsToday:  u.aiGenerationsToday || 0,
+        aiDailyLimit:        AI_DAILY_LIMITS[childPlan] ?? AI_DAILY_LIMITS.free,
+        daysInactive:        Math.floor((now - new Date(u.lastActivityAt || u.createdAt).getTime()) / 86400000),
+        isReclaimEligible:   Boolean(
+                               u.inactivityWarningSentAt &&
+                               u.inactivityKeepToken &&
+                               new Date(u.inactivityWarningSentAt) < new Date(Date.now() - 60 * 86400000)
+                             ),
+      };
+    });
   },
 
   async initializeRootAdmin() {
@@ -638,30 +934,33 @@ const dbStorage = {
   async completePayment(paymentId, transactionId) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
-    
+
+    const user = await this.getUserById(payment.userId);
+    const balanceBefore = user?.creditsRemaining ?? 0;
+
     await db.transaction(async (tx) => {
       await tx.update(payments)
-        .set({ 
-          status: PAYMENT_STATUS.SUCCESS, 
-          transactionId, 
-          completedAt: new Date() 
+        .set({
+          status: PAYMENT_STATUS.SUCCESS,
+          transactionId,
+          completedAt: new Date()
         })
         .where(eq(payments.id, paymentId));
-      
+
       await tx.update(users)
-        .set({ 
+        .set({
           creditsReceived: sql`credits_received + ${payment.credits}`,
           isTrialUser: false,
           updatedAt: new Date()
         })
         .where(eq(users.id, payment.userId));
-      
+
       await tx.insert(creditTransactions).values({
         userId: payment.userId,
         type: "purchase",
         amount: payment.credits,
-        balanceBefore: 0,
-        balanceAfter: payment.credits,
+        balanceBefore,
+        balanceAfter: balanceBefore + payment.credits,
         description: `Purchased ${payment.credits} credits - ${payment.planName}`
       });
     });
@@ -789,21 +1088,583 @@ const dbStorage = {
   async getTotalCreditsAvailable(userId) {
     const user = await this.getUserById(userId);
     if (!user) return { paid: 0, trial: 0, total: 0 };
-    
-    const paidRemaining = Math.max(0, 
+
+    const paidRemaining = Math.max(0,
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
-    const trialRemaining = user.isTrialUser 
+    const trialRemaining = user.isTrialUser
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
-    
+
     return {
       paid: paidRemaining,
       trial: trialRemaining,
       total: paidRemaining + trialRemaining,
       isTrialUser: user.isTrialUser
     };
-  }
+  },
+
+  async getEffectivePlan(userId) {
+    const user = await this.getUserById(userId);
+    if (!user) return "free";
+    if (user.plan && user.plan !== "free") return user.plan;
+    if (user.parentId) {
+      const parent = await this.getUserById(user.parentId);
+      if (parent?.plan) return parent.plan;
+    }
+    return "free";
+  },
+
+  async checkAndIncrementAiQuota(userId) {
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const limit = AI_DAILY_LIMITS[effectivePlan] ?? AI_DAILY_LIMITS.free;
+    if (limit === Infinity) return { allowed: true, remaining: Infinity, resetsAt: null };
+
+    return await db.transaction(async (tx) => {
+      const [user] = await tx.select({
+        aiGenerationsToday: users.aiGenerationsToday,
+        aiGenerationsResetAt: users.aiGenerationsResetAt,
+      }).from(users).where(eq(users.id, userId));
+
+      if (!user) throw new Error("User not found");
+
+      const now = new Date();
+      const needsReset = !user.aiGenerationsResetAt ||
+        (now.getTime() - new Date(user.aiGenerationsResetAt).getTime()) > 24 * 60 * 60 * 1000;
+
+      const currentCount = needsReset ? 0 : (user.aiGenerationsToday || 0);
+      const windowStart = needsReset ? now : new Date(user.aiGenerationsResetAt);
+      const resetsAt = new Date(windowStart.getTime() + 24 * 60 * 60 * 1000);
+
+      if (currentCount >= limit) {
+        return { allowed: false, remaining: 0, resetsAt };
+      }
+
+      await tx.update(users)
+        .set(needsReset
+          ? { aiGenerationsToday: 1, aiGenerationsResetAt: now, updatedAt: now }
+          : { aiGenerationsToday: sql`ai_generations_today + 1`, updatedAt: now }
+        )
+        .where(eq(users.id, userId));
+
+      return { allowed: true, remaining: limit - currentCount - 1, resetsAt };
+    });
+  },
+
+  // ── Campaign Emails ────────────────────────────────────────────────────────
+
+  async createCampaignEmail(data) {
+    const [record] = await db.insert(campaignEmails).values({
+      campaignId: data.campaignId,
+      userId: data.userId,
+      contactId: data.contactId || null,
+      recipientEmail: data.recipientEmail,
+      status: data.status || CAMPAIGN_EMAIL_STATUS.PENDING,
+    }).returning();
+    return record;
+  },
+
+  async updateCampaignEmail(id, updates) {
+    const [record] = await db.update(campaignEmails)
+      .set(updates)
+      .where(eq(campaignEmails.id, id))
+      .returning();
+    return record || null;
+  },
+
+  async getCampaignEmailBySesMessageId(sesMessageId) {
+    const [record] = await db.select().from(campaignEmails)
+      .where(eq(campaignEmails.sesMessageId, sesMessageId));
+    return record || null;
+  },
+
+  async getCampaignEmailsByCampaign(campaignId, limit = 50) {
+    return await db.select().from(campaignEmails)
+      .where(eq(campaignEmails.campaignId, campaignId))
+      .orderBy(desc(campaignEmails.createdAt))
+      .limit(limit);
+  },
+
+  async getCampaignEmailByContact(campaignId, contactId) {
+    const [record] = await db.select().from(campaignEmails)
+      .where(and(
+        eq(campaignEmails.campaignId, campaignId),
+        eq(campaignEmails.contactId, contactId)
+      ));
+    return record || null;
+  },
+
+  async hasAnySentEmails(campaignId) {
+    const [record] = await db.select().from(campaignEmails)
+      .where(and(
+        eq(campaignEmails.campaignId, campaignId),
+        eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.SENT)
+      ))
+      .limit(1);
+    return Boolean(record);
+  },
+
+  // ── Suppressions ───────────────────────────────────────────────────────────
+
+  async addSuppression(userId, email, source) {
+    const normalizedEmail = email.toLowerCase().trim();
+    await db.insert(suppressions)
+      .values({ userId, email: normalizedEmail, source })
+      .onConflictDoNothing();
+    console.log(`[SUPPRESSION] userId=${userId} email=${normalizedEmail} source=${source}`);
+  },
+
+  async isSuppressed(userId, email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const [record] = await db.select({ id: suppressions.id })
+      .from(suppressions)
+      .where(and(
+        eq(suppressions.userId, userId),
+        eq(suppressions.email, normalizedEmail)
+      ));
+    return !!record;
+  },
+
+  async getSuppressions(userId) {
+    return await db.select().from(suppressions)
+      .where(eq(suppressions.userId, userId))
+      .orderBy(desc(suppressions.createdAt));
+  },
+
+  // Platform-wide suppression check — covers bounce, complaint, and unsubscribe across all users.
+  // A contact suppressed by any user on the platform is unsafe to email from any campaign.
+  async isGloballySuppressed(email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const [record] = await db.select({ id: suppressions.id })
+      .from(suppressions)
+      .where(eq(suppressions.email, normalizedEmail))
+      .limit(1);
+    return !!record;
+  },
+
+  // Returns the count of emails from the provided array that are already globally suppressed.
+  // Used at campaign creation to inform the user before the campaign starts. Does not block.
+  async getPreCampaignSuppressionCount(emails) {
+    if (!emails || emails.length === 0) return 0;
+    const normalized = emails.map(e => e.toLowerCase().trim());
+    let count = 0;
+    for (const email of normalized) {
+      const [record] = await db.select({ id: suppressions.id })
+        .from(suppressions)
+        .where(eq(suppressions.email, email))
+        .limit(1);
+      if (record) count++;
+    }
+    return count;
+  },
+
+  // ── SNS event deduplication ────────────────────────────────────────────────
+
+  async getSnsEvent(messageId) {
+    const [record] = await db.select().from(snsEvents)
+      .where(eq(snsEvents.messageId, messageId));
+    return record || null;
+  },
+
+  async createSnsEvent(messageId, eventType) {
+    const rows = await db.insert(snsEvents)
+      .values({ messageId, eventType, processed: false })
+      .onConflictDoNothing()
+      .returning({ messageId: snsEvents.messageId });
+    return rows.length > 0; // true = claimed, false = concurrent delivery won the race
+  },
+
+  async updateSnsEventProcessed(messageId) {
+    await db.update(snsEvents)
+      .set({ processed: true })
+      .where(eq(snsEvents.messageId, messageId));
+  },
+
+  async deleteOldSnsEvents() {
+    const cutoff = new Date(Date.now() - 7 * 86400000);
+    await db.delete(snsEvents).where(lt(snsEvents.processedAt, cutoff));
+  },
+
+  async incrementCampaignBounced(campaignId) {
+    await db.update(campaigns)
+      .set({ bouncedEmails: sql`${campaigns.bouncedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
+  async incrementCampaignComplained(campaignId) {
+    await db.update(campaigns)
+      .set({ complainedEmails: sql`${campaigns.complainedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
+  async getCampaignEmailById(id) {
+    const [record] = await db.select().from(campaignEmails)
+      .where(eq(campaignEmails.id, id));
+    return record || null;
+  },
+
+  // Atomically sets openedAt only on the first open event; returns { wasFirst: boolean }.
+  async updateCampaignEmailOpened(campaignEmailId) {
+    const rows = await db.update(campaignEmails)
+      .set({ openedAt: new Date() })
+      .where(and(
+        eq(campaignEmails.id, campaignEmailId),
+        sql`${campaignEmails.openedAt} IS NULL`
+      ))
+      .returning({ id: campaignEmails.id });
+    return { wasFirst: rows.length > 0 };
+  },
+
+  // Atomically sets clickedAt only on the first click event; returns { wasFirst: boolean }.
+  async updateCampaignEmailClicked(campaignEmailId) {
+    const rows = await db.update(campaignEmails)
+      .set({ clickedAt: new Date() })
+      .where(and(
+        eq(campaignEmails.id, campaignEmailId),
+        sql`${campaignEmails.clickedAt} IS NULL`
+      ))
+      .returning({ id: campaignEmails.id });
+    return { wasFirst: rows.length > 0 };
+  },
+
+  async incrementCampaignOpened(campaignId) {
+    await db.update(campaigns)
+      .set({ openedEmails: sql`${campaigns.openedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
+  async incrementCampaignClicked(campaignId) {
+    await db.update(campaigns)
+      .set({ clickedEmails: sql`${campaigns.clickedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
+  // ── Invites ────────────────────────────────────────────────────────────────
+
+  async createInvite(data) {
+    const [invite] = await db.insert(invites).values({
+      email: data.email,
+      role: data.role,
+      invitedBy: data.invitedBy,
+      tokenHash: data.tokenHash,
+      expiresAt: data.expiresAt,
+    }).returning();
+    return invite;
+  },
+
+  async getInviteByTokenHash(tokenHash) {
+    const [invite] = await db.select().from(invites).where(eq(invites.tokenHash, tokenHash));
+    return invite || null;
+  },
+
+  async getInviteById(id) {
+    const [invite] = await db.select().from(invites).where(eq(invites.id, id));
+    return invite || null;
+  },
+
+  async getPendingInvitesByAdmin(invitedBy) {
+    return await db.select().from(invites)
+      .where(eq(invites.invitedBy, invitedBy))
+      .orderBy(desc(invites.createdAt));
+  },
+
+  async markInviteAccepted(id) {
+    const [invite] = await db.update(invites)
+      .set({ acceptedAt: new Date() })
+      .where(eq(invites.id, id))
+      .returning();
+    return invite || null;
+  },
+
+  async updateInviteToken(id, tokenHash, expiresAt) {
+    const [invite] = await db.update(invites)
+      .set({ tokenHash, expiresAt })
+      .where(eq(invites.id, id))
+      .returning();
+    return invite || null;
+  },
+
+  async deleteExpiredInvites() {
+    const deleted = await db.delete(invites)
+      .where(and(
+        lt(invites.expiresAt, new Date()),
+        sql`${invites.acceptedAt} IS NULL`,
+      ))
+      .returning({ id: invites.id });
+    return deleted.length;
+  },
+
+  async getChildUserCount(parentId) {
+    const [result] = await db.select({ count: sql`COUNT(*)` })
+      .from(users)
+      .where(and(
+        eq(users.parentId, parentId),
+        eq(users.isActive, true),
+      ));
+    return parseInt(result.count, 10);
+  },
+
+  // ── Inactivity Governance ──────────────────────────────────────────────────
+
+  async updateUserActivity(userId) {
+    const [before] = await db.select({ isDormant: users.isDormant })
+      .from(users).where(eq(users.id, userId));
+
+    await db.update(users).set({
+      lastActivityAt: new Date(),
+      inactivityWarningSentAt: null,
+      inactivityKeepToken: null,
+      inactivityKeepTokenExpiresAt: null,
+      isDormant: false,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+
+    if (before?.isDormant) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.USER_REACTIVATED,
+        targetType: "user",
+        targetId: userId,
+      });
+    }
+  },
+
+  async setUserDormant(userId) {
+    const user = await this.getUserById(userId);
+    if (!user) return;
+
+    await db.update(users).set({
+      isDormant: true,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+
+    const daysInactive = user.lastActivityAt
+      ? Math.floor((Date.now() - new Date(user.lastActivityAt).getTime()) / 86400000)
+      : null;
+
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.USER_DORMANT,
+      targetType: "user",
+      targetId: userId,
+      details: { daysInactive, creditsRemaining: user.creditsRemaining },
+    });
+  },
+
+  async getUsersForInactivityCheck() {
+    const { WARNING_DAYS } = INACTIVITY_THRESHOLDS;
+    const cutoff = new Date(Date.now() - WARNING_DAYS * 24 * 60 * 60 * 1000);
+
+    return await db.select().from(users).where(
+      and(
+        sql`${users.role} != ${USER_ROLES.ROOT_ADMIN}`,
+        eq(users.isSecondaryRoot, false),
+        eq(users.isActive, true),
+        sql`(
+          (${users.lastActivityAt} IS NULL AND ${users.createdAt} < ${cutoff})
+          OR ${users.lastActivityAt} < ${cutoff}
+        )`
+      )
+    );
+  },
+
+  async autoReclaimCredits(fromUserId, toUserId) {
+    const child = await this.getUserById(fromUserId);
+    const parent = await this.getUserById(toUserId);
+    if (!child || !parent) throw new Error("User not found");
+
+    const [{ reserved }] = await db.select({
+      reserved: sql`COALESCE(SUM(${campaigns.totalEmails} - ${campaigns.sentEmails}), 0)`,
+    }).from(campaigns).where(
+      and(eq(campaigns.userId, fromUserId), eq(campaigns.status, CAMPAIGN_STATUS.RUNNING))
+    );
+    const runningCampaignCredits = parseInt(reserved || 0);
+
+    const safeReclaim = child.creditsRemaining - runningCampaignCredits;
+    if (safeReclaim <= 0) return { amount: 0, skipped: true, protectedCredits: runningCampaignCredits };
+
+    const childBalanceBefore = child.creditsRemaining;
+    const parentActualBalance = (parent.creditsReceived || 0) - (parent.creditsAllocated || 0) - (parent.creditsUsed || 0);
+
+    await db.transaction(async (tx) => {
+      await tx.update(users)
+        .set({ creditsReceived: sql`credits_received - ${safeReclaim}`, updatedAt: new Date() })
+        .where(eq(users.id, fromUserId));
+      await tx.update(users)
+        .set({ creditsAllocated: sql`credits_allocated - ${safeReclaim}`, updatedAt: new Date() })
+        .where(eq(users.id, toUserId));
+      await tx.insert(creditTransactions).values({
+        userId: fromUserId, type: "reclaim_out",
+        amount: -safeReclaim,
+        balanceBefore: childBalanceBefore, balanceAfter: childBalanceBefore - safeReclaim,
+        fromUserId, toUserId,
+        description: `${safeReclaim} credits reclaimed — 90 days inactivity`,
+      });
+      await tx.insert(creditTransactions).values({
+        userId: toUserId, type: "reclaim_in",
+        amount: safeReclaim,
+        balanceBefore: parentActualBalance, balanceAfter: parentActualBalance + safeReclaim,
+        fromUserId, toUserId,
+        description: `${safeReclaim} credits auto-reclaimed from ${child.username} — 90 days inactivity`,
+      });
+    });
+
+    await this.createAuditLog({
+      userId: toUserId,
+      action: AUDIT_ACTIONS.CREDITS_AUTO_RECLAIMED,
+      targetType: "user",
+      targetId: fromUserId,
+      details: { amount: safeReclaim, runningCampaignCredits, reason: "90 days inactivity" },
+    });
+
+    return { amount: safeReclaim, skipped: false };
+  },
+
+  async validateKeepToken(rawToken) {
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    const [user] = await db.select().from(users)
+      .where(eq(users.inactivityKeepToken, tokenHash));
+
+    if (!user) return { valid: false, reason: "not_found" };
+
+    if (!user.inactivityKeepTokenExpiresAt || new Date(user.inactivityKeepTokenExpiresAt) < new Date()) {
+      return { valid: false, userId: user.id, reason: "expired" };
+    }
+
+    // Use audit log to detect reclaim rather than inferring from lastActivityAt.
+    // The activity-date check was unreliable: a user inactive 90+ days with a valid
+    // (not-yet-cleared) token would incorrectly show as reclaim_already_fired.
+    // After Fix 4, clearInactivityToken always runs after Stage C, so a found token
+    // means reclaim has not fired — but we still check the audit log for belt-and-suspenders.
+    const reclaimLogs = await this.getAuditLogs({
+      userId: user.id,
+      action: AUDIT_ACTIONS.CREDITS_AUTO_RECLAIMED,
+      limit: 1,
+    });
+    if (reclaimLogs && reclaimLogs.length > 0) {
+      return { valid: false, userId: user.id, reason: "reclaim_already_fired" };
+    }
+
+    return { valid: true, userId: user.id, user: this.sanitizeUser(user), reason: "valid" };
+  },
+
+  async markInactivityWarningSent(userId, tokenHash, tokenExpiresAt) {
+    await db.update(users).set({
+      inactivityWarningSentAt: new Date(),
+      inactivityKeepToken: tokenHash ?? null,
+      inactivityKeepTokenExpiresAt: tokenExpiresAt ?? null,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  // Replaces token hash/expiry only — does NOT touch inactivityWarningSentAt.
+  // Used by Stage B dormant email to refresh the raw token for the URL
+  // without resetting the dormant timeline clock.
+  async updateInactivityToken(userId, tokenHash, tokenExpiresAt) {
+    await db.update(users).set({
+      inactivityKeepToken: tokenHash,
+      inactivityKeepTokenExpiresAt: tokenExpiresAt,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  // Clears token fields only after Stage C reclaim (or no-ancestor skip).
+  // Prevents the next job run from re-entering Stage C for the same user.
+  async clearInactivityToken(userId) {
+    await db.update(users).set({
+      inactivityKeepToken: null,
+      inactivityKeepTokenExpiresAt: null,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  // ── Secondary Root Admin ───────────────────────────────────────────────────
+
+  async grantSecondaryRoot(userId) {
+    await db.update(users).set({
+      isSecondaryRoot: true,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  async revokeSecondaryRoot(userId) {
+    await db.update(users).set({
+      isSecondaryRoot: false,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  async getSecondaryRootCount() {
+    const [result] = await db.select({ count: sql`COUNT(*)` })
+      .from(users)
+      .where(eq(users.isSecondaryRoot, true));
+    return parseInt(result.count, 10);
+  },
+
+  async markAllRootAdminsRecoveryAt(timestamp) {
+    await db.update(users)
+      .set({ lastEmergencyRecoveryAt: timestamp })
+      .where(eq(users.role, USER_ROLES.ROOT_ADMIN));
+  },
+
+  // ── Data Cleanup Jobs ──────────────────────────────────────────────────────
+
+  async deleteExpiredSessions() {
+    const deleted = await db.delete(sessions)
+      .where(lt(sessions.expiresAt, new Date()))
+      .returning({ id: sessions.id });
+    return deleted.length;
+  },
+
+  async pruneAuditLogs(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    const deleted = await db.delete(auditLogs)
+      .where(lt(auditLogs.createdAt, cutoff))
+      .returning({ id: auditLogs.id });
+    return deleted.length;
+  },
+
+  async deleteOldCampaignEmails(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    // Delete campaign_email records for COMPLETED or FAILED campaigns older than the cutoff.
+    // Uses a subquery so the JOIN stays server-side. RUNNING/PENDING are never touched.
+    const deleted = await db.delete(campaignEmails)
+      .where(
+        sql`${campaignEmails.campaignId} IN (
+          SELECT id FROM campaigns
+          WHERE status IN ('COMPLETED', 'FAILED')
+          AND created_at < ${cutoff}
+        )`
+      )
+      .returning({ id: campaignEmails.id });
+    return deleted.length;
+  },
+
+  async pruneAiUsageLogs(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    const deleted = await db.delete(aiUsageLogs)
+      .where(lt(aiUsageLogs.createdAt, cutoff))
+      .returning({ id: aiUsageLogs.id });
+    return deleted.length;
+  },
+
+  async expireInactivityTokens() {
+    const updated = await db.update(users)
+      .set({
+        inactivityKeepToken: null,
+        inactivityKeepTokenExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          sql`${users.inactivityKeepToken} IS NOT NULL`,
+          lt(users.inactivityKeepTokenExpiresAt, new Date()),
+        )
+      )
+      .returning({ id: users.id });
+    return updated.length;
+  },
 };
 
 // Export the appropriate storage based on mode

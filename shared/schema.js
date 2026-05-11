@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, serial, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, serial, uuid, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -15,6 +15,21 @@ export const CAMPAIGN_STATUS = {
   PAUSED: "PAUSED",
   COMPLETED: "COMPLETED",
   FAILED: "FAILED"
+};
+
+export const CAMPAIGN_EMAIL_STATUS = {
+  PENDING: "PENDING",
+  SENT: "SENT",
+  FAILED: "FAILED",
+  BOUNCED: "BOUNCED",
+  COMPLAINED: "COMPLAINED",
+  SUPPRESSED: "SUPPRESSED",
+};
+
+export const SUPPRESSION_SOURCE = {
+  UNSUBSCRIBE: "unsubscribe",
+  BOUNCE: "bounce",
+  COMPLAINT: "complaint",
 };
 
 export const AUDIT_ACTIONS = {
@@ -46,7 +61,20 @@ export const AUDIT_ACTIONS = {
   PAYMENT_INITIATED: "PAYMENT_INITIATED",
   PAYMENT_SUCCESS: "PAYMENT_SUCCESS",
   PAYMENT_FAILED: "PAYMENT_FAILED",
-  CONTACT_FORM_SUBMITTED: "CONTACT_FORM_SUBMITTED"
+  CONTACT_FORM_SUBMITTED: "CONTACT_FORM_SUBMITTED",
+  INVITE_SENT: "INVITE_SENT",
+  CREDITS_RECLAIMED: "CREDITS_RECLAIMED",
+  // Inactivity governance
+  INACTIVITY_WARNING_SENT: "INACTIVITY_WARNING_SENT",
+  INACTIVITY_TIMER_RESET: "INACTIVITY_TIMER_RESET",
+  USER_DORMANT: "USER_DORMANT",
+  USER_REACTIVATED: "USER_REACTIVATED",
+  CREDITS_AUTO_RECLAIMED: "CREDITS_AUTO_RECLAIMED",
+  // Secondary root access
+  ROOT_ACCESS_GRANTED: "ROOT_ACCESS_GRANTED",
+  ROOT_ACCESS_REVOKED: "ROOT_ACCESS_REVOKED",
+  // Emergency recovery
+  EMERGENCY_RECOVERY_TRIGGERED: "EMERGENCY_RECOVERY_TRIGGERED",
 };
 
 export const PAYMENT_STATUS = {
@@ -82,8 +110,38 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at"),
-  plan: text("plan").notNull().default("free")
-});
+  plan: text("plan").notNull().default("free"),
+  aiGenerationsToday: integer("ai_generations_today").notNull().default(0),
+  aiGenerationsResetAt: timestamp("ai_generations_reset_at"),
+
+  // ── Inactivity governance ─────────────────────────────────────────────────
+  // Updated only when a campaign reaches COMPLETED. Never updated for ROOT_ADMIN.
+  lastActivityAt: timestamp("last_activity_at"),
+  // Set when Stage 1 warning email is sent. Reset to NULL when user becomes active again.
+  inactivityWarningSentAt: timestamp("inactivity_warning_sent_at"),
+  // SHA-256 hash of raw keep token (raw goes in email URL, never stored).
+  inactivityKeepToken: text("inactivity_keep_token"),
+  // Expires 60 days after warning sent.
+  inactivityKeepTokenExpiresAt: timestamp("inactivity_keep_token_expires_at"),
+  // Set at Stage 2 (60 days). Blocks campaign sends and AI. Reset on campaign completion.
+  isDormant: boolean("is_dormant").notNull().default(false),
+
+  // ── Secondary root access ─────────────────────────────────────────────────
+  // Grants ROOT_ADMIN-level read + user-management write access.
+  // Only true ROOT_ADMIN can grant. Secondary roots cannot grant to others.
+  isSecondaryRoot: boolean("is_secondary_root").notNull().default(false),
+
+  // ── Emergency recovery ────────────────────────────────────────────────────
+  // Only meaningful on ROOT_ADMIN rows. Enforces 30-day recovery cooldown.
+  lastEmergencyRecoveryAt: timestamp("last_emergency_recovery_at"),
+}, (table) => ({
+  // Supports fast inactivity job query filtering active non-root users
+  activeActivityIdx: index("users_active_activity_idx").on(table.isActive, table.lastActivityAt),
+  // Supports validateKeepToken lookup
+  keepTokenIdx: uniqueIndex("users_keep_token_idx").on(table.inactivityKeepToken),
+  // Supports getChildUsers, getActiveChildren, reassignChildren, getUsersWithStats
+  parentIdIdx: index("users_parent_id_idx").on(table.parentId),
+}));
 
 export const sessions = pgTable("sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -91,7 +149,10 @@ export const sessions = pgTable("sessions", {
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull()
-});
+}, (table) => ({
+  // Supports daily expired session cleanup — DELETE WHERE expires_at < NOW()
+  expiresAtIdx: index("sessions_expires_at_idx").on(table.expiresAt),
+}));
 
 export const templates = pgTable("templates", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -113,7 +174,9 @@ export const contacts = pgTable("contacts", {
   category: text("category"),
   customFields: jsonb("custom_fields"),
   createdAt: timestamp("created_at").defaultNow().notNull()
-});
+}, (table) => ({
+  userEmailUnique: uniqueIndex("contacts_user_email_unique").on(table.userId, table.email),
+}));
 
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -124,6 +187,11 @@ export const campaigns = pgTable("campaigns", {
   totalEmails: integer("total_emails").notNull().default(0),
   sentEmails: integer("sent_emails").notNull().default(0),
   failedEmails: integer("failed_emails").notNull().default(0),
+  skippedEmails: integer("skipped_emails").notNull().default(0),
+  bouncedEmails: integer("bounced_emails").notNull().default(0),
+  complainedEmails: integer("complained_emails").notNull().default(0),
+  openedEmails: integer("opened_emails").notNull().default(0),
+  clickedEmails: integer("clicked_emails").notNull().default(0),
   creditsUsed: integer("credits_used").notNull().default(0),
   contactIds: jsonb("contact_ids").notNull().default([]),
   templateSnapshot: jsonb("template_snapshot"),
@@ -132,18 +200,33 @@ export const campaigns = pgTable("campaigns", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
-});
+}, (table) => ({
+  // Supports getCampaigns(userId) — called on every campaign page load and dashboard stats
+  userIdIdx: index("campaigns_user_id_idx").on(table.userId),
+  // Supports scheduler query for pending scheduled campaigns
+  statusScheduledIdx: index("campaigns_status_scheduled_idx").on(table.status, table.scheduledAt),
+}));
 
 export const campaignEmails = pgTable("campaign_emails", {
   id: uuid("id").defaultRandom().primaryKey(),
   campaignId: uuid("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
-  contactId: uuid("contact_id").notNull().references(() => contacts.id),
-  status: text("status").notNull().default("pending"),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // nullable — contact record may be deleted after send; recipientEmail is the durable copy
+  contactId: uuid("contact_id").references(() => contacts.id),
+  recipientEmail: text("recipient_email").notNull(),
+  sesMessageId: text("ses_message_id"),
+  status: text("status").notNull().default(CAMPAIGN_EMAIL_STATUS.PENDING),
+  failureReason: text("failure_reason"),
   sentAt: timestamp("sent_at"),
-  errorMessage: text("error_message"),
-  creditDeducted: boolean("credit_deducted").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-});
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // fast SNS bounce/complaint lookup by SES Message-ID
+  sesMessageIdIdx: index("campaign_emails_ses_message_id_idx").on(table.sesMessageId),
+  // fast suppression and analytics queries per user+email
+  userEmailIdx: index("campaign_emails_user_email_idx").on(table.userId, table.recipientEmail),
+}));
 
 export const creditTransactions = pgTable("credit_transactions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -159,6 +242,17 @@ export const creditTransactions = pgTable("credit_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
+export const suppressions = pgTable("suppressions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  source: text("source").notNull(), // "unsubscribe" | "bounce" | "complaint"
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // idempotent upsert — same user+email pair is always one suppression regardless of source
+  uniqueUserEmail: uniqueIndex("suppressions_user_email_unique").on(table.userId, table.email),
+}));
+
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").references(() => users.id),
@@ -170,6 +264,23 @@ export const auditLogs = pgTable("audit_logs", {
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
+
+export const aiUsageLogs = pgTable("ai_usage_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull(), // "generate-template" | "preview" | "spam-analysis"
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull(),
+  outputTokens: integer("output_tokens").notNull(),
+  estimatedCostUsd: numeric("estimated_cost_usd", { precision: 10, scale: 6 }).notNull(),
+  cached: boolean("cached").notNull().default(false),
+  latencyMs: integer("latency_ms"),             // ms for the OpenAI call; 0 for cache hits; null if unmeasured
+  requestHash: text("request_hash"),            // SHA-256 of input content — dedup / abuse detection
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  // Composite supports per-user queries and the 30-day WHERE created_at filter in getDashboardStats
+  userCreatedAtIdx: index("ai_usage_logs_user_created_at_idx").on(table.userId, table.createdAt),
+}));
 
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -211,6 +322,21 @@ export const waitlist = pgTable("waitlist", {
   createdAt: timestamp("created_at").defaultNow().notNull()
 });
 
+export const invites = pgTable("invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  invitedBy: uuid("invited_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: uniqueIndex("invites_token_hash_idx").on(table.tokenHash),
+  emailIdx: index("invites_email_idx").on(table.email),
+  invitedByIdx: index("invites_invited_by_idx").on(table.invitedBy),
+}));
+
 export const waitlistSchema = z.object({
   email: z.string().email("Valid email is required"),
   source: z.string().optional()
@@ -221,7 +347,15 @@ export const insertUserSchema = createInsertSchema(users).omit({
   passwordHash: true,
   createdAt: true,
   updatedAt: true,
-  lastLoginAt: true
+  lastLoginAt: true,
+  // System-managed inactivity and governance fields — never set on user creation
+  lastActivityAt: true,
+  inactivityWarningSentAt: true,
+  inactivityKeepToken: true,
+  inactivityKeepTokenExpiresAt: true,
+  isDormant: true,
+  isSecondaryRoot: true,
+  lastEmergencyRecoveryAt: true,
 }).extend({
   password: z.string().min(6, "Password must be at least 6 characters"),
   username: z.string().min(3, "Username must be at least 3 characters"),
@@ -269,6 +403,15 @@ export const insertCampaignSchema = createInsertSchema(campaigns).omit({
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   id: true,
   createdAt: true
+});
+
+// SNS event deduplication — prevents duplicate processing of at-least-once SNS deliveries.
+// Only needs to survive the SNS redelivery window (max 72h); entries are cleaned up after 7 days.
+export const snsEvents = pgTable("sns_events", {
+  messageId: text("message_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+  processed: boolean("processed").notNull().default(false),
 });
 
 export const allocateCreditsSchema = z.object({
@@ -380,6 +523,36 @@ export const PRICING_PLANS = {
     priceUsd: null, priceInr: null,
     isCustom: true, type: "custom",
   },
+};
+
+// Inactivity governance thresholds (days)
+export const INACTIVITY_THRESHOLDS = {
+  WARNING_DAYS: 30,
+  DORMANT_DAYS: 60,
+  RECLAIM_ELIGIBLE_DAYS: 90,
+};
+
+// Daily AI generation quotas per plan. Enterprise is unlimited (Infinity).
+export const AI_DAILY_LIMITS = {
+  free:       5,
+  trial:      5,
+  starter:    20,
+  growth:     50,
+  scale:      150,
+  enterprise: Infinity,
+};
+
+// Maximum active child users (team members) per plan.
+// free/trial: admins on these plans cannot invite — they have no team seats.
+// NOTE: PLAN_LIMITS also carries a maxTeamMembers field with older values;
+// MAX_TEAM_MEMBERS is authoritative for invite/create enforcement.
+export const MAX_TEAM_MEMBERS = {
+  free:       0,
+  trial:      0,
+  starter:    3,
+  growth:     10,
+  scale:      25,
+  enterprise: Infinity,
 };
 
 export const PLAN_LIMITS = {

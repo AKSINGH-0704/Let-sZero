@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   ArrowLeft,
+  AlertCircle,
   Shield,
   AlertTriangle,
   CheckCircle,
@@ -45,6 +46,8 @@ export default function SpamAnalyzer() {
   const { template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate } = useCampaign();
   const [analysis, setAnalysis] = useState(spamAnalysis);
   const [acceptedSuggestions, setAcceptedSuggestions] = useState(new Set());
+  const [aiQuota, setAiQuota] = useState(null);
+  const [quotaError, setQuotaError] = useState(null);
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
@@ -52,13 +55,26 @@ export default function SpamAnalyzer() {
         subject: template.subject,
         body: template.body
       });
-      return res.json();
+      const remaining = res.headers.get("X-AI-Generations-Remaining");
+      const resetsAt = res.headers.get("X-AI-Generations-Reset");
+      const data = await res.json();
+      return { ...data, _quota: { remaining, resetsAt } };
     },
     onSuccess: (data) => {
-      setAnalysis(data);
-      setSpamAnalysis(data);
+      if (data._quota?.remaining != null) setAiQuota(data._quota);
+      setQuotaError(null);
+      const { _quota, ...analysisData } = data;
+      setAnalysis(analysisData);
+      setSpamAnalysis(analysisData);
     },
-    onError: () => {
+    onError: (err) => {
+      try {
+        const body = JSON.parse(err.message);
+        if (body?.resetsAt) {
+          setQuotaError({ resetsAt: body.resetsAt, upgradeMessage: body.upgradeMessage });
+          return;
+        }
+      } catch {}
       const localAnalysis = calculateSpamScore(template.subject, template.body);
       setAnalysis(localAnalysis);
       setSpamAnalysis(localAnalysis);
@@ -120,19 +136,24 @@ export default function SpamAnalyzer() {
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-lg">Spam Score</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReanalyze}
-                disabled={analyzeMutation.isPending}
-                data-testid="button-reanalyze"
-              >
-                {analyzeMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReanalyze}
+                  disabled={analyzeMutation.isPending}
+                  data-testid="button-reanalyze"
+                >
+                  {analyzeMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+                {aiQuota && aiQuota.remaining !== "unlimited" && (
+                  <span className="text-xs text-muted-foreground">{aiQuota.remaining} left today</span>
                 )}
-              </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -223,6 +244,17 @@ export default function SpamAnalyzer() {
         </Card>
       </div>
 
+      {quotaError && (
+        <Alert variant="destructive" className="py-2">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            Daily AI limit reached — resets at{" "}
+            {new Date(quotaError.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.{" "}
+            {quotaError.upgradeMessage}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {suggestions.length > 0 && (
         <Card className="border-card-border">
           <CardHeader className="pb-4">
@@ -287,7 +319,7 @@ export default function SpamAnalyzer() {
         <Alert className="border-primary/20 bg-primary/5 dark:bg-primary/10">
           <Sparkles className="h-4 w-4 text-primary" />
           <AlertDescription className="text-foreground">
-            <span className="font-medium text-primary">AI Analysis: </span>{analysis.summary}
+            <span className="font-medium text-primary">AI-Assisted Analysis: </span>{analysis.summary}
           </AlertDescription>
         </Alert>
       )}

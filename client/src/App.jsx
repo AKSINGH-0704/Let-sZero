@@ -22,6 +22,7 @@ import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";
 import NotFound from "@/pages/not-found";
 import WaitlistLanding from "@/pages/WaitlistLanding";
+import AcceptInvite from "@/pages/AcceptInvite";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -89,6 +90,10 @@ function AppRoutes() {
 
       <Route path="/contact">
         {() => <Contact />}
+      </Route>
+
+      <Route path="/accept-invite">
+        {() => <AcceptInvite />}
       </Route>
 
       <Route path="/app/dashboard">

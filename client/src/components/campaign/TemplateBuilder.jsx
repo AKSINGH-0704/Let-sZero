@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
+import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,8 @@ import {
 } from "lucide-react";
 import { replacePlaceholders, cn } from "@/lib/utils";
 
+const AI_DAILY_LIMITS = { free: 5, trial: 5, starter: 20, growth: 50, scale: 150, enterprise: Infinity };
+
 const PLACEHOLDERS = [
   { key: "{{name}}", label: "Name", description: "Recipient's name" },
   { key: "{{email}}", label: "Email", description: "Recipient's email" },
@@ -53,6 +56,7 @@ const AI_TONES = [
 
 export default function TemplateBuilder() {
   const { template, setTemplate, columnMapping, contacts, goNext, goBack } = useCampaign();
+  const { user } = useAuth();
   const [localTemplate, setLocalTemplate] = useState({
     name: template.name || "",
     subject: template.subject || "",
@@ -64,6 +68,7 @@ export default function TemplateBuilder() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiTone, setAiTone] = useState("professional");
   const [aiError, setAiError] = useState("");
+  const [aiQuota, setAiQuota] = useState(null);
 
   const generateTemplateMutation = useMutation({
     mutationFn: async () => {
@@ -71,9 +76,13 @@ export default function TemplateBuilder() {
         prompt: aiPrompt,
         tone: aiTone
       });
-      return res.json();
+      const remaining = res.headers.get("X-AI-Generations-Remaining");
+      const resetsAt = res.headers.get("X-AI-Generations-Reset");
+      const data = await res.json();
+      return { ...data, _quota: { remaining, resetsAt } };
     },
     onSuccess: (data) => {
+      if (data._quota?.remaining != null) setAiQuota(data._quota);
       setLocalTemplate(prev => ({
         ...prev,
         subject: data.subject || prev.subject,
@@ -84,6 +93,14 @@ export default function TemplateBuilder() {
       setActiveTab("edit");
     },
     onError: (err) => {
+      try {
+        const body = JSON.parse(err.message);
+        if (body?.resetsAt) {
+          const resetTime = new Date(body.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          setAiError(`Daily AI limit reached — resets at ${resetTime}. ${body.upgradeMessage}`);
+          return;
+        }
+      } catch {}
       setAiError(err.message || "Failed to generate template. Please try again.");
     }
   });
@@ -158,7 +175,7 @@ export default function TemplateBuilder() {
               </div>
               <div className="text-left">
                 <p className="font-medium text-sm">Generate with AI</p>
-                <p className="text-xs text-muted-foreground">Describe your campaign goal — GPT-4o writes the template</p>
+                <p className="text-xs text-muted-foreground">Describe your campaign goal — AI drafts a starting template</p>
               </div>
             </div>
             {aiOpen ? (
@@ -223,6 +240,19 @@ export default function TemplateBuilder() {
                   )}
                 </Button>
               </div>
+
+              {(() => {
+                const dailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
+                const isUnlimited = dailyLimit === Infinity || aiQuota?.remaining === "unlimited";
+                if (isUnlimited) return null;
+                const remaining = aiQuota ? parseInt(aiQuota.remaining, 10) : Math.max(0, dailyLimit - (user?.aiGenerationsToday ?? 0));
+                const used = dailyLimit - remaining;
+                return (
+                  <p className="text-xs text-muted-foreground text-right">
+                    {used} of {dailyLimit} AI generation{dailyLimit !== 1 ? "s" : ""} used today
+                  </p>
+                );
+              })()}
 
               {aiError && (
                 <Alert variant="destructive" className="py-2">
@@ -415,7 +445,7 @@ Your Team"
           disabled={!canProceed}
           data-testid="button-next-step"
         >
-          Continue to AI Preview
+          Continue to Preview
         </Button>
       </div>
     </div>

@@ -9,13 +9,12 @@
  */
 
 import crypto from "crypto";
-import { 
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS 
+import bcrypt from "bcryptjs";
+import {
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
+  CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
+  INACTIVITY_THRESHOLDS
 } from "../shared/schema.js";
-
-function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
-}
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -33,11 +32,15 @@ const store = {
   contacts: new Map(),
   campaigns: new Map(),
   campaignEmails: new Map(),
+  suppressions: new Map(),
   creditTransactions: new Map(),
   auditLogs: new Map(),
   payments: new Map(),
   contactSubmissions: new Map(),
-  waitlist: new Map()
+  waitlist: new Map(),
+  aiUsageLogs: new Map(),
+  invites: new Map(),
+  snsEvents: new Map(),
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -52,8 +55,8 @@ export const memoryStorage = {
   async createUser(userData) {
     const id = generateUUID();
     const now = new Date();
-    const passwordHash = hashPassword(userData.password);
-    
+    const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
+
     // Check for unique username
     for (const user of store.users.values()) {
       if (user.username === userData.username) {
@@ -80,9 +83,18 @@ export const memoryStorage = {
       mustResetPassword: userData.mustResetPassword !== false,
       isActive: true,
       plan: userData.plan || "free",
+      aiGenerationsToday: 0,
+      aiGenerationsResetAt: null,
       createdAt: now,
       updatedAt: now,
-      lastLoginAt: null
+      lastLoginAt: null,
+      lastActivityAt: null,
+      inactivityWarningSentAt: null,
+      inactivityKeepToken: null,
+      inactivityKeepTokenExpiresAt: null,
+      isDormant: false,
+      isSecondaryRoot: false,
+      lastEmergencyRecoveryAt: null,
     };
     
     store.users.set(id, user);
@@ -107,16 +119,48 @@ export const memoryStorage = {
     return null;
   },
 
+  async getUserByEmail(email) {
+    for (const user of store.users.values()) {
+      if (user.email && user.email.toLowerCase() === email.toLowerCase()) {
+        return user;
+      }
+    }
+    return null;
+  },
+
   async validatePassword(user, password) {
-    const hash = hashPassword(password);
-    return user.passwordHash === hash;
+    const hash = user.passwordHash;
+    if (!hash) return false;
+
+    // Modern bcrypt hash
+    if (hash.startsWith("$2b$") || hash.startsWith("$2a$")) {
+      return bcrypt.compare(password, hash);
+    }
+
+    // Legacy SHA-256 hash — verify, then transparently migrate to bcrypt
+    const sha256 = crypto.createHash("sha256").update(password).digest("hex");
+    if (sha256 !== hash) return false;
+
+    try {
+      const newHash = await bcrypt.hash(password, 12);
+      const storedUser = store.users.get(user.id);
+      if (storedUser) {
+        storedUser.passwordHash = newHash;
+        storedUser.updatedAt = new Date();
+        console.log(`[AUTH] Migrated password hash for user ${user.username} from SHA-256 to bcrypt`);
+      }
+    } catch (migErr) {
+      console.error(`[AUTH] Password migration failed for user ${user.id}:`, migErr.message);
+    }
+
+    return true;
   },
 
   async updatePassword(userId, newPassword) {
     const user = store.users.get(userId);
     if (!user) throw new Error("User not found");
-    
-    user.passwordHash = hashPassword(newPassword);
+
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
     user.mustResetPassword = false;
     user.updatedAt = new Date();
     
@@ -168,6 +212,19 @@ export const memoryStorage = {
     return result.map(u => this.sanitizeUser(u));
   },
 
+  async getActiveChildren(parentId) {
+    const result = toSortedArray(store.users).filter(u => u.parentId === parentId && u.isActive);
+    return result.map(u => this.sanitizeUser(u));
+  },
+
+  async reassignChildren(oldParentId, newParentId) {
+    for (const user of store.users.values()) {
+      if (user.parentId === oldParentId) {
+        user.parentId = newParentId;
+      }
+    }
+  },
+
   sanitizeUser(user) {
     if (!user) return null;
     const { passwordHash, ...sanitized } = user;
@@ -216,11 +273,14 @@ export const memoryStorage = {
   },
 
   async deleteUserSessions(userId) {
+    let count = 0;
     for (const [id, session] of store.sessions.entries()) {
       if (session.userId === userId) {
         store.sessions.delete(id);
+        count++;
       }
     }
+    return count;
   },
 
   // ==================== CREDIT OPERATIONS ====================
@@ -309,15 +369,59 @@ export const memoryStorage = {
     return { success: true, amount };
   },
 
+  async reclaimCredits(childId, parentId, amount) {
+    const child = store.users.get(childId);
+    const parent = store.users.get(parentId);
+    if (!child || !parent) throw new Error("User not found");
+
+    const childBalanceBefore = child.creditsReceived;
+    const parentBalanceBefore = parent.creditsAllocated;
+
+    child.creditsReceived -= amount;
+    child.updatedAt = new Date();
+    parent.creditsAllocated -= amount;
+    parent.updatedAt = new Date();
+
+    const txId1 = generateUUID();
+    store.creditTransactions.set(txId1, {
+      id: txId1,
+      userId: childId,
+      type: "reclaim_out",
+      amount: -amount,
+      balanceBefore: childBalanceBefore,
+      balanceAfter: childBalanceBefore - amount,
+      fromUserId: childId,
+      toUserId: parentId,
+      description: `${amount} credits reclaimed on account deactivation`,
+      createdAt: new Date(),
+    });
+
+    const txId2 = generateUUID();
+    store.creditTransactions.set(txId2, {
+      id: txId2,
+      userId: parentId,
+      type: "reclaim_in",
+      amount,
+      balanceBefore: parentBalanceBefore,
+      balanceAfter: parentBalanceBefore - amount,
+      fromUserId: childId,
+      toUserId: parentId,
+      description: `${amount} credits reclaimed from ${child.username} on deactivation`,
+      createdAt: new Date(),
+    });
+
+    return { amount };
+  },
+
   async useCredits(userId, amount) {
     const user = store.users.get(userId);
     if (!user) throw new Error("User not found");
-    
+
     const remaining = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
     if (remaining < amount) {
       throw new Error("Insufficient credits");
     }
-    
+
     user.creditsUsed += amount;
     user.updatedAt = new Date();
     
@@ -327,54 +431,77 @@ export const memoryStorage = {
   async deductCreditAtomic(userId, campaignId, description = "Email sent") {
     const user = store.users.get(userId);
     if (!user) throw new Error("User not found");
-    
-    const remaining = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
-    if (remaining < 1) {
+
+    // Compute balances at moment of write (single-threaded, no TOCTOU in memory)
+    const paidRemaining = Math.max(0, (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0));
+    const trialRemaining = user.isTrialUser
+      ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
+      : 0;
+
+    if (paidRemaining >= 1) {
+      const balanceBefore = user.creditsUsed;
+      user.creditsUsed += 1;
+      user.updatedAt = new Date();
+      const txId = generateUUID();
+      store.creditTransactions.set(txId, {
+        id: txId, userId, type: "usage", amount: -1,
+        balanceBefore, balanceAfter: balanceBefore + 1,
+        campaignId, description, createdAt: new Date()
+      });
+    } else if (trialRemaining >= 1) {
+      const balanceBefore = user.trialCreditsUsed || 0;
+      user.trialCreditsUsed = balanceBefore + 1;
+      user.updatedAt = new Date();
+      const txId = generateUUID();
+      store.creditTransactions.set(txId, {
+        id: txId, userId, type: "trial_usage", amount: -1,
+        balanceBefore, balanceAfter: balanceBefore + 1,
+        campaignId, description, createdAt: new Date()
+      });
+    } else {
       throw new Error("Insufficient credits");
     }
-    
-    const balanceBefore = user.creditsUsed;
-    user.creditsUsed += 1;
-    user.updatedAt = new Date();
-    
-    const txId = generateUUID();
-    store.creditTransactions.set(txId, {
-      id: txId,
-      userId,
-      type: "usage",
-      amount: -1,
-      balanceBefore,
-      balanceAfter: balanceBefore + 1,
-      campaignId,
-      description,
-      createdAt: new Date()
-    });
-    
+
     await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CREDITS_USED,
-      targetType: "campaign",
-      targetId: campaignId,
-      details: { creditsUsed: 1 }
+      userId, action: AUDIT_ACTIONS.CREDITS_USED,
+      targetType: "campaign", targetId: campaignId,
+      details: { creditsUsed: 1 },
     });
-    
+
     return true;
+  },
+
+  async addCredits(userId, amount, action, details = {}) {
+    const user = store.users.get(userId);
+    if (!user) throw new Error("User not found");
+    user.creditsReceived = (user.creditsReceived || 0) + amount;
+    user.updatedAt = new Date();
+    await this.createAuditLog({
+      userId, action: action || AUDIT_ACTIONS.CREDITS_PURCHASED,
+      details: { amount, ...details }
+    });
+    return this.sanitizeUser(user);
   },
 
   async canStartCampaign(userId, emailCount) {
     const user = await this.getUserById(userId);
     if (!user) return { allowed: false, reason: "User not found" };
-    
-    if (user.creditsRemaining < emailCount) {
-      return { 
-        allowed: false, 
-        reason: `Insufficient credits. Need ${emailCount}, have ${user.creditsRemaining}`,
+
+    const trialRemaining = user.isTrialUser
+      ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
+      : 0;
+    const totalAvailable = (user.creditsRemaining || 0) + trialRemaining;
+
+    if (totalAvailable < emailCount) {
+      return {
+        allowed: false,
+        reason: `Insufficient credits. Need ${emailCount}, have ${totalAvailable}`,
         creditsNeeded: emailCount,
-        creditsAvailable: user.creditsRemaining
+        creditsAvailable: totalAvailable
       };
     }
-    
-    return { allowed: true, creditsAvailable: user.creditsRemaining };
+
+    return { allowed: true, creditsAvailable: totalAvailable };
   },
 
   async getCreditTransactions(userId, limit = 50) {
@@ -451,18 +578,32 @@ export const memoryStorage = {
 
   // ==================== CONTACT OPERATIONS ====================
   async createContact(contactData) {
+    const email = contactData.email?.toLowerCase().trim();
+
+    // Upsert: update non-identifying fields if (userId, email) already exists
+    const existing = [...store.contacts.values()].find(
+      (c) => c.userId === contactData.userId && c.email === email
+    );
+    if (existing) {
+      existing.name = contactData.name ?? existing.name;
+      existing.company = contactData.company ?? existing.company;
+      existing.category = contactData.category ?? existing.category;
+      existing.customFields = contactData.customFields ?? existing.customFields;
+      store.contacts.set(existing.id, existing);
+      return existing;
+    }
+
     const id = generateUUID();
     const contact = {
       id,
       userId: contactData.userId,
-      email: contactData.email,
+      email,
       name: contactData.name || null,
       company: contactData.company || null,
       category: contactData.category || null,
       customFields: contactData.customFields || null,
       createdAt: new Date()
     };
-    
     store.contacts.set(id, contact);
     return contact;
   },
@@ -508,6 +649,7 @@ export const memoryStorage = {
       totalEmails: campaignData.totalEmails || 0,
       sentEmails: 0,
       failedEmails: 0,
+      skippedEmails: 0,
       creditsUsed: 0,
       contactIds: campaignData.contactIds || [],
       templateSnapshot: campaignData.templateSnapshot || null,
@@ -536,11 +678,13 @@ export const memoryStorage = {
   },
 
   async getCampaigns(userId = null, isRootAdmin = false) {
-    let result = toSortedArray(store.campaigns);
-    if (!isRootAdmin && userId) {
-      result = result.filter(c => c.userId === userId);
+    if (isRootAdmin) {
+      return toSortedArray(store.campaigns);
     }
-    return result;
+    if (userId) {
+      return toSortedArray(store.campaigns).filter(c => c.userId === userId);
+    }
+    return [];
   },
 
   async getCampaign(id) {
@@ -628,12 +772,15 @@ export const memoryStorage = {
 
   async getAuditLogs(filters = {}) {
     let result = toSortedArray(store.auditLogs);
-    
+
     if (filters.userId) {
       result = result.filter(l => l.userId === filters.userId);
     }
     if (filters.action) {
       result = result.filter(l => l.action === filters.action);
+    }
+    if (filters.targetId) {
+      result = result.filter(l => l.targetId === filters.targetId);
     }
     
     result = result.slice(0, filters.limit || 100);
@@ -649,14 +796,169 @@ export const memoryStorage = {
   },
 
   // ==================== DASHBOARD OPERATIONS ====================
+  async createAiUsageLog(data) {
+    const id = generateUUID();
+    const log = {
+      id,
+      userId: data.userId,
+      endpoint: data.endpoint,
+      model: data.model,
+      inputTokens: data.inputTokens,
+      outputTokens: data.outputTokens,
+      estimatedCostUsd: Number(data.estimatedCostUsd),
+      cached: data.cached ?? false,
+      latencyMs: data.latencyMs ?? null,
+      requestHash: data.requestHash ?? null,
+      createdAt: new Date(),
+    };
+    store.aiUsageLogs.set(id, log);
+    return log;
+  },
+
   async getDashboardStats(userId, isRootAdmin) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
-    return {
+    const base = {
       totalCampaigns: campaignsList.length,
       activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
       totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
     };
+
+    if (!isRootAdmin) return base;
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // All AI analytics scoped to 30 days — matches getDashboardStats in dbStorage
+    const recentLogs = Array.from(store.aiUsageLogs.values()).filter(l => new Date(l.createdAt) >= thirtyDaysAgo);
+
+    const totalCalls = recentLogs.length;
+    const cachedCalls = recentLogs.filter(l => l.cached).length;
+    const totalCostUsd = recentLogs.reduce((s, l) => s + Number(l.estimatedCostUsd), 0);
+
+    const endpointMap = {};
+    for (const l of recentLogs) {
+      if (!endpointMap[l.endpoint]) {
+        endpointMap[l.endpoint] = { totalCost: 0, totalCalls: 0, cacheHits: 0, latencySum: 0, latencyCount: 0 };
+      }
+      endpointMap[l.endpoint].totalCost += Number(l.estimatedCostUsd);
+      endpointMap[l.endpoint].totalCalls++;
+      if (l.cached) {
+        endpointMap[l.endpoint].cacheHits++;
+      } else if (l.latencyMs > 0) {
+        endpointMap[l.endpoint].latencySum += l.latencyMs;
+        endpointMap[l.endpoint].latencyCount++;
+      }
+    }
+
+    const spenderMap = {};
+    for (const l of recentLogs) {
+      if (!spenderMap[l.userId]) spenderMap[l.userId] = { userId: l.userId, username: null, totalCost: 0, totalCalls: 0 };
+      spenderMap[l.userId].totalCost += Number(l.estimatedCostUsd);
+      spenderMap[l.userId].totalCalls++;
+    }
+    // Resolve usernames
+    for (const s of Object.values(spenderMap)) {
+      const user = store.users.get(s.userId);
+      s.username = user?.username || s.userId;
+    }
+    const topSpenders = Object.values(spenderMap)
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 10);
+
+    return {
+      ...base,
+      aiStats: {
+        totalAiCostUsd: totalCostUsd,
+        aiCostLast30Days: totalCostUsd,
+        totalAiCalls: totalCalls,
+        cacheHitRate: totalCalls > 0 ? ((cachedCalls / totalCalls) * 100).toFixed(1) : "0.0",
+        aiCostByEndpoint: Object.entries(endpointMap).map(([endpoint, v]) => ({
+          endpoint,
+          totalCost: v.totalCost,
+          totalCalls: v.totalCalls,
+          cacheHits: v.cacheHits,
+          avgLatencyMs: v.latencyCount > 0 ? Math.round(v.latencySum / v.latencyCount) : null,
+        })),
+        topAiSpenders: topSpenders,
+      },
+    };
+  },
+
+  async getTeamStats(parentId) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const children = Array.from(store.users.values()).filter(u => u.parentId === parentId && u.isActive);
+    const childIds = new Set(children.map(u => u.id));
+    const teamCampaigns = Array.from(store.campaigns.values()).filter(c => childIds.has(c.userId));
+
+    const activeUserIds = new Set(
+      teamCampaigns
+        .filter(c => new Date(c.createdAt) >= sevenDaysAgo)
+        .map(c => c.userId)
+    );
+
+    return {
+      totalTeamMembers:            children.length,
+      activeThisWeek:              activeUserIds.size,
+      totalTeamCampaigns:          teamCampaigns.length,
+      totalTeamCreditsUsed:        children.reduce((s, u) => s + (u.creditsUsed || 0), 0),
+      totalTeamAiGenerationsToday: children.reduce((s, u) => s + (u.aiGenerationsToday || 0), 0),
+      creditsAllocatedToTeam:      children.reduce((s, u) => s + (u.creditsReceived || 0), 0),
+      creditsRemainingInTeam:      children.reduce((s, u) => s + ((u.creditsReceived || 0) - (u.creditsAllocated || 0) - (u.creditsUsed || 0)), 0),
+    };
+  },
+
+  async getUsersWithStats(parentId, isRootAdmin = false) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const userRows = isRootAdmin
+      ? toSortedArray(store.users)
+      : toSortedArray(store.users).filter(u => u.parentId === parentId);
+
+    if (userRows.length === 0) return [];
+
+    const userIdSet = new Set(userRows.map(u => u.id));
+    const teamCampaigns = Array.from(store.campaigns.values()).filter(c => userIdSet.has(c.userId));
+
+    // Build per-user campaign stats in one pass
+    const statsMap = {};
+    for (const c of teamCampaigns) {
+      if (!statsMap[c.userId]) statsMap[c.userId] = { total: 0, lastAt: null, activeRecently: false, runningReserved: 0 };
+      statsMap[c.userId].total++;
+      const cAt = new Date(c.createdAt);
+      if (!statsMap[c.userId].lastAt || cAt > new Date(statsMap[c.userId].lastAt)) {
+        statsMap[c.userId].lastAt = c.createdAt;
+      }
+      if (cAt >= sevenDaysAgo) statsMap[c.userId].activeRecently = true;
+      if (c.status === "RUNNING") {
+        statsMap[c.userId].runningReserved += Math.max(0, (c.totalEmails || 0) - (c.sentEmails || 0));
+      }
+    }
+
+    const parentEffectivePlan = await this.getEffectivePlan(parentId);
+    const now = Date.now();
+    const reclaimAfterWarningMs = (INACTIVITY_THRESHOLDS.RECLAIM_ELIGIBLE_DAYS - INACTIVITY_THRESHOLDS.WARNING_DAYS) * 86400000;
+
+    return userRows.map(u => {
+      const s = statsMap[u.id] || {};
+      const childPlan = (u.plan && u.plan !== "free") ? u.plan : parentEffectivePlan;
+      const { passwordHash, ...safe } = u;
+      const creditsRemaining = (u.creditsReceived || 0) - (u.creditsAllocated || 0) - (u.creditsUsed || 0);
+      const runningReserved = s.runningReserved || 0;
+      return {
+        ...safe,
+        creditsRemaining,
+        safeReclaimable:    Math.max(0, creditsRemaining - runningReserved),
+        totalCampaigns:     s.total || 0,
+        lastCampaignAt:     s.lastAt || null,
+        isActiveThisWeek:   s.activeRecently || false,
+        aiGenerationsToday: u.aiGenerationsToday || 0,
+        aiDailyLimit:       AI_DAILY_LIMITS[childPlan] ?? AI_DAILY_LIMITS.free,
+        daysInactive:       Math.floor((now - new Date(u.lastActivityAt || u.createdAt).getTime()) / 86400000),
+        isReclaimEligible:  Boolean(
+                              u.inactivityWarningSentAt &&
+                              u.inactivityKeepToken &&
+                              new Date(u.inactivityWarningSentAt) < new Date(Date.now() - 60 * 86400000)
+                            ),
+      };
+    });
   },
 
   // ==================== ADMIN INITIALIZATION ====================
@@ -746,12 +1048,15 @@ export const memoryStorage = {
     
     // Credit user account
     const user = store.users.get(payment.userId);
+    const balanceBefore = user
+      ? (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
+      : 0;
     if (user) {
       user.creditsReceived += payment.credits;
       user.isTrialUser = false;
       user.updatedAt = new Date();
     }
-    
+
     // Create credit transaction
     const txId = generateUUID();
     store.creditTransactions.set(txId, {
@@ -759,8 +1064,8 @@ export const memoryStorage = {
       userId: payment.userId,
       type: "purchase",
       amount: payment.credits,
-      balanceBefore: 0,
-      balanceAfter: payment.credits,
+      balanceBefore,
+      balanceAfter: balanceBefore + payment.credits,
       description: `Purchased ${payment.credits} credits - ${payment.planName}`,
       createdAt: new Date()
     });
@@ -898,21 +1203,556 @@ export const memoryStorage = {
   async getTotalCreditsAvailable(userId) {
     const user = await this.getUserById(userId);
     if (!user) return { paid: 0, trial: 0, total: 0 };
-    
-    const paidRemaining = Math.max(0, 
+
+    const paidRemaining = Math.max(0,
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
-    const trialRemaining = user.isTrialUser 
+    const trialRemaining = user.isTrialUser
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
-    
+
     return {
       paid: paidRemaining,
       trial: trialRemaining,
       total: paidRemaining + trialRemaining,
       isTrialUser: user.isTrialUser
     };
-  }
+  },
+
+  async getEffectivePlan(userId) {
+    const user = store.users.get(userId);
+    if (!user) return "free";
+    if (user.plan && user.plan !== "free") return user.plan;
+    if (user.parentId) {
+      const parent = store.users.get(user.parentId);
+      if (parent?.plan) return parent.plan;
+    }
+    return "free";
+  },
+
+  async checkAndIncrementAiQuota(userId) {
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const limit = AI_DAILY_LIMITS[effectivePlan] ?? AI_DAILY_LIMITS.free;
+    if (limit === Infinity) return { allowed: true, remaining: Infinity, resetsAt: null };
+
+    const user = store.users.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const now = new Date();
+    const needsReset = !user.aiGenerationsResetAt ||
+      (now.getTime() - new Date(user.aiGenerationsResetAt).getTime()) > 24 * 60 * 60 * 1000;
+
+    const currentCount = needsReset ? 0 : (user.aiGenerationsToday || 0);
+    const windowStart = needsReset ? now : new Date(user.aiGenerationsResetAt);
+    const resetsAt = new Date(windowStart.getTime() + 24 * 60 * 60 * 1000);
+
+    if (currentCount >= limit) {
+      return { allowed: false, remaining: 0, resetsAt };
+    }
+
+    user.aiGenerationsToday = currentCount + 1;
+    if (needsReset) user.aiGenerationsResetAt = now;
+    user.updatedAt = now;
+
+    return { allowed: true, remaining: limit - currentCount - 1, resetsAt };
+  },
+
+  // ── Campaign Emails ────────────────────────────────────────────────────────
+
+  async createCampaignEmail(data) {
+    const id = generateUUID();
+    const record = {
+      id,
+      campaignId: data.campaignId,
+      userId: data.userId,
+      contactId: data.contactId || null,
+      recipientEmail: data.recipientEmail,
+      sesMessageId: null,
+      status: data.status || CAMPAIGN_EMAIL_STATUS.PENDING,
+      failureReason: null,
+      sentAt: null,
+      openedAt: null,
+      clickedAt: null,
+      createdAt: new Date(),
+    };
+    store.campaignEmails.set(id, record);
+    return record;
+  },
+
+  async updateCampaignEmail(id, updates) {
+    const record = store.campaignEmails.get(id);
+    if (!record) return null;
+    Object.assign(record, updates);
+    return record;
+  },
+
+  async getCampaignEmailBySesMessageId(sesMessageId) {
+    for (const record of store.campaignEmails.values()) {
+      if (record.sesMessageId === sesMessageId) return record;
+    }
+    return null;
+  },
+
+  async getCampaignEmailsByCampaign(campaignId, limit = 50) {
+    return toSortedArray(store.campaignEmails)
+      .filter(r => r.campaignId === campaignId)
+      .slice(0, limit);
+  },
+
+  async getCampaignEmailByContact(campaignId, contactId) {
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId === campaignId && record.contactId === contactId) return record;
+    }
+    return null;
+  },
+
+  async hasAnySentEmails(campaignId) {
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId === campaignId && record.status === CAMPAIGN_EMAIL_STATUS.SENT) return true;
+    }
+    return false;
+  },
+
+  // ── Suppressions ───────────────────────────────────────────────────────────
+
+  async addSuppression(userId, email, source) {
+    const normalizedEmail = email.toLowerCase().trim();
+    // idempotent — one suppression per (userId, email) regardless of source
+    for (const record of store.suppressions.values()) {
+      if (record.userId === userId && record.email === normalizedEmail) return;
+    }
+    const id = generateUUID();
+    store.suppressions.set(id, { id, userId, email: normalizedEmail, source, createdAt: new Date() });
+    console.log(`[SUPPRESSION] userId=${userId} email=${normalizedEmail} source=${source}`);
+  },
+
+  async isSuppressed(userId, email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    for (const record of store.suppressions.values()) {
+      if (record.userId === userId && record.email === normalizedEmail) return true;
+    }
+    return false;
+  },
+
+  async getSuppressions(userId) {
+    return toSortedArray(store.suppressions).filter(r => r.userId === userId);
+  },
+
+  async isGloballySuppressed(email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    for (const record of store.suppressions.values()) {
+      if (record.email === normalizedEmail) return true;
+    }
+    return false;
+  },
+
+  async getPreCampaignSuppressionCount(emails) {
+    if (!emails || emails.length === 0) return 0;
+    let count = 0;
+    for (const email of emails) {
+      const normalized = email.toLowerCase().trim();
+      for (const record of store.suppressions.values()) {
+        if (record.email === normalized) { count++; break; }
+      }
+    }
+    return count;
+  },
+
+  // ── SNS event deduplication ────────────────────────────────────────────────
+
+  async getSnsEvent(messageId) {
+    return store.snsEvents.get(messageId) || null;
+  },
+
+  async createSnsEvent(messageId, eventType) {
+    if (store.snsEvents.has(messageId)) return false;
+    store.snsEvents.set(messageId, { messageId, eventType, processedAt: new Date(), processed: false });
+    return true;
+  },
+
+  async updateSnsEventProcessed(messageId) {
+    const record = store.snsEvents.get(messageId);
+    if (record) record.processed = true;
+  },
+
+  async deleteOldSnsEvents() {
+    const cutoff = new Date(Date.now() - 7 * 86400000);
+    for (const [id, record] of store.snsEvents) {
+      if (record.processedAt < cutoff) store.snsEvents.delete(id);
+    }
+  },
+
+  async incrementCampaignBounced(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.bouncedEmails = (campaign.bouncedEmails || 0) + 1;
+  },
+
+  async incrementCampaignComplained(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.complainedEmails = (campaign.complainedEmails || 0) + 1;
+  },
+
+  async getCampaignEmailById(id) {
+    return store.campaignEmails.get(id) || null;
+  },
+
+  async updateCampaignEmailOpened(campaignEmailId) {
+    const record = store.campaignEmails.get(campaignEmailId);
+    if (!record || record.openedAt != null) return { wasFirst: false };
+    record.openedAt = new Date();
+    return { wasFirst: true };
+  },
+
+  async updateCampaignEmailClicked(campaignEmailId) {
+    const record = store.campaignEmails.get(campaignEmailId);
+    if (!record || record.clickedAt != null) return { wasFirst: false };
+    record.clickedAt = new Date();
+    return { wasFirst: true };
+  },
+
+  async incrementCampaignOpened(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.openedEmails = (campaign.openedEmails || 0) + 1;
+  },
+
+  async incrementCampaignClicked(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.clickedEmails = (campaign.clickedEmails || 0) + 1;
+  },
+
+  // ── Invites ────────────────────────────────────────────────────────────────
+
+  async createInvite(data) {
+    const id = generateUUID();
+    const invite = {
+      id,
+      email: data.email,
+      role: data.role,
+      invitedBy: data.invitedBy,
+      tokenHash: data.tokenHash,
+      expiresAt: new Date(data.expiresAt),
+      acceptedAt: null,
+      createdAt: new Date(),
+    };
+    store.invites.set(id, invite);
+    return invite;
+  },
+
+  async getInviteByTokenHash(tokenHash) {
+    for (const invite of store.invites.values()) {
+      if (invite.tokenHash === tokenHash) return invite;
+    }
+    return null;
+  },
+
+  async getInviteById(id) {
+    return store.invites.get(id) || null;
+  },
+
+  async getPendingInvitesByAdmin(invitedBy) {
+    return toSortedArray(store.invites)
+      .filter(i => i.invitedBy === invitedBy);
+  },
+
+  async markInviteAccepted(id) {
+    const invite = store.invites.get(id);
+    if (!invite) return null;
+    invite.acceptedAt = new Date();
+    return invite;
+  },
+
+  async updateInviteToken(id, tokenHash, expiresAt) {
+    const invite = store.invites.get(id);
+    if (!invite) return null;
+    invite.tokenHash = tokenHash;
+    invite.expiresAt = new Date(expiresAt);
+    return invite;
+  },
+
+  async deleteExpiredInvites() {
+    const now = new Date();
+    let count = 0;
+    for (const [id, invite] of store.invites.entries()) {
+      if (invite.expiresAt < now && !invite.acceptedAt) {
+        store.invites.delete(id);
+        count++;
+      }
+    }
+    return count;
+  },
+
+  async getChildUserCount(parentId) {
+    let count = 0;
+    for (const user of store.users.values()) {
+      if (user.parentId === parentId && user.isActive) count++;
+    }
+    return count;
+  },
+
+  // ── Inactivity Governance ──────────────────────────────────────────────────
+
+  async updateUserActivity(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+
+    const wasDormant = user.isDormant;
+    user.lastActivityAt = new Date();
+    user.inactivityWarningSentAt = null;
+    user.inactivityKeepToken = null;
+    user.inactivityKeepTokenExpiresAt = null;
+    user.isDormant = false;
+    user.updatedAt = new Date();
+
+    if (wasDormant) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.USER_REACTIVATED,
+        targetType: "user",
+        targetId: userId,
+      });
+    }
+  },
+
+  async setUserDormant(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+
+    user.isDormant = true;
+    user.updatedAt = new Date();
+
+    const creditsRemaining = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
+    const daysInactive = user.lastActivityAt
+      ? Math.floor((Date.now() - new Date(user.lastActivityAt).getTime()) / 86400000)
+      : null;
+
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.USER_DORMANT,
+      targetType: "user",
+      targetId: userId,
+      details: { daysInactive, creditsRemaining },
+    });
+  },
+
+  async getUsersForInactivityCheck() {
+    const { WARNING_DAYS } = INACTIVITY_THRESHOLDS;
+    const cutoff = new Date(Date.now() - WARNING_DAYS * 24 * 60 * 60 * 1000);
+
+    return Array.from(store.users.values()).filter(u => {
+      if (u.role === USER_ROLES.ROOT_ADMIN) return false;
+      if (u.isSecondaryRoot) return false;
+      if (!u.isActive) return false;
+      if (u.lastActivityAt == null) return new Date(u.createdAt) < cutoff;
+      return new Date(u.lastActivityAt) < cutoff;
+    });
+  },
+
+  async autoReclaimCredits(fromUserId, toUserId) {
+    const child = store.users.get(fromUserId);
+    const parent = store.users.get(toUserId);
+    if (!child || !parent) throw new Error("User not found");
+
+    const creditsRemaining = (child.creditsReceived || 0) - (child.creditsAllocated || 0) - (child.creditsUsed || 0);
+    const runningCampaignCredits = Array.from(store.campaigns.values())
+      .filter(c => c.userId === fromUserId && c.status === CAMPAIGN_STATUS.RUNNING)
+      .reduce((sum, c) => sum + Math.max(0, (c.totalEmails || 0) - (c.sentEmails || 0)), 0);
+
+    const safeReclaim = creditsRemaining - runningCampaignCredits;
+    if (safeReclaim <= 0) return { amount: 0, skipped: true, protectedCredits: runningCampaignCredits };
+
+    const childBalanceBefore = creditsRemaining;
+    const parentActualBalance = (parent.creditsReceived || 0) - (parent.creditsAllocated || 0) - (parent.creditsUsed || 0);
+
+    child.creditsReceived -= safeReclaim;
+    child.updatedAt = new Date();
+    parent.creditsAllocated -= safeReclaim;
+    parent.updatedAt = new Date();
+
+    const txId1 = generateUUID();
+    store.creditTransactions.set(txId1, {
+      id: txId1, userId: fromUserId, type: "reclaim_out",
+      amount: -safeReclaim,
+      balanceBefore: childBalanceBefore, balanceAfter: childBalanceBefore - safeReclaim,
+      fromUserId, toUserId,
+      description: `${safeReclaim} credits reclaimed — 90 days inactivity`,
+      createdAt: new Date(),
+    });
+
+    const txId2 = generateUUID();
+    store.creditTransactions.set(txId2, {
+      id: txId2, userId: toUserId, type: "reclaim_in",
+      amount: safeReclaim,
+      balanceBefore: parentActualBalance, balanceAfter: parentActualBalance + safeReclaim,
+      fromUserId, toUserId,
+      description: `${safeReclaim} credits auto-reclaimed from ${child.username} — 90 days inactivity`,
+      createdAt: new Date(),
+    });
+
+    await this.createAuditLog({
+      userId: toUserId,
+      action: AUDIT_ACTIONS.CREDITS_AUTO_RECLAIMED,
+      targetType: "user",
+      targetId: fromUserId,
+      details: { amount: safeReclaim, runningCampaignCredits, reason: "90 days inactivity" },
+    });
+
+    return { amount: safeReclaim, skipped: false };
+  },
+
+  async validateKeepToken(rawToken) {
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    let user = null;
+    for (const u of store.users.values()) {
+      if (u.inactivityKeepToken === tokenHash) { user = u; break; }
+    }
+
+    if (!user) return { valid: false, reason: "not_found" };
+
+    if (!user.inactivityKeepTokenExpiresAt || new Date(user.inactivityKeepTokenExpiresAt) < new Date()) {
+      return { valid: false, userId: user.id, reason: "expired" };
+    }
+
+    const reclaimLogs = await this.getAuditLogs({
+      userId: user.id,
+      action: AUDIT_ACTIONS.CREDITS_AUTO_RECLAIMED,
+      limit: 1,
+    });
+    if (reclaimLogs && reclaimLogs.length > 0) {
+      return { valid: false, userId: user.id, reason: "reclaim_already_fired" };
+    }
+
+    return { valid: true, userId: user.id, user: this.sanitizeUser(user), reason: "valid" };
+  },
+
+  async markInactivityWarningSent(userId, tokenHash, tokenExpiresAt) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.inactivityWarningSentAt = new Date();
+    user.inactivityKeepToken = tokenHash ?? null;
+    user.inactivityKeepTokenExpiresAt = tokenExpiresAt ?? null;
+    user.updatedAt = new Date();
+  },
+
+  async updateInactivityToken(userId, tokenHash, tokenExpiresAt) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.inactivityKeepToken = tokenHash;
+    user.inactivityKeepTokenExpiresAt = tokenExpiresAt;
+    user.updatedAt = new Date();
+  },
+
+  async clearInactivityToken(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.inactivityKeepToken = null;
+    user.inactivityKeepTokenExpiresAt = null;
+    user.updatedAt = new Date();
+  },
+
+  // ── Secondary Root Admin ───────────────────────────────────────────────────
+
+  async grantSecondaryRoot(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.isSecondaryRoot = true;
+    user.updatedAt = new Date();
+  },
+
+  async revokeSecondaryRoot(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.isSecondaryRoot = false;
+    user.updatedAt = new Date();
+  },
+
+  async getSecondaryRootCount() {
+    let count = 0;
+    for (const user of store.users.values()) {
+      if (user.isSecondaryRoot) count++;
+    }
+    return count;
+  },
+
+  async markAllRootAdminsRecoveryAt(timestamp) {
+    for (const user of store.users.values()) {
+      if (user.role === USER_ROLES.ROOT_ADMIN) {
+        user.lastEmergencyRecoveryAt = timestamp;
+      }
+    }
+  },
+
+  // ── Data Cleanup Jobs ──────────────────────────────────────────────────────
+
+  async deleteExpiredSessions() {
+    const now = new Date();
+    let count = 0;
+    for (const [id, session] of store.sessions.entries()) {
+      if (new Date(session.expiresAt) < now) {
+        store.sessions.delete(id);
+        count++;
+      }
+    }
+    return count;
+  },
+
+  async pruneAuditLogs(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    let count = 0;
+    for (const [id, log] of store.auditLogs.entries()) {
+      if (new Date(log.createdAt) < cutoff) {
+        store.auditLogs.delete(id);
+        count++;
+      }
+    }
+    return count;
+  },
+
+  async deleteOldCampaignEmails(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    let count = 0;
+    for (const campaign of store.campaigns.values()) {
+      if (!["COMPLETED", "FAILED"].includes(campaign.status)) continue;
+      if (new Date(campaign.createdAt) >= cutoff) continue;
+      for (const [id, email] of store.campaignEmails.entries()) {
+        if (email.campaignId === campaign.id) {
+          store.campaignEmails.delete(id);
+          count++;
+        }
+      }
+    }
+    return count;
+  },
+
+  async pruneAiUsageLogs(retentionDays) {
+    const cutoff = new Date(Date.now() - retentionDays * 86400000);
+    let count = 0;
+    for (const [id, log] of store.aiUsageLogs.entries()) {
+      if (new Date(log.createdAt) < cutoff) {
+        store.aiUsageLogs.delete(id);
+        count++;
+      }
+    }
+    return count;
+  },
+
+  async expireInactivityTokens() {
+    const now = new Date();
+    let count = 0;
+    for (const user of store.users.values()) {
+      if (
+        user.inactivityKeepToken &&
+        user.inactivityKeepTokenExpiresAt &&
+        new Date(user.inactivityKeepTokenExpiresAt) < now
+      ) {
+        user.inactivityKeepToken = null;
+        user.inactivityKeepTokenExpiresAt = null;
+        user.updatedAt = new Date();
+        count++;
+      }
+    }
+    return count;
+  },
 };
 
 console.log("[DEV MODE] In-memory storage initialized - all data will reset on server restart");

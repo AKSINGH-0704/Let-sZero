@@ -8,11 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Play, 
-  Pause, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Play,
+  Pause,
+  CheckCircle,
+  XCircle,
   Clock,
   Activity,
   Send,
@@ -20,7 +20,10 @@ import {
   History,
   Loader2,
   Mail,
-  PartyPopper
+  PartyPopper,
+  TrendingUp,
+  MousePointerClick,
+  AlertTriangle,
 } from "lucide-react";
 import { formatNumber, cn } from "@/lib/utils";
 
@@ -198,6 +201,26 @@ export default function ProgressTracker() {
               <p className="text-sm text-green-700 dark:text-green-500 mt-1">
                 {formatNumber(currentCampaign.creditsUsed || totalEmails)} credits used
               </p>
+              {sentEmails < totalEmails && (
+                <div className="flex items-start gap-2 mt-3 pt-3 border-t border-green-200 dark:border-green-800 text-left">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                    Campaign stopped early — account ran out of credits. {formatNumber(sentEmails)} of {formatNumber(totalEmails)} contacts received this email. Top up credits to reach the remaining contacts.
+                  </p>
+                </div>
+              )}
+              {sentEmails > 0 && (currentCampaign.openedEmails > 0 || currentCampaign.clickedEmails > 0) && (
+                <div className="flex items-center justify-center gap-4 mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                  <span className="flex items-center gap-1 text-sm text-violet-700 dark:text-violet-400">
+                    <TrendingUp className="h-3.5 w-3.5" />
+                    {((currentCampaign.openedEmails / sentEmails) * 100).toFixed(1)}% open rate
+                  </span>
+                  <span className="flex items-center gap-1 text-sm text-blue-700 dark:text-blue-400">
+                    <MousePointerClick className="h-3.5 w-3.5" />
+                    {((currentCampaign.clickedEmails / sentEmails) * 100).toFixed(1)}% click rate
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

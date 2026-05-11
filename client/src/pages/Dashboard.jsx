@@ -1,3 +1,4 @@
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
@@ -5,13 +6,13 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { 
-  Coins, 
-  Send, 
-  History, 
-  TrendingUp, 
+import {
+  Coins,
+  Send,
+  History,
+  TrendingUp,
   TrendingDown,
   Plus,
   ArrowRight,
@@ -30,7 +31,8 @@ import {
   Calendar,
   PieChart,
   Target,
-  UserPlus
+  UserPlus,
+  X
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
 
@@ -61,15 +63,24 @@ function getStatusIcon(status) {
   }
 }
 
+const STATUS_DISPLAY = {
+  COMPLETED: { label: "Completed", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400", tooltip: "All emails were processed and sent." },
+  FAILED:    { label: "Failed",    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",         tooltip: "Campaign encountered an error and could not complete." },
+  RUNNING:   { label: "In Progress", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",   tooltip: "Campaign is actively sending emails right now." },
+  PAUSED:    { label: "Paused",    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400", tooltip: "Campaign is on hold. Resume it to continue sending." },
+  PENDING:   { label: "Queued",   color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",     tooltip: "Campaign is waiting to start. It will begin shortly." },
+};
+
 function getStatusBadge(status) {
-  const variants = {
-    COMPLETED: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    FAILED: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-    RUNNING: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    PAUSED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-    PENDING: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
-  };
-  return variants[status] || variants.PENDING;
+  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).color;
+}
+
+function getStatusLabel(status) {
+  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).label;
+}
+
+function getStatusTooltip(status) {
+  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).tooltip;
 }
 
 const PLAN_BADGE_STYLES = {
@@ -87,6 +98,19 @@ const PLAN_LABELS = {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(() => {
+    try {
+      const stored = localStorage.getItem("repmail_new_user");
+      return stored ? JSON.parse(stored)?.isNewUser === true : false;
+    } catch {
+      return false;
+    }
+  });
+
+  const dismissBanner = () => {
+    localStorage.removeItem("repmail_new_user");
+    setShowWelcomeBanner(false);
+  };
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard/stats"]
@@ -96,13 +120,18 @@ export default function Dashboard() {
     queryKey: ["/api/campaigns", "?limit=5"]
   });
 
-  const creditsRemaining = user 
+  const { data: creditsInfo } = useQuery({
+    queryKey: ["/api/credits/info"]
+  });
+
+  // Use total from credits/info (paid + trial) so it matches the Payments page
+  const creditsRemaining = creditsInfo?.total ?? (user
     ? calculateCreditsRemaining(
-        user.creditsReceived || 0, 
-        user.creditsAllocated || 0, 
+        user.creditsReceived || 0,
+        user.creditsAllocated || 0,
         user.creditsUsed || 0
       )
-    : 0;
+    : 0);
 
   // Chart data derived from stats or fallback
   const chartData = [
@@ -114,7 +143,27 @@ export default function Dashboard() {
     { month: 'Jun', sent: 28500, delivered: 27400 },
   ];
 
-  const isAdmin = user?.role === 'ROOT_ADMIN' || user?.role === 'SUB_ADMIN';
+  const isAdmin = user?.role === 'ROOT_ADMIN' || user?.role === 'SUB_ADMIN' || user?.isSecondaryRoot;
+
+  const { data: usersData } = useQuery({
+    queryKey: ["/api/users"],
+    enabled: isAdmin,
+  });
+
+  const inactivityStats = useMemo(() => {
+    if (!usersData || !isAdmin) return null;
+    const atRisk = usersData.filter(u =>
+      u.role !== "ROOT_ADMIN" &&
+      u.isActive &&
+      u.safeReclaimable > 0 &&
+      (u.isDormant || (u.inactivityWarningSentAt && u.inactivityKeepToken))
+    );
+    if (atRisk.length === 0) return null;
+    return {
+      count: atRisk.length,
+      credits: atRisk.reduce((s, u) => s + u.safeReclaimable, 0),
+    };
+  }, [usersData, isAdmin]);
 
   return (
     <AppLayout>
@@ -124,6 +173,87 @@ export default function Dashboard() {
         initial="hidden"
         animate="show"
       >
+        {/* Dormant banner — persistent, non-dismissible */}
+        <AnimatePresence>
+          {user?.isDormant && (
+            <motion.div
+              key="dormant-banner"
+              initial={{ opacity: 0, y: -16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex items-center justify-between gap-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700/60 px-5 py-4"
+            >
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                  Your account is dormant due to inactivity. Use the reactivation link sent to your email to restore full campaign access.
+                </p>
+              </div>
+              <p className="text-xs text-amber-700 dark:text-amber-400 shrink-0">
+                Questions? Contact your admin.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Welcome banner — shown once to new users who joined via invite */}
+        <AnimatePresence>
+          {showWelcomeBanner && (
+            <motion.div
+              key="welcome-banner"
+              initial={{ opacity: 0, y: -16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex items-center justify-between gap-4 rounded-xl bg-primary/10 border border-primary/20 px-5 py-4"
+            >
+              <p className="text-sm font-medium text-foreground">
+                Welcome to RepMail. Ready to send your first campaign?
+              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href="/app/campaigns/new">
+                  <Button size="sm" className="gap-1.5 h-8 text-xs">
+                    New Campaign
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+                <button
+                  onClick={dismissBanner}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Admin inactivity warning — derived from /api/users cache, no extra fetch */}
+        {isAdmin && inactivityStats && (
+          <motion.div
+            variants={itemVariants}
+            className="flex items-center gap-4 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-5 py-4"
+          >
+            <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0" />
+            <p className="text-sm font-medium text-amber-900 dark:text-amber-200 flex-1">
+              {inactivityStats.count} team member{inactivityStats.count !== 1 ? "s" : ""} inactive with{" "}
+              {formatNumber(inactivityStats.credits)} total credits at risk of automatic reclaim.
+            </p>
+            <Link href="/app/users" className="shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              >
+                Review Users
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </motion.div>
+        )}
+
         {/* Header */}
         <motion.div className="flex flex-wrap items-start justify-between gap-4" variants={itemVariants}>
           <div>
@@ -198,7 +328,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-slate-200 text-sm mb-1">Total Credits</p>
                 <p className="text-lg sm:text-xl font-medium text-white">
-                  {statsLoading ? '...' : formatNumber(user?.creditsReceived || 0)}
+                  {statsLoading ? '...' : formatNumber(creditsInfo?.total ?? user?.creditsReceived ?? 0)}
                 </p>
               </div>
               <div className="flex-1"></div>
@@ -545,11 +675,12 @@ export default function Dashboard() {
                         <div className="text-sm text-foreground font-medium">{formatNumber(campaign.totalEmails || 0)}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <Badge 
-                          variant="secondary" 
-                          className={`text-xs shadow-sm capitalize ${getStatusBadge(campaign.status)}`}
+                        <Badge
+                          variant="secondary"
+                          className={`text-xs shadow-sm ${getStatusBadge(campaign.status)}`}
+                          title={getStatusTooltip(campaign.status)}
                         >
-                          {campaign.status}
+                          {getStatusLabel(campaign.status)}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

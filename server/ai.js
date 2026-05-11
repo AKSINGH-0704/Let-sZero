@@ -1,34 +1,77 @@
 /**
  * RepMail AI Service
  * ==================
- * Powered by OpenAI gpt-4o — the best available model for copywriting and analysis.
- * All functions throw if OPENAI_API_KEY is not set, allowing callers to gracefully fall back.
+ * Model strategy:
+ *   generateTemplate  → gpt-4o      (high-quality copywriting, used sparingly)
+ *   generatePreviews  → gpt-4o-mini (fill-and-rephrase, cached)
+ *   analyzeSpam       → gpt-4o-mini (classification task, cached)
+ *
+ * All responses for generatePreviews and analyzeSpam are cached in memory
+ * (SHA-256 key on inputs, 1-hour TTL). Identical inputs return instantly.
  */
 
 import OpenAI from "openai";
+import * as cache from "./cache.js";
+import { storage } from "./storage.js";
+
+// Per-token cost rates (USD) — update here when OpenAI pricing changes
+const MODEL_COSTS = {
+  "gpt-4o":      { input: 2.50  / 1_000_000, output: 10.00 / 1_000_000 },
+  "gpt-4o-mini": { input: 0.150 / 1_000_000, output: 0.600 / 1_000_000 },
+};
+
+function calculateCostUsd(model, inputTokens, outputTokens) {
+  const rates = MODEL_COSTS[model] ?? MODEL_COSTS["gpt-4o-mini"];
+  return (inputTokens * rates.input) + (outputTokens * rates.output);
+}
+
+function logUsageToDb(userId, endpoint, model, inputTokens, outputTokens, cached, latencyMs = null, requestHash = null) {
+  const estimatedCostUsd = cached ? 0 : calculateCostUsd(model, inputTokens, outputTokens);
+  storage.createAiUsageLog({ userId: userId ?? null, endpoint, model, inputTokens, outputTokens, estimatedCostUsd, cached, latencyMs, requestHash })
+    .catch(err => console.error("[AI_LOG] Failed to write usage log:", err.message));
+}
 
 function getClient() {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY not configured");
   }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 30000,
+    maxRetries: 1,
+  });
 }
 
-// ─── 1. AI-POWERED EMAIL PREVIEW ───────────────────────────────────────────────
+function logAiUsage({ userId, endpoint, model, inputChars, outputChars }) {
+  const inputEst = Math.ceil(inputChars / 4);
+  const outputEst = Math.ceil(outputChars / 4);
+  console.log(
+    `[AI_USAGE] ts=${new Date().toISOString()} userId=${userId ?? "anon"} ` +
+    `endpoint=${endpoint} model=${model} ~inputTokens=${inputEst} ~outputTokens=${outputEst}`
+  );
+}
 
-/**
- * Generate personalized email previews for up to 3 contacts using GPT-4o.
- * Fills {{placeholders}}, rewrites in the selected tone, and makes emails feel
- * naturally written rather than templated.
- *
- * @param {string} subject  - Email subject with {{placeholders}}
- * @param {string} body     - Email body with {{placeholders}}
- * @param {Array}  contacts - Array of { name, email, company, category }
- * @param {string} tone     - "professional" | "friendly" | "formal" | "casual"
- * @returns {Array} Array of { contact, subject, body }
- */
-export async function generatePreviews(subject, body, contacts, tone = "professional") {
+// ─── 1. AI-POWERED EMAIL PREVIEW ──────────────────────────────────────────────
+// Model: gpt-4o-mini  |  Cached: yes (key = subject+body+tone+contacts)
+
+export async function generatePreviews(subject, body, contacts, tone = "professional", opts = {}) {
+  const cacheKey = cache.makeKey(
+    "preview",
+    subject,
+    body,
+    tone,
+    JSON.stringify(contacts.slice(0, 3).map(c => `${c.name}|${c.email}|${c.company}|${c.category}`))
+  );
+
+  const hit = cache.get(cacheKey);
+  if (hit) {
+    console.log(`[AI_CACHE] preview hit (key=${cacheKey.slice(0, 8)}…) — saved one GPT call`);
+    logUsageToDb(opts.userId, "preview", "gpt-4o-mini", 0, 0, true, 0, cacheKey);
+    return hit;
+  }
+
   const client = getClient();
+  const model = "gpt-4o-mini";
 
   const toneGuide = {
     professional:
@@ -54,9 +97,16 @@ export async function generatePreviews(subject, body, contacts, tone = "professi
 RULES:
 - Replace every {{placeholder}} with the contact's real data
 - Rewrite the email naturally in the specified tone — do NOT just swap words, actually rework the phrasing
+- Personalization must feel natural: if inserting the contact's name or category would make a sentence awkward, rephrase the sentence rather than forcing the placeholder in
 - Keep the core message and call-to-action intact
 - Make each email feel personally written for that specific person and company
-- Output ONLY valid JSON, no markdown, no explanation`;
+- Output ONLY valid JSON, no markdown, no explanation
+
+TONE — follow strictly for every email generated:
+- Professional: clear and direct, first-name greeting, confident but not stiff, no filler phrases
+- Friendly: warm and conversational, short punchy sentences, use first name often, upbeat but not over-the-top
+- Formal: no contractions, full structured sentences, respectful and measured, no informal phrases
+- Casual: relaxed and direct, reads like a message from a colleague, contractions throughout, no corporate language`;
 
   const userPrompt = `TEMPLATE SUBJECT: ${subject}
 TEMPLATE BODY:
@@ -78,8 +128,9 @@ Generate one personalized email for EACH contact. Return JSON:
 }`;
 
   try {
+    const t0 = Date.now();
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -88,11 +139,23 @@ Generate one personalized email for EACH contact. Return JSON:
       temperature: 0.7,
       max_tokens: 2000
     });
+    const latencyMs = Date.now() - t0;
 
-    const parsed = JSON.parse(response.choices[0].message.content);
+    const content = response.choices[0].message.content;
+    const usage = response.usage;
+    logAiUsage({
+      userId: opts.userId,
+      endpoint: "generatePreviews",
+      model,
+      inputChars: systemPrompt.length + userPrompt.length,
+      outputChars: content.length,
+    });
+    logUsageToDb(opts.userId, "preview", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, cacheKey);
+
+    const parsed = JSON.parse(content);
     const previews = parsed.previews || [];
 
-    return contacts.slice(0, 3).map((contact, i) => ({
+    const result = contacts.slice(0, 3).map((contact, i) => ({
       contact: {
         name: contact.name || "Valued Customer",
         email: contact.email || "",
@@ -102,26 +165,39 @@ Generate one personalized email for EACH contact. Return JSON:
       subject: previews[i]?.subject || subject,
       body: previews[i]?.body || body
     }));
+
+    cache.set(cacheKey, result);
+    return result;
   } catch (err) {
     console.error("[AI] generatePreviews error:", err.message);
     throw err;
   }
 }
 
-// ─── 2. AI-POWERED SPAM ANALYSIS ───────────────────────────────────────────────
+// ─── 2. AI-POWERED SPAM ANALYSIS ──────────────────────────────────────────────
+// Model: gpt-4o-mini  |  Cached: yes (key = subject+body)
 
-/**
- * Analyze an email for spam triggers, deliverability issues, and provide
- * intelligent improvement suggestions using GPT-4o.
- *
- * @param {string} subject - Email subject line
- * @param {string} body    - Email body text
- * @returns {{ score, riskyWords, suggestions, summary }}
- */
-export async function analyzeSpam(subject, body) {
+export async function analyzeSpam(subject, body, opts = {}) {
+  const model = "gpt-4o-mini";
+  const cacheKey = cache.makeKey("spam", subject, body, model);
+
+  const hit = cache.get(cacheKey);
+  if (hit) {
+    console.log(`[AI_CACHE] spam hit (key=${cacheKey.slice(0, 8)}…) — saved one GPT call`);
+    logUsageToDb(opts.userId, "spam-analysis", "gpt-4o-mini", 0, 0, true, 0, cacheKey);
+    return hit;
+  }
+
   const client = getClient();
 
   const systemPrompt = `You are a senior email deliverability expert who has analyzed millions of email campaigns. You understand exactly why emails land in spam folders and how to fix them.
+
+EVALUATE ALL FIVE DIMENSIONS — the score must reflect combined risk across:
+1. Spam trigger words: flag exact phrases from subject and body (free, win, guaranteed, urgent, limited time, click here, act now, etc.)
+2. Subject line issues: ALL CAPS, length over 50 characters, excessive punctuation, misleading preview text
+3. Reply-rate signals: is there a clear question or single CTA that invites a response? Penalize if missing or if multiple CTAs compete
+4. Mobile rendering: flag if body exceeds 200 words — long emails are truncated on mobile and hurt engagement
+5. Sender reputation: does this read like a legitimate individual reaching out, or a mass-blast template? Penalize promotional tone, generic openers, passive voice, and pressure language
 
 RULES:
 - Be precise and actionable, not generic
@@ -137,12 +213,12 @@ SUBJECT: ${subject}
 BODY:
 ${body}
 
-Evaluate these factors:
-1. Spam trigger words and phrases (free, win, guaranteed, urgent, limited time, click here, etc.)
-2. Subject line issues: ALL CAPS, excessive punctuation, deceptive preview text
-3. Body issues: excessive exclamation marks, misleading claims, overly promotional language
-4. Structural problems: too many links, no unsubscribe mention, suspicious formatting
-5. Tone issues: aggressive sales language, pressure tactics, false urgency
+Evaluate these five dimensions:
+1. Spam trigger words: flag exact phrases from subject and body (free, win, guaranteed, urgent, limited time, click here, act now, etc.)
+2. Subject line issues: ALL CAPS, length over 50 characters, excessive punctuation, deceptive preview text
+3. Reply-rate signals: is there a clear question or single CTA that invites a response? Note if missing or if multiple CTAs compete
+4. Mobile rendering: count the body words — flag if over 200 words as too long for mobile
+5. Sender reputation: does this read like a real person reaching out or a mass-blast template? Note promotional tone, generic openers, pressure language
 
 Return this exact JSON:
 {
@@ -155,8 +231,9 @@ Return this exact JSON:
 }`;
 
   try {
+    const t0 = Date.now();
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -165,32 +242,51 @@ Return this exact JSON:
       temperature: 0.3,
       max_tokens: 1000
     });
+    const latencyMs = Date.now() - t0;
 
-    const parsed = JSON.parse(response.choices[0].message.content);
-    return {
+    const content = response.choices[0].message.content;
+    const usage = response.usage;
+    logAiUsage({
+      userId: opts.userId,
+      endpoint: "analyzeSpam",
+      model,
+      inputChars: systemPrompt.length + userPrompt.length,
+      outputChars: content.length,
+    });
+    logUsageToDb(opts.userId, "spam-analysis", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, cacheKey);
+
+    const parsed = JSON.parse(content);
+    const result = {
       score: Math.min(Math.max(parseInt(parsed.score) || 0, 0), 100),
       riskyWords: Array.isArray(parsed.riskyWords) ? parsed.riskyWords : [],
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
       summary: parsed.summary || null
     };
+
+    cache.set(cacheKey, result);
+    return result;
   } catch (err) {
     console.error("[AI] analyzeSpam error:", err.message);
     throw err;
   }
 }
 
-// ─── 3. AI-POWERED TEMPLATE GENERATION ─────────────────────────────────────────
+// ─── 3. AI-POWERED TEMPLATE GENERATION ────────────────────────────────────────
+// Model: gpt-4o for growth/scale/enterprise, gpt-4o-mini otherwise
+// Cached: no (creative task, always generate fresh)
 
-/**
- * Generate a complete email template from a brief campaign description.
- * The output includes proper {{name}}, {{company}}, {{category}} placeholders.
- *
- * @param {string} prompt - User's campaign goal description
- * @param {string} tone   - "professional" | "friendly" | "formal" | "casual"
- * @returns {{ subject, body }}
- */
-export async function generateTemplate(prompt, tone = "professional") {
+function getModelForPlan(effectivePlan, feature) {
+  if (feature === "generate-template") {
+    return ["enterprise", "scale", "growth"].includes(effectivePlan) ? "gpt-4o" : "gpt-4o-mini";
+  }
+  return "gpt-4o-mini";
+}
+
+export async function generateTemplate(prompt, tone = "professional", opts = {}) {
   const client = getClient();
+  const effectivePlan = opts.effectivePlan || "free";
+  const model = getModelForPlan(effectivePlan, "generate-template");
+  console.log(`[AI] generate-template ${opts.userId ?? "anon"} using ${model} on effective plan ${effectivePlan}`);
 
   const toneGuide = {
     professional: "professional B2B tone — confident, clear, respectful",
@@ -211,9 +307,14 @@ RULES:
 - Always use {{name}} in the greeting
 - Use {{company}} where it makes the email more personal
 - Use {{category}} only if it fits naturally
-- Subject line should be compelling but not spammy (no ALL CAPS, no excessive punctuation)
+- Subject line must be under 50 characters — compelling but never clickbait
+- No ALL CAPS anywhere in subject or body
+- No excessive punctuation — avoid exclamation marks entirely unless the tone demands one
+- Avoid all spam trigger words: free, winner, urgent, guaranteed, click here, limited time, act now
+- Use plain conversational language — no salesy copy, no hype, no pressure tactics
 - Body should be 3-5 short paragraphs max
-- Include a clear, single call-to-action
+- Include exactly one clear CTA — never stack multiple asks
+- The email must end with a specific invitation: a question, a proposed next step, or a meeting request
 - End with a professional sign-off
 - Output ONLY valid JSON, no markdown, no explanation`;
 
@@ -229,8 +330,10 @@ Return JSON:
 }`;
 
   try {
+    const requestHash = cache.makeKey(prompt, tone);
+    const t0 = Date.now();
     const response = await client.chat.completions.create({
-      model: "gpt-4o",
+      model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -239,8 +342,20 @@ Return JSON:
       temperature: 0.8,
       max_tokens: 1200
     });
+    const latencyMs = Date.now() - t0;
 
-    const parsed = JSON.parse(response.choices[0].message.content);
+    const content = response.choices[0].message.content;
+    const usage = response.usage;
+    logAiUsage({
+      userId: opts.userId,
+      endpoint: "generateTemplate",
+      model,
+      inputChars: systemPrompt.length + userPrompt.length,
+      outputChars: content.length,
+    });
+    logUsageToDb(opts.userId, "generate-template", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, requestHash);
+
+    const parsed = JSON.parse(content);
     if (!parsed.subject || !parsed.body) {
       throw new Error("Invalid template response from AI");
     }

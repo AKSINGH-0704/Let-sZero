@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { apiRequest } from "@/lib/queryClient";
@@ -13,16 +13,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  ArrowLeft, 
-  Sparkles, 
-  RefreshCw, 
-  User, 
+import {
+  ArrowLeft,
+  AlertCircle,
+  Sparkles,
+  RefreshCw,
+  User,
   Mail as MailIcon,
   Building,
   Loader2,
-  CheckCircle
+  Info,
+  ChevronDown,
+  ChevronUp,
+  Wand2,
 } from "lucide-react";
 import { replacePlaceholders } from "@/lib/utils";
 
@@ -30,142 +39,238 @@ const TONES = [
   { value: "professional", label: "Professional" },
   { value: "friendly", label: "Friendly" },
   { value: "formal", label: "Formal" },
-  { value: "casual", label: "Casual" }
+  { value: "casual", label: "Casual" },
 ];
 
 export default function AiPreview() {
   const { template, columnMapping, contacts, goNext, goBack, setAiPreviews } = useCampaign();
   const [tone, setTone] = useState("professional");
   const [previews, setPreviews] = useState([]);
-  const [isGenerated, setIsGenerated] = useState(false);
+  const [isAiEnhanced, setIsAiEnhanced] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiQuota, setAiQuota] = useState(null);
+  const [quotaError, setQuotaError] = useState(null);
 
   const sampleContacts = contacts.slice(0, 3).map(contact => ({
     email: contact[columnMapping.email] || "",
     name: contact[columnMapping.name] || "",
     company: contact[columnMapping.company] || "",
-    category: contact[columnMapping.category] || ""
+    category: contact[columnMapping.category] || "",
   }));
 
-  const generateMutation = useMutation({
+  const generateLocalPreviews = () =>
+    sampleContacts.map(contact => {
+      const data = {
+        name: contact.name || "Valued Customer",
+        email: contact.email || "customer@example.com",
+        company: contact.company || "Your Company",
+        category: contact.category || "General",
+      };
+      return {
+        contact: data,
+        subject: replacePlaceholders(template.subject, data),
+        body: replacePlaceholders(template.body, data),
+      };
+    });
+
+  // Show merge preview immediately — no AI call
+  useEffect(() => {
+    setPreviews(generateLocalPreviews());
+  }, []);
+
+  const aiRewriteMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/preview", {
         subject: template.subject,
         body: template.body,
         contacts: sampleContacts,
-        tone
+        tone,
       });
-      return res.json();
+      const remaining = res.headers.get("X-AI-Generations-Remaining");
+      const resetsAt = res.headers.get("X-AI-Generations-Reset");
+      const data = await res.json();
+      return { ...data, _quota: { remaining, resetsAt } };
     },
     onSuccess: (data) => {
+      if (data._quota?.remaining != null) setAiQuota(data._quota);
+      setQuotaError(null);
       setPreviews(data.previews || generateLocalPreviews());
-      setIsGenerated(true);
+      setIsAiEnhanced(true);
+      setAiOpen(false);
     },
-    onError: () => {
+    onError: (err) => {
+      try {
+        const body = JSON.parse(err.message);
+        if (body?.resetsAt) {
+          setQuotaError({ resetsAt: body.resetsAt, upgradeMessage: body.upgradeMessage });
+          return;
+        }
+      } catch {}
       setPreviews(generateLocalPreviews());
-      setIsGenerated(true);
-    }
+      setIsAiEnhanced(false);
+      setAiOpen(false);
+    },
   });
-
-  const generateLocalPreviews = () => {
-    return sampleContacts.map(contact => {
-      const data = {
-        name: contact.name || "Valued Customer",
-        email: contact.email || "customer@example.com",
-        company: contact.company || "Your Company",
-        category: contact.category || "General"
-      };
-      return {
-        contact: data,
-        subject: replacePlaceholders(template.subject, data),
-        body: replacePlaceholders(template.body, data)
-      };
-    });
-  };
-
-  const handleGenerate = () => {
-    generateMutation.mutate();
-  };
 
   const handleContinue = () => {
     setAiPreviews(previews);
     goNext();
   };
 
+  const resetToLocal = () => {
+    setPreviews(generateLocalPreviews());
+    setIsAiEnhanced(false);
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold flex items-center justify-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          AI-Powered Email Preview
+          <MailIcon className="h-5 w-5 text-primary" />
+          Email Preview
         </h2>
         <p className="text-muted-foreground mt-1">
-          Preview how your emails will look with personalized content
+          See how your template looks with real contact data
         </p>
       </div>
 
+      {/* Sending mechanics clarification */}
+      <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
+        <Info className="h-4 w-4 text-blue-600" />
+        <AlertDescription className="text-blue-800 dark:text-blue-300 text-sm">
+          <span className="font-medium">How outbound sending works:</span> Placeholders like{" "}
+          <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{{name}}"}</code> and{" "}
+          <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{{company}}"}</code> are
+          replaced with each contact's real data at send time. No AI is involved in the outbound
+          emails — AI only assists with template drafting and optional preview rewording here.
+        </AlertDescription>
+      </Alert>
+
+      {/* AI Rewrite — opt-in only */}
+      <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-between h-auto py-3 px-4 border-dashed border-primary/40 hover:border-primary hover:bg-primary/5 transition-all duration-200"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-sm">AI-Assisted Rewrite</p>
+                <p className="text-xs text-muted-foreground">
+                  Optionally reword these previews in a different tone to evaluate your copy
+                </p>
+              </div>
+            </div>
+            {aiOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 mt-2">
+            <CardContent className="pt-4 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                AI will reword the preview emails to match the selected tone. This is for
+                evaluating copy options — it does not change how outbound emails are sent.
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-sm font-medium whitespace-nowrap">Tone:</span>
+                  <Select value={tone} onValueChange={setTone}>
+                    <SelectTrigger className="w-36 bg-background" data-testid="select-tone">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TONES.map(t => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={() => aiRewriteMutation.mutate()}
+                  disabled={aiRewriteMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-generate-preview"
+                >
+                  {aiRewriteMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Rewriting...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4" />
+                      Rewrite with AI
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {aiQuota && aiQuota.remaining !== "unlimited" && (
+                <p className="text-xs text-muted-foreground text-right">
+                  {aiQuota.remaining} AI generation{aiQuota.remaining !== "1" ? "s" : ""} left today
+                </p>
+              )}
+
+              {quotaError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-sm">
+                    Daily AI limit reached — resets at{" "}
+                    {new Date(quotaError.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.{" "}
+                    {quotaError.upgradeMessage}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Preview cards */}
       <Card className="border-card-border">
         <CardHeader className="pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <CardTitle className="text-lg">Generate Preview</CardTitle>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Tone:</span>
-                <Select value={tone} onValueChange={setTone}>
-                  <SelectTrigger className="w-36" data-testid="select-tone">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TONES.map(t => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              Sample Emails
+              {isAiEnhanced && (
+                <Badge
+                  variant="secondary"
+                  className="text-xs bg-primary/10 text-primary border-primary/20"
+                >
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  AI Assisted
+                </Badge>
+              )}
+            </CardTitle>
+            {isAiEnhanced && (
               <Button
-                onClick={handleGenerate}
-                disabled={generateMutation.isPending}
-                data-testid="button-generate-preview"
+                variant="ghost"
+                size="sm"
+                onClick={resetToLocal}
+                className="text-xs text-muted-foreground"
               >
-                {generateMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    {isGenerated ? "Regenerate" : "Generate Preview"}
-                  </>
-                )}
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Reset to merge preview
               </Button>
-            </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {!isGenerated && !generateMutation.isPending && (
-            <div className="text-center py-12">
-              <Sparkles className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-              <p className="text-muted-foreground mb-2">
-                Generate a preview to see how your emails will look
-              </p>
-              <p className="text-sm text-muted-foreground">
-                We'll show 3 sample emails with real contact data
-              </p>
-            </div>
-          )}
-
-          {generateMutation.isPending && (
+          {aiRewriteMutation.isPending ? (
             <div className="text-center py-12">
               <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin mb-4" />
-              <p className="text-muted-foreground">
-                Generating personalized previews...
-              </p>
+              <p className="text-muted-foreground">Rewriting previews with AI...</p>
             </div>
-          )}
-
-          {isGenerated && previews.length > 0 && (
+          ) : (
             <div className="space-y-4">
               {previews.map((preview, index) => (
                 <Card key={index} className="border border-border">
@@ -177,13 +282,11 @@ export default function AiPreview() {
                         </div>
                         <div className="text-sm">
                           <p className="font-medium">{preview.contact.name || "Contact"}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {preview.contact.email}
-                          </p>
+                          <p className="text-muted-foreground text-xs">{preview.contact.email}</p>
                         </div>
                       </div>
                       <Badge variant="secondary" className="text-xs">
-                        Sample {index + 1}
+                        {isAiEnhanced ? "AI Assisted" : "Merge Preview"}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -192,7 +295,9 @@ export default function AiPreview() {
                       <div className="flex items-start gap-2">
                         <MailIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
                         <div>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide">Subject</p>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                            Subject
+                          </p>
                           <p className="font-medium">{preview.subject}</p>
                         </div>
                       </div>
@@ -215,25 +320,12 @@ export default function AiPreview() {
         </CardContent>
       </Card>
 
-      {isGenerated && (
-        <Alert className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800 dark:text-green-400">
-            Previews generated successfully. Review your emails before continuing.
-          </AlertDescription>
-        </Alert>
-      )}
-
       <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={goBack} data-testid="button-back">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button 
-          onClick={handleContinue} 
-          disabled={!isGenerated}
-          data-testid="button-next-step"
-        >
+        <Button onClick={handleContinue} data-testid="button-next-step">
           Continue to Spam Analysis
         </Button>
       </div>

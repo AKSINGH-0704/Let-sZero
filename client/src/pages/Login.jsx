@@ -212,6 +212,10 @@ function SignInForm({ login, isLoggingIn, loginError }) {
   };
 
   const handleOAuthRedirect = (provider) => {
+    if (provider === "Google") {
+      window.location.href = "/api/auth/google";
+      return;
+    }
     toast({
       title: `${provider} sign-in coming soon`,
       description: "Redirecting you to Request Access to get started.",

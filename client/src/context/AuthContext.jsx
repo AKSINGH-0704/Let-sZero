@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
     staleTime: Infinity,
+    refetchOnWindowFocus: true,
     throwOnError: false
   });
 
@@ -73,7 +74,8 @@ export function AuthProvider({ children }) {
   const mustResetPassword = user?.mustResetPassword === true;
   const isRootAdmin = user?.role === "ROOT_ADMIN";
   const isSubAdmin = user?.role === "SUB_ADMIN";
-  const isAdmin = isRootAdmin || isSubAdmin;
+  const isSecondaryRoot = user?.isSecondaryRoot === true;
+  const isAdmin = isRootAdmin || isSubAdmin || isSecondaryRoot;
 
   const value = {
     user,
@@ -81,6 +83,7 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     isRootAdmin,
     isSubAdmin,
+    isSecondaryRoot,
     isAdmin,
     mustResetPassword,
     login,

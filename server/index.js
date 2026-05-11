@@ -1,33 +1,22 @@
+import "./env.js"; // must be first — loads .env before any other module reads process.env
 import express from "express";
+import crypto from "crypto";
 import { registerRoutes, executeCampaign } from "./routes.js";
 import { storage } from "./storage.js";
+import { sendTransactionalEmail } from "./email.js";
 import { createServer } from "http";
-import { readFileSync } from "fs";
-import { resolve } from "path";
-
-// Load .env file manually (no dotenv dependency needed)
-try {
-  const envPath = resolve(process.cwd(), ".env");
-  const envContent = readFileSync(envPath, "utf8");
-  for (const line of envContent.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("#")) {
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        const val = trimmed.slice(eqIdx + 1).trim();
-        if (key && !(key in process.env)) {
-          process.env[key] = val;
-        }
-      }
-    }
-  }
-} catch {
-  // No .env file found — using system environment variables (e.g., Railway)
-}
+import { startWorker } from "./worker.js";
+import { addCampaignJob, getCampaignQueue } from "./queue.js";
+import { stripeWebhookHandler } from "./stripeWebhook.js";
+import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Stripe webhook MUST be registered before express.json() — Stripe signature
+// verification requires the raw request body. Once express.json() consumes
+// the stream, constructEvent() will always throw.
+app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -59,6 +48,355 @@ app.use((req, res, next) => {
   
   next();
 });
+
+// ─── Inactivity Governance Job ────────────────────────────────────────────────
+
+async function findActiveReclaimTarget(userId, storage) {
+  let currentId = userId;
+  const visited = new Set();
+
+  while (true) {
+    const user = await storage.getUserById(currentId);
+    if (!user || visited.has(currentId)) break;
+    visited.add(currentId);
+
+    if (!user.parentId) break;
+
+    const parent = await storage.getUserById(user.parentId);
+    if (!parent) break;
+
+    if (parent.isActive && !parent.isDormant) {
+      return parent.id;
+    }
+
+    currentId = user.parentId;
+  }
+
+  return null;
+}
+
+async function runInactivityJob() {
+  const now = new Date();
+  const { WARNING_DAYS, DORMANT_DAYS, RECLAIM_ELIGIBLE_DAYS } = INACTIVITY_THRESHOLDS;
+  const appUrl = process.env.APP_URL || "http://localhost:5000";
+
+  // Thresholds derived from constants (avoids hardcoded magic numbers)
+  const warningSentDormantThreshold  = new Date(now.getTime() - (DORMANT_DAYS - WARNING_DAYS) * 86400000); // 30d
+  const warningSentReclaimThreshold  = new Date(now.getTime() - (RECLAIM_ELIGIBLE_DAYS - WARNING_DAYS) * 86400000); // 60d
+  const rootAdminAlertCutoff         = new Date(now.getTime() - 45 * 86400000);
+
+  let warnedCount = 0, dormantCount = 0, reclaimedCount = 0, skippedCount = 0;
+
+  try {
+    const users = await storage.getUsersForInactivityCheck();
+    console.log(`[INACTIVITY JOB] Started. Found ${users.length} users to check.`);
+
+    // ── Step A: Stage 1 warnings (30d inactive, no warning sent yet) ───────────
+    for (const user of users) {
+      if (user.inactivityWarningSentAt) continue;
+      try {
+        const creditsRemaining = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
+        const daysInactive = Math.floor((now - new Date(user.lastActivityAt || user.createdAt)) / 86400000);
+
+        // Check suppression FIRST — if suppressed, mark warning sent (no token) and skip email.
+        // Without this guard, the token would be written to DB and Stage C would attempt
+        // reclaim 60 days later on a user who never received a warning.
+        const suppressed = await storage.isSuppressed(user.id, user.email);
+        if (suppressed) {
+          await storage.markInactivityWarningSent(user.id, null, null);
+          await storage.createAuditLog({
+            userId:     user.id,
+            action:     AUDIT_ACTIONS.INACTIVITY_WARNING_SENT,
+            targetType: "user",
+            targetId:   user.id,
+            details:    { daysInactive, suppressed: true, note: "warning skipped — email suppressed, manual review needed" },
+          });
+          warnedCount++;
+          continue;
+        }
+
+        // Skip token generation if user has no credits to protect
+        if (creditsRemaining <= 0) {
+          await storage.markInactivityWarningSent(user.id, null, null);
+          await storage.createAuditLog({
+            userId:     user.id,
+            action:     AUDIT_ACTIONS.INACTIVITY_WARNING_SENT,
+            targetType: "user",
+            targetId:   user.id,
+            details:    { daysInactive, creditsRemaining: 0, note: "warning skipped — no credits to protect" },
+          });
+          warnedCount++;
+          continue;
+        }
+
+        const rawToken    = crypto.randomBytes(32).toString("hex");
+        const tokenHash   = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const tokenExpiry = new Date(now.getTime() + (RECLAIM_ELIGIBLE_DAYS - WARNING_DAYS) * 86400000); // 60d window
+
+        await storage.markInactivityWarningSent(user.id, tokenHash, tokenExpiry);
+        await storage.createAuditLog({
+          userId:     user.id,
+          action:     AUDIT_ACTIONS.INACTIVITY_WARNING_SENT,
+          targetType: "user",
+          targetId:   user.id,
+          details:    { daysInactive },
+        });
+
+        const keepUrl = `${appUrl}/inactivity/keep-credits?token=${rawToken}`;
+        sendTransactionalEmail(
+          user.email,
+          "Action required: Your RepMail account will become dormant soon",
+          `Hi ${user.username},\n\nYour RepMail account has been inactive for ${daysInactive} days.\n\nTo keep your credits and prevent your account from becoming dormant, click the link below before it expires:\n\n${keepUrl}\n\nThis link expires in 60 days. After 90 days of inactivity, your unused credits may be reclaimed by your administrator.\n\nThe RepMail Team`
+        ).catch(err => console.error(`[INACTIVITY JOB] Stage A user email failed uid=${user.id}:`, err.message));
+
+        // Parent notification — fire-and-forget, failure must never block the warning flow
+        if (user.parentId) {
+          try {
+            const parent = await storage.getUserById(user.parentId);
+            if (parent) {
+              sendTransactionalEmail(
+                parent.email,
+                `${user.username} is inactive on RepMail`,
+                `Hi ${parent.username},\n\nYour team member ${user.username} has been inactive on RepMail for 30 days.\n\nThey have ${creditsRemaining} credits allocated. If they remain inactive for 90 days total, those credits will be automatically returned to your account.\n\nView your team: ${appUrl}/app/users\n\n— The RepMail Team`
+              ).catch(err => console.error(`[INACTIVITY JOB] Stage A parent notify failed uid=${parent.id}:`, err.message));
+            }
+          } catch (parentErr) {
+            console.error(`[INACTIVITY JOB] Stage A parent lookup failed uid=${user.id}:`, parentErr.message);
+          }
+        }
+
+        warnedCount++;
+      } catch (err) {
+        console.error(`[INACTIVITY JOB] Stage A error uid=${user.id}:`, err.message);
+        skippedCount++;
+      }
+    }
+
+    // ── Step B: Stage 2 dormant (warning sent 30+ days ago, not yet dormant) ───
+    for (const user of users) {
+      if (!user.inactivityWarningSentAt) continue;
+      if (user.isDormant) continue;
+      if (new Date(user.inactivityWarningSentAt) >= warningSentDormantThreshold) continue;
+      try {
+        const creditsRemaining = (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0);
+        await storage.setUserDormant(user.id);
+        dormantCount++;
+
+        // Dormant notice to user — use a fresh raw token with the SAME expiry as Stage A.
+        // We cannot recover the original raw token (only the hash is stored), so we generate
+        // a new one and update the stored hash without resetting inactivityWarningSentAt.
+        if (user.inactivityKeepToken) {
+          try {
+            const existingExpiry = user.inactivityKeepTokenExpiresAt
+              ? new Date(user.inactivityKeepTokenExpiresAt)
+              : new Date(now.getTime() + 30 * 86400000);
+            const daysUntilExpiry = Math.max(0, Math.ceil((existingExpiry.getTime() - now.getTime()) / 86400000));
+            const freshToken = crypto.randomBytes(32).toString("hex");
+            const freshHash  = crypto.createHash("sha256").update(freshToken).digest("hex");
+            await storage.updateInactivityToken(user.id, freshHash, existingExpiry);
+            const keepUrl = `${appUrl}/inactivity/keep-credits?token=${freshToken}`;
+            sendTransactionalEmail(
+              user.email,
+              "Your RepMail account is now dormant",
+              `Hi ${user.username},\n\nYour RepMail account has been dormant for 60 days.\n\nYou can still log in and view your history, but sending campaigns and AI features are paused.\n\nTo reactivate your account, click the link below — your inactivity timer will reset and full access will be restored immediately:\n\n${keepUrl}\n\nThis link expires in ${daysUntilExpiry} days.\n\nYour ${creditsRemaining} credits will be returned to your manager if no action is taken before the link expires.\n\n${appUrl}/login\n\n— The RepMail Team`
+            ).catch(err => console.error(`[INACTIVITY JOB] Stage B dormant email failed uid=${user.id}:`, err.message));
+          } catch (emailErr) {
+            console.error(`[INACTIVITY JOB] Stage B dormant email error uid=${user.id}:`, emailErr.message);
+          }
+        }
+      } catch (err) {
+        console.error(`[INACTIVITY JOB] Stage B error uid=${user.id}:`, err.message);
+        skippedCount++;
+      }
+    }
+
+    // ── Step C: Stage 3 auto-reclaim (warning sent 60+ days ago, token still set) ─
+    for (const user of users) {
+      if (!user.isDormant) continue;
+      if (!user.inactivityWarningSentAt) continue;
+      if (new Date(user.inactivityWarningSentAt) >= warningSentReclaimThreshold) continue;
+      if (!user.inactivityKeepToken) continue; // token cleared = user self-reactivated
+
+      try {
+        // Walk ancestor tree to find the nearest active, non-dormant parent.
+        // Direct parentId may be deactivated, trapping credits in a dead account.
+        const reclaimTargetId = await findActiveReclaimTarget(user.id, storage);
+
+        if (!reclaimTargetId) {
+          console.error(`[INACTIVITY JOB] Stage C: no active ancestor for uid=${user.id} — credits held, manual review needed`);
+          await storage.clearInactivityToken(user.id);
+          skippedCount++;
+          continue;
+        }
+
+        const result = await storage.autoReclaimCredits(user.id, reclaimTargetId);
+
+        if (result.skipped) {
+          await storage.createAuditLog({
+            userId:     user.id,
+            action:     AUDIT_ACTIONS.CREDITS_AUTO_RECLAIMED,
+            targetType: "user",
+            targetId:   user.id,
+            details:    { skipped: true, reason: "running_campaigns_protected", runningCampaignCreditsProtected: result.protectedCredits },
+          });
+          skippedCount++;
+        } else {
+          reclaimedCount++;
+
+          // Reclaim notice to user — fire-and-forget
+          sendTransactionalEmail(
+            user.email,
+            "Your RepMail credits have been returned to your team",
+            `Hi ${user.username},\n\nYour RepMail account has been inactive for 90 days.\n\nYour unused credits have been automatically returned to your team manager. Your account remains active — reactivate anytime by sending a campaign.\n\n${appUrl}/login\n\n— The RepMail Team`
+          ).catch(err => console.error(`[INACTIVITY JOB] Stage C user reclaim email failed uid=${user.id}:`, err.message));
+
+          // Reclaim notice to admin — fire-and-forget
+          try {
+            const reclaimTarget = await storage.getUserById(reclaimTargetId);
+            if (reclaimTarget) {
+              sendTransactionalEmail(
+                reclaimTarget.email,
+                `${user.username}'s credits returned to your account`,
+                `Hi ${reclaimTarget.username},\n\n${user.username} has been inactive for 90 days.\n\n${result.amount} unused credits have been automatically returned to your account and are ready to allocate.\n\nView audit trail: ${appUrl}/app/audit\n\n— The RepMail Team`
+              ).catch(err => console.error(`[INACTIVITY JOB] Stage C admin reclaim email failed uid=${reclaimTarget.id}:`, err.message));
+            }
+          } catch (adminEmailErr) {
+            console.error(`[INACTIVITY JOB] Stage C admin email error uid=${user.id}:`, adminEmailErr.message);
+          }
+        }
+
+        // Always clear token after every Stage C outcome — prevents re-entry on next 24h run.
+        await storage.clearInactivityToken(user.id);
+      } catch (err) {
+        console.error(`[INACTIVITY JOB] Stage C error uid=${user.id}:`, err.message);
+        skippedCount++;
+        // Still clear the token on error to prevent infinite retry loops
+        await storage.clearInactivityToken(user.id).catch(() => {});
+      }
+    }
+
+    // ── Step D: ROOT_ADMIN inactivity alert (45d, separate query) ───────────────
+    try {
+      const allUsers         = await storage.getUsers(null, true);
+      const inactiveAdmins   = allUsers.filter(u => {
+        if (u.role !== USER_ROLES.ROOT_ADMIN) return false;
+        if (!u.isActive) return false;
+        if (u.inactivityWarningSentAt) return false; // already alerted this cycle
+        const lastActive = u.lastActivityAt ? new Date(u.lastActivityAt) : new Date(u.createdAt);
+        return lastActive < rootAdminAlertCutoff;
+      });
+
+      for (const admin of inactiveAdmins) {
+        try {
+          await storage.markInactivityWarningSent(admin.id, null, null);
+          console.warn(`[INACTIVITY JOB] ROOT_ADMIN ${admin.username} (${admin.id}) inactive 45+ days`);
+          sendTransactionalEmail(
+            admin.email,
+            "RepMail: Root admin account inactivity alert",
+            `Hi ${admin.username},\n\nYour RepMail root admin account has been inactive for 45+ days.\n\nPlease log in to keep your account active. If all root admin accounts remain inactive for 60+ days, emergency recovery procedures may be triggered.\n\nThe RepMail Team`
+          ).catch(err => console.error(`[INACTIVITY JOB] Stage D email failed uid=${admin.id}:`, err.message));
+        } catch (err) {
+          console.error(`[INACTIVITY JOB] Stage D error uid=${admin.id}:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error("[INACTIVITY JOB] Stage D query error:", err.message);
+    }
+
+    console.log(`[INACTIVITY JOB] Complete. Warned: ${warnedCount}, Dormant: ${dormantCount}, Reclaimed: ${reclaimedCount}, Skipped: ${skippedCount}`);
+  } catch (err) {
+    console.error("[INACTIVITY JOB] Fatal error:", err.message);
+  }
+}
+
+async function runEmergencyRecovery() {
+  const recoveryEmail = process.env.RECOVERY_EMAIL;
+  if (!recoveryEmail) {
+    console.log("[RECOVERY] RECOVERY_EMAIL not set — emergency recovery disabled");
+    return;
+  }
+
+  try {
+    const allUsers = await storage.getUsers(null, true);
+    const allRootAdmins = allUsers.filter(u => u.role === USER_ROLES.ROOT_ADMIN);
+
+    // Cooldown: any ROOT_ADMIN stamped within the last 30 days → skip
+    const cooldownCutoff = new Date(Date.now() - 30 * 86400000);
+    const onCooldown = allRootAdmins.some(
+      u => u.lastEmergencyRecoveryAt && new Date(u.lastEmergencyRecoveryAt) > cooldownCutoff
+    );
+    if (onCooldown) {
+      console.log("[RECOVERY] Emergency recovery cooldown active — skipping");
+      return;
+    }
+
+    // Activity check: any active ROOT_ADMIN active within 60 days → normal operation, skip silently
+    const activityCutoff = new Date(Date.now() - 60 * 86400000);
+    const hasActiveAdmin = allRootAdmins
+      .filter(u => u.isActive)
+      .some(u => {
+        const lastActive = u.lastActivityAt ? new Date(u.lastActivityAt) : new Date(u.createdAt);
+        return lastActive > activityCutoff;
+      });
+    if (hasActiveAdmin) return;
+
+    console.log("[RECOVERY] No active root admin within 60 days — triggering emergency recovery");
+
+    // Resolve recovery account (getUserByEmail returns raw row including isDormant)
+    const recoveryUser = await storage.getUserByEmail(recoveryEmail);
+    let recoveryUserId;
+
+    if (recoveryUser) {
+      recoveryUserId = recoveryUser.id;
+
+      // Always elevate to full ROOT_ADMIN regardless of current role,
+      // reactivate, and invalidate any stale sessions.
+      await storage.updateUser(recoveryUserId, {
+        role: USER_ROLES.ROOT_ADMIN,
+        mustResetPassword: true,
+        isActive: true,
+      });
+      await storage.updateUserActivity(recoveryUserId); // clears isDormant + all inactivity fields
+      await storage.deleteUserSessions(recoveryUserId); // invalidate any stale sessions
+    } else {
+      const tempPassword = crypto.randomBytes(16).toString("hex");
+      const newUser = await storage.createUser({
+        username: recoveryEmail.split("@")[0].replace(/[^a-z0-9_]/gi, "_") + "_recovery",
+        email: recoveryEmail,
+        password: tempPassword,
+        role: USER_ROLES.ROOT_ADMIN,
+        mustResetPassword: true,
+        creditsReceived: 0,
+      });
+      recoveryUserId = newUser.id;
+    }
+
+    // Atomic: stamp lastEmergencyRecoveryAt on ALL ROOT_ADMIN rows to set cooldown
+    await storage.markAllRootAdminsRecoveryAt(new Date());
+
+    await storage.createAuditLog({
+      userId: null,
+      action: AUDIT_ACTIONS.EMERGENCY_RECOVERY_TRIGGERED,
+      targetType: "user",
+      targetId: recoveryUserId,
+      details: { recoveryEmail, createdNew: !recoveryUser },
+    });
+
+    const alertEmail = process.env.PLATFORM_ALERT_EMAIL;
+    if (alertEmail) {
+      const appUrl = process.env.APP_URL || "http://localhost:5000";
+      sendTransactionalEmail(
+        alertEmail,
+        "RepMail: Emergency recovery account activated",
+        `Emergency recovery was triggered on ${new Date().toISOString()}.\n\nRecovery account: ${recoveryEmail}\nNew account created: ${!recoveryUser}\n\nPlease review at ${appUrl}/admin.\n\nThe RepMail System`
+      ).catch(err => console.error("[RECOVERY] Alert email failed:", err.message));
+    }
+
+    console.log(`[RECOVERY] Complete — recovery account: ${recoveryEmail} (userId=${recoveryUserId})`);
+  } catch (err) {
+    console.error("[RECOVERY] Emergency recovery error:", err.message);
+  }
+}
 
 export function log(message, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -111,6 +449,7 @@ app.use((req, res, next) => {
       '/contact',
       '/api/waitlist',
       '/api/contact',
+      '/api/health',
     ];
 
     const isAllowed = allowedPaths.some(path => req.path === path);
@@ -128,15 +467,228 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
-  // Campaign scheduler — executes PENDING campaigns when their scheduledAt time arrives
+  // Startup campaign reconciliation.
+  //
+  // Precedence rules (highest authority first):
+  //   1. completedAt IS NOT NULL  → campaign finished; do not overwrite with FAILED.
+  //   2. BullMQ job state is active/waiting/delayed → worker already owns it; leave DB alone.
+  //   3. All other RUNNING campaigns → mark FAILED so the UI is not stuck indefinitely.
+  //
+  // The worker's isRetry detection is data-driven (hasAnySentEmails), so marking FAILED
+  // here does NOT break per-contact idempotency when BullMQ retries the job.
+  await (async function recoverStaleCampaigns() {
+    try {
+      const running = await storage.getCampaignsByStatus("RUNNING");
+      if (!running.length) return;
+      console.log(`[RECOVERY] Found ${running.length} stale RUNNING campaign(s) — reconciling`);
+
+      const queue = getCampaignQueue();
+
+      for (const c of running) {
+        // Rule 1: completedAt set means the campaign finished; status column is stale.
+        if (c.completedAt) {
+          await storage.updateCampaign(c.id, { status: "COMPLETED" });
+          console.log(`[RECOVERY] Campaign ${c.id} → COMPLETED (completedAt already set)`);
+          continue;
+        }
+
+        // Rule 2: BullMQ queue is authoritative if available — job may be mid-flight.
+        if (queue) {
+          try {
+            const job = await queue.getJob(c.id);
+            if (job) {
+              const state = await job.getState();
+              if (["active", "waiting", "delayed"].includes(state)) {
+                console.log(`[RECOVERY] Campaign ${c.id} — BullMQ state=${state}, leaving RUNNING`);
+                continue;
+              }
+            }
+          } catch (queueErr) {
+            console.warn(`[RECOVERY] Campaign ${c.id} — queue check failed:`, queueErr.message);
+          }
+        }
+
+        // Rule 3: No completedAt, no live BullMQ job → mark FAILED so the UI unblocks.
+        await storage.updateCampaign(c.id, { status: "FAILED" });
+        console.log(`[RECOVERY] Campaign ${c.id} → FAILED (no live job found)`);
+      }
+    } catch (err) {
+      console.error("[RECOVERY] Error:", err.message);
+    }
+  })();
+
+  // Emergency recovery check — runs once at boot before any other job
+  await runEmergencyRecovery();
+
+  // Start the BullMQ worker (no-op if REDIS_URL is not set)
+  const worker = startWorker();
+
+  if (!process.env.SNS_TOPIC_ARN) {
+    console.warn("[STARTUP] SNS_TOPIC_ARN not set — TopicArn validation disabled. Set this env var to prevent cross-topic SNS injection.");
+  }
+
+  // Railway sends SIGTERM with a 30-second grace window before SIGKILL.
+  // worker.close() waits for the current job iteration to finish before exiting.
+  async function gracefulShutdown(signal) {
+    console.log(`[SHUTDOWN] ${signal} received — closing worker gracefully`);
+    try {
+      if (worker) await worker.close();
+      console.log("[SHUTDOWN] Worker drained cleanly");
+    } catch (err) {
+      console.error("[SHUTDOWN] Worker close error:", err.message);
+    }
+    process.exit(0);
+  }
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
+
+  // ── Cleanup jobs ─────────────────────────────────────────────────────────────
+  // Each job holds a per-closure boolean lock. If a previous run is still awaiting
+  // the DB when the interval fires, the new invocation logs a warning and returns
+  // immediately — preventing overlapping deletes, amplified lock contention, and
+  // duplicate row-count log lines under slow DB conditions.
+
+  // SNS events — daily, fires at boot (no startup delay needed; touches no hot path).
+  {
+    let running = false;
+    setInterval(async () => {
+      if (running) { console.warn("[CLEANUP] SNS event cleanup still in progress — skipping"); return; }
+      running = true;
+      try {
+        await storage.deleteOldSnsEvents();
+        console.log("[CLEANUP] Old SNS events pruned");
+      } catch (err) {
+        console.error("[CLEANUP] SNS event cleanup error:", err.message);
+      } finally {
+        running = false;
+      }
+    }, 24 * 60 * 60 * 1000);
+  }
+
+  // Expired sessions — daily, 5-minute startup offset.
+  setTimeout(() => {
+    let running = false;
+    async function runSessionCleanup() {
+      if (running) { console.warn("[CLEANUP] Session cleanup still in progress — skipping"); return; }
+      running = true;
+      try {
+        const count = await storage.deleteExpiredSessions();
+        console.log(`[CLEANUP] Expired sessions deleted: ${count}`);
+      } catch (err) {
+        console.error("[CLEANUP] Session cleanup error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runSessionCleanup();
+    setInterval(runSessionCleanup, 24 * 60 * 60 * 1000);
+  }, 5 * 60 * 1000);
+
+  // Audit log pruning — daily, 8-minute startup offset.
+  // Retention controlled by AUDIT_LOG_RETENTION_DAYS (default 180).
+  setTimeout(() => {
+    let running = false;
+    async function runAuditLogPruning() {
+      if (running) { console.warn("[CLEANUP] Audit log pruning still in progress — skipping"); return; }
+      running = true;
+      const retentionDays = parseInt(process.env.AUDIT_LOG_RETENTION_DAYS || "180", 10);
+      try {
+        const count = await storage.pruneAuditLogs(retentionDays);
+        console.log(`[CLEANUP] Audit logs pruned (older than ${retentionDays}d): ${count}`);
+      } catch (err) {
+        console.error("[CLEANUP] Audit log pruning error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runAuditLogPruning();
+    setInterval(runAuditLogPruning, 24 * 60 * 60 * 1000);
+  }, 8 * 60 * 1000);
+
+  // Campaign email records — weekly, 12-minute startup offset.
+  // RUNNING and PENDING campaigns are never touched.
+  // Retention controlled by CAMPAIGN_EMAIL_RETENTION_DAYS (default 90).
+  setTimeout(() => {
+    let running = false;
+    async function runCampaignEmailCleanup() {
+      if (running) { console.warn("[CLEANUP] Campaign email cleanup still in progress — skipping"); return; }
+      running = true;
+      const retentionDays = parseInt(process.env.CAMPAIGN_EMAIL_RETENTION_DAYS || "90", 10);
+      try {
+        const count = await storage.deleteOldCampaignEmails(retentionDays);
+        console.log(`[CLEANUP] Campaign email records deleted (campaign age >${retentionDays}d): ${count}`);
+      } catch (err) {
+        console.error("[CLEANUP] Campaign email cleanup error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runCampaignEmailCleanup();
+    setInterval(runCampaignEmailCleanup, 7 * 24 * 60 * 60 * 1000);
+  }, 12 * 60 * 1000);
+
+  // Expired inactivity tokens — weekly, 17-minute startup offset.
+  setTimeout(() => {
+    let running = false;
+    async function runInactivityTokenExpiry() {
+      if (running) { console.warn("[CLEANUP] Inactivity token expiry still in progress — skipping"); return; }
+      running = true;
+      try {
+        const count = await storage.expireInactivityTokens();
+        console.log(`[CLEANUP] Expired inactivity tokens nulled: ${count}`);
+      } catch (err) {
+        console.error("[CLEANUP] Inactivity token expiry error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runInactivityTokenExpiry();
+    setInterval(runInactivityTokenExpiry, 7 * 24 * 60 * 60 * 1000);
+  }, 17 * 60 * 1000);
+
+  // AI usage logs — weekly, 20-minute startup offset.
+  // Retention controlled by AI_USAGE_LOG_RETENTION_DAYS (default 90).
+  setTimeout(() => {
+    let running = false;
+    async function runAiUsageLogPruning() {
+      if (running) { console.warn("[CLEANUP] AI usage log pruning still in progress — skipping"); return; }
+      running = true;
+      const retentionDays = parseInt(process.env.AI_USAGE_LOG_RETENTION_DAYS || "90", 10);
+      try {
+        const count = await storage.pruneAiUsageLogs(retentionDays);
+        console.log(`[CLEANUP] AI usage logs pruned (older than ${retentionDays}d): ${count}`);
+      } catch (err) {
+        console.error("[CLEANUP] AI usage log pruning error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runAiUsageLogPruning();
+    setInterval(runAiUsageLogPruning, 7 * 24 * 60 * 60 * 1000);
+  }, 20 * 60 * 1000);
+
+  // Inactivity governance job — 10-minute boot delay, then every 24 hours
+  setTimeout(() => {
+    runInactivityJob();
+    setInterval(runInactivityJob, 24 * 60 * 60 * 1000);
+  }, 10 * 60 * 1000);
+
+  // Scheduled-campaign scheduler — checks every 30s for PENDING campaigns
+  // whose scheduledAt has passed and enqueues them for the worker.
+  // Intentionally queries PENDING only: RUNNING/FAILED/COMPLETED campaigns are
+  // never re-enqueued here, so recovery exhaustion is not possible from this path.
   setInterval(async () => {
     try {
       const pendingCampaigns = await storage.getCampaignsByStatus("PENDING");
       const now = new Date();
       for (const campaign of pendingCampaigns) {
         if (campaign.scheduledAt && new Date(campaign.scheduledAt) <= now) {
-          console.log(`[SCHEDULER] Executing scheduled campaign: ${campaign.id}`);
-          await executeCampaign(campaign.id, campaign.userId);
+          console.log(`[SCHEDULER] Enqueueing scheduled campaign: ${campaign.id}`);
+          const job = await addCampaignJob(campaign.id, campaign.userId);
+          if (!job) {
+            // Redis not available — run inline as fallback
+            await executeCampaign(campaign.id, campaign.userId);
+          }
         }
       }
     } catch (err) {

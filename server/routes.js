@@ -1,7 +1,50 @@
 import { storage } from "./storage.js";
-import { AUDIT_ACTIONS, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS } from "../shared/schema.js";
+import { pool } from "./db.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
 import { generatePreviews, analyzeSpam, generateTemplate } from "./ai.js";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
+import { uploadFile } from "./s3.js";
+import express from "express";
+import rateLimit from "express-rate-limit";
+import { addCampaignJob, getCampaignQueue, getRedisConnection } from "./queue.js";
+import { verifyUnsubscribeToken } from "./unsubscribe.js";
+import { verifySnsMessage } from "./sns.js";
+import crypto from "crypto";
+import { rzp, stripe, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
+import { upgradePlanIfHigher } from "./fulfillPayment.js";
+import { getRateLimiter } from "./rateLimiter.js";
+
+// 5 login attempts per IP per 15 minutes
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again in 15 minutes." },
+});
+
+// 10 AI requests per user per minute (keyed on user ID after authMiddleware runs)
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,  // RateLimit-Remaining (RFC draft)
+  legacyHeaders: true,    // X-RateLimit-Remaining (used by frontend)
+  keyGenerator: (req) => `ai:${req.user?.id ?? "anon"}`,
+  message: { message: "Too many AI requests. Please wait a moment before generating more content." },
+});
+
+// 5 invite sends/resends per admin per hour
+const inviteLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `invite:${req.user?.id ?? "anon"}`,
+  message: { message: "Too many invites sent. Please wait before sending more." },
+});
 
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
@@ -22,30 +65,72 @@ async function authMiddleware(req, res, next) {
     await storage.deleteSession(token);
     return res.status(401).json({ message: "User not found" });
   }
-  
+
+  if (!user.isActive) {
+    await storage.deleteSession(token);
+    res.clearCookie("token");
+    return res.status(401).json({ error: "Account deactivated. Contact your administrator." });
+  }
+
+  // Dormant users can read their data but cannot start campaigns, use AI, or buy credits
+  if (user.isDormant) {
+    const dormantBlocked =
+      (req.method === "POST" && req.path === "/api/campaigns") ||
+      (req.method === "POST" && req.path.startsWith("/api/ai/")) ||
+      (req.method === "POST" && req.path === "/api/payments/initiate");
+    if (dormantBlocked) {
+      return res.status(403).json({
+        error: "Your account is dormant due to inactivity.",
+        isDormant: true,
+        message: "Click the reactivation link in your email to restore full access, or contact your admin.",
+        reactivationPath: "check_email",
+      });
+    }
+  }
+
   req.user = user;
   req.token = token;
+  // Precompute so routes don't need to re-derive isSecondaryRoot inline
+  req.isRootAdmin = user.role === "ROOT_ADMIN" || user.isSecondaryRoot === true;
   next();
 }
 
 function adminMiddleware(req, res, next) {
-  if (req.user.role !== "ROOT_ADMIN" && req.user.role !== "SUB_ADMIN") {
+  if (req.user.role !== "ROOT_ADMIN" && req.user.role !== "SUB_ADMIN" && !req.user.isSecondaryRoot) {
     return res.status(403).json({ message: "Forbidden" });
   }
   next();
 }
 
 function rootAdminMiddleware(req, res, next) {
-  if (req.user.role !== "ROOT_ADMIN") {
+  if (req.user.role !== "ROOT_ADMIN" && !req.user.isSecondaryRoot) {
     return res.status(403).json({ message: "Forbidden" });
   }
   next();
 }
 
+const SEND_RATE_MS = parseInt(process.env.SES_SEND_RATE_MS || "0", 10);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Reusable campaign execution — used by both immediate send and scheduler
 export async function executeCampaign(campaignId, userId) {
   const campaign = await storage.getCampaign(campaignId);
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
+
+  // Owner-active guard — deactivation may race with an already-queued campaign
+  const owner = await storage.getUserById(userId);
+  if (!owner || !owner.isActive) {
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "Campaign owner account deactivated", name: campaign.name },
+    });
+    console.warn(`[CAMPAIGN] ${campaignId} aborted — owner ${userId} is inactive`);
+    return;
+  }
 
   const canStart = await storage.canStartCampaign(userId, campaign.totalEmails);
   if (!canStart.allowed) {
@@ -61,14 +146,136 @@ export async function executeCampaign(campaignId, userId) {
   }
 
   await storage.updateCampaign(campaignId, { status: "RUNNING", startedAt: new Date() });
+  await storage.createAuditLog({
+    userId,
+    action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
+    targetType: "campaign",
+    targetId: campaignId,
+  });
 
-  for (let i = 0; i < campaign.totalEmails; i++) {
-    await storage.deductCreditAtomic(userId, campaignId, `Email ${i + 1} of campaign ${campaign.name}`);
+  const template = campaign.templateSnapshot || {};
+  const contactIds = campaign.contactIds || [];
+  const rateLimiter = getRateLimiter();
+  let rateLimiterFallbackLogged = false;
+  let sentCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
+  let outOfCredits = false;
+
+  const creditsBefore = await storage.getTotalCreditsAvailable(userId);
+  console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
+
+  for (let i = 0; i < contactIds.length; i++) {
+    const contactId = contactIds[i];
+    const contact = await storage.getContactById(contactId);
+
+    // Create PENDING audit record before any send attempt
+    const campaignEmailRecord = await storage.createCampaignEmail({
+      campaignId,
+      userId,
+      contactId: contact ? contactId : null,
+      recipientEmail: contact?.email || "unknown",
+      status: CAMPAIGN_EMAIL_STATUS.PENDING,
+    });
+
+    let attemptedSend = false;
+    let usedRateLimiter = false;
+    try {
+      if (!contact || !contact.email) throw new Error("Contact or email missing");
+
+      // Per-user suppression followed by platform-wide global check.
+      // Per-contact inside the loop: a bounce from a concurrent campaign could
+      // add this address to the global list mid-execution of a long campaign.
+      const suppressed = await storage.isSuppressed(userId, contact.email);
+      const globallySuppressed = suppressed ? false : await storage.isGloballySuppressed(contact.email);
+      if (suppressed || globallySuppressed) {
+        skippedCount++;
+        await storage.updateCampaignEmail(campaignEmailRecord.id, {
+          status: CAMPAIGN_EMAIL_STATUS.SUPPRESSED,
+        });
+        console.log(`[CAMPAIGN ${campaignId}] contact ${i + 1} ${globallySuppressed ? "globally " : ""}suppressed — skipping ${contact.email}`);
+      } else {
+        attemptedSend = true;
+        // Acquire a shared SES send token before every actual send attempt
+        if (rateLimiter) {
+          try {
+            await rateLimiter.acquire(campaignId);
+            usedRateLimiter = true;
+          } catch (rlErr) {
+            if (!rateLimiterFallbackLogged) {
+              console.warn(`[CAMPAIGN] [${campaignId}] Rate limiter unavailable — falling back to ${SEND_RATE_MS}ms per-worker delay:`, rlErr.message);
+              rateLimiterFallbackLogged = true;
+            }
+          }
+        }
+        const info = await sendCampaignEmail(contact, template, userId, campaignEmailRecord.id);
+        console.log(`[SES SEND] contact=${contact.email} status=ok`);
+
+        // Email delivered — mark SENT before credit deduction so a deduction
+        // failure does not retroactively show the email as FAILED.
+        await storage.updateCampaignEmail(campaignEmailRecord.id, {
+          status: CAMPAIGN_EMAIL_STATUS.SENT,
+          sesMessageId: info?.messageId || null,
+          sentAt: new Date(),
+        });
+        sentCount++;
+
+        try {
+          await storage.deductCreditAtomic(userId, campaignId, `Email to ${contact.email}`);
+          console.log(`[CREDITS DEDUCTED] contact=${contact.email} sentSoFar=${sentCount}`);
+        } catch (deductErr) {
+          if (deductErr.message === "Insufficient credits") {
+            outOfCredits = true;
+            console.warn(`[CAMPAIGN ${campaignId}] credits exhausted after send to ${contact.email} — stopping`);
+            break;
+          }
+          console.error(`[CAMPAIGN ${campaignId}] credit deduction failed after send to ${contact.email} — accounting drift:`, deductErr.message);
+        }
+      }
+    } catch (err) {
+      // Handles: contact missing, isSuppressed failure, sendCampaignEmail failure
+      console.error(`[CAMPAIGN ${campaignId}] Failed to send email ${i + 1}:`, err.message);
+      failedCount++;
+      await storage.updateCampaignEmail(campaignEmailRecord.id, {
+        status: CAMPAIGN_EMAIL_STATUS.FAILED,
+        failureReason: err.message,
+      });
+    }
+
+    // Checkpoint after every email (mirrors BullMQ worker behaviour)
+    await storage.updateCampaign(campaignId, {
+      sentEmails: sentCount,
+      failedEmails: failedCount,
+      skippedEmails: skippedCount,
+    });
+
+    // Fallback throttle when Redis rate limiter is unavailable — per-worker sleep
+    if (SEND_RATE_MS > 0 && attemptedSend && !usedRateLimiter) await sleep(SEND_RATE_MS);
+  }
+
+  if (outOfCredits) {
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { name: campaign.name, sentEmails: sentCount, stoppedEarly: true },
+    });
+    console.warn(`[CAMPAIGN ${campaignId}] stopped early — insufficient credits`);
+  }
+
+  // Re-read status to detect external termination (e.g., user deactivated mid-run)
+  const currentState = await storage.getCampaign(campaignId);
+  if (currentState?.status === "FAILED") {
+    console.warn(`[CAMPAIGN ${campaignId}] externally terminated (status=FAILED) — not overwriting to COMPLETED`);
+    return currentState;
   }
 
   await storage.updateCampaign(campaignId, {
-    sentEmails: campaign.totalEmails,
-    creditsUsed: campaign.totalEmails,
+    sentEmails: sentCount,
+    failedEmails: failedCount,
+    skippedEmails: skippedCount,
+    creditsUsed: sentCount,
     status: "COMPLETED",
     completedAt: new Date()
   });
@@ -78,16 +285,433 @@ export async function executeCampaign(campaignId, userId) {
     action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
     targetType: "campaign",
     targetId: campaignId,
-    details: { name: campaign.name, sentEmails: campaign.totalEmails }
+    details: { name: campaign.name, sentEmails: sentCount, failedEmails: failedCount }
   });
 
+  if (owner && owner.role !== USER_ROLES.ROOT_ADMIN && !owner.isSecondaryRoot) {
+    await storage.updateUserActivity(userId).catch(err =>
+      console.error(`[CAMPAIGN] updateUserActivity failed for ${userId}:`, err.message)
+    );
+  }
+
   return await storage.getCampaign(campaignId);
+}
+
+// ── Campaign validation constants and helpers ─────────────────────────────────
+const CAMPAIGN_MAX_CONTACTS = 10_000;
+const CAMPAIGN_MAX_SUBJECT_LENGTH = 200;
+const CAMPAIGN_MAX_BODY_BYTES = 500 * 1024; // 500 KB
+
+const ROLE_ADDRESS_PREFIXES = [
+  "admin", "support", "noreply", "no-reply", "postmaster",
+  "mailer-daemon", "abuse", "webmaster", "info", "help", "contact",
+];
+
+function normalizeContactEmail(email) {
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+function isValidEmailFormat(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isRoleAddress(email) {
+  const local = email.split("@")[0].toLowerCase();
+  return ROLE_ADDRESS_PREFIXES.some(
+    prefix => local === prefix || local.startsWith(prefix + ".") || local.startsWith(prefix + "+")
+  );
+}
+
+function extractPlaceholders(text) {
+  const found = new Set();
+  const re = /\{\{(\w+)\}\}|\{(\w+)\}/g;
+  let m;
+  while ((m = re.exec(text ?? "")) !== null) {
+    found.add(m[1] || m[2]);
+  }
+  return found;
 }
 
 export async function registerRoutes(httpServer, app) {
   await storage.initializeRootAdmin();
 
-  app.post("/api/auth/login", async (req, res) => {
+  // ── Public: health check — registered FIRST so no middleware can shadow it ─
+  // Used by Railway health checks, uptime monitors, and load balancers.
+  // Always returns 200 — individual component statuses are in the body.
+  app.get("/api/health", async (req, res) => {
+    const result = {
+      status: "ok",
+      uptime: Math.floor(process.uptime()),
+      postgres: "unchecked",
+      redis: "unchecked",
+      worker: "unchecked",
+      smtp: "unchecked",
+    };
+
+    // Postgres — 3s timeout prevents health probe from hanging on a slow connection
+    if (pool) {
+      try {
+        await Promise.race([
+          pool.query("SELECT 1"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+        ]);
+        result.postgres = "connected";
+      } catch (err) {
+        result.postgres = `error: ${err.message}`;
+        result.status = "degraded";
+      }
+    } else {
+      result.postgres = "dev-mode";
+    }
+
+    // Redis — use the BullMQ connection (maxRetriesPerRequest: null, lazyConnect)
+    const redisConn = getRedisConnection();
+    if (redisConn) {
+      try {
+        await Promise.race([
+          redisConn.ping(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+        ]);
+        result.redis = "connected";
+
+        // Worker heartbeat — written every 30s by worker.js with 60s TTL
+        const heartbeat = await redisConn.get("repmail:worker:heartbeat").catch(() => null);
+        if (heartbeat) {
+          const ageMs = Date.now() - parseInt(heartbeat, 10);
+          result.worker = ageMs < 70_000 ? "running" : "stalled";
+        } else {
+          result.worker = "stalled";
+        }
+      } catch (err) {
+        result.redis = `error: ${err.message}`;
+        result.worker = "unknown";
+        result.status = "degraded";
+      }
+    } else {
+      result.redis = "not-configured";
+      result.worker = "disabled";
+    }
+
+    // SMTP — verify nodemailer transport; 5s timeout to avoid blocking health probes
+    if (process.env.SES_SMTP_HOST) {
+      try {
+        await Promise.race([
+          verifySesConnection(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+        ]);
+        result.smtp = "ok";
+      } catch (err) {
+        result.smtp = `error: ${err.message}`;
+        result.status = "degraded";
+      }
+    } else {
+      result.smtp = "not-configured";
+    }
+
+    res.json(result);
+  });
+
+  // ── Passport / Google OAuth ────────────────────────────────────────────────
+  app.use(passport.initialize());
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: "/api/auth/google/callback",
+      },
+      async (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const email = profile.emails?.[0]?.value;
+          if (!email) return done(new Error("Google did not return an email address"), null);
+
+          let user = await storage.getUserByEmail(email);
+
+          if (!user) {
+            const base = (email.split("@")[0]).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
+            const username = `${base}_${Math.random().toString(36).slice(2, 6)}`;
+            user = await storage.createUser({
+              username,
+              email,
+              role: "USER",
+              plan: "free",
+              isTrialUser: true,
+              creditsReceived: 0,
+              mustResetPassword: false,
+            });
+          }
+
+          return done(null, user);
+        } catch (err) {
+          return done(err, null);
+        }
+      }
+    ));
+  }
+
+  // Redirect to Google
+  app.get("/api/auth/google",
+    passport.authenticate("google", { scope: ["profile", "email"], session: false })
+  );
+
+  // Google callback — create session token and set cookie
+  app.get("/api/auth/google/callback",
+    passport.authenticate("google", { session: false, failureRedirect: "/login?error=google_failed" }),
+    async (req, res) => {
+      try {
+        const session = await storage.createSession(req.user.id);
+        res.cookie("token", session.token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 24 * 60 * 60 * 1000,
+        });
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.USER_LOGIN,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+        res.redirect("/app/dashboard");
+      } catch (err) {
+        console.error("Google callback error:", err);
+        res.redirect("/login?error=google_failed");
+      }
+    }
+  );
+  // ── End Google OAuth ───────────────────────────────────────────────────────
+
+  // ── Public: unsubscribe ────────────────────────────────────────────────────
+  app.get("/api/unsubscribe", async (req, res) => {
+    const { token, uid, email } = req.query;
+    const fail = (msg) => res.status(400).send(`<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"><h2 style="color:#dc2626">Unsubscribe Failed</h2><p>${msg}</p></body></html>`);
+
+    if (!token || !uid || !email) return fail("Missing required parameters.");
+    if (!/^[0-9a-f-]{36}$/.test(uid)) return fail("Invalid request.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Invalid email.");
+    if (!/^[0-9a-f]{64}$/.test(token)) return fail("Invalid token.");
+
+    const valid = verifyUnsubscribeToken(uid, email, token);
+    if (!valid) return fail("This unsubscribe link is invalid or has expired.");
+
+    try {
+      await storage.addSuppression(uid, email, "unsubscribe");
+      return res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"><h2 style="color:#16a34a">You've been unsubscribed</h2><p><strong>${email}</strong> will no longer receive emails from this sender.</p></body></html>`);
+    } catch (err) {
+      console.error("[UNSUBSCRIBE] addSuppression failed:", err.message);
+      return fail("Something went wrong. Please try again later.");
+    }
+  });
+
+  // ── Public: inactivity keep-credits ───────────────────────────────────────
+  app.get("/api/inactivity/keep-credits", async (req, res) => {
+    const html = (color, heading, body) =>
+      res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"><h2 style="color:${color}">${heading}</h2><p>${body}</p></body></html>`);
+
+    const { token } = req.query;
+    if (!token || !/^[0-9a-f]{64}$/.test(token)) {
+      return html("#dc2626", "Invalid link", "This reactivation link is invalid. Please check your email or contact your administrator.");
+    }
+
+    try {
+      const result = await storage.validateKeepToken(token);
+
+      if (result.reason === "not_found") {
+        return html("#dc2626", "Link not found", "This reactivation link is invalid. Please check your email or contact your administrator.");
+      }
+      if (result.reason === "expired") {
+        return html("#dc2626", "Link expired", "This reactivation link has expired. Please contact your administrator to reactivate your account.");
+      }
+      if (result.reason === "reclaim_already_fired") {
+        return html("#ea580c", "Credits already reclaimed", "Your account was inactive for 90 days and your unused credits have been reclaimed. Please contact your administrator to purchase new credits.");
+      }
+
+      // valid — reset inactivity timer
+      await storage.updateUserActivity(result.userId);
+      await storage.createAuditLog({
+        userId:     result.userId,
+        action:     AUDIT_ACTIONS.INACTIVITY_TIMER_RESET,
+        targetType: "user",
+        targetId:   result.userId,
+        details:    { via: "keep-credits-link" },
+      });
+
+      const appUrl = process.env.APP_URL || "http://localhost:5000";
+      return html("#16a34a", "Account fully reactivated ✓", `Your credits are safe and campaign sending has been restored. Your inactivity timer has been reset to today. <a href="${appUrl}/login" style="color:#2563eb">Log in to RepMail →</a>`);
+    } catch (err) {
+      console.error("[KEEP-CREDITS] Error:", err.message);
+      return html("#dc2626", "Something went wrong", "Please try again later or contact your administrator.");
+    }
+  });
+
+  // ── Public: SES bounce / complaint SNS webhook ────────────────────────────
+  // SNS may send Content-Type: text/plain — add a text parser for this route
+  // only so the global express.json() fallback still works for application/json.
+  app.post("/api/webhooks/ses", express.text({ type: "text/plain" }), async (req, res) => {
+    // Parse body first — needed for signature verification
+    let envelope;
+    try {
+      envelope = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    } catch {
+      console.error("[SNS] Unparseable request body");
+      return res.status(400).send("Bad Request");
+    }
+
+    // Issue 1 fix: verify signature BEFORE sending 200.
+    // Forged requests (invalid signature) are rejected with 403 so the caller
+    // knows the request was rejected and SNS does not retry valid messages.
+    // verifySnsMessage validates SigningCertURL hostname against *.amazonaws.com
+    // (SSRF protection), caches the cert for 24h, and verifies with SHA1withRSA.
+    try {
+      await verifySnsMessage(envelope);
+    } catch (err) {
+      console.error("[SNS] Signature verification failed — rejecting:", err.message);
+      return res.status(403).send("Forbidden");
+    }
+
+    // Reject messages from unexpected topics — prevents cross-account SNS injection.
+    const expectedTopicArn = process.env.SNS_TOPIC_ARN;
+    if (expectedTopicArn && envelope.TopicArn && envelope.TopicArn !== expectedTopicArn) {
+      console.warn("[SNS] Rejected message from unexpected TopicArn:", envelope.TopicArn);
+      return res.status(403).send("Forbidden");
+    }
+
+    // ACK after verification passes — SNS retries on non-2xx for up to 23 days.
+    // All remaining processing is async fire-and-forget after this point.
+    res.sendStatus(200);
+
+    // Confirm new SNS subscriptions automatically
+    if (envelope.Type === "SubscriptionConfirmation") {
+      const subUrl = envelope.SubscribeURL;
+      if (!subUrl || !subUrl.startsWith("https://")) return;
+      try {
+        const resp = await fetch(subUrl);
+        console.log(`[SNS] Subscription confirmed — HTTP ${resp.status}`);
+      } catch (err) {
+        console.error("[SNS] Failed to confirm subscription:", err.message);
+      }
+      return;
+    }
+
+    if (envelope.Type !== "Notification") return;
+
+    // ── Step 1: Deduplication check ──────────────────────────────────────────
+    // processed=true  → fully done, skip entirely.
+    // processed=false → previous attempt crashed before step 4; re-process.
+    // not found       → first delivery, proceed to step 2.
+    const snsMessageId = envelope.MessageId;
+    let existingSnsEvent = null;
+    if (snsMessageId) {
+      existingSnsEvent = await storage.getSnsEvent(snsMessageId);
+      if (existingSnsEvent?.processed) {
+        console.log(`[SNS] Already processed: snsMessageId=${snsMessageId}`);
+        return;
+      }
+    }
+
+    let notification;
+    try {
+      notification = JSON.parse(envelope.Message);
+    } catch {
+      console.error("[SNS] Unparseable Message field");
+      return;
+    }
+
+    // Legacy SES notifications use `notificationType`; Configuration Set events use `eventType`.
+    const { notificationType, eventType: confSetEventType, mail, bounce, complaint } = notification;
+    const sesMessageId = mail?.messageId;
+    const eventType = notificationType || confSetEventType;
+    if (!sesMessageId || !eventType) return;
+
+    // ── Step 2: Claim this delivery ───────────────────────────────────────────
+    // Only insert if no existing record (existingSnsEvent === null means first delivery).
+    // If existingSnsEvent is non-null with processed=false, this is crash recovery —
+    // skip the insert and fall through to re-process.
+    if (snsMessageId && !existingSnsEvent) {
+      const inserted = await storage.createSnsEvent(snsMessageId, eventType.toLowerCase());
+      if (!inserted) {
+        // Another concurrent delivery won the insert race — defer to them.
+        console.log(`[SNS] Concurrent delivery race lost: snsMessageId=${snsMessageId}`);
+        return;
+      }
+    }
+
+    try {
+      // ── Step 3: Execute all writes ────────────────────────────────────────
+      // For Open/Click, prefer the UUID tag injected at send time for a direct PK lookup;
+      // fall back to SES Message-ID for events from legacy or untagged sends.
+      let campaignEmail;
+      if (eventType === "Open" || eventType === "Click") {
+        const taggedId = notification.mail?.tags?.["campaign-email-id"]?.[0];
+        if (taggedId) campaignEmail = await storage.getCampaignEmailById(taggedId);
+        if (!campaignEmail) campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
+      } else {
+        campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
+      }
+
+      if (!campaignEmail) {
+        console.warn(`[SNS] No campaign_email record for ses_message_id=${sesMessageId} eventType=${eventType}`);
+        return;
+      }
+
+      const { userId, campaignId, id: campaignEmailId } = campaignEmail;
+
+      if (eventType === "Bounce") {
+        // Only suppress on permanent bounces; transient bounces are retryable
+        if (bounce?.bounceType !== "Permanent") {
+          console.log(`[SNS] Transient bounce ignored for messageId=${sesMessageId}`);
+          return;
+        }
+        for (const r of bounce.bouncedRecipients || []) {
+          if (!r.emailAddress) continue;
+          await storage.addSuppression(userId, r.emailAddress, "bounce");
+          await storage.updateCampaignEmail(campaignEmailId, {
+            status: CAMPAIGN_EMAIL_STATUS.BOUNCED,
+          });
+          if (campaignId) await storage.incrementCampaignBounced(campaignId);
+          console.log(`[SNS] Permanent bounce — suppressed: ${r.emailAddress}`);
+        }
+      } else if (eventType === "Complaint") {
+        for (const r of complaint.complainedRecipients || []) {
+          if (!r.emailAddress) continue;
+          await storage.addSuppression(userId, r.emailAddress, "complaint");
+          await storage.updateCampaignEmail(campaignEmailId, {
+            status: CAMPAIGN_EMAIL_STATUS.COMPLAINED,
+          });
+          if (campaignId) await storage.incrementCampaignComplained(campaignId);
+          console.log(`[SNS] Complaint — suppressed: ${r.emailAddress}`);
+        }
+      } else if (eventType === "Open") {
+        const { wasFirst } = await storage.updateCampaignEmailOpened(campaignEmailId);
+        if (wasFirst && campaignId) {
+          await storage.incrementCampaignOpened(campaignId);
+          console.log(`[SNS] Open recorded — campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
+        }
+      } else if (eventType === "Click") {
+        const link = notification.click?.link;
+        const { wasFirst } = await storage.updateCampaignEmailClicked(campaignEmailId);
+        if (wasFirst && campaignId) {
+          await storage.incrementCampaignClicked(campaignId);
+          console.log(`[SNS] Click recorded — link=${link} campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
+        }
+      }
+
+      // ── Step 4: Mark as fully processed ──────────────────────────────────
+      // If a crash occurs before this line, processed stays false and the next
+      // SNS delivery re-processes. Counter may be off by one in that scenario —
+      // acceptable vs the alternative of permanently dropped events.
+      if (snsMessageId) {
+        await storage.updateSnsEventProcessed(snsMessageId).catch(err =>
+          console.warn(`[SNS] Failed to mark event processed snsMessageId=${snsMessageId}:`, err.message)
+        );
+      }
+    } catch (err) {
+      console.error("[SNS] Handler error:", err.message);
+    }
+  });
+
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     try {
       const { username, password } = req.body;
       
@@ -146,7 +770,11 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/auth/me", authMiddleware, async (req, res) => {
     try {
-      res.json(req.user);
+      res.json({
+        ...req.user,
+        isDormant: req.user.isDormant ?? false,
+        isSecondaryRoot: req.user.isSecondaryRoot ?? false,
+      });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -179,8 +807,12 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
     try {
-      const isRootAdmin = req.user.role === "ROOT_ADMIN";
-      const stats = await storage.getDashboardStats(req.user.id, isRootAdmin);
+      const stats = await storage.getDashboardStats(req.user.id, req.isRootAdmin);
+      const isAdmin = req.user.role === "ROOT_ADMIN" || req.user.role === "SUB_ADMIN" || req.user.isSecondaryRoot;
+      if (isAdmin) {
+        const teamStats = await storage.getTeamStats(req.user.id);
+        return res.json({ ...stats, teamStats });
+      }
       res.json(stats);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -189,8 +821,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-      const isRootAdmin = req.user.role === "ROOT_ADMIN";
-      const usersList = await storage.getUsers(req.user.id, isRootAdmin);
+      const usersList = await storage.getUsersWithStats(req.user.id, req.isRootAdmin);
       res.json(usersList);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -202,17 +833,18 @@ export async function registerRoutes(httpServer, app) {
       const { username, email, password, role, credits } = req.body;
 
       // Plan limit check — team members
-      const childUsers = await storage.getChildUsers(req.user.id);
-      const activeChildren = childUsers.filter(u => u.isActive);
-      const userLimits = PLAN_LIMITS[req.user.plan || "free"];
-      if (activeChildren.length >= userLimits.maxTeamMembers) {
-        return res.status(403).json({
-          error: "PLAN_LIMIT",
-          message: `Your ${userLimits.label} plan allows up to ${userLimits.maxTeamMembers} team members. Upgrade your plan to add more.`,
-          currentPlan: req.user.plan || "free",
-          limit: userLimits.maxTeamMembers,
-          current: activeChildren.length,
-        });
+      const memberLimit = MAX_TEAM_MEMBERS[req.user.plan] ?? 0;
+      if (memberLimit !== Infinity) {
+        const activeCount = await storage.getChildUserCount(req.user.id);
+        if (activeCount >= memberLimit) {
+          return res.status(403).json({
+            error: "PLAN_LIMIT",
+            message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade to add more.`,
+            currentPlan: req.user.plan || "free",
+            limit: memberLimit,
+            current: activeCount,
+          });
+        }
       }
 
       const existing = await storage.getUserByUsername(username);
@@ -220,11 +852,11 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      if (req.user.role === "SUB_ADMIN" && role !== "USER") {
+      if (req.user.role === "SUB_ADMIN" && !req.user.isSecondaryRoot && role !== "USER") {
         return res.status(403).json({ message: "Sub-admins can only create users" });
       }
-      
-      if (req.user.role === "ROOT_ADMIN" && role === "USER") {
+
+      if ((req.user.role === "ROOT_ADMIN" || req.user.isSecondaryRoot) && role === "USER") {
         return res.status(403).json({ message: "Root admin can only create sub-admins" });
       }
 
@@ -285,29 +917,175 @@ export async function registerRoutes(httpServer, app) {
   app.delete("/api/users/:id", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
-      const user = await storage.getUserById(id);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+
+      // a. Load and verify target user
+      const target = await storage.getUserById(id);
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (target.role === "ROOT_ADMIN" && req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Cannot deactivate root admin" });
+      }
+      if (target.isSecondaryRoot && req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Cannot deactivate a secondary root admin" });
+      }
+      if (req.user.role === "SUB_ADMIN" && target.parentId !== req.user.id) {
+        return res.status(403).json({ message: "Forbidden" });
       }
 
-      if (user.role === "ROOT_ADMIN") {
-        return res.status(403).json({ message: "Cannot delete root admin" });
+      // b. Terminate active and pending campaigns
+      const allCampaigns = await storage.getCampaigns(id, false);
+      const activeCampaigns = allCampaigns.filter(c => ["RUNNING", "PENDING"].includes(c.status));
+      const queue = getCampaignQueue();
+      for (const campaign of activeCampaigns) {
+        await storage.updateCampaign(campaign.id, { status: "FAILED" });
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+          targetType: "campaign",
+          targetId: campaign.id,
+          details: { name: campaign.name, reason: "Campaign terminated — user account deactivated" },
+        });
+        if (queue) {
+          try {
+            const job = await queue.getJob(campaign.id);
+            if (job) await job.remove();
+          } catch (e) {
+            console.warn(`[DELETE_USER] BullMQ job removal failed for campaign ${campaign.id}:`, e.message);
+          }
+        }
       }
 
-      await storage.deleteUser(id);
+      // c. Cascade reclaim and reassign children (SUB_ADMIN deactivation only)
+      let reassignedChildCount = 0;
+      if (target.role === "SUB_ADMIN") {
+        const activeChildren = await storage.getActiveChildren(id);
 
+        for (const child of activeChildren) {
+          const childCampaigns = await storage.getCampaigns(child.id, false);
+          const hasRunning = childCampaigns.some(c => c.status === "RUNNING");
+
+          if (hasRunning) {
+            console.warn(`[DELETE_USER] Child ${child.id} (${child.username}) has RUNNING campaigns — skipping credit reclaim`);
+          } else {
+            await storage.autoReclaimCredits(child.id, req.user.id).catch(err =>
+              console.error(`[DELETE_USER] autoReclaimCredits failed for child ${child.id}:`, err.message)
+            );
+          }
+
+          sendTransactionalEmail(
+            child.email,
+            "Your manager's account has been deactivated",
+            `Hi ${child.username},\n\nYour manager's account has been deactivated. Your account has been moved to a new administrator. Contact your new admin for credit reallocation.\n\nThe RepMail Team`
+          ).catch(err => console.error(`[DELETE_USER] Child notification failed for ${child.id}:`, err.message));
+        }
+
+        // Reassign ALL children (including those with running campaigns)
+        const allChildren = await storage.getChildUsers(id);
+        reassignedChildCount = allChildren.length;
+        await storage.reassignChildren(id, req.user.id);
+      }
+
+      // d. Reclaim unspent credits to parent
+      const unspent = (target.creditsReceived || 0) - (target.creditsAllocated || 0) - (target.creditsUsed || 0);
+      if (unspent > 0 && target.parentId) {
+        await storage.reclaimCredits(id, target.parentId, unspent);
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.CREDITS_RECLAIMED,
+          targetType: "user",
+          targetId: id,
+          details: { amount: unspent, reclaimedTo: target.parentId, username: target.username },
+        });
+      }
+
+      // e. Kill all active sessions immediately
+      await storage.deleteUserSessions(id);
+
+      // f. Soft-deactivate the account
+      await storage.updateUser(id, { isActive: false });
+
+      // g. Audit trail
       await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.USER_DELETED,
         targetType: "user",
         targetId: id,
-        details: { username: user.username }
+        details: { username: target.username, role: target.role, previousParentId: target.parentId ?? null, newParentId: req.user.id, campaignsTerminated: activeCampaigns.length, creditsReclaimed: unspent > 0 ? unspent : 0, childrenReassigned: reassignedChildCount },
       });
 
-      res.json({ message: "User deleted successfully" });
+      res.json({ message: "User deactivated successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Secondary root admin management ───────────────────────────────────────
+
+  app.post("/api/admin/grant-root-access", authMiddleware, async (req, res) => {
+    try {
+      if (req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Only the root administrator can grant secondary root access." });
+      }
+
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ message: "userId is required." });
+
+      const target = await storage.getUserById(userId);
+      if (!target) return res.status(404).json({ message: "User not found." });
+      if (!target.isActive) return res.status(400).json({ message: "Cannot grant access to an inactive user." });
+      if (target.role === USER_ROLES.ROOT_ADMIN) return res.status(400).json({ message: "User is already the root administrator." });
+      if (target.isSecondaryRoot) return res.status(400).json({ message: "User already has secondary root access." });
+
+      const count = await storage.getSecondaryRootCount();
+      if (count >= 2) {
+        return res.status(400).json({ message: "Maximum of 2 secondary root admins allowed. Revoke one before granting another." });
+      }
+
+      await storage.grantSecondaryRoot(userId);
+      await storage.createAuditLog({
+        userId:     req.user.id,
+        action:     AUDIT_ACTIONS.ROOT_ACCESS_GRANTED,
+        targetType: "user",
+        targetId:   userId,
+        details:    { grantedTo: target.username, grantedBy: req.user.username },
+      });
+
+      sendTransactionalEmail(
+        target.email,
+        "You have been granted secondary root admin access on RepMail",
+        `Hi ${target.username},\n\nYou have been granted secondary root admin access on RepMail by ${req.user.username}.\n\nYou can now access all administrative features. This access can be revoked at any time.\n\nThe RepMail Team`
+      ).catch(err => console.error("[GRANT-ROOT] Notification email failed:", err.message));
+
+      res.json({ message: "Secondary root access granted.", userId });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/revoke-root-access", authMiddleware, async (req, res) => {
+    try {
+      if (req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Only the root administrator can revoke secondary root access." });
+      }
+
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ message: "userId is required." });
+
+      const target = await storage.getUserById(userId);
+      if (!target) return res.status(404).json({ message: "User not found." });
+      if (!target.isSecondaryRoot) return res.status(400).json({ message: "User does not have secondary root access." });
+
+      await storage.revokeSecondaryRoot(userId);
+      await storage.createAuditLog({
+        userId:     req.user.id,
+        action:     AUDIT_ACTIONS.ROOT_ACCESS_REVOKED,
+        targetType: "user",
+        targetId:   userId,
+        details:    { revokedFrom: target.username, revokedBy: req.user.username },
+      });
+
+      res.json({ message: "Secondary root access revoked.", userId });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
     }
   });
 
@@ -322,8 +1100,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/campaigns", authMiddleware, async (req, res) => {
     try {
-      const isRootAdmin = req.user.role === "ROOT_ADMIN";
-      const campaignsList = await storage.getCampaigns(req.user.id, isRootAdmin);
+      const campaignsList = await storage.getCampaigns(req.user.id, req.isRootAdmin);
       res.json(campaignsList);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -332,12 +1109,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/campaigns", authMiddleware, async (req, res) => {
     try {
-      const { name, template, contacts, totalEmails, scheduledAt } = req.body;
+      const { name, template, contacts, scheduledAt } = req.body;
+      const rawContacts = contacts || [];
+      const validationErrors = [];
 
-      // Plan limit check — count active campaigns
+      // ── Plan limit check ──────────────────────────────────────────────────────
       const userCampaigns = await storage.getCampaigns(req.user.id, false);
       const activeCampaigns = userCampaigns.filter(c => ["RUNNING", "PENDING", "DRAFT"].includes(c.status));
-      const campaignLimits = PLAN_LIMITS[req.user.plan || "free"];
+      const campaignLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
       if (activeCampaigns.length >= campaignLimits.maxActiveCampaigns) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
@@ -348,7 +1127,6 @@ export async function registerRoutes(httpServer, app) {
         });
       }
 
-      // Scheduling check
       if (scheduledAt && !campaignLimits.canSchedule) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
@@ -357,32 +1135,151 @@ export async function registerRoutes(httpServer, app) {
         });
       }
 
+      // ── Scheduled time validation ─────────────────────────────────────────────
+      let scheduledTime = null;
       if (scheduledAt) {
-        const scheduledTime = new Date(scheduledAt);
+        scheduledTime = new Date(scheduledAt);
         if (isNaN(scheduledTime.getTime()) || scheduledTime <= new Date()) {
-          return res.status(400).json({ message: "Scheduled time must be a valid future date." });
+          validationErrors.push("Scheduled time must be a valid future date");
         }
+      }
+
+      // ── Contact validation pipeline ───────────────────────────────────────────
+      // All filtering runs before any DB write so the operation is atomic.
+
+      const totalOriginal = rawContacts.length;
+
+      // Step 1: Normalize emails
+      const normalized = rawContacts.map(c => ({
+        ...c,
+        email: normalizeContactEmail(c.email),
+      }));
+
+      // Step 2: Deduplicate by normalized email
+      const seenEmails = new Set();
+      const deduped = normalized.filter(c => {
+        if (!c.email || seenEmails.has(c.email)) return false;
+        seenEmails.add(c.email);
+        return true;
+      });
+      const duplicatesRemoved = totalOriginal - deduped.length;
+
+      // Step 3: Format validation
+      const formatValid = deduped.filter(c => isValidEmailFormat(c.email));
+      const invalidFormat = deduped.length - formatValid.length;
+
+      // Step 4: Role address filter
+      const notRole = formatValid.filter(c => !isRoleAddress(c.email));
+      const roleAddresses = formatValid.length - notRole.length;
+
+      // Step 5: Enforce contact limit (after all contact-level filtering)
+      if (notRole.length > CAMPAIGN_MAX_CONTACTS) {
+        validationErrors.push(
+          `Contact list exceeds the maximum of ${CAMPAIGN_MAX_CONTACTS.toLocaleString()} contacts after filtering`
+        );
+      }
+
+      // ── Template validation ───────────────────────────────────────────────────
+      const subject = template?.subject || "";
+      const body = template?.body || "";
+
+      if (subject.length > CAMPAIGN_MAX_SUBJECT_LENGTH) {
+        validationErrors.push(
+          `Subject exceeds the maximum of ${CAMPAIGN_MAX_SUBJECT_LENGTH} characters (got ${subject.length})`
+        );
+      }
+
+      const bodyBytes = Buffer.byteLength(body, "utf8");
+      if (bodyBytes > CAMPAIGN_MAX_BODY_BYTES) {
+        validationErrors.push(
+          `Email body exceeds the maximum of 500 KB (got ${(bodyBytes / 1024).toFixed(0)} KB)`
+        );
+      }
+
+      // ── Placeholder cross-reference ───────────────────────────────────────────
+      // Every {{placeholder}} in subject/body must have a matching column in the contact data.
+      if (notRole.length > 0) {
+        const availableColumns = new Set(Object.keys(notRole[0]));
+        const allPlaceholders = new Set([
+          ...extractPlaceholders(subject),
+          ...extractPlaceholders(body),
+        ]);
+        const missingColumns = [...allPlaceholders].filter(p => !availableColumns.has(p));
+        if (missingColumns.length > 0) {
+          validationErrors.push(
+            `Template placeholder(s) not found in contact data: ${missingColumns.map(p => `{{${p}}}`).join(", ")}`
+          );
+        }
+      }
+
+      // ── Blocking gate — no DB writes before this point ────────────────────────
+      if (validationErrors.length > 0) {
+        return res.status(400).json({ validationErrors });
+      }
+
+      const validContacts = notRole;
+
+      if (validContacts.length === 0) {
+        return res.status(400).json({ validationErrors: ["No valid contacts remain after filtering"] });
+      }
+
+      // ── Pre-campaign suppression count ────────────────────────────────────────
+      // Runs last — after normalization, dedup, format validation, and role filtering.
+      const suppressedContactCount = await storage.getPreCampaignSuppressionCount(
+        validContacts.map(c => c.email)
+      );
+
+      // ── Credit check for immediate campaigns ──────────────────────────────────
+      const totalEmails = validContacts.length;
+      if (!scheduledAt) {
+        const canStart = await storage.canStartCampaign(req.user.id, totalEmails);
+        if (!canStart.allowed) {
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+            details: canStart,
+          });
+          return res.status(400).json({ message: canStart.reason });
+        }
+      }
+
+      // ── Persist contacts and campaign ─────────────────────────────────────────
+      const savedContacts = await storage.createContacts(
+        validContacts.map(c => ({
+          userId: req.user.id,
+          email: c.email,
+          name: c.name || null,
+          company: c.company || null,
+          category: c.category || null,
+        }))
+      );
+      const savedContactIds = savedContacts.map(c => c.id);
+
+      const contactStats = {
+        total: totalOriginal,
+        valid: savedContactIds.length,
+        duplicatesRemoved,
+        invalidFormat,
+        roleAddresses,
+        suppressed: suppressedContactCount,
+      };
+
+      if (scheduledAt) {
         const campaign = await storage.createCampaign({
           name,
           userId: req.user.id,
           totalEmails,
           templateSnapshot: template,
-          contactIds: contacts?.map(c => c.id) || [],
+          contactIds: savedContactIds,
           status: "PENDING",
           scheduledAt: scheduledTime,
         });
-        return res.status(201).json({ ...campaign, message: `Campaign scheduled for ${scheduledTime.toISOString()}` });
-      }
-
-      // Immediate execution — check credits first
-      const canStart = await storage.canStartCampaign(req.user.id, totalEmails);
-      if (!canStart.allowed) {
-        await storage.createAuditLog({
-          userId: req.user.id,
-          action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
-          details: canStart
+        return res.status(201).json({
+          campaign,
+          contactStats,
+          validationErrors: [],
+          message: `Campaign scheduled for ${scheduledTime.toISOString()}`,
         });
-        return res.status(400).json({ message: canStart.reason });
       }
 
       const campaign = await storage.createCampaign({
@@ -390,12 +1287,30 @@ export async function registerRoutes(httpServer, app) {
         userId: req.user.id,
         totalEmails,
         templateSnapshot: template,
-        contactIds: contacts?.map(c => c.id) || [],
-        status: "DRAFT"
+        contactIds: savedContactIds,
+        status: "PENDING",
       });
 
-      const completedCampaign = await executeCampaign(campaign.id, req.user.id);
-      res.status(201).json(completedCampaign);
+      // Enqueue via BullMQ if Redis is available
+      const job = await addCampaignJob(campaign.id, req.user.id);
+
+      if (!job) {
+        // Redis not configured — run inline (non-blocking) as fallback
+        executeCampaign(campaign.id, req.user.id).catch(async (err) => {
+          console.error(`[CAMPAIGN] Inline execution error for ${campaign.id}:`, err.message);
+          await storage.updateCampaign(campaign.id, { status: "FAILED" }).catch(() => {});
+          if (req.user.role !== USER_ROLES.ROOT_ADMIN && !req.user.isSecondaryRoot) {
+            const failed = await storage.getCampaign(campaign.id).catch(() => null);
+            if (failed) {
+              const attempted = (failed.sentEmails || 0) + (failed.failedEmails || 0) + (failed.skippedEmails || 0);
+              if (attempted > 0) await storage.updateUserActivity(req.user.id).catch(() => {});
+            }
+          }
+        });
+      }
+
+      // Return immediately — client polls GET /api/campaigns/:id for progress
+      res.status(201).json({ campaign, contactStats, validationErrors: [] });
     } catch (error) {
       res.status(400).json({ message: error.message });
     }
@@ -407,7 +1322,29 @@ export async function registerRoutes(httpServer, app) {
       if (!campaign) {
         return res.status(404).json({ message: "Campaign not found" });
       }
-      res.json(campaign);
+      if (campaign.userId !== req.user.id && req.user.role !== "ROOT_ADMIN" && !req.user.isSecondaryRoot) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      // Include up to 50 most-recent per-email records for the ProgressTracker
+      const campaignEmails = await storage.getCampaignEmailsByCampaign(campaign.id, 50);
+      res.json({ ...campaign, campaignEmails });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Campaign audit trail ─────────────────────────────────────────────────────
+  app.get("/api/campaigns/:id/audit", authMiddleware, async (req, res) => {
+    try {
+      const campaign = await storage.getCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+      if (campaign.userId !== req.user.id && !req.isRootAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const logs = await storage.getAuditLogs({ targetId: req.params.id, limit: 50 });
+      res.json(logs);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -415,10 +1352,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.patch("/api/campaigns/:id", authMiddleware, async (req, res) => {
     try {
-      const campaign = await storage.updateCampaign(req.params.id, req.body);
-      if (!campaign) {
+      const existing = await storage.getCampaign(req.params.id);
+      if (!existing) {
         return res.status(404).json({ message: "Campaign not found" });
       }
+      if (existing.userId !== req.user.id && req.user.role !== "ROOT_ADMIN" && !req.user.isSecondaryRoot) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const campaign = await storage.updateCampaign(req.params.id, req.body);
       res.json(campaign);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -440,7 +1381,7 @@ export async function registerRoutes(httpServer, app) {
 
       // Plan limit check
       const userTemplates = await storage.getTemplates(req.user.id);
-      const templateLimits = PLAN_LIMITS[req.user.plan || "free"];
+      const templateLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
       if (userTemplates.length >= templateLimits.maxTemplates) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
@@ -465,10 +1406,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.patch("/api/templates/:id", authMiddleware, async (req, res) => {
     try {
-      const template = await storage.updateTemplate(req.params.id, req.body);
-      if (!template) {
+      const existing = await storage.getTemplate(req.params.id);
+      if (!existing) {
         return res.status(404).json({ message: "Template not found" });
       }
+      if (existing.userId !== req.user.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const template = await storage.updateTemplate(req.params.id, req.body);
       res.json(template);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -500,7 +1445,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/audit-logs/export", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
-      const exportLimits = PLAN_LIMITS[req.user.plan || "free"];
+      const exportLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
       if (!exportLimits.canExportAudit) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
@@ -553,9 +1498,244 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/ai/preview", authMiddleware, async (req, res) => {
+  // ─── INVITE ROUTES ────────────────────────────────────────────────────────────
+
+  // POST /api/users/invite — create and email an invite link
+  app.post("/api/users/invite", authMiddleware, adminMiddleware, inviteLimiter, async (req, res) => {
+    try {
+      const { email, role } = req.body;
+
+      if (!email || !role) {
+        return res.status(400).json({ message: "email and role are required" });
+      }
+
+      const validRoles = (req.user.role === "ROOT_ADMIN" || req.user.isSecondaryRoot) ? ["SUB_ADMIN", "USER"] : ["USER"];
+      if (!validRoles.includes(role)) {
+        return res.status(403).json({ message: `You can only invite: ${validRoles.join(", ")}` });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ message: "Invalid email address" });
+      }
+
+      // Enforce team member limit
+      const limit = MAX_TEAM_MEMBERS[req.user.plan] ?? 0;
+      if (limit !== Infinity) {
+        const activeCount = await storage.getChildUserCount(req.user.id);
+        if (activeCount >= limit) {
+          return res.status(403).json({
+            error: "PLAN_LIMIT",
+            message: `Your plan allows up to ${limit} team member${limit === 1 ? "" : "s"}. Upgrade to add more.`,
+            limit,
+            current: activeCount,
+          });
+        }
+      }
+
+      // Block if email already registered
+      const existing = await storage.getUserByEmail(email);
+      if (existing) {
+        return res.status(409).json({ message: "A user with that email already exists" });
+      }
+
+      // Block duplicate pending invite
+      const allInvites = await storage.getPendingInvitesByAdmin(req.user.id);
+      const now = new Date();
+      const duplicatePending = allInvites.find(
+        inv => inv.email === email && !inv.acceptedAt && new Date(inv.expiresAt) > now
+      );
+      if (duplicatePending) {
+        return res.status(409).json({ message: "A pending invite for that email already exists" });
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      const invite = await storage.createInvite({
+        email,
+        role,
+        invitedBy: req.user.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      const base = process.env.APP_URL || "http://localhost:5000";
+      const acceptUrl = `${base}/accept-invite?token=${rawToken}`;
+
+      await sendTransactionalEmail(
+        email,
+        `You've been invited to join RepMail`,
+        `Hi,\n\n${req.user.username} has invited you to join their team on RepMail as a ${role === "SUB_ADMIN" ? "Sub-Admin" : "team member"}.\n\nAccept your invitation here:\n${acceptUrl}\n\nThis link expires in 7 days.\n\nIf you weren't expecting this invite, you can safely ignore it.\n\n— The RepMail Team`
+      );
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.INVITE_SENT,
+        details: { inviteId: invite.id, email, role },
+      });
+
+      res.status(201).json({ id: invite.id, email, role, expiresAt });
+    } catch (error) {
+      console.error("[INVITE] create error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // GET /api/invites/validate?token=... — public, validate token before showing accept form
+  app.get("/api/invites/validate", async (req, res) => {
+    try {
+      const { token } = req.query;
+      if (!token) return res.status(400).json({ message: "token is required" });
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const invite = await storage.getInviteByTokenHash(tokenHash);
+
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.acceptedAt) return res.status(410).json({ message: "This invite has already been used" });
+      if (new Date(invite.expiresAt) < new Date()) return res.status(410).json({ message: "This invite has expired" });
+
+      const admin = await storage.getUserById(invite.invitedBy);
+
+      res.json({
+        email: invite.email,
+        role: invite.role,
+        invitedBy: admin?.username || "your admin",
+        expiresAt: invite.expiresAt,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // POST /api/invites/accept — public, create account and accept invite
+  app.post("/api/invites/accept", async (req, res) => {
+    try {
+      const { token, username, password } = req.body;
+
+      if (!token || !username || !password) {
+        return res.status(400).json({ message: "token, username, and password are required" });
+      }
+      if (password.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters" });
+      }
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const invite = await storage.getInviteByTokenHash(tokenHash);
+
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.acceptedAt) return res.status(410).json({ message: "This invite has already been used" });
+      if (new Date(invite.expiresAt) < new Date()) return res.status(410).json({ message: "This invite link has expired. Ask your admin to resend it." });
+
+      const takenUsername = await storage.getUserByUsername(username);
+      if (takenUsername) return res.status(409).json({ message: "Username is already taken" });
+
+      const takenEmail = await storage.getUserByEmail(invite.email);
+      if (takenEmail) return res.status(409).json({ message: "A user with that email already exists" });
+
+      const newUser = await storage.createUser({
+        username,
+        email: invite.email,
+        password,
+        role: invite.role,
+        parentId: invite.invitedBy,
+        mustResetPassword: false,
+      });
+
+      await storage.markInviteAccepted(invite.id);
+
+      const session = await storage.createSession(newUser.id);
+      res.cookie("token", session.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 24 * 60 * 60 * 1000,
+      });
+
+      res.status(201).json({ user: newUser });
+    } catch (error) {
+      console.error("[INVITE] accept error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // GET /api/invites — list all invites sent by the calling admin
+  app.get("/api/invites", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const invites = await storage.getPendingInvitesByAdmin(req.user.id);
+      const now = new Date();
+
+      const result = invites.map(inv => {
+        let status;
+        if (inv.acceptedAt) status = "accepted";
+        else if (new Date(inv.expiresAt) < now) status = "expired";
+        else status = "pending";
+
+        return {
+          id: inv.id,
+          email: inv.email,
+          role: inv.role,
+          status,
+          expiresAt: inv.expiresAt,
+          acceptedAt: inv.acceptedAt,
+          createdAt: inv.createdAt,
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // POST /api/invites/:id/resend — regenerate token and resend invite email
+  app.post("/api/invites/:id/resend", authMiddleware, adminMiddleware, inviteLimiter, async (req, res) => {
+    try {
+      const invite = await storage.getInviteById(req.params.id);
+
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.invitedBy !== req.user.id) return res.status(403).json({ message: "Forbidden" });
+      if (invite.acceptedAt) return res.status(409).json({ message: "This invite has already been accepted" });
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      await storage.updateInviteToken(invite.id, tokenHash, expiresAt);
+
+      const base = process.env.APP_URL || "http://localhost:5000";
+      const acceptUrl = `${base}/accept-invite?token=${rawToken}`;
+
+      await sendTransactionalEmail(
+        invite.email,
+        `Your RepMail invite has been resent`,
+        `Hi,\n\n${req.user.username} has resent your invitation to join their team on RepMail as a ${invite.role === "SUB_ADMIN" ? "Sub-Admin" : "team member"}.\n\nAccept your invitation here:\n${acceptUrl}\n\nThis link expires in 7 days.\n\nIf you weren't expecting this invite, you can safely ignore it.\n\n— The RepMail Team`
+      );
+
+      res.status(204).end();
+    } catch (error) {
+      console.error("[INVITE] resend error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ─── AI ROUTES ────────────────────────────────────────────────────────────────
+
+  app.post("/api/ai/preview", authMiddleware, aiLimiter, async (req, res) => {
     try {
       const { subject, body, contacts, tone } = req.body;
+
+      const quota = await storage.checkAndIncrementAiQuota(req.user.id);
+      if (!quota.allowed) {
+        return res.status(429).json({
+          error: "Daily AI generation limit reached.",
+          resetsAt: quota.resetsAt,
+          upgradeMessage: "Upgrade your plan for more AI generations per day."
+        });
+      }
+      res.set("X-AI-Generations-Remaining", quota.remaining === Infinity ? "unlimited" : String(quota.remaining));
+      res.set("X-AI-Generations-Reset", quota.resetsAt ? quota.resetsAt.toISOString() : "");
 
       await storage.createAuditLog({
         userId: req.user.id,
@@ -563,9 +1743,9 @@ export async function registerRoutes(httpServer, app) {
         details: { contactCount: contacts?.length || 0, tone: tone || "professional" }
       });
 
-      // Try OpenAI GPT-4o first
+      // Try OpenAI (gpt-4o-mini) — falls back to local placeholder replacement on failure
       try {
-        const previews = await generatePreviews(subject, body, contacts || [], tone || "professional");
+        const previews = await generatePreviews(subject, body, contacts || [], tone || "professional", { userId: req.user.id });
         return res.json({ previews, aiPowered: true });
       } catch (aiErr) {
         console.log("[AI] Preview falling back to placeholder replacement:", aiErr.message);
@@ -594,9 +1774,20 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/ai/spam-analysis", authMiddleware, async (req, res) => {
+  app.post("/api/ai/spam-analysis", authMiddleware, aiLimiter, async (req, res) => {
     try {
       const { subject, body } = req.body;
+
+      const quota = await storage.checkAndIncrementAiQuota(req.user.id);
+      if (!quota.allowed) {
+        return res.status(429).json({
+          error: "Daily AI generation limit reached.",
+          resetsAt: quota.resetsAt,
+          upgradeMessage: "Upgrade your plan for more AI generations per day."
+        });
+      }
+      res.set("X-AI-Generations-Remaining", quota.remaining === Infinity ? "unlimited" : String(quota.remaining));
+      res.set("X-AI-Generations-Reset", quota.resetsAt ? quota.resetsAt.toISOString() : "");
 
       await storage.createAuditLog({
         userId: req.user.id,
@@ -604,9 +1795,9 @@ export async function registerRoutes(httpServer, app) {
         details: { subjectLength: subject?.length, bodyLength: body?.length }
       });
 
-      // Try OpenAI GPT-4o first
+      // Try OpenAI (gpt-4o-mini) — falls back to keyword matching on failure
       try {
-        const result = await analyzeSpam(subject, body);
+        const result = await analyzeSpam(subject, body, { userId: req.user.id });
         return res.json({ ...result, aiPowered: true });
       } catch (aiErr) {
         console.log("[AI] Spam analysis falling back to keyword matching:", aiErr.message);
@@ -643,13 +1834,26 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/ai/generate-template", authMiddleware, async (req, res) => {
+  app.post("/api/ai/generate-template", authMiddleware, aiLimiter, async (req, res) => {
     try {
       const { prompt, tone } = req.body;
       if (!prompt || !prompt.trim()) {
         return res.status(400).json({ message: "Prompt is required" });
       }
-      const template = await generateTemplate(prompt.trim(), tone || "professional");
+
+      const effectivePlan = await storage.getEffectivePlan(req.user.id);
+      const quota = await storage.checkAndIncrementAiQuota(req.user.id);
+      if (!quota.allowed) {
+        return res.status(429).json({
+          error: "Daily AI generation limit reached.",
+          resetsAt: quota.resetsAt,
+          upgradeMessage: "Upgrade your plan for more AI generations per day."
+        });
+      }
+      res.set("X-AI-Generations-Remaining", quota.remaining === Infinity ? "unlimited" : String(quota.remaining));
+      res.set("X-AI-Generations-Reset", quota.resetsAt ? quota.resetsAt.toISOString() : "");
+
+      const template = await generateTemplate(prompt.trim(), tone || "professional", { userId: req.user.id, effectivePlan });
       res.json(template);
     } catch (error) {
       console.error("[AI] generate-template error:", error.message);
@@ -711,30 +1915,89 @@ export async function registerRoutes(httpServer, app) {
         });
 
         // Add credits to user immediately
-        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_COMPLETED, {
+        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
           paymentId: payment.id,
           planName: plan.name
         });
 
-        res.json({ 
+        res.json({
           payment,
-          redirectUrl: `/app/payments/process/${payment.id}`,
+          redirectUrl: `/app/payments`,
           currency: "INR"
         });
         return;
       }
-      
+
       if (!SUPPORTED_CURRENCIES[currency]) {
         return res.status(400).json({ message: "Unsupported currency" });
       }
-      
+
       const exchangeRate = DEFAULT_EXCHANGE_RATE;
       const planWithPrices = getPlanWithPrices(plan, exchangeRate);
-      
-      const amountUsd = planWithPrices.priceUsd;
-      const amountInr = planWithPrices.priceInr;
-      const amountLocal = currency === "INR" ? amountInr : amountUsd;
-      
+
+      const amountUsd = Math.round(planWithPrices.priceUsd);
+      const amountInr = Math.round(planWithPrices.priceInr);
+      const amountLocal = Math.round(currency === "INR" ? amountInr : amountUsd);
+
+      // Dev mode: simulate payment success immediately (no real gateway needed)
+      if (process.env.NODE_ENV !== "production") {
+        const payment = await storage.createPayment({
+          userId: req.user.id,
+          planName: plan.name,
+          credits: plan.credits,
+          amountUsd,
+          amountInr,
+          amountLocal,
+          currency,
+          exchangeRate: exchangeRate.toString(),
+          paymentMethod: "SIMULATED",
+          status: "COMPLETED"
+        });
+        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
+          paymentId: payment.id,
+          planName: plan.name
+        });
+        res.json({ payment, redirectUrl: `/app/payments` });
+        return;
+      }
+
+      // Production: route to the appropriate payment gateway by currency
+      if (currency === "INR") {
+        if (!rzp) return res.status(503).json({ message: "INR payments not configured. Contact support." });
+
+        const rzpOrder = await rzp.orders.create({
+          amount: amountInr * 100, // Razorpay uses paise (1 INR = 100 paise)
+          currency: "INR",
+          receipt: crypto.randomUUID(),
+        });
+
+        const payment = await storage.createPayment({
+          userId: req.user.id,
+          planName: plan.name,
+          credits: plan.credits,
+          amountUsd,
+          amountInr,
+          amountLocal,
+          currency: "INR",
+          exchangeRate: exchangeRate.toString(),
+          paymentMethod: "RAZORPAY",
+          status: PAYMENT_STATUS.PENDING,
+          metadata: { razorpay_order_id: rzpOrder.id },
+        });
+
+        return res.json({
+          payment,
+          gateway: "razorpay",
+          razorpayOrderId: rzpOrder.id,
+          razorpayKeyId: RAZORPAY_KEY_ID,
+          amount: amountInr * 100,
+          currency: "INR",
+        });
+      }
+
+      // USD → Stripe
+      if (!stripe) return res.status(503).json({ message: "USD payments not configured. Contact support." });
+
       const payment = await storage.createPayment({
         userId: req.user.id,
         planName: plan.name,
@@ -742,52 +2005,88 @@ export async function registerRoutes(httpServer, app) {
         amountUsd,
         amountInr,
         amountLocal,
-        currency,
+        currency: "USD",
         exchangeRate: exchangeRate.toString(),
-        paymentMethod: paymentMethod || (currency === "INR" ? "UPI" : "CARD"),
-        status: PAYMENT_STATUS.PENDING
+        paymentMethod: "STRIPE",
+        status: PAYMENT_STATUS.PENDING,
       });
-      
-      res.json({ 
+
+      const intent = await stripe.paymentIntents.create({
+        amount: amountUsd * 100, // Stripe uses cents
+        currency: "usd",
+        metadata: { repmail_payment_id: payment.id },
+      });
+
+      return res.json({
         payment,
-        redirectUrl: `/app/payments/process/${payment.id}`,
-        currency,
-        exchangeRate
+        gateway: "stripe",
+        clientSecret: intent.client_secret,
+        currency: "USD",
       });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
   });
 
+  // ── Razorpay: verify payment signature after frontend checkout ────────────
+  app.post("/api/payments/razorpay/verify", authMiddleware, async (req, res) => {
+    try {
+      const { razorpay_payment_id, razorpay_order_id, razorpay_signature, repmail_payment_id } = req.body;
+
+      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature || !repmail_payment_id) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      if (!rzp || !RAZORPAY_KEY_SECRET) {
+        return res.status(503).json({ message: "Razorpay not configured" });
+      }
+      // Signature must be exactly 64 hex chars (SHA-256 = 32 bytes)
+      if (!/^[0-9a-f]{64}$/.test(razorpay_signature)) {
+        return res.status(400).json({ message: "Invalid signature format" });
+      }
+
+      // Verify: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
+      const expected = crypto
+        .createHmac("sha256", RAZORPAY_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest("hex");
+
+      const valid = crypto.timingSafeEqual(
+        Buffer.from(expected, "hex"),
+        Buffer.from(razorpay_signature, "hex")
+      );
+      if (!valid) return res.status(400).json({ message: "Payment signature verification failed" });
+
+      const existing = await storage.getPayment(repmail_payment_id);
+      if (!existing) return res.status(404).json({ message: "Payment not found" });
+      if (existing.userId !== req.user.id) return res.status(403).json({ message: "Forbidden" });
+
+      // Idempotency guard
+      if (existing.status === PAYMENT_STATUS.SUCCESS) {
+        return res.json({ payment: existing, message: "Already completed" });
+      }
+
+      const payment = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
+      const user = await upgradePlanIfHigher(payment.userId, payment.planName);
+      console.log(`[RAZORPAY] Payment ${repmail_payment_id} verified — ${payment.credits} credits → user ${payment.userId}`);
+
+      res.json({ payment, user: storage.sanitizeUser(user) });
+    } catch (error) {
+      console.error("[RAZORPAY] Verify error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Dev-only: manually complete a pending payment (locked in production) ──
   app.post("/api/payments/:id/complete", authMiddleware, async (req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ message: "This endpoint is disabled in production. Payments complete via Razorpay or Stripe." });
+    }
     try {
       const { id } = req.params;
       const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
       const payment = await storage.completePayment(id, transactionId);
-      let user = await storage.getUserById(req.user.id);
-
-      // Plan upgrade — only upgrade, never downgrade
-      const planMapping = {
-        "free trial": "free", "starter": "starter",
-        "growth": "growth", "scale": "scale", "enterprise": "enterprise"
-      };
-      const newPlan = planMapping[(payment.planName || "").toLowerCase()] || "free";
-      const planRank = { free: 0, starter: 1, growth: 2, scale: 3, enterprise: 4 };
-      const currentPlan = user.plan || "free";
-      if ((planRank[newPlan] ?? 0) > (planRank[currentPlan] ?? 0)) {
-        await storage.updateUser(user.id, { plan: newPlan });
-        user = await storage.getUserById(user.id);
-        // Cascade plan to children and grandchildren
-        const children = await storage.getChildUsers(user.id);
-        for (const child of children) {
-          await storage.updateUser(child.id, { plan: newPlan });
-          const grandchildren = await storage.getChildUsers(child.id);
-          for (const gc of grandchildren) {
-            await storage.updateUser(gc.id, { plan: newPlan });
-          }
-        }
-      }
+      const user = await upgradePlanIfHigher(payment.userId, payment.planName);
 
       res.json({ payment, user: storage.sanitizeUser(user) });
     } catch (error) {
@@ -861,37 +2160,150 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // ── Admin: force-cancel a stuck campaign ─────────────────────────────────────
+  app.post("/api/admin/campaigns/:id/cancel", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      const campaign = await storage.getCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+      if (["COMPLETED", "FAILED", "DRAFT"].includes(campaign.status)) {
+        return res.status(400).json({ message: `Campaign is already ${campaign.status} — nothing to cancel` });
+      }
+
+      await storage.updateCampaign(campaign.id, { status: "FAILED" });
+
+      // Remove BullMQ job — best-effort; job may already be gone
+      try {
+        const queue = getCampaignQueue();
+        if (queue) {
+          const job = await queue.getJob(campaign.id);
+          if (job) await job.remove();
+        }
+      } catch (queueErr) {
+        console.warn(`[ADMIN] Cancel: queue job removal failed for ${campaign.id}:`, queueErr.message);
+      }
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+        targetType: "campaign",
+        targetId: campaign.id,
+        details: { reason: "force_cancelled_by_admin", cancelledBy: req.user.username, previousStatus: campaign.status },
+      });
+
+      res.json({ message: "Campaign cancelled", campaignId: campaign.id });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Admin: BullMQ queue depth + last 10 failed jobs ──────────────────────────
+  app.get("/api/admin/queue/status", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      const queue = getCampaignQueue();
+      if (!queue) {
+        return res.json({ available: false, reason: "Redis not configured — BullMQ disabled" });
+      }
+      const counts = await queue.getJobCounts("active", "waiting", "delayed", "failed", "completed");
+      const failedJobs = await queue.getFailed(0, 9);
+      res.json({
+        available: true,
+        counts,
+        failedJobs: failedJobs.map(j => ({
+          jobId: j.id,
+          campaignId: j.data?.campaignId,
+          userId: j.data?.userId,
+          failedReason: j.failedReason,
+          attemptsMade: j.attemptsMade,
+          timestamp: j.timestamp,
+        })),
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/parse-excel", authMiddleware, async (req, res) => {
     try {
       const { fileData, fileName } = req.body;
-      
+
       if (!fileData) {
         return res.status(400).json({ message: "No file data provided" });
       }
-      
-      const buffer = Buffer.from(fileData, "base64");
-      const workbook = XLSX.read(buffer, { type: "buffer" });
+
+      let buffer;
+      try {
+        buffer = Buffer.from(fileData, "base64");
+      } catch {
+        return res.status(400).json({ message: "Invalid file data encoding" });
+      }
+
+      if (buffer.length === 0) {
+        return res.status(400).json({ message: "File is empty" });
+      }
+
+      if (buffer.length > 10 * 1024 * 1024) {
+        return res.status(400).json({ message: "File exceeds the 10 MB limit" });
+      }
+
+      // Save original file to S3 (best-effort — don't fail if S3 is misconfigured)
+      let s3Key = null;
+      try {
+        const ext = (fileName || "upload").split(".").pop();
+        const mime = ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        s3Key = await uploadFile(buffer, fileName || "upload", mime);
+      } catch (s3Err) {
+        console.warn("[S3] Upload skipped:", s3Err.message);
+      }
+
+      // Strip UTF-8 BOM (0xEF 0xBB 0xBF) before parsing — common in CSV exports from Excel
+      const parseBuffer = buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF
+        ? buffer.slice(3)
+        : buffer;
+
+      let workbook;
+      try {
+        workbook = XLSX.read(parseBuffer, { type: "buffer" });
+      } catch {
+        return res.status(400).json({ message: "Failed to parse file. Ensure it is a valid Excel or CSV file." });
+      }
+
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      
-      if (jsonData.length === 0) {
-        return res.status(400).json({ message: "File is empty" });
+
+      if (!jsonData.length || !jsonData[0]?.length) {
+        return res.status(400).json({ message: "File is empty or has no headers" });
       }
-      
-      const headers = jsonData[0].map(h => String(h || "").trim());
-      const rows = jsonData.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((header, i) => {
-          obj[header] = row[i] !== undefined ? String(row[i]) : "";
+
+      const rawHeaders = jsonData[0];
+      if (rawHeaders.length > 20) {
+        return res.status(400).json({ message: "File has too many columns (maximum 20)" });
+      }
+
+      const headers = rawHeaders.map(h => String(h || "").trim());
+      const emailColPresent = headers.includes("email");
+      let malformedCount = 0;
+
+      const rows = jsonData.slice(1)
+        .map(row => {
+          const obj = {};
+          headers.forEach((header, i) => {
+            obj[header] = row[i] !== undefined ? String(row[i]) : "";
+          });
+          return obj;
+        })
+        .filter(row => {
+          if (!Object.values(row).some(v => v)) return false;
+          if (emailColPresent && !row["email"]) malformedCount++;
+          return true;
         });
-        return obj;
-      }).filter(row => Object.values(row).some(v => v));
-      
-      res.json({ headers, rows, fileName });
+
+      res.json({ headers, rows, fileName, s3Key, malformedCount });
     } catch (error) {
       console.error("Excel parse error:", error);
-      res.status(400).json({ message: "Failed to parse Excel file. Please check the format." });
+      res.status(400).json({ message: "Failed to parse file. Please check the format." });
     }
   });
 

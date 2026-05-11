@@ -5,7 +5,7 @@ const STEPS = [
   { id: 1, name: "Upload", description: "Upload contacts" },
   { id: 2, name: "Map", description: "Map columns" },
   { id: 3, name: "Template", description: "Create template" },
-  { id: 4, name: "Preview", description: "AI preview" },
+  { id: 4, name: "Preview", description: "Preview" },
   { id: 5, name: "Analyze", description: "Spam check" },
   { id: 6, name: "Confirm", description: "Review & send" },
   { id: 7, name: "Progress", description: "Track progress" }

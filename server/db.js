@@ -18,7 +18,7 @@ const hasRealDatabase = process.env.DATABASE_URL &&
                         !process.env.DATABASE_URL.includes("placeholder") &&
                         !process.env.DATABASE_URL.includes("your-");
 
-export const isDevMode = !hasRealDatabase || !isProduction;
+export const isDevMode = !hasRealDatabase;
 
 let db = null;
 let pool = null;
