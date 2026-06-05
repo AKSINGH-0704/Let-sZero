@@ -17,6 +17,20 @@ import { rzp, stripe, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { getRateLimiter } from "./rateLimiter.js";
 
+// SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
+let smtpHealthCache = { status: "unknown", checkedAt: 0 };
+async function getSmtpHealth() {
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+  if (Date.now() - smtpHealthCache.checkedAt < CACHE_TTL_MS) return smtpHealthCache.status;
+  try {
+    await verifySesConnection();
+    smtpHealthCache = { status: "verified", checkedAt: Date.now() };
+  } catch {
+    smtpHealthCache = { status: "error", checkedAt: Date.now() };
+  }
+  return smtpHealthCache.status;
+}
+
 // 5 login attempts per IP per 15 minutes
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -392,21 +406,17 @@ export async function registerRoutes(httpServer, app) {
       result.worker = "disabled";
     }
 
-    // SMTP — verify nodemailer transport; 5s timeout to avoid blocking health probes
+    // SMTP — use 5-minute cache to avoid exhausting AWS SES connections on frequent health polls
     if (process.env.SES_SMTP_HOST) {
-      try {
-        await Promise.race([
-          verifySesConnection(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-        ]);
-        result.smtp = "ok";
-      } catch (err) {
-        result.smtp = `error: ${err.message}`;
-        result.status = "degraded";
-      }
+      result.smtp = await getSmtpHealth();
+      if (result.smtp === "error") result.status = "degraded";
     } else {
       result.smtp = "not-configured";
     }
+
+    // sendPaused — placeholder false until Phase 3 platform_settings table is added
+    result.sendPaused = false;
+    result.timestamp = new Date().toISOString();
 
     res.json(result);
   });
