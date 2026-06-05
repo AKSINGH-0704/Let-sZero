@@ -2286,14 +2286,30 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/admin/platform/resume-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
       await storage.setPlatformSetting("send_pause_enabled", "false", req.user.id);
+
+      // Re-queue all campaigns that were paused by the global pause.
+      // addCampaignJob uses jobId=campaignId for deduplication — safe to call even if a job
+      // already exists for a campaign (no-op in that case, no duplicate jobs created).
+      const pausedCampaigns = await storage.getCampaignsByStatus("PAUSED");
+      let requeuedCount = 0;
+      for (const campaign of pausedCampaigns) {
+        try {
+          await addCampaignJob(campaign.id, campaign.userId);
+          requeuedCount++;
+        } catch (qErr) {
+          console.warn(`[ADMIN] Failed to re-queue paused campaign ${campaign.id}:`, qErr.message);
+        }
+      }
+
       await storage.createAuditLog({
         userId: req.user.id,
         action: "PLATFORM_SEND_RESUMED",
         targetType: "platform",
         targetId: "global",
-        details: {},
+        details: { requeuedCampaigns: requeuedCount },
       });
-      res.json({ message: "Platform sending resumed", resumedBy: req.user.id });
+
+      res.json({ message: "Platform sending resumed", resumedBy: req.user.id, requeuedCampaigns: requeuedCount });
     } catch (err) {
       res.status(500).json({ message: err.message });
     }

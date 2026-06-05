@@ -4,7 +4,7 @@
 2026-06-05T12:00:00Z
 
 ## Current Status
-Phase 3 complete. Awaiting approval to begin Phase 4.
+Phase 3 complete + pause-recovery fixes applied. Awaiting approval to begin Phase 4.
 
 ---
 
@@ -143,6 +143,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS send_paused_at timestamp;
 - RESOLVED: Stripe startup crash — stripeWebhook.js threw unconditionally in production when STRIPE_WEBHOOK_SECRET unset. Fixed in hotfix commit (see below). Guard now only fires when STRIPE_SECRET_KEY is also set.
 - Human action required: Set SES_SEND_RATE_MS=75 in Railway before first deploy.
 - Human action required: Apply Phase 3 SQL migrations before deploying Phase 3 code.
+
+## Post-Phase-3 Correctness Fixes
+### isRetry + auto-requeue (approved pre-Phase-4 changes)
+- Commit: PENDING (this commit)
+- File 1: server/worker.js line 165 — isRetry now includes `status === "PAUSED" && hasAnySentEmails`
+- File 2: server/routes.js resume-sending route — now queries all PAUSED campaigns and calls addCampaignJob() for each on resume; returns requeuedCampaigns count; audit log includes count
+- Duplicate-job safety: addCampaignJob uses jobId=campaignId (BullMQ dedup) — calling it twice is a no-op
+- Effect: mid-loop paused campaigns that already sent some emails will correctly skip those contacts on re-queue
 
 ## Hotfixes Applied (outside phase plan)
 ### Stripe startup crash fix

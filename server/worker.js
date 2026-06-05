@@ -159,9 +159,11 @@ async function processCampaign(campaignId, userId, job) {
   // Status-based detection breaks when startup recovery marks RUNNING→FAILED before
   // the worker processes the resurrected BullMQ job. Using sent-email existence as the
   // signal means idempotency kicks in regardless of what recoverStaleCampaigns wrote.
+  // PAUSED is included: a mid-loop global pause may have sent some emails already —
+  // treating it as a retry ensures those contacts are skipped and not re-sent.
   const hasAnySentEmails = await storage.hasAnySentEmails(campaignId);
   const isRetry = campaign.status === "RUNNING" ||
-    (campaign.status === "FAILED" && hasAnySentEmails);
+    ((campaign.status === "PAUSED" || campaign.status === "FAILED") && hasAnySentEmails);
 
   // Owner-active guard — deactivation may race with a job already sitting in the queue
   const owner = await storage.getUserById(userId);
