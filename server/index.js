@@ -31,8 +31,6 @@ app.use((req, res, next) => {
     "http://127.0.0.1:3000",
     "http://localhost:5000",
     "http://127.0.0.1:5000",
-    "http://localhost:8083",
-    "http://127.0.0.1:8083"
   ];
   
   if (allowedOrigins.includes(origin)) {
@@ -75,7 +73,13 @@ async function findActiveReclaimTarget(userId, storage) {
   return null;
 }
 
+let inactivityJobRunning = false;
 async function runInactivityJob() {
+  if (inactivityJobRunning) {
+    console.warn("[INACTIVITY] Job still in progress — skipping this interval");
+    return;
+  }
+  inactivityJobRunning = true;
   const now = new Date();
   const { WARNING_DAYS, DORMANT_DAYS, RECLAIM_ELIGIBLE_DAYS } = INACTIVITY_THRESHOLDS;
   const appUrl = process.env.APP_URL || "http://localhost:5000";
@@ -306,6 +310,8 @@ async function runInactivityJob() {
     console.log(`[INACTIVITY JOB] Complete. Warned: ${warnedCount}, Dormant: ${dormantCount}, Reclaimed: ${reclaimedCount}, Skipped: ${skippedCount}`);
   } catch (err) {
     console.error("[INACTIVITY JOB] Fatal error:", err.message);
+  } finally {
+    inactivityJobRunning = false;
   }
 }
 
