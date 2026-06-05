@@ -506,10 +506,14 @@ export async function registerRoutes(httpServer, app) {
     if (!valid) return fail("This unsubscribe link is invalid or has expired.");
 
     try {
+      const alreadySuppressed = await storage.isSuppressed(uid, email);
+      if (alreadySuppressed) {
+        return res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Already Unsubscribed</title><style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;text-align:center;color:#1a1a1a}.icon{font-size:48px;margin-bottom:16px}h1{font-size:22px;font-weight:600;margin-bottom:8px}p{color:#555;line-height:1.5}</style></head><body><div class="icon">✓</div><h1>Already unsubscribed</h1><p>You are already unsubscribed from this sender. No further action is needed.</p></body></html>`);
+      }
       await storage.addSuppression(uid, email, "unsubscribe");
-      return res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"><h2 style="color:#16a34a">You've been unsubscribed</h2><p><strong>${email}</strong> will no longer receive emails from this sender.</p></body></html>`);
+      return res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed</title><style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;text-align:center;color:#1a1a1a}.icon{font-size:48px;margin-bottom:16px}h1{font-size:22px;font-weight:600;margin-bottom:8px}p{color:#555;line-height:1.5}</style></head><body><div class="icon">✓</div><h1>You've been unsubscribed</h1><p>You will no longer receive emails from this sender. This change takes effect immediately.</p></body></html>`);
     } catch (err) {
-      console.error("[UNSUBSCRIBE] addSuppression failed:", err.message);
+      console.error("[UNSUBSCRIBE] error:", err.message);
       return fail("Something went wrong. Please try again later.");
     }
   });
