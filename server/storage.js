@@ -29,7 +29,7 @@ const { eq, and, desc, gte, sql, lt } = (!isDevMode && db) ? drizzleOps : {};
 const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
-  suppressions, aiUsageLogs, invites, snsEvents
+  suppressions, aiUsageLogs, invites, snsEvents, platformSettings
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -124,6 +124,9 @@ const dbStorage = {
     if (updates.creditsAllocated !== undefined) allowedUpdates.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) allowedUpdates.creditsUsed = updates.creditsUsed;
     if (updates.plan) allowedUpdates.plan = updates.plan;
+    if (updates.sendPaused !== undefined) allowedUpdates.sendPaused = updates.sendPaused;
+    if (updates.sendPausedReason !== undefined) allowedUpdates.sendPausedReason = updates.sendPausedReason;
+    if (updates.sendPausedAt !== undefined) allowedUpdates.sendPausedAt = updates.sendPausedAt;
     allowedUpdates.updatedAt = new Date();
     
     const [user] = await db.update(users)
@@ -1664,6 +1667,44 @@ const dbStorage = {
       )
       .returning({ id: users.id });
     return updated.length;
+  },
+
+  async getPlatformSetting(key) {
+    const [row] = await db.select().from(platformSettings).where(eq(platformSettings.key, key));
+    return row || null;
+  },
+
+  async setPlatformSetting(key, value, userId) {
+    await db
+      .insert(platformSettings)
+      .values({ key, value, updatedAt: new Date(), updatedBy: userId })
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value, updatedAt: new Date(), updatedBy: userId },
+      });
+  },
+
+  async getUserSenderHealth(userId) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const [totals] = await db
+      .select({
+        totalSent: sql`COALESCE(SUM(sent_emails), 0)`,
+        totalBounced: sql`COALESCE(SUM(bounced_emails), 0)`,
+        totalComplained: sql`COALESCE(SUM(complained_emails), 0)`,
+      })
+      .from(campaigns)
+      .where(and(eq(campaigns.userId, userId), gte(campaigns.createdAt, sevenDaysAgo)));
+
+    const sent = Number(totals?.totalSent || 0);
+    const bounced = Number(totals?.totalBounced || 0);
+    const complained = Number(totals?.totalComplained || 0);
+    return {
+      sent,
+      bounced,
+      complained,
+      bounceRate: sent > 0 ? bounced / sent : 0,
+      complaintRate: sent > 0 ? complained / sent : 0,
+    };
   },
 
   async getDeliveryHealthStats() {

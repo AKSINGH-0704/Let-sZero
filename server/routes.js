@@ -102,6 +102,14 @@ async function authMiddleware(req, res, next) {
     }
   }
 
+  // Paused senders cannot start new campaigns
+  if (user.sendPaused && req.method === "POST" && req.path === "/api/campaigns") {
+    return res.status(403).json({
+      error: "Your account has been paused from sending due to elevated bounce or complaint rates. Contact support to resume.",
+      sendPaused: true,
+    });
+  }
+
   req.user = user;
   req.token = token;
   // Precompute so routes don't need to re-derive isSecondaryRoot inline
@@ -414,8 +422,13 @@ export async function registerRoutes(httpServer, app) {
       result.smtp = "not-configured";
     }
 
-    // sendPaused — placeholder false until Phase 3 platform_settings table is added
-    result.sendPaused = false;
+    // sendPaused — live value from platform_settings table
+    try {
+      const pauseSetting = await storage.getPlatformSetting("send_pause_enabled");
+      result.sendPaused = pauseSetting?.value === "true";
+    } catch {
+      result.sendPaused = false;
+    }
     result.timestamp = new Date().toISOString();
 
     res.json(result);
@@ -2248,6 +2261,60 @@ export async function registerRoutes(httpServer, app) {
     try {
       const stats = await storage.getDeliveryHealthStats();
       res.json(stats);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Platform send pause / resume ──────────────────────────────────────────
+  app.post("/api/admin/platform/pause-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      await storage.setPlatformSetting("send_pause_enabled", "true", req.user.id);
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: "PLATFORM_SEND_PAUSED",
+        targetType: "platform",
+        targetId: "global",
+        details: { reason: req.body.reason || "manual_admin_pause" },
+      });
+      res.json({ message: "Platform sending paused", pausedBy: req.user.id });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/platform/resume-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      await storage.setPlatformSetting("send_pause_enabled", "false", req.user.id);
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: "PLATFORM_SEND_RESUMED",
+        targetType: "platform",
+        targetId: "global",
+        details: {},
+      });
+      res.json({ message: "Platform sending resumed", resumedBy: req.user.id });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Per-user sender resume ─────────────────────────────────────────────────
+  app.post("/api/admin/users/:id/resume-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      await storage.updateUser(req.params.id, {
+        sendPaused: false,
+        sendPausedReason: null,
+        sendPausedAt: null,
+      });
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: "USER_SEND_RESUMED",
+        targetType: "user",
+        targetId: req.params.id,
+        details: { resumedBy: req.user.id },
+      });
+      res.json({ message: "User sending resumed" });
     } catch (err) {
       res.status(500).json({ message: err.message });
     }

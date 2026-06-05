@@ -184,8 +184,11 @@ export const memoryStorage = {
     if (updates.creditsAllocated !== undefined) user.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) user.creditsUsed = updates.creditsUsed;
     if (updates.plan) user.plan = updates.plan;
+    if (updates.sendPaused !== undefined) user.sendPaused = updates.sendPaused;
+    if (updates.sendPausedReason !== undefined) user.sendPausedReason = updates.sendPausedReason;
+    if (updates.sendPausedAt !== undefined) user.sendPausedAt = updates.sendPausedAt;
     user.updatedAt = new Date();
-    
+
     return this.sanitizeUser(user);
   },
 
@@ -1752,6 +1755,19 @@ export const memoryStorage = {
       }
     }
     return count;
+  },
+
+  async getPlatformSetting(key) {
+    return this._platformSettings?.get(key) || null;
+  },
+
+  async setPlatformSetting(key, value, userId) {
+    if (!this._platformSettings) this._platformSettings = new Map();
+    this._platformSettings.set(key, { key, value, updatedAt: new Date(), updatedBy: userId });
+  },
+
+  async getUserSenderHealth(userId) {
+    return { sent: 0, bounced: 0, complained: 0, bounceRate: 0, complaintRate: 0 };
   },
 
   async getDeliveryHealthStats() {

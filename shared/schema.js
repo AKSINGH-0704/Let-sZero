@@ -134,6 +134,12 @@ export const users = pgTable("users", {
   // ── Emergency recovery ────────────────────────────────────────────────────
   // Only meaningful on ROOT_ADMIN rows. Enforces 30-day recovery cooldown.
   lastEmergencyRecoveryAt: timestamp("last_emergency_recovery_at"),
+
+  // ── Sender health auto-pause ──────────────────────────────────────────────
+  // Set by worker when bounce/complaint rate exceeds threshold. Cleared by admin via resume endpoint.
+  sendPaused: boolean("send_paused").notNull().default(false),
+  sendPausedReason: text("send_paused_reason"),
+  sendPausedAt: timestamp("send_paused_at"),
 }, (table) => ({
   // Supports fast inactivity job query filtering active non-root users
   activeActivityIdx: index("users_active_activity_idx").on(table.isActive, table.lastActivityAt),
@@ -337,6 +343,13 @@ export const invites = pgTable("invites", {
   invitedByIdx: index("invites_invited_by_idx").on(table.invitedBy),
 }));
 
+export const platformSettings = pgTable("platform_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: uuid("updated_by").references(() => users.id),
+});
+
 export const waitlistSchema = z.object({
   email: z.string().email("Valid email is required"),
   source: z.string().optional()
@@ -356,6 +369,9 @@ export const insertUserSchema = createInsertSchema(users).omit({
   isDormant: true,
   isSecondaryRoot: true,
   lastEmergencyRecoveryAt: true,
+  sendPaused: true,
+  sendPausedReason: true,
+  sendPausedAt: true,
 }).extend({
   password: z.string().min(6, "Password must be at least 6 characters"),
   username: z.string().min(3, "Username must be at least 3 characters"),

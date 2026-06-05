@@ -204,6 +204,70 @@ async function processCampaign(campaignId, userId, job) {
     targetId: campaignId,
   });
 
+  // ── Helper: check global send pause ──────────────────────────────────────
+  async function isGlobalSendPaused() {
+    const setting = await storage.getPlatformSetting("send_pause_enabled");
+    return setting?.value === "true";
+  }
+
+  // ── Pre-loop: global platform pause check ─────────────────────────────────
+  if (await isGlobalSendPaused()) {
+    await storage.updateCampaign(campaignId, { status: "PAUSED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "global_send_pause_active" },
+    });
+    console.warn(`[WORKER] Campaign ${campaignId} paused — global send pause is active`);
+    return;
+  }
+
+  // ── Pre-loop: per-user manual pause check ─────────────────────────────────
+  // Reuses the already-fetched owner variable (no extra DB query).
+  if (owner.sendPaused) {
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "sender_paused", pausedReason: owner.sendPausedReason },
+    });
+    console.warn(`[WORKER] Campaign ${campaignId} failed — sender ${userId} is paused`);
+    return;
+  }
+
+  // ── Pre-loop: auto-pause check (7-day rolling bounce/complaint rate) ───────
+  // Fetch health once before the loop — never per-contact.
+  const senderHealth = await storage.getUserSenderHealth(userId);
+  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.15");
+  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.005");
+
+  if (senderHealth.sent >= 50 && (senderHealth.bounceRate > bounceThreshold || senderHealth.complaintRate > complaintThreshold)) {
+    await storage.updateUser(userId, {
+      sendPaused: true,
+      sendPausedReason: `auto_paused: bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`,
+      sendPausedAt: new Date(),
+    });
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: {
+        reason: "sender_auto_paused",
+        bounceRate: senderHealth.bounceRate,
+        complaintRate: senderHealth.complaintRate,
+        threshold: { bounce: bounceThreshold, complaint: complaintThreshold },
+      },
+    });
+    console.warn(`[WORKER] User ${userId} auto-paused — bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`);
+    return;
+  }
+
   const template = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
   const rateLimiter = getRateLimiter();
@@ -212,10 +276,29 @@ async function processCampaign(campaignId, userId, job) {
   let failedCount = 0;
   let skippedCount = 0;
   let outOfCredits = false;
+  let globalPausedMidLoop = false;
 
   console.log(`[WORKER] Campaign ${campaignId} — ${contactIds.length} contacts`);
 
   for (let i = 0; i < contactIds.length; i++) {
+    // Re-check global pause every 50 contacts — allows admin pause to take effect mid-campaign
+    // without a DB query on every single contact. Skip i=0 (already checked pre-loop).
+    if (i > 0 && i % 50 === 0) {
+      if (await isGlobalSendPaused()) {
+        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.createAuditLog({
+          userId,
+          action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+          targetType: "campaign",
+          targetId: campaignId,
+          details: { reason: "global_send_pause_active", pausedAtContact: i },
+        });
+        console.warn(`[WORKER] Campaign ${campaignId} paused at contact ${i} — global send pause activated`);
+        globalPausedMidLoop = true;
+        break;
+      }
+    }
+
     const contactId = contactIds[i];
     const contact = await storage.getContactById(contactId);
 
@@ -357,10 +440,20 @@ async function processCampaign(campaignId, userId, job) {
     console.warn(`[WORKER] Campaign ${campaignId} stopped early — insufficient credits`);
   }
 
-  // Re-read status to detect external termination (e.g., user deactivated mid-run)
+  // If global pause triggered mid-loop, status is already PAUSED — do not overwrite to COMPLETED.
+  if (globalPausedMidLoop) {
+    console.warn(`[WORKER] Campaign ${campaignId} paused mid-loop — not overwriting to COMPLETED`);
+    return;
+  }
+
+  // Re-read status to detect external termination (e.g., user deactivated mid-run, force-cancel)
   const currentState = await storage.getCampaign(campaignId);
   if (currentState?.status === "FAILED") {
     console.warn(`[WORKER] Campaign ${campaignId} externally terminated (status=FAILED) — not overwriting to COMPLETED`);
+    return;
+  }
+  if (currentState?.status === "PAUSED") {
+    console.warn(`[WORKER] Campaign ${campaignId} externally paused — not overwriting to COMPLETED`);
     return;
   }
 

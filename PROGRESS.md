@@ -1,10 +1,10 @@
 # RepMail Production Hardening — Progress Log
 
 ## Last Updated
-2026-06-05T00:00:00Z
+2026-06-05T12:00:00Z
 
 ## Current Status
-Phase 2 complete. Stripe startup-crash hotfix applied (pre-Phase-3 blocker). Awaiting Phase 3 approval.
+Phase 3 complete. Awaiting approval to begin Phase 4.
 
 ---
 
@@ -97,7 +97,16 @@ IMPLEMENT (MISSING or PARTIAL):
   - No schema change. No migration. No new env vars.
 
 ### Phase 3 — SES Reputation Protection
-- Status: NOT STARTED
+- Status: COMPLETE
+- Committed: PENDING (this commit)
+- Tasks completed: [3.1, 3.2]
+- Notes:
+  - 3.1: platformSettings table added to schema. getPlatformSetting/setPlatformSetting added to storage + mirror. Global pause check: pre-loop + every 50 contacts. Mid-loop break sets globalPausedMidLoop flag to prevent PAUSED→COMPLETED overwrite. Three admin routes added.
+  - 3.2: sendPaused/sendPausedReason/sendPausedAt added to users schema. updateUser allowlist extended. getUserSenderHealth added to storage + mirror. Pre-loop checks: manual sendPaused flag → FAILED, auto-health threshold (min 50 sent) → FAILED + user auto-pause. sendPaused guard in authMiddleware blocks POST /api/campaigns for paused users.
+  - /api/health sendPaused field now reads live from platform_settings (was placeholder false).
+  - Global platform pause → campaign status PAUSED (resumable).
+  - Manual user pause → campaign status FAILED (requires admin action).
+  - Auto sender-health pause → campaign status FAILED (requires admin action).
 
 ### Phase 4 — Frontend Completion
 - Status: NOT STARTED
