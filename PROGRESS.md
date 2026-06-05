@@ -4,7 +4,7 @@
 2026-06-05T00:00:00Z
 
 ## Current Status
-Phase 0 complete. Proceeding to Phase 1, Task 1.1.
+Phase 2 complete. Awaiting approval to begin Phase 3.
 
 ---
 
@@ -75,16 +75,26 @@ IMPLEMENT (MISSING or PARTIAL):
 ---
 
 ### Phase 1 — Safety Fixes
-- Status: NOT STARTED
-- Committed: PENDING
-- Tasks completed: []
-- Tasks pending: [1.1, 1.2, 1.3, 1.4, 1.5, 1.6]
+- Status: COMPLETE
+- Committed: 2002eb9
+- Tasks completed: [1.1, 1.2, 1.3, 1.4, 1.5, 1.6]
+- Tasks pending: []
+- Notes:
+  - 1.1: SES_SEND_RATE_MS warning added to worker.js (var is read there, not rateLimiter.js)
+  - 1.2: SMTP caching added (5-min TTL), sendPaused:false placeholder, timestamp field added
+  - 1.3: Unsubscribe "already unsubscribed" state added via isSuppressed() pre-check
+  - 1.4: CAN-SPAM validation added before blocking gate in POST /api/campaigns
+  - 1.5: inactivityJobRunning guard added with finally block
+  - 1.6: localhost:8083 removed from CORS allowedOrigins
 
 ### Phase 2 — Operational Observability
-- Status: NOT STARTED
-- Committed: PENDING
-- Tasks completed: [2.1-already-exists, 2.2-already-exists, 2.3-already-exists, 2.4-already-exists, 2.5-already-exists]
-- Tasks pending: [2.6]
+- Status: COMPLETE
+- Committed: PENDING (this commit)
+- Tasks completed: [2.1-already-exists, 2.2-already-exists, 2.3-already-exists, 2.4-already-exists, 2.5-already-exists, 2.6]
+- Tasks pending: []
+- Notes:
+  - 2.6: getDeliveryHealthStats added to storage.js + memoryStorage.js mirror + GET /api/admin/delivery-health route
+  - No schema change. No migration. No new env vars.
 
 ### Phase 3 — SES Reputation Protection
 - Status: NOT STARTED

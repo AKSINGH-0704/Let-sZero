@@ -1753,6 +1753,18 @@ export const memoryStorage = {
     }
     return count;
   },
+
+  async getDeliveryHealthStats() {
+    return {
+      status: 'healthy',
+      period: '30d',
+      totals: { sent: 0, bounced: 0, complained: 0 },
+      rates: { bounceRate: 0, complaintRate: 0 },
+      thresholds: { bounce: { warning: 5, critical: 10, unit: '%' }, complaint: { warning: 0.1, critical: 0.5, unit: '%' } },
+      topBouncers: [],
+      suppression: { addedLast7d: 0, addedLast30d: 0 },
+    };
+  },
 };
 
 console.log("[DEV MODE] In-memory storage initialized - all data will reset on server restart");

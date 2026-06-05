@@ -2244,6 +2244,15 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  app.get("/api/admin/delivery-health", authMiddleware, rootAdminMiddleware, async (req, res) => {
+    try {
+      const stats = await storage.getDeliveryHealthStats();
+      res.json(stats);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/parse-excel", authMiddleware, async (req, res) => {
     try {
       const { fileData, fileName } = req.body;

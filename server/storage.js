@@ -1665,6 +1665,82 @@ const dbStorage = {
       .returning({ id: users.id });
     return updated.length;
   },
+
+  async getDeliveryHealthStats() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+
+    const [totals] = await db
+      .select({
+        totalSent: sql`COALESCE(SUM(sent_emails), 0)`,
+        totalBounced: sql`COALESCE(SUM(bounced_emails), 0)`,
+        totalComplained: sql`COALESCE(SUM(complained_emails), 0)`,
+      })
+      .from(campaigns)
+      .where(gte(campaigns.createdAt, thirtyDaysAgo));
+
+    const sent = Number(totals?.totalSent || 0);
+    const bounced = Number(totals?.totalBounced || 0);
+    const complained = Number(totals?.totalComplained || 0);
+    const bounceRate = sent > 0 ? bounced / sent : 0;
+    const complaintRate = sent > 0 ? complained / sent : 0;
+
+    let status = 'healthy';
+    if (bounceRate > 0.10 || complaintRate > 0.005) status = 'critical';
+    else if (bounceRate > 0.05 || complaintRate > 0.001) status = 'warning';
+
+    const topBouncers = await db
+      .select({
+        userId: campaigns.userId,
+        userEmail: users.email,
+        totalSent: sql`SUM(sent_emails)`,
+        totalBounced: sql`SUM(bounced_emails)`,
+      })
+      .from(campaigns)
+      .innerJoin(users, eq(campaigns.userId, users.id))
+      .where(gte(campaigns.createdAt, thirtyDaysAgo))
+      .groupBy(campaigns.userId, users.email)
+      .having(sql`SUM(sent_emails) >= 10`)
+      .orderBy(sql`SUM(bounced_emails)::float / NULLIF(SUM(sent_emails), 0) DESC`)
+      .limit(5);
+
+    const [suppressionLast7d] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(suppressions)
+      .where(gte(suppressions.createdAt, sevenDaysAgo));
+
+    const [suppressionLast30d] = await db
+      .select({ count: sql`COUNT(*)` })
+      .from(suppressions)
+      .where(gte(suppressions.createdAt, thirtyDaysAgo));
+
+    return {
+      status,
+      period: '30d',
+      totals: { sent, bounced, complained },
+      rates: {
+        bounceRate: parseFloat((bounceRate * 100).toFixed(2)),
+        complaintRate: parseFloat((complaintRate * 100).toFixed(4)),
+      },
+      thresholds: {
+        bounce: { warning: 5, critical: 10, unit: '%' },
+        complaint: { warning: 0.1, critical: 0.5, unit: '%' },
+      },
+      topBouncers: topBouncers.map(u => ({
+        userId: u.userId,
+        email: u.userEmail,
+        sent: Number(u.totalSent),
+        bounced: Number(u.totalBounced),
+        bounceRate: Number(u.totalSent) > 0
+          ? parseFloat((Number(u.totalBounced) / Number(u.totalSent) * 100).toFixed(2))
+          : 0,
+      })),
+      suppression: {
+        addedLast7d: Number(suppressionLast7d?.count || 0),
+        addedLast30d: Number(suppressionLast30d?.count || 0),
+      },
+    };
+  },
 };
 
 // Export the appropriate storage based on mode
