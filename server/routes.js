@@ -1226,6 +1226,12 @@ export async function registerRoutes(httpServer, app) {
         }
       }
 
+      // ── CAN-SPAM compliance: body must contain unsubscribe link ─────────────
+      const bodyToCheck = body.toLowerCase();
+      if (!bodyToCheck.includes("{{unsubscribe_url}}") && !bodyToCheck.includes("unsubscribe")) {
+        validationErrors.push("Template body must include {{unsubscribe_url}} for CAN-SPAM compliance. Recipients must be able to opt out.");
+      }
+
       // ── Blocking gate — no DB writes before this point ────────────────────────
       if (validationErrors.length > 0) {
         return res.status(400).json({ validationErrors });
