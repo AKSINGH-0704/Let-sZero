@@ -17,6 +17,7 @@ import {
   Plus,
   ArrowRight,
   ArrowUpRight,
+  AlertCircle,
   CheckCircle,
   XCircle,
   Clock,
