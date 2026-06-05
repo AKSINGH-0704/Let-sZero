@@ -1,10 +1,10 @@
 # RepMail Production Hardening — Progress Log
 
 ## Last Updated
-2026-06-05T12:00:00Z
+2026-06-06T00:00:00Z
 
 ## Current Status
-Phase 4 complete. Awaiting approval to begin Phase 5.
+Phase 5 IN PROGRESS — awaiting production URL and manual test inputs from operator.
 
 ---
 
@@ -119,7 +119,60 @@ IMPLEMENT (MISSING or PARTIAL):
   - Auth pattern: useAuth() from existing @/context/AuthContext used throughout — no new auth mechanism introduced.
 
 ### Phase 5 — Real-World Validation
-- Status: NOT STARTED
+- Status: IN PROGRESS
+- Committed: rolling (checkpoints after S1, S2, all complete)
+
+#### Pre-flight code analysis (completed without production access)
+
+**SNS confirmation path (routes.js:612–622):**
+- Auto-confirmed by fetching SubscribeURL on receipt of SubscriptionConfirmation message
+- Evidence marker in logs: `[SNS] Subscription confirmed — HTTP 200`
+- TopicArn guard active if SNS_TOPIC_ARN env var is set
+
+**Complaint handler (routes.js:702–710):**
+- Source: `complaint@simulator.amazonses.com` triggers an SNS Complaint event
+- Handler: addSuppression(userId, emailAddress, 'complaint'), updateCampaignEmail(COMPLAINED), incrementCampaignComplained
+- Guard: only fires for permanent bounces (bounceType check); complaint has no equivalent filter
+
+**Recovery logic (index.js:485–524):**
+- Recovers RUNNING → FAILED if no live BullMQ job found
+- Does NOT recover PENDING campaigns
+
+**Test 2.2B watchdog gap — CONFIRMED (code analysis):**
+- Scheduler only re-queues PENDING campaigns with past scheduledAt (index.js:691)
+- recoverStaleCampaigns only processes RUNNING (index.js:487)
+- GAP: immediate (no scheduledAt) PENDING campaign with lost BullMQ job has no automatic recovery
+- Severity: depends on Redis persistence config (RDB/AOF). If Redis persists jobs across restart, gap does not manifest. If Redis is ephemeral, PENDING campaigns are orphaned.
+- STATUS: documented as known risk per Phase 5 rules — no fix implemented
+
+---
+
+#### Test Results
+
+| Test | Status | Notes |
+|------|--------|-------|
+| SNS Pre-check | PENDING | Needs Railway log search |
+| 4.2 Auth headers | PENDING | Needs email header inspection |
+| 1.1 Baseline send | PENDING | Needs production URL + inboxes |
+| 1.2 SES delivery | PENDING | Needs DB + AWS console |
+| 1.3 Open tracking | PENDING | Needs inbox + Railway logs |
+| 1.4 Click tracking | PENDING | Needs inbox + Railway logs |
+| 1.5 Unsubscribe | PENDING | Needs browser + DB |
+| 1.6 Bounce handling | PENDING | Needs DB + Railway logs |
+| 1.7 Complaint handling | PENDING | Needs SES simulator + DB |
+| 2.1 Redis fallback | PENDING | Needs Railway logs |
+| 2.2 Worker restart | PENDING | Needs Railway restart + DB |
+| 2.2B Restart PENDING | DOCUMENTED | Known risk — see above |
+| 2.3 Global pause | PENDING | Needs API calls + DB |
+| 2.4 Auto-pause | PENDING | Needs DB seed + API calls |
+| 2.5 Credit exhaustion | PENDING | Needs DB seed + API calls |
+| 3.1 Retry safety | PENDING | Depends on 2.4/2.5 results |
+| 3.2 Paused resume | PENDING | Depends on 2.3 results |
+| 3.3 Health endpoint | PENDING | Needs API calls |
+| 4.1 Inbox placement | PENDING | Depends on 1.1 results |
+
+#### Known Risks Documented During Phase 5
+- KR-1: Immediate PENDING campaigns orphaned on restart if BullMQ job lost (no scheduledAt watchdog) — low probability if Redis has AOF persistence, high probability if Redis is ephemeral. No fix during Phase 5 per instructions.
 
 ---
 
