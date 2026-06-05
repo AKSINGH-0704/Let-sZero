@@ -17,6 +17,9 @@ import { AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, USER_ROLES } from "../shared/sche
 import { getRateLimiter } from "./rateLimiter.js";
 
 const SEND_RATE_MS = parseInt(process.env.SES_SEND_RATE_MS || "0", 10);
+if (SEND_RATE_MS === 0) {
+  console.warn("[STARTUP] WARNING: SES_SEND_RATE_MS is 0 or unset. If Redis becomes unavailable, campaign sends will run at uncapped speed. Set SES_SEND_RATE_MS=75 minimum in production.");
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function startWorker() {
