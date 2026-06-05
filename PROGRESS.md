@@ -4,7 +4,7 @@
 2026-06-05T00:00:00Z
 
 ## Current Status
-Phase 2 complete. Awaiting approval to begin Phase 3.
+Phase 2 complete. Stripe startup-crash hotfix applied (pre-Phase-3 blocker). Awaiting Phase 3 approval.
 
 ---
 
@@ -131,6 +131,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS send_paused_at timestamp;
 ```
 
 ## Known Issues / Blockers
-- None at Phase 0 level.
+- RESOLVED: Stripe startup crash — stripeWebhook.js threw unconditionally in production when STRIPE_WEBHOOK_SECRET unset. Fixed in hotfix commit (see below). Guard now only fires when STRIPE_SECRET_KEY is also set.
 - Human action required: Set SES_SEND_RATE_MS=75 in Railway before first deploy.
 - Human action required: Apply Phase 3 SQL migrations before deploying Phase 3 code.
+
+## Hotfixes Applied (outside phase plan)
+### Stripe startup crash fix
+- Commit: PENDING (this commit)
+- File: server/stripeWebhook.js line 18
+- Change: `process.env.NODE_ENV === "production"` → `process.env.STRIPE_SECRET_KEY`
+- Effect: Server starts cleanly when Stripe is not configured. Throw still fires if STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET is absent (correct behavior).
+- Root cause: stripeWebhook.js was added in commit f4e5624 (pre-hardening branch) with an unconditional production throw that contradicted the optional-gateway design in gateways.js.

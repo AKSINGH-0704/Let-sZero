@@ -15,8 +15,8 @@ import { upgradePlanIfHigher } from "./fulfillPayment.js";
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || null;
 
-if (process.env.NODE_ENV === "production" && !WEBHOOK_SECRET) {
-  throw new Error("STRIPE_WEBHOOK_SECRET must be set in production");
+if (process.env.STRIPE_SECRET_KEY && !WEBHOOK_SECRET) {
+  throw new Error("STRIPE_WEBHOOK_SECRET must be set when STRIPE_SECRET_KEY is configured");
 }
 
 export async function stripeWebhookHandler(req, res) {
