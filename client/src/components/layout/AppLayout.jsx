@@ -1,5 +1,8 @@
 import Navbar from "./Navbar";
 import { PageScrollIndicator } from "@/components/ui/scroll-indicator";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import { AlertTriangle } from "lucide-react";
 
 function SubtleBackground() {
   return (
@@ -16,11 +19,48 @@ function SubtleBackground() {
   );
 }
 
+function PauseBanners() {
+  const { user } = useAuth();
+
+  const { data: health } = useQuery({
+    queryKey: ["/api/health"],
+    refetchInterval: 30_000,
+    enabled: !!user,
+  });
+
+  const platformPaused = health?.sendPaused === true;
+  const userPaused = user?.sendPaused === true;
+
+  if (!platformPaused && !userPaused) return null;
+
+  return (
+    <div className="border-b bg-background">
+      {platformPaused && (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl py-2">
+          <div className="flex items-center gap-2 text-sm text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-md px-3 py-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>Platform sending is paused by an administrator. New campaigns will not execute until sending is resumed.</span>
+          </div>
+        </div>
+      )}
+      {userPaused && (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl py-2">
+          <div className="flex items-center gap-2 text-sm text-red-800 dark:text-red-300 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md px-3 py-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>Your account has been paused from sending due to elevated bounce or complaint rates. Contact support to resume.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AppLayout({ children, showScrollIndicator = true }) {
   return (
     <div className="min-h-screen bg-background relative">
       <SubtleBackground />
       <Navbar />
+      <PauseBanners />
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-7xl relative">
         {children}
       </main>

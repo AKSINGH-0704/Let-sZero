@@ -4,7 +4,7 @@
 2026-06-05T12:00:00Z
 
 ## Current Status
-Phase 3 complete + pause-recovery fixes applied. Awaiting approval to begin Phase 4.
+Phase 4 complete. Awaiting approval to begin Phase 5.
 
 ---
 
@@ -109,7 +109,14 @@ IMPLEMENT (MISSING or PARTIAL):
   - Auto sender-health pause → campaign status FAILED (requires admin action).
 
 ### Phase 4 — Frontend Completion
-- Status: NOT STARTED
+- Status: COMPLETE
+- Committed: PENDING (this commit)
+- Tasks completed: [4.1, 4.2, 4.3]
+- Notes:
+  - 4.1: Per-contact table (Opened At / Clicked At) added to History.jsx campaign dialog. Aggregate open/click stats already existed — only the per-contact table was missing. Secondary useQuery for /api/campaigns/:id fires when dialog opens.
+  - 4.2: DeliveryHealthPanel.jsx created. Bounce/complaint rate bars (green/yellow/red), suppression stats, top bouncer table, pause/resume buttons with AlertDialog confirmation. Rendered in Dashboard.jsx under isRootAdmin guard.
+  - 4.3: PauseBanners component added to AppLayout.jsx. Uses useAuth() for user.sendPaused, useQuery for /api/health sendPaused (30s refetch). Platform pause banner (yellow) + user pause banner (red). No new hook or context created.
+  - Auth pattern: useAuth() from existing @/context/AuthContext used throughout — no new auth mechanism introduced.
 
 ### Phase 5 — Real-World Validation
 - Status: NOT STARTED

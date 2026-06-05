@@ -35,6 +35,7 @@ import {
   X
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
+import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 
 // Animation variants
 const containerVariants = {
@@ -97,7 +98,7 @@ const PLAN_LABELS = {
 };
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isRootAdmin } = useAuth();
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(() => {
     try {
       const stored = localStorage.getItem("repmail_new_user");
@@ -714,6 +715,13 @@ export default function Dashboard() {
             </div>
           )}
         </motion.div>
+
+        {/* Delivery health panel — ROOT_ADMIN only */}
+        {isRootAdmin && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
+            <DeliveryHealthPanel />
+          </motion.div>
+        )}
       </motion.div>
     </AppLayout>
   );

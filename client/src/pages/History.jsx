@@ -99,6 +99,12 @@ export default function History() {
     queryKey: ["/api/campaigns"]
   });
 
+  // Fetch per-contact email records when a campaign dialog is open
+  const { data: campaignDetail, isLoading: detailLoading } = useQuery({
+    queryKey: ["/api/campaigns", viewCampaign?.id],
+    enabled: !!viewCampaign?.id,
+  });
+
   const filteredCampaigns = (campaigns || []).filter(campaign => {
     const matchesSearch = campaign.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || campaign.status === statusFilter;
@@ -391,6 +397,44 @@ export default function History() {
                   </div>
                 </div>
               )}
+
+              {/* Per-contact email records */}
+              {detailLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              ) : campaignDetail?.campaignEmails?.length > 0 ? (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recipients</p>
+                  <div className="rounded-md border overflow-auto max-h-48">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Email</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Opened At</TableHead>
+                          <TableHead className="text-xs">Clicked At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {campaignDetail.campaignEmails.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="text-xs font-mono truncate max-w-[160px]">{r.recipientEmail}</TableCell>
+                            <TableCell className="text-xs">{r.status}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {r.openedAt ? formatDate(r.openedAt) : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {r.clickedAt ? formatDate(r.clickedAt) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Template details */}
               {viewCampaign.templateSnapshot ? (
