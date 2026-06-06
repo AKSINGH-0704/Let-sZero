@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-07
-**Current commit:** e282d43
+**Current commit:** 8465b74
 
 ---
 
@@ -26,7 +26,7 @@ Only **V** is treated as proven.
 |---|---|---|
 | Redis connectivity | **V** | PING→PONG confirmed in diagnostic deployment |
 | Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
-| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars now present in Railway. SMTP transport configured. SMTP verification pending — root cause under investigation (transport.verify() times out; DNS+TCP diagnostic deployed). |
+| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars confirmed present. SMTP transport configured. DNS+TCP diagnostic deployed (8465b74). Root cause investigation in progress — awaiting startup log output. |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
 | SNS subscription confirmed | **I** | Auto-confirm code exists; subscription status not checked |
@@ -138,7 +138,7 @@ Only **V** is treated as proven.
 | `/api/health` redis | **V** | `redis: "connected"` confirmed |
 | `/api/health` worker | **V** | `worker: "running"` confirmed |
 | `/api/health` postgres | **V** | Implied by platform working; direct query not pasted |
-| `/api/health` smtp | **I** | SMTP vars present; transport.verify() times out before health response returns (HTTP 499). DNS+TCP diagnostic running. |
+| `/api/health` smtp | **I** | SMTP vars present; transport.verify() hangs (HTTP 499 observed). Diagnostic deployed 8465b74 — awaiting evidence. |
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
 
