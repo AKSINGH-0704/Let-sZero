@@ -2380,3 +2380,49 @@
   Both update on every accepted suggestion and on every AI analysis completion.
   displayAnalysis (stable snapshot) is unchanged — still used for Risky Words and
   Keyword Improvements rendering.
+
+---
+
+  Section — Send Validation UX + Unsubscribe Check Removal (commit edd9455)
+
+  Problem 1 — Raw JSON rendered to user
+
+  POST /api/campaigns returns HTTP 400 {"validationErrors":[...]} when template or contact
+  data fails validation. The CampaignConfirmation.jsx onError handler checked for
+  parsed.error === "PLAN_LIMIT" and parsed.message but never handled parsed.validationErrors.
+  The fallback set error state to the raw JSON string, which React rendered verbatim.
+
+  Fix: onError now checks Array.isArray(parsed.validationErrors) first. If present, it sets
+  a separate validationErrors state (array). The render block shows a titled bullet list with
+  a "Fix Column Mapping" button (setStep(2)) when any error mentions a missing placeholder.
+  Both error and validationErrors are cleared before each new send attempt.
+
+  Problem 2 — Redundant unsubscribe body validation
+
+  routes.js blocked campaigns whose body didn't contain {{unsubscribe_url}} or the word
+  "unsubscribe". Two reasons this was wrong:
+
+  1. {{unsubscribe_url}} is not a supported merge tag. email.js replacePlaceholders handles
+     only {{name}}, {{email}}, {{company}}, {{category}}. A user writing {{unsubscribe_url}}
+     would see the literal text in their sent emails — a broken link.
+
+  2. buildUnsubscribeFooter() is called unconditionally in sendCampaignEmail for every
+     delivery path. CAN-SPAM compliance is guaranteed by the footer. The validation was
+     redundant and blocked clean cold-outreach templates.
+
+  Delivery path audit (all paths confirmed before removing the check):
+    BullMQ worker (primary)        worker.js:124 → sendCampaignEmail → buildUnsubscribeFooter
+    Inline fallback (Redis down)   routes.js:233 → sendCampaignEmail → buildUnsubscribeFooter
+    Scheduled (BullMQ)             scheduler → addCampaignJob → worker → sendCampaignEmail
+    Scheduled (inline fallback)    index.js:696 → executeCampaign → routes.js:233
+    Application retries            sendWithRetry loop → sendCampaignEmail
+    Resume after global pause      resume-sending → addCampaignJob → worker
+
+  No test-send feature exists. sendTransactionalEmail is used for system notifications
+  (invites, inactivity alerts) — transactional messages are CAN-SPAM exempt.
+
+  Files changed
+    server/routes.js        Removed 5-line unsubscribe validation block
+    client/src/components/campaign/CampaignConfirmation.jsx
+                            Added validationErrors state; updated onError; structured
+                            error panel; Fix Column Mapping button via setStep(2)

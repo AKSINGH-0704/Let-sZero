@@ -478,3 +478,58 @@ RepMail injects the unsubscribe link server-side at send time. The raw template 
 | Template with 0 triggers | Score card shows no breakdown section | PENDING |
 | Accept a keyword suggestion | Score and breakdown update immediately | PENDING |
 | Re-run AI analysis | localAnalysisLive resets, breakdown reflects post-accept template | PENDING |
+
+---
+
+## Send Validation UX + Unsubscribe Check Removal — 2026-06-06
+
+### Commit
+`edd9455` — [UX] Human-readable send validation errors + remove redundant unsubscribe check
+
+### Problem 1 — Raw JSON rendered to user
+When `POST /api/campaigns` returned HTTP 400 with `{"validationErrors":[...]}`, the error path in CampaignConfirmation.jsx fell through to `setError(msg)` where `msg` was the raw JSON string. The Alert rendered the literal `{"validationErrors":[...]}` text.
+
+Root cause: `onError` checked for `parsed.error === "PLAN_LIMIT"` and `parsed.message` but never handled `parsed.validationErrors`.
+
+### Problem 2 — Redundant unsubscribe body validation
+`routes.js` blocked campaigns whose body didn't contain `{{unsubscribe_url}}` or the word "unsubscribe". Two issues:
+1. `{{unsubscribe_url}}` is not a supported merge tag — `email.js replacePlaceholders` only handles `{{name}}`, `{{email}}`, `{{company}}`, `{{category}}`. A user writing `{{unsubscribe_url}}` would send broken literal text.
+2. `buildUnsubscribeFooter()` is called unconditionally in `sendCampaignEmail` for every delivery path — the footer satisfies CAN-SPAM without any template requirement.
+
+### Delivery path audit (all paths confirmed before removal)
+| Path | Code | Footer appended |
+|---|---|---|
+| BullMQ worker (primary) | `worker.js:124 → sendCampaignEmail` | ✓ |
+| Inline fallback (Redis down) | `routes.js:233 → sendCampaignEmail` | ✓ |
+| Scheduled via BullMQ | scheduler → `addCampaignJob` → worker | ✓ |
+| Scheduled inline fallback | `index.js:696 → executeCampaign` | ✓ |
+| Application-level retries | `sendWithRetry` loop → `sendCampaignEmail` | ✓ |
+| Resume after global pause | `resume-sending → addCampaignJob` → worker | ✓ |
+| Test sends | Feature does not exist | n/a |
+| `sendTransactionalEmail` | System notifications — not campaign emails | n/a |
+
+### Changes
+| File | Change |
+|---|---|
+| `server/routes.js` | Removed 5-line unsubscribe validation block (comment + `bodyToCheck` const + if block) |
+| `client/src/components/campaign/CampaignConfirmation.jsx` | Added `validationErrors` state (array); updated `onError` to check `parsed.validationErrors`; render structured bullet list with header; "Fix Column Mapping" button (calls `setStep(2)`) when any error mentions a placeholder; clear both `error` and `validationErrors` before each send attempt |
+
+### UI after fix
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ⚠  Cannot send campaign — fix these issues first:              │
+│                                                                 │
+│    • Template placeholder(s) not found in contact data:         │
+│      {{company}}                                                │
+│                                                                 │
+│    [Fix Column Mapping]                                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Production validation checklist
+| Check | Expected | Result |
+|---|---|---|
+| Send campaign with {{company}} but no company column mapped | Structured error list, not raw JSON. "Fix Column Mapping" button visible | PENDING |
+| Click "Fix Column Mapping" | Navigates to step 2 (Map Columns) | PENDING |
+| Send campaign with all columns mapped, clean template | Campaign starts, no validation error | PENDING |
+| Send campaign exceeding contact limit | Structured error: "Contact list exceeds maximum..." | PENDING |
