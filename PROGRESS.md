@@ -26,7 +26,7 @@ Only **V** is treated as proven.
 |---|---|---|
 | Redis connectivity | **V** | PING→PONG confirmed in diagnostic deployment |
 | Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
-| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars confirmed present. SMTP transport configured. DNS: VERIFIED (resolves correctly). TCP port 587: FAILED (timeout — port blocked). SMTP AUTH: not yet tested. Root cause: outbound port 587 blocked in Railway network. |
+| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars confirmed present. SMTP transport configured. DNS: VERIFIED. TCP port 587: FAILED (timeout). Port 2587 validation in progress — SES_SMTP_PORT=2587 set in Railway. SMTP AUTH: not yet tested. |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
 | SNS subscription confirmed | **I** | Auto-confirm code exists; subscription status not checked |
@@ -164,7 +164,7 @@ Only **V** is treated as proven.
 
 | # | Blocker | Severity | Current status |
 |---|---|---|---|
-| 1 | SMTP TCP connectivity blocked — outbound port 587 times out on Railway network. Alternative port required. | Critical | I — port change pending |
+| 1 | SMTP TCP connectivity — port 587 blocked. Port 2587 validation in progress (SES_SMTP_PORT=2587 set in Railway). | Critical | I — awaiting deployment evidence |
 | 2 | No test campaign has completed in production | Critical | I |
 | 3 | `SES_CONFIGURATION_SET` not confirmed set | Critical | I |
 | 4 | `APP_URL` not confirmed pointing to production hostname | Critical | I |
