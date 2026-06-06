@@ -11,6 +11,11 @@ import { stripeWebhookHandler } from "./stripeWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import IORedis from "ioredis";
 
+// Top-level probe — fires when this module is first evaluated by Node.js.
+// If this line appears in Railway logs the new build is active.
+// If it never appears Railway is running a cached binary from before this commit.
+console.log("[STARTUP-PROBE] index.js module loaded — build includes redis diagnostic");
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -552,11 +557,11 @@ async function runRedisDiagnostic() {
     return res.redirect('/early-access');
   });
 
-  await registerRoutes(httpServer, app);
-
-  // Temporary startup diagnostic — identifies Redis auth failure root cause.
-  // Safe to remove once WRONGPASS is resolved.
+  // Temporary startup diagnostic — must run before registerRoutes and before any
+  // other Redis usage so it has a clean, isolated connection.
   await runRedisDiagnostic();
+
+  await registerRoutes(httpServer, app);
 
   // Startup campaign reconciliation.
   //
