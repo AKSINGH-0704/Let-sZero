@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-07
-**Current commit:** 8465b74
+**Current commit:** f3f2f3e
 
 ---
 
@@ -26,12 +26,12 @@ Only **V** is treated as proven.
 |---|---|---|
 | Redis connectivity | **V** | PING→PONG confirmed in diagnostic deployment |
 | Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
-| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars confirmed present. SMTP transport configured. DNS: VERIFIED. TCP port 587: FAILED (timeout). Port 2587 validation in progress — SES_SMTP_PORT=2587 set in Railway. SMTP AUTH: not yet tested. |
+| Environment variables (all launch-critical) | **V** | Block 1B: SES vars present. DNS: VERIFIED. TCP port 2587: VERIFIED. SMTP AUTH: VERIFIED. `/api/health` → `smtp: "verified"`. |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
 | SNS subscription confirmed | **I** | Auto-confirm code exists; subscription status not checked |
 
-**Milestone status: I** — 1 of 6 sub-items Verified
+**Milestone status: I/V mixed** — 2 of 6 sub-items Verified
 
 **Blocking items before Block 2:**
 - Block 1A: Redis persistence config — **PASS**
@@ -138,7 +138,7 @@ Only **V** is treated as proven.
 | `/api/health` redis | **V** | `redis: "connected"` confirmed |
 | `/api/health` worker | **V** | `worker: "running"` confirmed |
 | `/api/health` postgres | **V** | Implied by platform working; direct query not pasted |
-| `/api/health` smtp | **I** | SMTP vars present. DNS OK. Port 587 TCP timeout. SMTP AUTH not yet tested. Blocked at transport connectivity layer. |
+| `/api/health` smtp | **V** | `smtp: "verified"` confirmed. DNS OK. TCP port 2587 open. SMTP AUTH accepted by SES. |
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
 
@@ -164,7 +164,7 @@ Only **V** is treated as proven.
 
 | # | Blocker | Severity | Current status |
 |---|---|---|---|
-| 1 | SMTP TCP connectivity — port 587 blocked. Port 2587 validation in progress (SES_SMTP_PORT=2587 set in Railway). | Critical | I — awaiting deployment evidence |
+| 1 | No test campaign has completed in production | Critical | I |
 | 2 | No test campaign has completed in production | Critical | I |
 | 3 | `SES_CONFIGURATION_SET` not confirmed set | Critical | I |
 | 4 | `APP_URL` not confirmed pointing to production hostname | Critical | I |
@@ -203,3 +203,4 @@ Evidence is appended here as each item moves to V.
 | 2026-06-07 | Worker heartbeat | `/api/health` → `worker: "running"` | PASS |
 | 2026-06-07 | Health endpoint | `/api/health` → `status: "ok"` | PASS |
 | 2026-06-07 | Redis durability | `save 60 1` / `appendonly no` / `maxmemory-policy noeviction` / `maxmemory 0` | PASS |
+| 2026-06-07 | SMTP configuration | DNS OK, TCP port 2587 open, SMTP AUTH accepted, `/api/health` → `smtp: "verified"` | PASS |
