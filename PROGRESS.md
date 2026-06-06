@@ -26,7 +26,7 @@ Only **V** is treated as proven.
 |---|---|---|
 | Redis connectivity | **V** | PING→PONG confirmed in diagnostic deployment |
 | Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
-| Environment variables (all launch-critical) | **I** | Referenced in code; not all confirmed present in Railway |
+| Environment variables (all launch-critical) | **I** | Block 1B: 4 required SES vars now present in Railway. SMTP transport configured. SMTP verification pending — root cause under investigation (transport.verify() times out; DNS+TCP diagnostic deployed). |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
 | SNS subscription confirmed | **I** | Auto-confirm code exists; subscription status not checked |
@@ -34,10 +34,10 @@ Only **V** is treated as proven.
 **Milestone status: I** — 1 of 6 sub-items Verified
 
 **Blocking items before Block 2:**
-- Block 1A: Redis persistence config
-- Block 1B: All env vars present and correct (especially `SES_CONFIGURATION_SET`, `APP_URL`, `REPMAIL_PUBLIC`)
-- Block 1C: Schema columns verified in production DB
-- Block 1D: AWS SES + SNS configuration confirmed
+- Block 1A: Redis persistence config — **PASS**
+- Block 1B: Required vars set — **FAIL** (SES_SMTP_HOST, SES_SMTP_USER, SES_SMTP_PASS, SES_FROM_EMAIL missing)
+- Block 1C: Schema columns verified in production DB — pending
+- Block 1D: AWS SES + SNS configuration confirmed — pending
 
 ---
 
@@ -138,7 +138,7 @@ Only **V** is treated as proven.
 | `/api/health` redis | **V** | `redis: "connected"` confirmed |
 | `/api/health` worker | **V** | `worker: "running"` confirmed |
 | `/api/health` postgres | **V** | Implied by platform working; direct query not pasted |
-| `/api/health` smtp | **I** | Not confirmed `"verified"` |
+| `/api/health` smtp | **I** | SMTP vars present; transport.verify() times out before health response returns (HTTP 499). DNS+TCP diagnostic running. |
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
 
@@ -164,15 +164,15 @@ Only **V** is treated as proven.
 
 | # | Blocker | Severity | Current status |
 |---|---|---|---|
-| 1 | No test campaign has completed in production | Critical | I |
-| 2 | `SES_CONFIGURATION_SET` not confirmed set | Critical | I |
-| 3 | `APP_URL` not confirmed pointing to production hostname | Critical | I |
-| 4 | SNS subscription confirmation status unknown | Critical | I |
-| 5 | Schema hardening columns not verified in production DB | High | I |
-| 6 | `REPMAIL_PUBLIC` not confirmed `"true"` | High | I |
-| 7 | Bounce/complaint suppression not tested | High | I |
-| 8 | Inbox placement (SPF/DKIM/DMARC) not checked | High | D |
-| 9 | Redis persistence config unknown | Medium | D |
+| 1 | SMTP connectivity unverified — transport.verify() times out (HTTP 499); DNS+TCP diagnostic deployed | Critical | I — pending diagnostic output |
+| 2 | No test campaign has completed in production | Critical | I |
+| 3 | `SES_CONFIGURATION_SET` not confirmed set | Critical | I |
+| 4 | `APP_URL` not confirmed pointing to production hostname | Critical | I |
+| 5 | SNS subscription confirmation status unknown | Critical | I |
+| 6 | Schema hardening columns not verified in production DB | High | I |
+| 7 | `REPMAIL_PUBLIC` not confirmed `"true"` | High | I |
+| 8 | Bounce/complaint suppression not tested | High | I |
+| 9 | Inbox placement (SPF/DKIM/DMARC) not checked | High | D |
 | 10 | Unsubscribe link URL not verified | High | I |
 
 ---

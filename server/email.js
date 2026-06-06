@@ -103,5 +103,15 @@ export async function sendTransactionalEmail(to, subject, text) {
 }
 
 export async function verifySesConnection() {
-  await transport.verify();
+  try {
+    await transport.verify();
+  } catch (err) {
+    console.error("[SMTP-VERIFY] Failed:", {
+      code:     err.code,
+      command:  err.command,
+      response: err.response,
+      message:  err.message,
+    });
+    throw err;
+  }
 }

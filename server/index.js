@@ -1,6 +1,8 @@
 import "./env.js"; // must be first — loads .env before any other module reads process.env
 import express from "express";
 import crypto from "crypto";
+import { createConnection } from "net";
+import { lookup as dnsLookup } from "dns/promises";
 import { registerRoutes, executeCampaign } from "./routes.js";
 import { storage } from "./storage.js";
 import { sendTransactionalEmail } from "./email.js";
@@ -440,6 +442,52 @@ app.use((req, res, next) => {
   next();
 });
 
+// Temporary SMTP path diagnostic — remove after SMTP connectivity is confirmed.
+// Runs once at startup; logs DNS and TCP results without modifying credentials or config.
+async function diagnoseSMTPPath() {
+  const host = process.env.SES_SMTP_HOST;
+  const port = parseInt(process.env.SES_SMTP_PORT || "587", 10);
+
+  if (!host) {
+    console.log("[SMTP-DIAG] SES_SMTP_HOST not set — skipping");
+    return;
+  }
+
+  console.log(`[SMTP-DIAG] Testing ${host}:${port}`);
+
+  // Layer 1: DNS resolution
+  try {
+    const addrs = await dnsLookup(host, { all: true });
+    console.log("[SMTP-DIAG] DNS OK →", addrs.map(a => a.address).join(", "));
+  } catch (err) {
+    console.error(`[SMTP-DIAG] DNS FAILED: ${err.code} — ${err.message}`);
+    return;
+  }
+
+  // Layer 2: TCP connectivity (5-second timeout)
+  await new Promise((resolve) => {
+    const sock = createConnection({ host, port });
+    const timer = setTimeout(() => {
+      sock.destroy();
+      console.error(`[SMTP-DIAG] TCP TIMEOUT after 5s — port ${port} unreachable (firewall or blocked port)`);
+      resolve();
+    }, 5000);
+
+    sock.once("connect", () => {
+      clearTimeout(timer);
+      console.log(`[SMTP-DIAG] TCP OK — connected to ${host}:${port}`);
+      sock.destroy();
+      resolve();
+    });
+
+    sock.once("error", (err) => {
+      clearTimeout(timer);
+      console.error(`[SMTP-DIAG] TCP FAILED: ${err.code} — ${err.message}`);
+      resolve();
+    });
+  });
+}
+
 (async () => {
   // Block RepMail routes on production when REPMAIL_PUBLIC is not "true"
   app.use((req, res, next) => {
@@ -531,6 +579,9 @@ app.use((req, res, next) => {
   if (!process.env.SNS_TOPIC_ARN) {
     console.warn("[STARTUP] SNS_TOPIC_ARN not set — TopicArn validation disabled. Set this env var to prevent cross-topic SNS injection.");
   }
+
+  // SMTP path diagnostic — temporary, runs once at startup.
+  await diagnoseSMTPPath();
 
   // Railway sends SIGTERM with a 30-second grace window before SIGKILL.
   // worker.close() waits for the current job iteration to finish before exiting.
