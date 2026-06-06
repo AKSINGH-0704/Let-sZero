@@ -20,6 +20,32 @@ const MODEL_COSTS = {
   "gpt-4o-mini": { input: 0.150 / 1_000_000, output: 0.600 / 1_000_000 },
 };
 
+// Module-level AI health status — updated on every OpenAI call, read by /api/health
+// No active probing: zero extra OpenAI calls. Status reflects the most recent real call.
+const aiHealthCache = { status: "unknown", lastError: null, updatedAt: 0 };
+
+export function getAiHealthStatus() {
+  if (!process.env.OPENAI_API_KEY) return { status: "not_configured", lastError: null };
+  return { status: aiHealthCache.status, lastError: aiHealthCache.lastError, updatedAt: aiHealthCache.updatedAt };
+}
+
+function markAiHealthOk() {
+  aiHealthCache.status = "ok";
+  aiHealthCache.lastError = null;
+  aiHealthCache.updatedAt = Date.now();
+}
+
+function markAiHealthError(err) {
+  const isAuthError =
+    err.status === 401 ||
+    err.code === "invalid_api_key" ||
+    (err.message || "").includes("API key") ||
+    (err.message || "").includes("Incorrect API key");
+  aiHealthCache.status = isAuthError ? "error" : "degraded";
+  aiHealthCache.lastError = (err.message || "Unknown error").slice(0, 120);
+  aiHealthCache.updatedAt = Date.now();
+}
+
 function calculateCostUsd(model, inputTokens, outputTokens) {
   const rates = MODEL_COSTS[model] ?? MODEL_COSTS["gpt-4o-mini"];
   return (inputTokens * rates.input) + (outputTokens * rates.output);
@@ -166,9 +192,11 @@ Generate one personalized email for EACH contact. Return JSON:
       body: previews[i]?.body || body
     }));
 
+    markAiHealthOk();
     cache.set(cacheKey, result);
     return result;
   } catch (err) {
+    markAiHealthError(err);
     console.error("[AI] generatePreviews error:", err.message);
     throw err;
   }
@@ -263,9 +291,11 @@ Return this exact JSON:
       summary: parsed.summary || null
     };
 
+    markAiHealthOk();
     cache.set(cacheKey, result);
     return result;
   } catch (err) {
+    markAiHealthError(err);
     console.error("[AI] analyzeSpam error:", err.message);
     throw err;
   }
@@ -274,6 +304,20 @@ Return this exact JSON:
 // ─── 3. AI-POWERED TEMPLATE GENERATION ────────────────────────────────────────
 // Model: gpt-4o for growth/scale/enterprise, gpt-4o-mini otherwise
 // Cached: no (creative task, always generate fresh)
+
+// Strip bracket-style placeholder artifacts from AI-generated text.
+// Targets patterns like [Your Name], [Title], [Company Name] that GPT outputs
+// when it doesn't have sender context. Only matches known placeholder words —
+// will not strip legitimate bracket usage like [see attached] or [Q3 results].
+function stripBracketPlaceholders(text) {
+  return text
+    .replace(
+      /\[\s*(?:Your\s+|The\s+|A\s+)?(?:Name|First\s*Name|Last\s*Name|Full\s*Name|Title|Job\s*Title|Position|Role|Company|Organization|Company\s*Name|Phone(?:\s*Number)?|Email(?:\s*Address)?|Signature|Department|Team)[^\]]{0,30}\]/gi,
+      ""
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function getModelForPlan(effectivePlan, feature) {
   if (feature === "generate-template") {
@@ -315,7 +359,7 @@ RULES:
 - Body should be 3-5 short paragraphs max
 - Include exactly one clear CTA — never stack multiple asks
 - The email must end with a specific invitation: a question, a proposed next step, or a meeting request
-- End with a professional sign-off
+- End with a professional sign-off (e.g. "Best regards," or "Thanks,") — NEVER write [Your Name], [Title], [Company], [Phone], [Email] or any text in square brackets
 - Output ONLY valid JSON, no markdown, no explanation`;
 
   const userPrompt = `Create a complete email template for this campaign:
@@ -359,8 +403,10 @@ Return JSON:
     if (!parsed.subject || !parsed.body) {
       throw new Error("Invalid template response from AI");
     }
-    return { subject: parsed.subject, body: parsed.body };
+    markAiHealthOk();
+    return { subject: parsed.subject, body: stripBracketPlaceholders(parsed.body) };
   } catch (err) {
+    markAiHealthError(err);
     console.error("[AI] generateTemplate error:", err.message);
     throw err;
   }

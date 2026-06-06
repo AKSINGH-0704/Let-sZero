@@ -1260,6 +1260,13 @@ export const memoryStorage = {
     return { allowed: true, remaining: limit - currentCount - 1, resetsAt };
   },
 
+  async refundAiQuota(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.aiGenerationsToday = Math.max((user.aiGenerationsToday || 0) - 1, 0);
+    user.updatedAt = new Date();
+  },
+
   // ── Campaign Emails ────────────────────────────────────────────────────────
 
   async createCampaignEmail(data) {

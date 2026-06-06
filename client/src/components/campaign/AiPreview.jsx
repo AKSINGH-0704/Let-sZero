@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
-import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/context/AuthContext";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +36,8 @@ import {
 } from "lucide-react";
 import { replacePlaceholders } from "@/lib/utils";
 
+const AI_DAILY_LIMITS = { free: 5, trial: 5, starter: 20, growth: 50, scale: 150, enterprise: Infinity };
+
 const TONES = [
   { value: "professional", label: "Professional" },
   { value: "friendly", label: "Friendly" },
@@ -44,12 +47,14 @@ const TONES = [
 
 export default function AiPreview() {
   const { template, columnMapping, contacts, goNext, goBack, setAiPreviews } = useCampaign();
+  const { user } = useAuth();
   const [tone, setTone] = useState("professional");
   const [previews, setPreviews] = useState([]);
   const [isAiEnhanced, setIsAiEnhanced] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiQuota, setAiQuota] = useState(null);
   const [quotaError, setQuotaError] = useState(null);
+  const [aiRewriteFailed, setAiRewriteFailed] = useState(false);
 
   const sampleContacts = contacts.slice(0, 3).map(contact => ({
     email: contact[columnMapping.email] || "",
@@ -93,9 +98,11 @@ export default function AiPreview() {
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setQuotaError(null);
+      setAiRewriteFailed(false);
       setPreviews(data.previews || generateLocalPreviews());
-      setIsAiEnhanced(true);
+      setIsAiEnhanced(data.aiPowered !== false);
       setAiOpen(false);
     },
     onError: (err) => {
@@ -106,6 +113,7 @@ export default function AiPreview() {
           return;
         }
       } catch {}
+      setAiRewriteFailed(true);
       setPreviews(generateLocalPreviews());
       setIsAiEnhanced(false);
       setAiOpen(false);
@@ -122,15 +130,21 @@ export default function AiPreview() {
     setIsAiEnhanced(false);
   };
 
+  const aiDailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
+  const aiIsUnlimited = aiDailyLimit === Infinity || aiQuota?.remaining === "unlimited";
+  const aiRemaining = aiQuota
+    ? parseInt(aiQuota.remaining, 10)
+    : Math.max(0, aiDailyLimit - (user?.aiGenerationsToday ?? 0));
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold flex items-center justify-center gap-2">
           <MailIcon className="h-5 w-5 text-primary" />
-          Email Preview
+          Merge Preview
         </h2>
         <p className="text-muted-foreground mt-1">
-          See how your template looks with real contact data
+          Each contact receives a personally addressed email — see exactly what they'll get
         </p>
       </div>
 
@@ -138,11 +152,11 @@ export default function AiPreview() {
       <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
         <Info className="h-4 w-4 text-blue-600" />
         <AlertDescription className="text-blue-800 dark:text-blue-300 text-sm">
-          <span className="font-medium">How outbound sending works:</span> Placeholders like{" "}
+          <span className="font-medium">Personalized delivery:</span> Placeholders like{" "}
           <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{{name}}"}</code> and{" "}
           <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{"{{company}}"}</code> are
-          replaced with each contact's real data at send time. No AI is involved in the outbound
-          emails — AI only assists with template drafting and optional preview rewording here.
+          replaced with each contact's real data at send time, so every recipient gets a message
+          addressed to them. Use the tone rewriter below to explore different copy styles before sending.
         </AlertDescription>
       </Alert>
 
@@ -158,17 +172,22 @@ export default function AiPreview() {
                 <Sparkles className="h-4 w-4 text-primary" />
               </div>
               <div className="text-left">
-                <p className="font-medium text-sm">AI-Assisted Rewrite</p>
+                <p className="font-medium text-sm">Preview in a Different Tone</p>
                 <p className="text-xs text-muted-foreground">
-                  Optionally reword these previews in a different tone to evaluate your copy
+                  Reword these previews to evaluate how your copy reads in another style
                 </p>
               </div>
             </div>
-            {aiOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
+            <div className="flex items-center gap-2">
+              {!aiIsUnlimited && (
+                <span className="text-xs text-muted-foreground">{aiRemaining} left today</span>
+              )}
+              {aiOpen ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -214,9 +233,9 @@ export default function AiPreview() {
                 </Button>
               </div>
 
-              {aiQuota && aiQuota.remaining !== "unlimited" && (
+              {!aiIsUnlimited && (
                 <p className="text-xs text-muted-foreground text-right">
-                  {aiQuota.remaining} AI generation{aiQuota.remaining !== "1" ? "s" : ""} left today
+                  {aiRemaining} AI generation{aiRemaining !== 1 ? "s" : ""} left today
                 </p>
               )}
 
@@ -235,22 +254,36 @@ export default function AiPreview() {
         </CollapsibleContent>
       </Collapsible>
 
+      {aiRewriteFailed && (
+        <Alert className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-900">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-800 dark:text-yellow-300 text-sm">
+            AI rewrite temporarily unavailable — showing merge preview instead. Your campaign will send normally.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Preview cards */}
       <Card className="border-card-border">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              Sample Emails
-              {isAiEnhanced && (
-                <Badge
-                  variant="secondary"
-                  className="text-xs bg-primary/10 text-primary border-primary/20"
-                >
-                  <Sparkles className="h-3 w-3 mr-1" />
-                  AI Assisted
-                </Badge>
-              )}
-            </CardTitle>
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                Sample Emails
+                {isAiEnhanced && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs bg-primary/10 text-primary border-primary/20"
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    AI Assisted
+                  </Badge>
+                )}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Showing up to 3 contacts — placeholders filled with real data
+              </p>
+            </div>
             {isAiEnhanced && (
               <Button
                 variant="ghost"

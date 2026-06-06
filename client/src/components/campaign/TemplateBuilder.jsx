@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,6 +83,7 @@ export default function TemplateBuilder() {
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setLocalTemplate(prev => ({
         ...prev,
         subject: data.subject || prev.subject,
@@ -152,6 +153,11 @@ export default function TemplateBuilder() {
 
   const canProceed = localTemplate.subject.trim() && localTemplate.body.trim();
 
+  const aiDailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
+  const aiIsUnlimited = aiDailyLimit === Infinity || aiQuota?.remaining === "unlimited";
+  const aiRemaining = aiQuota ? parseInt(aiQuota.remaining, 10) : Math.max(0, aiDailyLimit - (user?.aiGenerationsToday ?? 0));
+  const aiUsed = aiDailyLimit - aiRemaining;
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
@@ -178,11 +184,16 @@ export default function TemplateBuilder() {
                 <p className="text-xs text-muted-foreground">Describe your campaign goal — AI drafts a starting template</p>
               </div>
             </div>
-            {aiOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
+            <div className="flex items-center gap-2">
+              {!aiIsUnlimited && (
+                <span className="text-xs text-muted-foreground">{aiRemaining} left today</span>
+              )}
+              {aiOpen ? (
+                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -241,18 +252,11 @@ export default function TemplateBuilder() {
                 </Button>
               </div>
 
-              {(() => {
-                const dailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
-                const isUnlimited = dailyLimit === Infinity || aiQuota?.remaining === "unlimited";
-                if (isUnlimited) return null;
-                const remaining = aiQuota ? parseInt(aiQuota.remaining, 10) : Math.max(0, dailyLimit - (user?.aiGenerationsToday ?? 0));
-                const used = dailyLimit - remaining;
-                return (
-                  <p className="text-xs text-muted-foreground text-right">
-                    {used} of {dailyLimit} AI generation{dailyLimit !== 1 ? "s" : ""} used today
-                  </p>
-                );
-              })()}
+              {!aiIsUnlimited && (
+                <p className="text-xs text-muted-foreground text-right">
+                  {aiUsed} of {aiDailyLimit} AI generation{aiDailyLimit !== 1 ? "s" : ""} used today
+                </p>
+              )}
 
               {aiError && (
                 <Alert variant="destructive" className="py-2">

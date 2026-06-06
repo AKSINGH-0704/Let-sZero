@@ -114,41 +114,89 @@ export function calculateSpamScore(subject, body) {
     "act now", "urgent", "congratulations", "guarantee", "no obligation",
     "risk free", "special offer", "exclusive deal", "you won", "cash"
   ];
-  
+
+  const alternatives = {
+    "free": "complimentary",
+    "winner": "selected participant",
+    "click here": "learn more at [link]",
+    "buy now": "explore your options",
+    "limited time": "time-sensitive opportunity",
+    "act now": "consider this soon",
+    "urgent": "important",
+    "congratulations": "we're pleased to inform you",
+    "guarantee": "assurance",
+    "no obligation": "no commitment required",
+    "risk free": "with full confidence",
+    "special offer": "exclusive opportunity",
+    "exclusive deal": "tailored offer",
+    "you won": "you've been selected",
+    "cash": "payment"
+  };
+
   const text = ((subject || "") + " " + (body || "")).toLowerCase();
   let score = 0;
   const riskyWords = [];
-  
+  const suggestions = [];
+
   spamWords.forEach(word => {
     if (text.includes(word)) {
       score += 5;
       riskyWords.push(word);
+      suggestions.push({ original: word, suggestion: alternatives[word] });
     }
   });
-  
+
   if (subject && subject === subject.toUpperCase() && subject.length > 5) {
     score += 15;
+    suggestions.push({
+      original: subject,
+      suggestion: "Rewrite the subject in sentence case — all-caps reads as shouting and triggers spam filters",
+      actionable: false
+    });
+  } else if (subject && subject.length > 50) {
+    score += 5;
+    suggestions.push({
+      original: subject,
+      suggestion: `Subject is ${subject.length} characters — trim to under 50 to avoid truncation on mobile`,
+      actionable: false
+    });
   }
-  
+
   const exclamationCount = (text.match(/!/g) || []).length;
-  score += Math.min(exclamationCount * 2, 10);
-  
-  const alternatives = {
-    "free": "complimentary",
-    "winner": "selected participant",
-    "click here": "learn more",
-    "buy now": "explore options",
-    "limited time": "time-sensitive"
-  };
-  
-  const suggestions = riskyWords.slice(0, 5).map(word => ({
-    original: word,
-    suggestion: alternatives[word] || word
-  }));
-  
+  if (exclamationCount > 0) {
+    score += Math.min(exclamationCount * 2, 10);
+    suggestions.push({
+      original: `${exclamationCount} exclamation mark${exclamationCount > 1 ? "s" : ""}`,
+      suggestion: exclamationCount > 1
+        ? "Remove all exclamation marks — multiple instances signal promotional content"
+        : "Remove the exclamation mark for a more professional tone",
+      actionable: false
+    });
+  }
+
+  const wordCount = (body || "").trim().split(/\s+/).filter(Boolean).length;
+  if (wordCount > 200) {
+    score += 5;
+    suggestions.push({
+      original: `${wordCount}-word body`,
+      suggestion: "Trim the email to under 200 words — long emails are truncated on mobile and hurt engagement",
+      actionable: false
+    });
+  }
+
+  const issues = [];
+  if (riskyWords.length > 0) issues.push(`${riskyWords.length} spam trigger word${riskyWords.length > 1 ? "s" : ""}`);
+  if (exclamationCount > 1) issues.push("excessive punctuation");
+  if (subject && subject.length > 50) issues.push("long subject line");
+  if (wordCount > 200) issues.push("long body");
+  const summary = issues.length > 0
+    ? `Keyword-based scan found: ${issues.join(", ")}. Run AI analysis for deeper insights.`
+    : "No common spam triggers detected. Run AI analysis for a full deliverability review.";
+
   return {
     score: Math.min(score, 100),
     riskyWords,
-    suggestions
+    suggestions,
+    summary
   };
 }

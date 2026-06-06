@@ -2,7 +2,7 @@ import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
-import { generatePreviews, analyzeSpam, generateTemplate } from "./ai.js";
+import { generatePreviews, analyzeSpam, generateTemplate, getAiHealthStatus } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
@@ -429,6 +429,7 @@ export async function registerRoutes(httpServer, app) {
     } catch {
       result.sendPaused = false;
     }
+    result.ai = getAiHealthStatus().status;
     result.timestamp = new Date().toISOString();
 
     res.json(result);
@@ -1781,6 +1782,7 @@ export async function registerRoutes(httpServer, app) {
         const previews = await generatePreviews(subject, body, contacts || [], tone || "professional", { userId: req.user.id });
         return res.json({ previews, aiPowered: true });
       } catch (aiErr) {
+        storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
         console.log("[AI] Preview falling back to placeholder replacement:", aiErr.message);
       }
 
@@ -1833,6 +1835,7 @@ export async function registerRoutes(httpServer, app) {
         const result = await analyzeSpam(subject, body, { userId: req.user.id });
         return res.json({ ...result, aiPowered: true });
       } catch (aiErr) {
+        storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
         console.log("[AI] Spam analysis falling back to keyword matching:", aiErr.message);
       }
 
@@ -1889,6 +1892,7 @@ export async function registerRoutes(httpServer, app) {
       const template = await generateTemplate(prompt.trim(), tone || "professional", { userId: req.user.id, effectivePlan });
       res.json(template);
     } catch (error) {
+      storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
       console.error("[AI] generate-template error:", error.message);
       res.status(500).json({ message: "Template generation failed. Please write your template manually." });
     }

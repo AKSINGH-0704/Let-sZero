@@ -6,6 +6,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion, AnimatePresence } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
@@ -33,7 +34,8 @@ import {
   PieChart,
   Target,
   UserPlus,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
@@ -721,6 +723,64 @@ export default function Dashboard() {
         {isRootAdmin && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
             <DeliveryHealthPanel />
+          </motion.div>
+        )}
+
+        {/* AI Analytics — ROOT_ADMIN only */}
+        {isRootAdmin && stats?.aiStats && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.25 }}>
+            <Card className="border-card-border">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  AI Usage — Last 30 Days
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Cost</p>
+                    <p className="text-2xl font-semibold">${(stats.aiStats.totalAiCostUsd ?? 0).toFixed(4)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total Calls</p>
+                    <p className="text-2xl font-semibold">{formatNumber(stats.aiStats.totalAiCalls ?? 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Cache Hit Rate</p>
+                    <p className="text-2xl font-semibold">{((stats.aiStats.cacheHitRate ?? 0) * 100).toFixed(1)}%</p>
+                  </div>
+                </div>
+
+                {stats.aiStats.aiCostByEndpoint && Object.keys(stats.aiStats.aiCostByEndpoint).length > 0 && (
+                  <div className="mb-6">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Cost by Endpoint</p>
+                    <div className="space-y-2">
+                      {Object.entries(stats.aiStats.aiCostByEndpoint).map(([endpoint, cost]) => (
+                        <div key={endpoint} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{endpoint}</span>
+                          <span className="font-medium">${Number(cost).toFixed(4)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {stats.aiStats.topAiSpenders && stats.aiStats.topAiSpenders.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Top AI Spenders</p>
+                    <div className="space-y-2">
+                      {stats.aiStats.topAiSpenders.slice(0, 5).map((spender, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground truncate max-w-[200px]">{spender.email || spender.userId}</span>
+                          <span className="font-medium">${Number(spender.totalCost).toFixed(4)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </motion.div>
         )}
       </motion.div>

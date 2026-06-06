@@ -1154,6 +1154,13 @@ const dbStorage = {
     });
   },
 
+  async refundAiQuota(userId) {
+    const now = new Date();
+    await db.update(users)
+      .set({ aiGenerationsToday: sql`GREATEST(ai_generations_today - 1, 0)`, updatedAt: now })
+      .where(eq(users.id, userId));
+  },
+
   // ── Campaign Emails ────────────────────────────────────────────────────────
 
   async createCampaignEmail(data) {

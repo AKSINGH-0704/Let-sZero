@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
-import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/context/AuthContext";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,12 +43,23 @@ function getScoreLabel(score) {
   return "High Risk";
 }
 
+const AI_DAILY_LIMITS = { free: 5, trial: 5, starter: 20, growth: 50, scale: 150, enterprise: Infinity };
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export default function SpamAnalyzer() {
   const { template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate } = useCampaign();
-  const [analysis, setAnalysis] = useState(spamAnalysis);
+  const { user } = useAuth();
+  const [analysis, setAnalysis] = useState(
+    () => spamAnalysis || calculateSpamScore(template.subject, template.body)
+  );
   const [acceptedSuggestions, setAcceptedSuggestions] = useState(new Set());
   const [aiQuota, setAiQuota] = useState(null);
   const [quotaError, setQuotaError] = useState(null);
+  const [analysisSource, setAnalysisSource] = useState(spamAnalysis ? "local" : "initial");
+  const [analysisDirty, setAnalysisDirty] = useState(false);
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
@@ -62,7 +74,11 @@ export default function SpamAnalyzer() {
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setQuotaError(null);
+      setAnalysisDirty(false);
+      setAcceptedSuggestions(new Set());
+      setAnalysisSource(data.aiPowered !== false ? "ai" : "fallback");
       const { _quota, ...analysisData } = data;
       setAnalysis(analysisData);
       setSpamAnalysis(analysisData);
@@ -75,40 +91,36 @@ export default function SpamAnalyzer() {
           return;
         }
       } catch {}
+      setAnalysisDirty(false);
+      setAcceptedSuggestions(new Set());
+      setAnalysisSource("fallback");
       const localAnalysis = calculateSpamScore(template.subject, template.body);
       setAnalysis(localAnalysis);
       setSpamAnalysis(localAnalysis);
     }
   });
 
-  useEffect(() => {
-    if (!analysis) {
-      const localAnalysis = calculateSpamScore(template.subject, template.body);
-      setAnalysis(localAnalysis);
-      setSpamAnalysis(localAnalysis);
-    }
-  }, []);
-
   const handleReanalyze = () => {
     analyzeMutation.mutate();
   };
 
   const acceptSuggestion = (suggestion) => {
-    const newSubject = template.subject.replace(
-      new RegExp(suggestion.original, 'gi'), 
-      suggestion.suggestion
-    );
-    const newBody = template.body.replace(
-      new RegExp(suggestion.original, 'gi'), 
-      suggestion.suggestion
-    );
-    
+    if (suggestion.actionable === false) return;
+
+    const pattern = new RegExp(escapeRegex(suggestion.original), "gi");
+    const newSubject = template.subject.replace(pattern, suggestion.suggestion);
+    const newBody = template.body.replace(pattern, suggestion.suggestion);
+
     setTemplate({ subject: newSubject, body: newBody });
     setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
-    
-    const newAnalysis = calculateSpamScore(newSubject, newBody);
-    setAnalysis(newAnalysis);
-    setSpamAnalysis(newAnalysis);
+
+    if (analysisSource === "ai") {
+      setAnalysisDirty(true);
+    } else {
+      const newAnalysis = calculateSpamScore(newSubject, newBody);
+      setAnalysis(newAnalysis);
+      setSpamAnalysis(newAnalysis);
+    }
   };
 
   const handleContinue = () => {
@@ -118,6 +130,12 @@ export default function SpamAnalyzer() {
   const score = analysis?.score || 0;
   const riskyWords = analysis?.riskyWords || [];
   const suggestions = analysis?.suggestions || [];
+
+  const aiDailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
+  const aiIsUnlimited = aiDailyLimit === Infinity || aiQuota?.remaining === "unlimited";
+  const aiRemaining = aiQuota
+    ? parseInt(aiQuota.remaining, 10)
+    : Math.max(0, aiDailyLimit - (user?.aiGenerationsToday ?? 0));
 
   return (
     <div className="space-y-6">
@@ -130,6 +148,15 @@ export default function SpamAnalyzer() {
           Check your email for spam triggers and improve deliverability
         </p>
       </div>
+
+      {analysisSource === "fallback" && (
+        <Alert className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-900">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-800 dark:text-yellow-300 text-sm">
+            AI analysis temporarily unavailable — showing keyword-based results. Re-analyze to retry.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
         <Card className="border-card-border">
@@ -150,36 +177,42 @@ export default function SpamAnalyzer() {
                     <RefreshCw className="h-4 w-4" />
                   )}
                 </Button>
-                {aiQuota && aiQuota.remaining !== "unlimited" && (
-                  <span className="text-xs text-muted-foreground">{aiQuota.remaining} left today</span>
+                {analysisDirty && !analyzeMutation.isPending && (
+                  <span className="text-xs text-primary font-medium">Re-analyze for updated score</span>
+                )}
+                {!analysisDirty && !aiIsUnlimited && (
+                  <span className="text-xs text-muted-foreground">{aiRemaining} left today</span>
                 )}
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className={cn("text-6xl font-bold mb-2", getScoreColor(score))}>
+              <div className={cn("text-6xl font-bold mb-2", analysisDirty ? "text-muted-foreground" : getScoreColor(score))}>
                 {score}
               </div>
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className={cn(
                   "text-sm",
-                  score <= 30 && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                  score > 30 && score <= 60 && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-                  score > 60 && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                  analysisDirty && "bg-muted text-muted-foreground",
+                  !analysisDirty && score <= 30 && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                  !analysisDirty && score > 30 && score <= 60 && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+                  !analysisDirty && score > 60 && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                 )}
               >
-                {getScoreLabel(score)}
+                {analysisDirty ? "Outdated — re-analyze" : getScoreLabel(score)}
               </Badge>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Risk Level</span>
-                <span className={getScoreColor(score)}>{score}/100</span>
+                <span className={analysisDirty ? "text-muted-foreground" : getScoreColor(score)}>
+                  {analysisDirty ? "—/100" : `${score}/100`}
+                </span>
               </div>
-              <Progress value={score} className="h-2" />
+              <Progress value={analysisDirty ? 0 : score} className="h-2" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
@@ -268,14 +301,26 @@ export default function SpamAnalyzer() {
           </CardHeader>
           <CardContent className="space-y-3">
             {suggestions.map((suggestion, i) => {
+              if (suggestion.actionable === false) {
+                return (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-4 rounded-md border border-border bg-muted/30"
+                  >
+                    <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-sm text-muted-foreground">{suggestion.suggestion}</p>
+                  </div>
+                );
+              }
+
               const isAccepted = acceptedSuggestions.has(suggestion.original);
               return (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className={cn(
                     "flex items-center justify-between p-4 rounded-md border",
-                    isAccepted 
-                      ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900" 
+                    isAccepted
+                      ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
                       : "bg-muted/30 border-border"
                   )}
                 >
