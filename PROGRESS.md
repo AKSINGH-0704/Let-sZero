@@ -382,3 +382,43 @@ Cache-first behavior (`peekSpamCache`) is unchanged. Merge tag substitution chan
 - **AI observations deduplication**: AI structural observations in the AI Review card may overlap in spirit with local structural tips (e.g., both might flag a long subject). This is acceptable — they come from different analysis systems and provide complementary context.
 - **Apply button on AI recommendations**: Only shown when the original phrase is in the raw template. AI suggestions referencing rendered content (e.g., "Hi Alex" when template has "Hi {{name}}") show without an Apply button. This is correct behavior — the raw template doesn't have "Alex".
 - **Score delta after back-navigation**: `prevScore` is component state, resets on re-mount. Delta only appears after the first AI analysis on that mount. No stale delta from a previous session.
+
+---
+
+## calculateSpamScore Expansion — 2026-06-06
+
+### Commit
+`cd1714b` — [SCORING] Expand calculateSpamScore with 3 new signals + 2 advisory warnings
+
+### File changed
+`client/src/lib/utils.js` — `calculateSpamScore` only. No server changes. No schema changes. No AI quota or cache impact.
+
+### New scored signals
+
+| Signal | Rule | Points |
+|---|---|---|
+| Re:/Fwd: deceptive subject | `/^\s*(re\|fwd\|fw)\s*:/i` matches subject | +15 |
+| Generic greeting | Pattern list matches first 200 chars of body | +5 |
+| Link count (4–5 links) | `https?://` count in body ≥ 4 | +5 |
+| Link count (6+ links) | `https?://` count in body ≥ 6 | +10 |
+
+Generic greeting patterns: "Hi there", "Hello there", "Dear Sir/Madam", "To Whom It May Concern", "Greetings", "Dear All", "Dear Customer", "Dear Friend".
+
+Threshold for links set at 4 (not 3) to accommodate Calendly + website + unsubscribe as a common clean pattern.
+
+### Advisory warnings (no score, tip only)
+
+| Advisory | Threshold |
+|---|---|
+| Placeholder count | ≥ 4 unique `{{fields}}` in subject + body combined |
+| CTA count | ≥ 3 distinct CTA phrases (schedule a, book a, click here, visit our, download, register, sign up, learn more, get started, call us, call me) |
+
+### Score impact examples
+
+| Email | Before | After |
+|---|---|---|
+| Clean cold outreach (Hi Sarah, named greeting, no links) | 0 | 0 |
+| Re: subject + "Hi there" | 0 | 20 |
+| 4 links, clean language | 0 | 5 |
+| Fwd: + Dear Customer + 5 links | 0 | 25 |
+| High-spam multi-keyword email + Re: + Hi there | 54 | 74 |

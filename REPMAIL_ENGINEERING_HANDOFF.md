@@ -2273,3 +2273,52 @@
   "Spam Score reflects keyword and structural analysis. Inbox placement also depends on domain
   reputation, authentication, sending behavior, and recipient engagement."
   This prevents users from interpreting a low keyword score as a guarantee of inbox delivery.
+
+---
+
+  Section — calculateSpamScore Signal Reference (commit cd1714b)
+
+  Complete rule set as of 2026-06-06. All checks are deterministic and client-side.
+  No server contact, no quota consumption, no cache interaction.
+
+  Scored Rules (point values and conditions)
+
+  ┌──────────────────────────────────────┬───────────┬──────────────────────────────────────────────────┐
+  │ Rule                                 │ Points    │ Condition                                        │
+  ├──────────────────────────────────────┼───────────┼──────────────────────────────────────────────────┤
+  │ Spam keyword match                   │ +5 each   │ 15 phrases in combined subject+body (lowercase)  │
+  │ ALL CAPS subject                     │ +15       │ subject === subject.toUpperCase() && length > 5  │
+  │ Subject too long                     │ +5        │ subject.length > 50 (else-if, not stacked)       │
+  │ Re:/Fwd: deceptive prefix            │ +15       │ /^\s*(re|fwd|fw)\s*:/i matches subject           │
+  │ Exclamation marks                    │ +2 each   │ count × 2, capped at +10                         │
+  │ Body > 200 words                     │ +5        │ word count of body                               │
+  │ Link count 4–5                       │ +5        │ https?:// occurrences in body ≥ 4                │
+  │ Link count 6+                        │ +10       │ https?:// occurrences in body ≥ 6                │
+  │ Generic greeting                     │ +5        │ Pattern list matches first 200 chars of body     │
+  └──────────────────────────────────────┴───────────┴──────────────────────────────────────────────────┘
+
+  Score ceiling: Math.min(score, 100)
+  ALL CAPS and subject-too-long are mutually exclusive (else-if). All other rules are independent.
+
+  Generic Greeting Patterns
+    /^\s*(dear\s+(sir|madam|sir\s*\/\s*madam|ma'am|customer|valued\s+customer|friend))\b/i
+    /^\s*to\s+whom\s+it\s+may\s+concern/i
+    /^\s*(hello|hi)\s+there\b/i
+    /^\s*greetings\b/i
+    /^\s*dear\s+all\b/i
+
+  Advisory Tips (no score impact, shown as lightbulb structural tips)
+
+  Placeholder count: fires when ≥ 4 unique {{field}} names appear in subject + body combined.
+  Warns about column mapping failures that expose raw placeholders to recipients.
+
+  CTA count: fires when ≥ 3 of the following phrases appear in the combined text:
+    "schedule a", "book a", "book time", "grab time", "click here",
+    "visit our", "check out our", "download", "register", "sign up",
+    "learn more", "get started", "call us", "call me"
+  Advisory to reduce to a single clear ask.
+
+  Link Count Threshold Design Note
+  Threshold is 4 (not 3) because a RepMail campaign body with a Calendly link + website
+  link + unsubscribe link = 3 links total. This is a normal, clean pattern. The penalty
+  fires at 4+ where bulk-email patterns begin.
