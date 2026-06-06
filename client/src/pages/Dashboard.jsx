@@ -748,7 +748,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Cache Hit Rate</p>
-                    <p className="text-2xl font-semibold">{((stats.aiStats.cacheHitRate ?? 0) * 100).toFixed(1)}%</p>
+                    <p className="text-2xl font-semibold">{parseFloat(stats.aiStats.cacheHitRate ?? 0).toFixed(1)}%</p>
                   </div>
                 </div>
 

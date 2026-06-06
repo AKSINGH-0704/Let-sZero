@@ -727,7 +727,7 @@ const dbStorage = {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
     const base = {
       totalCampaigns: campaignsList.length,
-      activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
+      activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED" || c.status === "PENDING").length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
       totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
     };
