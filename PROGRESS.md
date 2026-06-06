@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-07
-**Current commit:** e6ed49c
+**Current commit:** e282d43
 
 ---
 
@@ -25,7 +25,7 @@ Only **V** is treated as proven.
 | Sub-item | Status | Evidence |
 |---|---|---|
 | Redis connectivity | **V** | PING→PONG confirmed in diagnostic deployment |
-| Redis durability (persistence config) | **D** | `CONFIG GET save/appendonly` not yet run |
+| Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
 | Environment variables (all launch-critical) | **I** | Referenced in code; not all confirmed present in Railway |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
@@ -202,3 +202,4 @@ Evidence is appended here as each item moves to V.
 | 2026-06-07 | Redis connectivity | `PING→PONG` confirmed in diagnostic session | PASS |
 | 2026-06-07 | Worker heartbeat | `/api/health` → `worker: "running"` | PASS |
 | 2026-06-07 | Health endpoint | `/api/health` → `status: "ok"` | PASS |
+| 2026-06-07 | Redis durability | `save 60 1` / `appendonly no` / `maxmemory-policy noeviction` / `maxmemory 0` | PASS |
