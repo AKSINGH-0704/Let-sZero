@@ -146,7 +146,10 @@ export function calculateSpamScore(subject, body) {
     }
   });
 
+  let wasAllCaps = false;
+  let wasLongSubject = false;
   if (subject && subject === subject.toUpperCase() && subject.length > 5) {
+    wasAllCaps = true;
     score += 15;
     suggestions.push({
       original: subject,
@@ -154,6 +157,7 @@ export function calculateSpamScore(subject, body) {
       actionable: false
     });
   } else if (subject && subject.length > 50) {
+    wasLongSubject = true;
     score += 5;
     suggestions.push({
       original: subject,
@@ -272,10 +276,25 @@ export function calculateSpamScore(subject, body) {
     ? `Keyword-based scan found: ${issues.join(", ")}. Run AI analysis for deeper insights.`
     : "No common spam triggers detected. Run AI analysis for a full deliverability review.";
 
+  const breakdown = [];
+  if (riskyWords.length > 0) {
+    const listed = riskyWords.slice(0, 3).join(", ") + (riskyWords.length > 3 ? `, +${riskyWords.length - 3} more` : "");
+    breakdown.push({ label: `${riskyWords.length} spam keyword${riskyWords.length > 1 ? "s" : ""} (${listed})`, points: riskyWords.length * 5 });
+  }
+  if (wasAllCaps) breakdown.push({ label: "ALL CAPS subject", points: 15 });
+  if (wasLongSubject) breakdown.push({ label: "Subject too long", points: 5 });
+  if (hasDeceptiveSubject) breakdown.push({ label: "Re: / Fwd: subject prefix", points: 15 });
+  if (exclamationCount > 0) breakdown.push({ label: `${exclamationCount} exclamation mark${exclamationCount > 1 ? "s" : ""}`, points: Math.min(exclamationCount * 2, 10) });
+  if (wordCount > 200) breakdown.push({ label: `${wordCount}-word body`, points: 5 });
+  if (linkCount >= 6) breakdown.push({ label: `${linkCount} links`, points: 10 });
+  else if (linkCount >= 4) breakdown.push({ label: `${linkCount} links`, points: 5 });
+  if (hasGenericGreeting) breakdown.push({ label: "Generic greeting", points: 5 });
+
   return {
     score: Math.min(score, 100),
     riskyWords,
     suggestions,
-    summary
+    summary,
+    breakdown
   };
 }

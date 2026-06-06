@@ -54,8 +54,8 @@ export default function SpamAnalyzer() {
 
   const initialAnalysis = spamAnalysis || calculateSpamScore(template.subject, template.body);
 
-  // Live score — always reflects the current template after each accept
-  const [localScore, setLocalScore] = useState(() => initialAnalysis.score);
+  // Live analysis — always reflects the current template after each accept; carries score + breakdown
+  const [localAnalysisLive, setLocalAnalysisLive] = useState(() => initialAnalysis);
 
   // Stable display snapshot — used for risky words and keyword suggestions
   // Resets to current template state after each AI analysis run
@@ -109,7 +109,7 @@ export default function SpamAnalyzer() {
       setAiAnalysisFailed(false);
 
       // Baseline for delta: score at the moment this analysis completed
-      setPrevScore(localScore);
+      setPrevScore(localAnalysisLive.score);
 
       const { _quota, fromCache, ...analysisData } = data;
       setAiAnalysis({
@@ -119,6 +119,7 @@ export default function SpamAnalyzer() {
 
       // Reset keyword display snapshot to the current (post-accept) template state
       const currentKeywords = calculateSpamScore(template.subject, template.body);
+      setLocalAnalysisLive(currentKeywords);
       setDisplayAnalysis(currentKeywords);
       setSpamAnalysis(currentKeywords);
       setAcceptedSuggestions(new Set());
@@ -155,9 +156,9 @@ export default function SpamAnalyzer() {
     setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
     setAcceptedDetails(prev => new Map([...prev, [suggestion.original, changedFields]]));
 
-    // Always recalculate live score — no AI-source branching
+    // Always recalculate live — no AI-source branching
     const newAnalysis = calculateSpamScore(newSubject, newBody);
-    setLocalScore(newAnalysis.score);
+    setLocalAnalysisLive(newAnalysis);
     setSpamAnalysis(newAnalysis);
   };
 
@@ -180,7 +181,8 @@ export default function SpamAnalyzer() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const score = localScore;
+  const score = localAnalysisLive.score;
+  const breakdown = localAnalysisLive.breakdown || [];
   const { riskyWords, suggestions } = displayAnalysis;
 
   // Score delta — shown once AI has run and local score has moved from that baseline
@@ -282,6 +284,23 @@ export default function SpamAnalyzer() {
               >
                 {getScoreLabel(score)}
               </Badge>
+
+              {breakdown.length > 0 && (
+                <div className="mt-4 text-left space-y-1 border-t pt-3">
+                  {breakdown.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span className={cn("font-medium tabular-nums", getScoreColor(score))}>
+                        +{item.points}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-xs font-semibold border-t pt-1 mt-1">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className={cn("tabular-nums", getScoreColor(score))}>{score}</span>
+                  </div>
+                </div>
+              )}
 
               {scoreDelta !== null && (
                 <div className={cn(
