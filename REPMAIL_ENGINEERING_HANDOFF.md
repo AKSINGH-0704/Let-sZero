@@ -2186,3 +2186,90 @@
 
 ※ recap: RepMail is a B2B email campaign platform being production-hardened. Priority 6 (open/click tracking) is complete and a full engineering handoff
   document was generated. Next: implement `GET /api/health`.
+
+---
+
+  Section — Spam Analyzer Trust Redesign (commit f0cbbbb)
+
+  Problem Solved
+
+  The spam score could increase after a user accepted AI suggestions (observed: 36 → 41). Root causes:
+  1. Merge tags like {{name}} and {{company}} were sent raw to GPT, triggering dimension 5 "mass-blast
+     template" penalties on every analysis.
+  2. GPT's holistic score was the primary displayed score. Accepting one suggestion could shift holistic
+     weighting on other dimensions, causing the total score to rise — a trust-breaking result.
+
+  Architecture After Redesign
+
+  Two independent systems now have explicit, separate roles:
+
+  calculateSpamScore (client/src/lib/utils.js)
+  - Deterministic, keyword-based, synchronous
+  - Always runs on the current raw template (after each accept)
+  - Score can only decrease when keyword suggestions are accepted
+  - Primary displayed "Spam Score" — the number the user acts on
+  - Structural checks: subject length, ALL CAPS, exclamation count, word count (tips, not score)
+
+  analyzeSpam / GPT-4o-mini (server/ai.js)
+  - Non-deterministic, holistic, async
+  - Evaluates RENDERED content (merge tags substituted before sending)
+  - Returns: summary, structural observations, contextual recommendations
+  - Displayed in "AI Deliverability Review" panel — advisory only
+  - AI numeric score returned by GPT is intentionally discarded and never shown
+
+  Merge Tag Substitution
+
+  Before sending to GPT, the client substitutes merge tags using the first contact's data (or demo
+  values when no contacts are loaded):
+    {{name}}     → firstContact[columnMapping.name]     or "Alex"
+    {{company}}  → firstContact[columnMapping.company]  or "Acme Corp"
+    {{category}} → firstContact[columnMapping.category] or "Technology"
+    {{email}}    → firstContact[columnMapping.email]    or "alex@example.com"
+
+  The rendered content is what the server receives and caches. Cache key = SHA-256 of rendered content.
+  The raw template is never sent to GPT.
+
+  Accepted Suggestion Suppression
+
+  Client sends acceptedSuggestions: ["free", "guarantee"] in the POST body.
+  Server-side behavior:
+  - Cache hit: suggestions array filtered by accepted set before returning (case-insensitive match on original)
+  - Cache miss: acceptedSuggestions injected into the AI user prompt as context:
+    "The user has already addressed these issues: [free, guarantee]. Do not suggest these again."
+  This prevents re-suggestion of already-accepted words across re-analysis runs.
+
+  Score Delta Display
+
+  prevScore state stores the local score at the time of each AI analysis run.
+  After the first analysis, if the local score has changed (due to accepts), the Score card shows:
+    "Was 36 → Now 28 (−8)"  ← green, TrendingDown icon
+    "Was 28 → Now 36 (+8)"  ← amber, TrendingUp icon (user added spam words manually)
+  prevScore resets on re-analysis, establishing a new baseline.
+
+  Display Snapshot Pattern
+
+  displayAnalysis (component state) holds a stable snapshot of calculateSpamScore at the time of
+  the last AI analysis run. This snapshot is used for rendering the Risky Words card and the Keyword
+  Improvements list, so that accepted words continue to show "Applied" + location badges until the
+  next re-analysis.
+
+  localScore is always live (recalculated on every accept) and drives the displayed score.
+
+  On each successful AI analysis:
+  1. displayAnalysis reset to calculateSpamScore(current template) — reflects post-accept state
+  2. acceptedSuggestions and acceptedDetails reset — fresh baseline for next editing round
+  3. prevScore set to current localScore — establishes delta baseline
+  4. setSpamAnalysis(currentKeywords) — persists local snapshot to CampaignContext for back-navigation
+
+  AI Recommendations Applicability Guard
+
+  AI suggestions reference rendered content (e.g., "Hi Alex" when template has "Hi {{name}}"). The
+  Apply button is only shown when suggestion.original is found in the raw template.subject or
+  template.body (case-insensitive). When not found, the suggestion displays as a read-only tip.
+
+  Disclaimer
+
+  A note is shown under the Spam Score card:
+  "Spam Score reflects keyword and structural analysis. Inbox placement also depends on domain
+  reputation, authentication, sending behavior, and recipient engagement."
+  This prevents users from interpreting a low keyword score as a guarantee of inbox delivery.

@@ -339,3 +339,46 @@ Manual checks to perform after confirming Railway build `cf92b4f`:
 | `client/src/components/campaign/SpamAnalyzer.jsx` | Same as TemplateBuilder |
 | `PROGRESS.md` | This section + KL-1 marked resolved |
 | `REPMAIL_ENGINEERING_HANDOFF.md` | Uncommitted local changes committed |
+
+---
+
+## Spam Analyzer Trust Redesign — 2026-06-06
+
+### Commit
+`f0cbbbb` — [PHASE-5] Spam analyzer redesign: deterministic primary score + AI advisory panel
+
+### Root Cause Addressed
+Score could increase (e.g. 36 → 41) after the user accepted AI suggestions. Two blocking causes:
+1. Merge tags (`{{name}}`, `{{company}}`) sent raw to GPT → dimension 5 "mass-blast template" penalty
+2. GPT's holistic score used as the primary displayed score → non-deterministic, holistic re-weighting after accepting one suggestion could increase other dimension scores
+
+### Design
+- **Primary score**: `calculateSpamScore` — deterministic, keyword-based, always reflects current template. Score can only decrease when keyword suggestions are accepted.
+- **AI Deliverability Review**: qualitative panel with AI summary and structural observations. No AI numeric score shown (eliminates score confusion and trust failure).
+- **AI Recommendations**: actionable AI suggestions shown as a secondary subsection; Apply button only shown when the original phrase is found in the raw template (handles merge-tag substitution mismatch).
+- **Score delta**: "Was 36 → Now 28 (−8)" shown after first AI analysis when local score has moved.
+- **Merge tag substitution**: first-contact data (or demo values) substituted before sending to GPT; GPT evaluates rendered email, not raw `{{name}}`/`{{company}}` syntax.
+- **Accepted suggestion suppression**: accepted words passed to server in POST body; server filters them from cache hits and injects them into the AI prompt context.
+
+### State Model Changes
+| Removed | Replacement |
+|---|---|
+| `analysis` (single source for both score and display) | `localScore` (live score) + `displayAnalysis` (stable snapshot for rendering) + `aiAnalysis` (AI-only result) |
+| `analysisSource` | Not needed — primary score is always local |
+| `analysisDirty` | Not needed — primary score always current, no dirty state |
+
+### Files Changed
+| File | Change |
+|---|---|
+| `server/ai.js` | `analyzeSpam`: destructures `acceptedSuggestions` from opts; appends accepted-context block to user prompt; both `logUsageToDb` calls use destructured `userId` |
+| `server/routes.js` | Spam-analysis route: extracts `acceptedSuggestions` from request body; cache hits filtered by accepted set before return; `acceptedSuggestions` passed to `analyzeSpam` on cache miss |
+| `client/src/components/campaign/SpamAnalyzer.jsx` | Complete redesign — see design notes above |
+
+### Quota Accounting — unchanged
+Cache-first behavior (`peekSpamCache`) is unchanged. Merge tag substitution changes the cache key (rendered content vs raw template), which is intentional — different rendered content warrants a different cache entry.
+
+### Known Limitations (post-redesign)
+- **KL-2 resolved by redesign**: `analysisDirty` back-navigation issue no longer exists — primary score is always live, no dirty state to preserve.
+- **AI observations deduplication**: AI structural observations in the AI Review card may overlap in spirit with local structural tips (e.g., both might flag a long subject). This is acceptable — they come from different analysis systems and provide complementary context.
+- **Apply button on AI recommendations**: Only shown when the original phrase is in the raw template. AI suggestions referencing rendered content (e.g., "Hi Alex" when template has "Hi {{name}}") show without an Apply button. This is correct behavior — the raw template doesn't have "Alex".
+- **Score delta after back-navigation**: `prevScore` is component state, resets on re-mount. Delta only appears after the first AI analysis on that mount. No stale delta from a previous session.
