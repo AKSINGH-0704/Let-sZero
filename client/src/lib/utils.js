@@ -162,6 +162,17 @@ export function calculateSpamScore(subject, body) {
     });
   }
 
+  let hasDeceptiveSubject = false;
+  if (subject && /^\s*(re|fwd|fw)\s*:/i.test(subject)) {
+    hasDeceptiveSubject = true;
+    score += 15;
+    suggestions.push({
+      original: subject,
+      suggestion: "Subject begins with 'Re:' or 'Fwd:' — implying a prior thread on a cold email is deceptive, triggers complaint rates, and violates CAN-SPAM",
+      actionable: false
+    });
+  }
+
   const exclamationCount = (text.match(/!/g) || []).length;
   if (exclamationCount > 0) {
     score += Math.min(exclamationCount * 2, 10);
@@ -184,11 +195,79 @@ export function calculateSpamScore(subject, body) {
     });
   }
 
+  const linkCount = ((body || "").match(/https?:\/\//gi) || []).length;
+  if (linkCount >= 6) {
+    score += 10;
+    suggestions.push({
+      original: `${linkCount} links`,
+      suggestion: "6 or more links — high link density is consistently classified as bulk mail by spam filters. Aim for 0–1 links in cold outreach",
+      actionable: false
+    });
+  } else if (linkCount >= 4) {
+    score += 5;
+    suggestions.push({
+      original: `${linkCount} links`,
+      suggestion: "4 or more links — cold outreach performs best with 0–1 links. Consider removing all but the most essential",
+      actionable: false
+    });
+  }
+
+  const GENERIC_GREETINGS = [
+    /^\s*(dear\s+(sir|madam|sir\s*\/\s*madam|ma'am|customer|valued\s+customer|friend))\b/i,
+    /^\s*to\s+whom\s+it\s+may\s+concern/i,
+    /^\s*(hello|hi)\s+there\b/i,
+    /^\s*greetings\b/i,
+    /^\s*dear\s+all\b/i,
+  ];
+  const bodyStart = (body || "").trimStart().slice(0, 200);
+  let hasGenericGreeting = false;
+  if (GENERIC_GREETINGS.some(re => re.test(bodyStart))) {
+    hasGenericGreeting = true;
+    score += 5;
+    suggestions.push({
+      original: "generic greeting",
+      suggestion: "Impersonal openers like 'Hi there', 'Dear Sir/Madam', or 'To Whom It May Concern' signal mass sending — open with the recipient's name or a specific reference",
+      actionable: false
+    });
+  }
+
+  const allText = (subject || "") + " " + (body || "");
+  const uniquePlaceholders = new Set((allText.match(/\{\{[^}]+\}\}/g) || []).map(p => p.toLowerCase()));
+  if (uniquePlaceholders.size >= 4) {
+    suggestions.push({
+      original: `${uniquePlaceholders.size} merge fields`,
+      suggestion: `Template uses ${uniquePlaceholders.size} personalization fields — each unmapped column will expose a raw {{placeholder}} to recipients. Consider simplifying to {{name}} and {{company}}`,
+      actionable: false
+    });
+  }
+
+  const CTA_PHRASES = [
+    "schedule a", "book a", "book time", "grab time",
+    "click here",
+    "visit our", "check out our",
+    "download", "register", "sign up",
+    "learn more", "get started",
+    "call us", "call me",
+  ];
+  const ctaCount = CTA_PHRASES.filter(phrase => text.includes(phrase)).length;
+  if (ctaCount >= 3) {
+    suggestions.push({
+      original: `${ctaCount} calls to action`,
+      suggestion: ctaCount >= 4
+        ? `Email contains ${ctaCount} calls to action — cold outreach performs best with a single clear ask. Consider removing all but the most important`
+        : "3 calls to action detected — consider reducing to one clear ask to improve reply rates",
+      actionable: false
+    });
+  }
+
   const issues = [];
   if (riskyWords.length > 0) issues.push(`${riskyWords.length} spam trigger word${riskyWords.length > 1 ? "s" : ""}`);
   if (exclamationCount > 1) issues.push("excessive punctuation");
   if (subject && subject.length > 50) issues.push("long subject line");
   if (wordCount > 200) issues.push("long body");
+  if (hasDeceptiveSubject) issues.push("deceptive subject prefix");
+  if (linkCount >= 4) issues.push("high link count");
+  if (hasGenericGreeting) issues.push("generic greeting");
   const summary = issues.length > 0
     ? `Keyword-based scan found: ${issues.join(", ")}. Run AI analysis for deeper insights.`
     : "No common spam triggers detected. Run AI analysis for a full deliverability review.";
