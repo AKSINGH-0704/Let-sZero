@@ -969,6 +969,14 @@
   storage.refundAiQuota(userId) — GREATEST(ai_generations_today - 1, 0). Called fire-and-forget in the catch blocks of all three AI routes (generate-template,
   preview, spam-analysis). Fallback routes (placeholder replacement, keyword scoring) still execute as before; they do not consume quota.
 
+  Cache-First Quota Protection for Spam Analysis (added post-29aaeeb)
+
+  The POST /api/ai/spam-analysis route performs a synchronous in-memory cache lookup (peekSpamCache) before calling checkAndIncrementAiQuota. This prevents
+  quota consumption for repeated analyses of the same template content (e.g., back-navigation in the campaign wizard). Cache hits return immediately with
+  fromCache: true in the response body; no audit log is written and no quota is charged. The cache key is SHA-256("spam\x00{subject}\x00{body}\x00gpt-4o-mini")
+  — the same key used internally by analyzeSpam. Cache TTL is 1 hour (process-local Map). On the client, the SpamAnalyzer component fires the mutation
+  automatically on mount; the fromCache flag prevents a redundant /api/auth/me invalidation when the cache path is taken.
+
   Template Generation Output Guard (added commit cf92b4f)
 
   generateTemplate() applies stripBracketPlaceholders() to the returned body before sending it to the client. This strips GPT sign-off artifacts like

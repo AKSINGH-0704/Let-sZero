@@ -301,6 +301,13 @@ Return this exact JSON:
   }
 }
 
+// Synchronous cache peek — does NOT touch quota or audit log.
+// Used by the spam-analysis route to serve repeated navigations for free.
+export function peekSpamCache(subject, body) {
+  const cacheKey = cache.makeKey("spam", subject, body, "gpt-4o-mini");
+  return cache.get(cacheKey);
+}
+
 // ─── 3. AI-POWERED TEMPLATE GENERATION ────────────────────────────────────────
 // Model: gpt-4o for growth/scale/enterprise, gpt-4o-mini otherwise
 // Cached: no (creative task, always generate fresh)

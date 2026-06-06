@@ -2,7 +2,7 @@ import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
-import { generatePreviews, analyzeSpam, generateTemplate, getAiHealthStatus } from "./ai.js";
+import { generatePreviews, analyzeSpam, generateTemplate, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
@@ -1817,6 +1817,14 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { subject, body } = req.body;
 
+      // Cache-first: serve repeated navigations without touching quota or audit log.
+      // peekSpamCache is synchronous and matches the same SHA-256 key used by analyzeSpam.
+      const cached = peekSpamCache(subject, body);
+      if (cached) {
+        return res.json({ ...cached, aiPowered: true, fromCache: true });
+      }
+
+      // Cache miss — normal quota-gated flow.
       const quota = await storage.checkAndIncrementAiQuota(req.user.id);
       if (!quota.allowed) {
         return res.status(429).json({

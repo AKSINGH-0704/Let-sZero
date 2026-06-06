@@ -284,6 +284,32 @@ Manual checks to perform after confirming Railway build `cf92b4f`:
 
 ---
 
+## Spam Analyzer Auto-Run + Accept Confirmation — 2026-06-06
+
+### Issues fixed
+- **Issue 1 (auto-run):** SpamAnalyzer now fires AI analysis automatically on step entry via `useEffect`. Server-side cache-first protection (`peekSpamCache`) ensures back-navigation with unchanged template never consumes quota. `fromCache: true` flag skips unnecessary `/api/auth/me` invalidation on cache hits.
+- **Issue 2 (accept confirmation):** Accepting a suggestion now shows "in subject line", "in body", or "in subject line & body" below the Applied badge, confirming exactly where the email text was modified.
+
+### Quota accounting — exact behavior
+
+| Scenario | Client | Server | Quota impact |
+|---|---|---|---|
+| First entry to Analyze step | `useEffect` fires mutation | Cache miss → quota decremented → AI call | −1 |
+| Back navigation, same template | `useEffect` fires mutation | `peekSpamCache` hit → returns immediately | 0 |
+| Back navigation, template edited | `useEffect` fires mutation | Cache miss (new key) → quota decremented | −1 |
+| Quota exhausted on mount | `aiExhausted=true` → no-op | N/A | 0 |
+| Manual Re-analyze, same content | Button fires mutation | `peekSpamCache` hit → returns immediately | 0 |
+| Cache expired (>1h), same template | `useEffect` fires mutation | Cache miss → quota decremented → fresh AI call | −1 |
+
+### Files changed
+| File | Change |
+|---|---|
+| `server/ai.js` | Added `peekSpamCache(subject, body)` — synchronous cache peek, same SHA-256 key as `analyzeSpam` |
+| `server/routes.js` | Spam-analysis route: `peekSpamCache` check before quota increment; cache hits return `fromCache: true` without audit log |
+| `client/src/components/campaign/SpamAnalyzer.jsx` | `useEffect` auto-run on mount; `acceptedDetails` state tracks changed fields; "in subject line / body" render after Applied badge; `fromCache` strips from analysisData; `invalidateQueries` gated on `!fromCache`; `acceptedDetails` reset in `onSuccess`/`onError` |
+
+---
+
 ## AI Quota UX + Documentation — 2026-06-06
 
 ### Changes

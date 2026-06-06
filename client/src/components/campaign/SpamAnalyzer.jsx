@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -54,6 +54,7 @@ export default function SpamAnalyzer() {
     () => spamAnalysis || calculateSpamScore(template.subject, template.body)
   );
   const [acceptedSuggestions, setAcceptedSuggestions] = useState(new Set());
+  const [acceptedDetails, setAcceptedDetails] = useState(new Map());
   const [aiQuota, setAiQuota] = useState(null);
   const [quotaError, setQuotaError] = useState(null);
   const [analysisSource, setAnalysisSource] = useState(spamAnalysis ? "local" : "initial");
@@ -72,12 +73,16 @@ export default function SpamAnalyzer() {
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      // Skip invalidation for cache hits — quota did not change, no need to refetch /api/auth/me
+      if (!data.fromCache) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
       setQuotaError(null);
       setAnalysisDirty(false);
       setAcceptedSuggestions(new Set());
+      setAcceptedDetails(new Map());
       setAnalysisSource(data.aiPowered !== false ? "ai" : "fallback");
-      const { _quota, ...analysisData } = data;
+      const { _quota, fromCache, ...analysisData } = data;
       setAnalysis(analysisData);
       setSpamAnalysis(analysisData);
     },
@@ -91,6 +96,7 @@ export default function SpamAnalyzer() {
       } catch {}
       setAnalysisDirty(false);
       setAcceptedSuggestions(new Set());
+      setAcceptedDetails(new Map());
       setAnalysisSource("fallback");
       const localAnalysis = calculateSpamScore(template.subject, template.body);
       setAnalysis(localAnalysis);
@@ -111,6 +117,12 @@ export default function SpamAnalyzer() {
 
     setTemplate({ subject: newSubject, body: newBody });
     setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
+
+    // Record which fields were actually modified so the UI can confirm the change location
+    const changedFields = [];
+    if (newSubject !== template.subject) changedFields.push("subject line");
+    if (newBody !== template.body) changedFields.push("body");
+    setAcceptedDetails(prev => new Map([...prev, [suggestion.original, changedFields]]));
 
     if (analysisSource === "ai") {
       setAnalysisDirty(true);
@@ -139,6 +151,15 @@ export default function SpamAnalyzer() {
   const aiUsed = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
   const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
   const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
+
+  // Auto-run AI analysis when the Analyze step is entered.
+  // Server serves cache hits for free (peekSpamCache runs before quota check),
+  // so back-navigation with an unchanged template never consumes additional quota.
+  useEffect(() => {
+    if (!aiExhausted) {
+      analyzeMutation.mutate();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
@@ -347,10 +368,17 @@ export default function SpamAnalyzer() {
                     </div>
                   </div>
                   {isAccepted ? (
-                    <Badge variant="secondary" className="bg-green-100 text-green-800">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Applied
-                    </Badge>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Applied
+                      </Badge>
+                      {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          in {acceptedDetails.get(suggestion.original).join(" & ")}
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex gap-2">
                       <Button
