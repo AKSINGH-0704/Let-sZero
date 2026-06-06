@@ -9,6 +9,7 @@ import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { stripeWebhookHandler } from "./stripeWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
+import IORedis from "ioredis";
 
 const app = express();
 const httpServer = createServer(app);
@@ -441,6 +442,86 @@ app.use((req, res, next) => {
   next();
 });
 
+async function runRedisDiagnostic() {
+  const rawUrl = process.env.REDIS_URL;
+  console.log("[REDIS-DIAG] === Redis Connection Diagnostic ===");
+
+  if (!rawUrl) {
+    console.log("[REDIS-DIAG] REDIS_URL not set — Redis disabled");
+    return;
+  }
+
+  // 1. Parse URL components using Node's URL parser (no IORedis involved yet)
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (e) {
+    console.error("[REDIS-DIAG] REDIS_URL is not a valid URL:", e.message);
+    return;
+  }
+  console.log("[REDIS-DIAG] protocol :", parsed.protocol);
+  console.log("[REDIS-DIAG] hostname :", parsed.hostname);
+  console.log("[REDIS-DIAG] port     :", parsed.port || "(default 6379)");
+  console.log("[REDIS-DIAG] username :", parsed.username || "(empty)");
+  console.log("[REDIS-DIAG] password :", parsed.password ? `[SET length=${parsed.password.length}]` : "[NOT SET]");
+
+  // 2. Create a standalone IORedis instance using exactly REDIS_URL — isolated from the app singleton
+  const redis = new IORedis(rawUrl, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    lazyConnect: true,
+  });
+
+  // 5. Log what IORedis actually parsed from the URL (its internal options object)
+  console.log("[REDIS-DIAG] ioredis options.host    :", redis.options.host);
+  console.log("[REDIS-DIAG] ioredis options.port    :", redis.options.port);
+  console.log("[REDIS-DIAG] ioredis options.username:", redis.options.username ?? "(undefined)");
+  console.log("[REDIS-DIAG] ioredis options.password:", redis.options.password ? `[SET length=${redis.options.password.length}]` : "[NOT SET]");
+
+  // 3 & 4. Execute ping — with 8s hard timeout so it can't block startup forever
+  try {
+    const pong = await Promise.race([
+      redis.ping(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout after 8s")), 8000)),
+    ]);
+    console.log("[REDIS-DIAG] PING result:", pong, "— AUTH SUCCEEDED");
+  } catch (firstErr) {
+    console.error("[REDIS-DIAG] PING failed:", firstErr.message);
+
+    if (firstErr.message.includes("WRONGPASS")) {
+      // Secondary test: omit username entirely — sends AUTH <password> (single-arg)
+      // vs the two-arg AUTH <username> <password> that IORedis sends when username is set.
+      // If this succeeds, the Redis server does not recognise the ACL username 'default'.
+      console.log("[REDIS-DIAG] Retrying with password-only auth (no username field)...");
+      const redis2 = new IORedis({
+        host: redis.options.host,
+        port: redis.options.port,
+        password: redis.options.password,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+        lazyConnect: true,
+      });
+      try {
+        const pong2 = await Promise.race([
+          redis2.ping(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout after 8s")), 8000)),
+        ]);
+        console.log("[REDIS-DIAG] Password-only PING:", pong2, "— WORKS: server rejects 2-arg AUTH, accepts 1-arg AUTH");
+        console.log("[REDIS-DIAG] FIX: remove username from REDIS_URL — use redis://:password@host:port");
+      } catch (secondErr) {
+        console.error("[REDIS-DIAG] Password-only PING also failed:", secondErr.message);
+        console.log("[REDIS-DIAG] Both auth methods fail — password is wrong or user is disabled");
+      } finally {
+        redis2.disconnect();
+      }
+    }
+  } finally {
+    redis.disconnect();
+  }
+
+  console.log("[REDIS-DIAG] === End Diagnostic ===");
+}
+
 (async () => {
   // Block RepMail routes on production when REPMAIL_PUBLIC is not "true"
   app.use((req, res, next) => {
@@ -472,6 +553,10 @@ app.use((req, res, next) => {
   });
 
   await registerRoutes(httpServer, app);
+
+  // Temporary startup diagnostic — identifies Redis auth failure root cause.
+  // Safe to remove once WRONGPASS is resolved.
+  await runRedisDiagnostic();
 
   // Startup campaign reconciliation.
   //
