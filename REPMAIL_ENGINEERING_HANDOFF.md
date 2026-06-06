@@ -2322,3 +2322,61 @@
   Threshold is 4 (not 3) because a RepMail campaign body with a Calendly link + website
   link + unsubscribe link = 3 links total. This is a normal, clean pattern. The penalty
   fires at 4+ where bulk-email patterns begin.
+
+  Note on Calendly + website + LinkedIn + unsubscribe = 4 links: RepMail injects the
+  unsubscribe link server-side at send time. The raw template only has 3 links
+  (Calendly + website + LinkedIn). calculateSpamScore evaluates the raw template and
+  sees 3 links — below threshold — no penalty. The +5 only fires if a user manually
+  adds a 4th https:// in their template body, which is appropriate to flag.
+
+---
+
+  Section — Score Composition Breakdown (commit a0d5fc1)
+
+  Problem Solved
+
+  The Spam Score card showed only a total number, risk badge, and progress bar.
+  Users could not see which rules fired or how many points each contributed.
+  Trust in the score depends on users understanding where it comes from.
+
+  Solution
+
+  calculateSpamScore now returns a breakdown: [{ label: string, points: number }] array.
+  Each rule that fires and contributes points pushes one entry. Advisory tips (placeholder
+  count, CTA count) are excluded — they have no numeric value.
+
+  The Score card renders a compact per-rule table directly below the risk badge:
+
+    +15  Re: / Fwd: subject prefix
+    +5   Generic greeting
+    +5   4 links
+    +5   2 spam keywords (free, guarantee)
+    ─────────────────────────────────────
+    = 30
+
+  Shown only when score > 0. Score = 0 shows no breakdown.
+
+  Breakdown labels by rule
+
+  ┌──────────────────────────┬───────────────────────────────────────────────┐
+  │ Rule                     │ Label format                                  │
+  ├──────────────────────────┼───────────────────────────────────────────────┤
+  │ Spam keywords            │ "N spam keyword(s) (word1, word2, ...)"       │
+  │ ALL CAPS subject         │ "ALL CAPS subject"                            │
+  │ Subject too long         │ "Subject too long"                            │
+  │ Re:/Fwd: prefix          │ "Re: / Fwd: subject prefix"                   │
+  │ Exclamation marks        │ "N exclamation mark(s)"                       │
+  │ Body > 200 words         │ "N-word body"                                 │
+  │ 4–5 links                │ "N links"                                     │
+  │ 6+ links                 │ "N links"                                     │
+  │ Generic greeting         │ "Generic greeting"                            │
+  └──────────────────────────┴───────────────────────────────────────────────┘
+
+  State Model Update
+
+  localScore (number) replaced by localAnalysisLive (full calculateSpamScore result object).
+  - localAnalysisLive.score  → drives the displayed number (was localScore)
+  - localAnalysisLive.breakdown → drives the breakdown table (new)
+  Both update on every accepted suggestion and on every AI analysis completion.
+  displayAnalysis (stable snapshot) is unchanged — still used for Risky Words and
+  Keyword Improvements rendering.

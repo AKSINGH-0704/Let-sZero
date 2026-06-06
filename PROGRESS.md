@@ -422,3 +422,59 @@ Threshold for links set at 4 (not 3) to accommodate Calendly + website + unsubsc
 | 4 links, clean language | 0 | 5 |
 | Fwd: + Dear Customer + 5 links | 0 | 25 |
 | High-spam multi-keyword email + Re: + Hi there | 54 | 74 |
+
+---
+
+## Score Composition Breakdown — 2026-06-06
+
+### Commit
+`a0d5fc1` — [PHASE-5] Score composition breakdown in Spam Analyzer
+
+### Problem
+The Spam Score card showed only a total number, risk badge, and progress bar. Users could not see which rules contributed how many points — reducing transparency and trust.
+
+### Solution
+`calculateSpamScore` now returns a `breakdown: [{ label: string, points: number }]` array. Each rule that fires and contributes points pushes one entry. Advisory tips (placeholder count, CTA count) do not appear — they have no numeric value.
+
+The Score card renders a per-rule table directly below the risk badge. Shown only when `score > 0`. Format:
+
+```
++15  Re: / Fwd: subject prefix
++5   Generic greeting
++5   4 links
++5   2 spam keywords (free, guarantee)
+─────────────────────────────────────
+= 30
+```
+
+State model updated: `localScore` (number) replaced by `localAnalysisLive` (full analysis object). `localAnalysisLive.score` and `localAnalysisLive.breakdown` are always current and update on every accepted suggestion.
+
+### Files changed
+| File | Change |
+|---|---|
+| `client/src/lib/utils.js` | Added `wasAllCaps` / `wasLongSubject` flags; built `breakdown` array parallel to scoring; returned `breakdown` in result |
+| `client/src/components/campaign/SpamAnalyzer.jsx` | `localScore` state replaced by `localAnalysisLive`; breakdown table rendered below badge in Score card |
+
+### Score breakdown rules tracked
+| Rule | Breakdown label | Points |
+|---|---|---|
+| Spam keywords | `N spam keyword(s) (word1, word2...)` | N × 5 |
+| ALL CAPS subject | `ALL CAPS subject` | 15 |
+| Subject too long | `Subject too long` | 5 |
+| Re:/Fwd: prefix | `Re: / Fwd: subject prefix` | 15 |
+| Exclamation marks | `N exclamation mark(s)` | min(N×2, 10) |
+| Body > 200 words | `N-word body` | 5 |
+| 4–5 links | `N links` | 5 |
+| 6+ links | `N links` | 10 |
+| Generic greeting | `Generic greeting` | 5 |
+
+### 4-link validation (Calendly + website + LinkedIn + unsubscribe)
+RepMail injects the unsubscribe link server-side at send time. The raw template has 3 links (Calendly + website + LinkedIn). `calculateSpamScore` evaluates the raw template → 3 links → below threshold → **no penalty**. The +5 penalty only fires if the user manually adds a 4th `https://` in their template, which is appropriate to flag (and the breakdown will show exactly why).
+
+### Production validation checklist
+| Check | Expected | Result |
+|---|---|---|
+| Template with Re: + generic greeting + 4 links | Score card shows breakdown: +15, +5, +5 = 25 | PENDING |
+| Template with 0 triggers | Score card shows no breakdown section | PENDING |
+| Accept a keyword suggestion | Score and breakdown update immediately | PENDING |
+| Re-run AI analysis | localAnalysisLive resets, breakdown reflects post-accept template | PENDING |
