@@ -206,13 +206,14 @@ Generate one personalized email for EACH contact. Return JSON:
 // Model: gpt-4o-mini  |  Cached: yes (key = subject+body)
 
 export async function analyzeSpam(subject, body, opts = {}) {
+  const { userId, acceptedSuggestions = [] } = opts;
   const model = "gpt-4o-mini";
   const cacheKey = cache.makeKey("spam", subject, body, model);
 
   const hit = cache.get(cacheKey);
   if (hit) {
     console.log(`[AI_CACHE] spam hit (key=${cacheKey.slice(0, 8)}…) — saved one GPT call`);
-    logUsageToDb(opts.userId, "spam-analysis", "gpt-4o-mini", 0, 0, true, 0, cacheKey);
+    logUsageToDb(userId, "spam-analysis", "gpt-4o-mini", 0, 0, true, 0, cacheKey);
     return hit;
   }
 
@@ -234,12 +235,16 @@ RULES:
 - Suggestions must reference exact text from the email
 - Output ONLY valid JSON, no markdown, no explanation`;
 
+  const acceptedContext = Array.isArray(acceptedSuggestions) && acceptedSuggestions.length > 0
+    ? `\n\nThe user has already addressed these issues: [${acceptedSuggestions.join(", ")}]. Do not suggest these again. Focus on remaining issues only.`
+    : "";
+
   const userPrompt = `Analyze this email for spam risk and deliverability issues:
 
 SUBJECT: ${subject}
 
 BODY:
-${body}
+${body}${acceptedContext}
 
 Evaluate these five dimensions:
 1. Spam trigger words: flag exact phrases from subject and body (free, win, guaranteed, urgent, limited time, click here, act now, etc.)
@@ -281,7 +286,7 @@ Return this exact JSON:
       inputChars: systemPrompt.length + userPrompt.length,
       outputChars: content.length,
     });
-    logUsageToDb(opts.userId, "spam-analysis", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, cacheKey);
+    logUsageToDb(userId, "spam-analysis", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, cacheKey);
 
     const parsed = JSON.parse(content);
     const result = {

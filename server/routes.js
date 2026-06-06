@@ -1815,13 +1815,19 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/ai/spam-analysis", authMiddleware, aiLimiter, async (req, res) => {
     try {
-      const { subject, body } = req.body;
+      const { subject, body, acceptedSuggestions } = req.body;
+      const acceptedSet = new Set(
+        Array.isArray(acceptedSuggestions) ? acceptedSuggestions.map(s => String(s).toLowerCase()) : []
+      );
 
       // Cache-first: serve repeated navigations without touching quota or audit log.
       // peekSpamCache is synchronous and matches the same SHA-256 key used by analyzeSpam.
       const cached = peekSpamCache(subject, body);
       if (cached) {
-        return res.json({ ...cached, aiPowered: true, fromCache: true });
+        const filtered = acceptedSet.size > 0
+          ? { ...cached, suggestions: (cached.suggestions || []).filter(s => !acceptedSet.has((s.original || "").toLowerCase())) }
+          : cached;
+        return res.json({ ...filtered, aiPowered: true, fromCache: true });
       }
 
       // Cache miss — normal quota-gated flow.
@@ -1844,7 +1850,7 @@ export async function registerRoutes(httpServer, app) {
 
       // Try OpenAI (gpt-4o-mini) — falls back to keyword matching on failure
       try {
-        const result = await analyzeSpam(subject, body, { userId: req.user.id });
+        const result = await analyzeSpam(subject, body, { userId: req.user.id, acceptedSuggestions: Array.isArray(acceptedSuggestions) ? acceptedSuggestions : [] });
         return res.json({ ...result, aiPowered: true });
       } catch (aiErr) {
         storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));

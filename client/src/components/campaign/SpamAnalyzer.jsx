@@ -15,26 +15,20 @@ import {
   Shield,
   AlertTriangle,
   CheckCircle,
-  XCircle,
   RefreshCw,
   Loader2,
   Lightbulb,
   ThumbsUp,
-  ThumbsDown,
-  Sparkles
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
-import { calculateSpamScore, cn } from "@/lib/utils";
+import { calculateSpamScore, replacePlaceholders, cn } from "@/lib/utils";
 
 function getScoreColor(score) {
   if (score <= 30) return "text-green-600";
   if (score <= 60) return "text-yellow-600";
   return "text-red-600";
-}
-
-function getScoreBg(score) {
-  if (score <= 30) return "bg-green-500";
-  if (score <= 60) return "bg-yellow-500";
-  return "bg-red-500";
 }
 
 function getScoreLabel(score) {
@@ -47,24 +41,59 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const DEMO_MERGE_VARS = {
+  name: "Alex",
+  company: "Acme Corp",
+  category: "Technology",
+  email: "alex@example.com",
+};
+
 export default function SpamAnalyzer() {
-  const { template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate } = useCampaign();
+  const { template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate, contacts, columnMapping } = useCampaign();
   const { user } = useAuth();
-  const [analysis, setAnalysis] = useState(
-    () => spamAnalysis || calculateSpamScore(template.subject, template.body)
-  );
+
+  const initialAnalysis = spamAnalysis || calculateSpamScore(template.subject, template.body);
+
+  // Live score — always reflects the current template after each accept
+  const [localScore, setLocalScore] = useState(() => initialAnalysis.score);
+
+  // Stable display snapshot — used for risky words and keyword suggestions
+  // Resets to current template state after each AI analysis run
+  const [displayAnalysis, setDisplayAnalysis] = useState(() => initialAnalysis);
+
+  // AI analysis result — null until the first AI call completes
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+
+  // Score at the time of the most recent AI analysis run; null = no baseline yet
+  const [prevScore, setPrevScore] = useState(null);
+
+  // Accepted suggestions — accumulates across accepts, reset on re-analysis
   const [acceptedSuggestions, setAcceptedSuggestions] = useState(new Set());
   const [acceptedDetails, setAcceptedDetails] = useState(new Map());
+
+  // Quota + error state
   const [aiQuota, setAiQuota] = useState(null);
   const [quotaError, setQuotaError] = useState(null);
-  const [analysisSource, setAnalysisSource] = useState(spamAnalysis ? "local" : "initial");
-  const [analysisDirty, setAnalysisDirty] = useState(false);
+  const [aiAnalysisFailed, setAiAnalysisFailed] = useState(false);
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
+      // Substitute merge tags before sending to AI so GPT evaluates rendered content,
+      // not raw placeholder syntax like {{name}} which triggers mass-template penalties.
+      const firstContact = contacts[0] || {};
+      const mergeData = {
+        name: (columnMapping?.name && firstContact[columnMapping.name]) || DEMO_MERGE_VARS.name,
+        company: (columnMapping?.company && firstContact[columnMapping.company]) || DEMO_MERGE_VARS.company,
+        category: (columnMapping?.category && firstContact[columnMapping.category]) || DEMO_MERGE_VARS.category,
+        email: (columnMapping?.email && firstContact[columnMapping.email]) || DEMO_MERGE_VARS.email,
+      };
+      const renderedSubject = replacePlaceholders(template.subject, mergeData);
+      const renderedBody = replacePlaceholders(template.body, mergeData);
+
       const res = await apiRequest("POST", "/api/ai/spam-analysis", {
-        subject: template.subject,
-        body: template.body
+        subject: renderedSubject,
+        body: renderedBody,
+        acceptedSuggestions: [...acceptedSuggestions],
       });
       const remaining = res.headers.get("X-AI-Generations-Remaining");
       const resetsAt = res.headers.get("X-AI-Generations-Reset");
@@ -73,35 +102,38 @@ export default function SpamAnalyzer() {
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
-      // Skip invalidation for cache hits — quota did not change, no need to refetch /api/auth/me
       if (!data.fromCache) {
         queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       }
       setQuotaError(null);
-      setAnalysisDirty(false);
+      setAiAnalysisFailed(false);
+
+      // Baseline for delta: score at the moment this analysis completed
+      setPrevScore(localScore);
+
+      const { _quota, fromCache, ...analysisData } = data;
+      setAiAnalysis({
+        suggestions: analysisData.suggestions || [],
+        summary: analysisData.summary || null,
+      });
+
+      // Reset keyword display snapshot to the current (post-accept) template state
+      const currentKeywords = calculateSpamScore(template.subject, template.body);
+      setDisplayAnalysis(currentKeywords);
+      setSpamAnalysis(currentKeywords);
       setAcceptedSuggestions(new Set());
       setAcceptedDetails(new Map());
-      setAnalysisSource(data.aiPowered !== false ? "ai" : "fallback");
-      const { _quota, fromCache, ...analysisData } = data;
-      setAnalysis(analysisData);
-      setSpamAnalysis(analysisData);
     },
     onError: (err) => {
       try {
-        const body = JSON.parse(err.message);
-        if (body?.resetsAt) {
-          setQuotaError({ resetsAt: body.resetsAt, upgradeMessage: body.upgradeMessage });
+        const errBody = JSON.parse(err.message);
+        if (errBody?.resetsAt) {
+          setQuotaError({ resetsAt: errBody.resetsAt, upgradeMessage: errBody.upgradeMessage });
           return;
         }
       } catch {}
-      setAnalysisDirty(false);
-      setAcceptedSuggestions(new Set());
-      setAcceptedDetails(new Map());
-      setAnalysisSource("fallback");
-      const localAnalysis = calculateSpamScore(template.subject, template.body);
-      setAnalysis(localAnalysis);
-      setSpamAnalysis(localAnalysis);
-    }
+      setAiAnalysisFailed(true);
+    },
   });
 
   const handleReanalyze = () => {
@@ -116,31 +148,20 @@ export default function SpamAnalyzer() {
     const newBody = template.body.replace(pattern, suggestion.suggestion);
 
     setTemplate({ subject: newSubject, body: newBody });
-    setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
 
-    // Record which fields were actually modified so the UI can confirm the change location
     const changedFields = [];
     if (newSubject !== template.subject) changedFields.push("subject line");
     if (newBody !== template.body) changedFields.push("body");
+    setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
     setAcceptedDetails(prev => new Map([...prev, [suggestion.original, changedFields]]));
 
-    if (analysisSource === "ai") {
-      setAnalysisDirty(true);
-    } else {
-      const newAnalysis = calculateSpamScore(newSubject, newBody);
-      setAnalysis(newAnalysis);
-      setSpamAnalysis(newAnalysis);
-    }
+    // Always recalculate live score — no AI-source branching
+    const newAnalysis = calculateSpamScore(newSubject, newBody);
+    setLocalScore(newAnalysis.score);
+    setSpamAnalysis(newAnalysis);
   };
 
-  const handleContinue = () => {
-    goNext();
-  };
-
-  const score = analysis?.score || 0;
-  const riskyWords = analysis?.riskyWords || [];
-  const suggestions = analysis?.suggestions || [];
-
+  // Quota derived values
   const aiIsUnlimited = user?.aiDailyLimit == null;
   const aiLimit = user?.aiDailyLimit ?? 0;
   const aiRemainingFromHeader = aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
@@ -152,14 +173,45 @@ export default function SpamAnalyzer() {
   const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
   const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
-  // Auto-run AI analysis when the Analyze step is entered.
-  // Server serves cache hits for free (peekSpamCache runs before quota check),
-  // so back-navigation with an unchanged template never consumes additional quota.
+  // Auto-run AI analysis on mount; cache hits are served free by peekSpamCache
   useEffect(() => {
     if (!aiExhausted) {
       analyzeMutation.mutate();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const score = localScore;
+  const { riskyWords, suggestions } = displayAnalysis;
+
+  // Score delta — shown once AI has run and local score has moved from that baseline
+  const scoreDelta = prevScore !== null && prevScore !== score ? score - prevScore : null;
+
+  // Keyword improvements from deterministic local analysis (stable snapshot)
+  const keywordSuggestions = (suggestions || []).filter(s => s.actionable !== false);
+  const structuralTips = (suggestions || []).filter(s => s.actionable === false);
+
+  // AI observations (non-actionable) rendered inside the AI Deliverability Review card
+  const aiObservations = (aiAnalysis?.suggestions || []).filter(s => s.actionable === false);
+
+  // AI recommendations: actionable suggestions not already covered by local keyword list
+  const localKeywordOriginals = new Set(
+    keywordSuggestions.map(s => (s.original || "").toLowerCase())
+  );
+  const aiRecommendations = (aiAnalysis?.suggestions || []).filter(s =>
+    s.actionable !== false &&
+    !localKeywordOriginals.has((s.original || "").toLowerCase()) &&
+    !acceptedSuggestions.has(s.original)
+  );
+
+  // An AI recommendation can only be applied if its original phrase exists in the raw template
+  const isApplicableToTemplate = (originalText) => {
+    const combined = ((template.subject || "") + " " + (template.body || "")).toLowerCase();
+    return combined.includes((originalText || "").toLowerCase());
+  };
+
+  const showAiPanel = aiAnalysis !== null || analyzeMutation.isPending;
+  const showAiRecommendations = aiRecommendations.length > 0;
+  const showSuggestionsCard = keywordSuggestions.length > 0 || structuralTips.length > 0 || showAiRecommendations;
 
   return (
     <div className="space-y-6">
@@ -173,16 +225,17 @@ export default function SpamAnalyzer() {
         </p>
       </div>
 
-      {analysisSource === "fallback" && (
+      {aiAnalysisFailed && (
         <Alert className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-900">
           <AlertCircle className="h-4 w-4 text-yellow-600" />
           <AlertDescription className="text-yellow-800 dark:text-yellow-300 text-sm">
-            AI analysis temporarily unavailable — showing keyword-based results. Re-analyze to retry.
+            AI analysis temporarily unavailable — keyword-based results shown. Re-analyze to retry.
           </AlertDescription>
         </Alert>
       )}
 
       <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
+        {/* Primary Spam Score — deterministic, always reflects current template */}
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-2">
@@ -201,50 +254,56 @@ export default function SpamAnalyzer() {
                     <RefreshCw className="h-4 w-4" />
                   )}
                 </Button>
-                {analysisDirty && !analyzeMutation.isPending && (
-                  <span className="text-xs text-primary font-medium">Re-analyze for updated score</span>
-                )}
-                {!analysisDirty && (
-                  aiIsUnlimited ? (
-                    <span className="text-xs text-green-600 font-medium">Unlimited</span>
-                  ) : aiExhausted ? (
-                    <span className="text-xs text-red-600 font-medium">Limit reached</span>
-                  ) : (
-                    <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
-                      {aiRemaining} left today
-                    </span>
-                  )
+                {aiIsUnlimited ? (
+                  <span className="text-xs text-green-600 font-medium">Unlimited</span>
+                ) : aiExhausted ? (
+                  <span className="text-xs text-red-600 font-medium">Limit reached</span>
+                ) : (
+                  <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                    {aiRemaining} left today
+                  </span>
                 )}
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="text-center">
-              <div className={cn("text-6xl font-bold mb-2", analysisDirty ? "text-muted-foreground" : getScoreColor(score))}>
+              <div className={cn("text-6xl font-bold mb-2", getScoreColor(score))}>
                 {score}
               </div>
               <Badge
                 variant="secondary"
                 className={cn(
                   "text-sm",
-                  analysisDirty && "bg-muted text-muted-foreground",
-                  !analysisDirty && score <= 30 && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                  !analysisDirty && score > 30 && score <= 60 && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-                  !analysisDirty && score > 60 && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                  score <= 30 && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+                  score > 30 && score <= 60 && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+                  score > 60 && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                 )}
               >
-                {analysisDirty ? "Outdated — re-analyze" : getScoreLabel(score)}
+                {getScoreLabel(score)}
               </Badge>
+
+              {scoreDelta !== null && (
+                <div className={cn(
+                  "flex items-center justify-center gap-1 mt-2 text-sm font-medium",
+                  scoreDelta < 0 ? "text-green-600" : "text-amber-600"
+                )}>
+                  {scoreDelta < 0
+                    ? <TrendingDown className="h-4 w-4" />
+                    : <TrendingUp className="h-4 w-4" />}
+                  <span>
+                    Was {prevScore} → Now {score} ({scoreDelta > 0 ? "+" : ""}{scoreDelta})
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Risk Level</span>
-                <span className={analysisDirty ? "text-muted-foreground" : getScoreColor(score)}>
-                  {analysisDirty ? "—/100" : `${score}/100`}
-                </span>
+                <span className={getScoreColor(score)}>{score}/100</span>
               </div>
-              <Progress value={analysisDirty ? 0 : score} className="h-2" />
+              <Progress value={score} className="h-2" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
@@ -261,9 +320,16 @@ export default function SpamAnalyzer() {
                 <p className="text-xs text-red-700 dark:text-red-400">High Risk</p>
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed border-t pt-4">
+              Spam Score reflects keyword and structural analysis.
+              Inbox placement also depends on domain reputation,
+              authentication, sending behavior, and recipient engagement.
+            </p>
           </CardContent>
         </Card>
 
+        {/* Risky Words — from deterministic local analysis */}
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -271,8 +337,8 @@ export default function SpamAnalyzer() {
               Risky Words Detected
             </CardTitle>
             <CardDescription>
-              {riskyWords.length === 0 
-                ? "No spam trigger words found" 
+              {riskyWords.length === 0
+                ? "No spam trigger words found"
                 : `Found ${riskyWords.length} potential spam triggers`}
             </CardDescription>
           </CardHeader>
@@ -280,18 +346,14 @@ export default function SpamAnalyzer() {
             {riskyWords.length === 0 ? (
               <div className="text-center py-8">
                 <CheckCircle className="h-12 w-12 mx-auto text-green-600 mb-3" />
-                <p className="text-green-700 dark:text-green-400 font-medium">
-                  Your email looks clean!
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  No common spam trigger words detected
-                </p>
+                <p className="text-green-700 dark:text-green-400 font-medium">Your email looks clean!</p>
+                <p className="text-sm text-muted-foreground">No common spam trigger words detected</p>
               </div>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {riskyWords.map((word, i) => (
-                  <Badge 
-                    key={i} 
+                  <Badge
+                    key={i}
                     variant="secondary"
                     className={cn(
                       "text-sm",
@@ -320,92 +382,208 @@ export default function SpamAnalyzer() {
         </Alert>
       )}
 
-      {suggestions.length > 0 && (
+      {/* AI Deliverability Review — qualitative guidance, no numeric AI score */}
+      {showAiPanel && (
+        <Card className="border-card-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Deliverability Review
+            </CardTitle>
+            <CardDescription>
+              GPT-4o-mini assessment of your rendered email content
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {analyzeMutation.isPending && !aiAnalysis ? (
+              <div className="space-y-3 animate-pulse">
+                <div className="h-4 bg-muted rounded w-full" />
+                <div className="h-4 bg-muted rounded w-5/6" />
+                <div className="h-4 bg-muted rounded w-4/6" />
+              </div>
+            ) : (
+              <>
+                {aiAnalysis?.summary && (
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {aiAnalysis.summary}
+                  </p>
+                )}
+                {aiObservations.length > 0 && (
+                  <div className="space-y-2">
+                    {aiObservations.map((obs, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30"
+                      >
+                        <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <p className="text-sm text-muted-foreground">{obs.suggestion}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Suggested Improvements — two subsections: keyword (local) + AI recommendations */}
+      {showSuggestionsCard && (
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Lightbulb className="h-4 w-4 text-primary" />
               Suggested Improvements
             </CardTitle>
-            <CardDescription>
-              Accept suggestions to lower your spam score
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {suggestions.map((suggestion, i) => {
-              if (suggestion.actionable === false) {
-                return (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 p-4 rounded-md border border-border bg-muted/30"
-                  >
-                    <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                    <p className="text-sm text-muted-foreground">{suggestion.suggestion}</p>
+            {/* Section A: Keyword Improvements (deterministic) */}
+            {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
+              <div>
+                {keywordSuggestions.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                      Keyword Improvements
+                    </p>
+                    <div className="space-y-2">
+                      {keywordSuggestions.map((suggestion, i) => {
+                        const isAccepted = acceptedSuggestions.has(suggestion.original);
+                        return (
+                          <div
+                            key={i}
+                            className={cn(
+                              "flex items-center justify-between p-4 rounded-md border",
+                              isAccepted
+                                ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
+                                : "bg-muted/30 border-border"
+                            )}
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className="text-sm">
+                                <span className="text-red-600 line-through font-medium">
+                                  {suggestion.original}
+                                </span>
+                                <span className="mx-2 text-muted-foreground">&rarr;</span>
+                                <span className="text-green-600 font-medium">
+                                  {suggestion.suggestion}
+                                </span>
+                              </div>
+                            </div>
+                            {isAccepted ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Applied
+                                </Badge>
+                                {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    in {acceptedDetails.get(suggestion.original).join(" & ")}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => acceptSuggestion(suggestion)}
+                                data-testid={`button-accept-${i}`}
+                              >
+                                <ThumbsUp className="h-3 w-3 mr-1" />
+                                Accept
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                );
-              }
+                )}
 
-              const isAccepted = acceptedSuggestions.has(suggestion.original);
-              return (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex items-center justify-between p-4 rounded-md border",
-                    isAccepted
-                      ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
-                      : "bg-muted/30 border-border"
-                  )}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm">
-                      <span className="text-red-600 line-through font-medium">
-                        {suggestion.original}
-                      </span>
-                      <span className="mx-2 text-muted-foreground">&rarr;</span>
-                      <span className="text-green-600 font-medium">
-                        {suggestion.suggestion}
-                      </span>
-                    </div>
-                  </div>
-                  {isAccepted ? (
-                    <div className="flex flex-col items-end gap-0.5">
-                      <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Applied
-                      </Badge>
-                      {acceptedDetails.get(suggestion.original)?.length > 0 && (
-                        <span className="text-xs text-muted-foreground">
-                          in {acceptedDetails.get(suggestion.original).join(" & ")}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => acceptSuggestion(suggestion)}
-                        data-testid={`button-accept-${i}`}
+                {structuralTips.length > 0 && (
+                  <div className={cn("space-y-2", keywordSuggestions.length > 0 && "mt-3")}>
+                    {structuralTips.map((tip, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-3 p-4 rounded-md border border-border bg-muted/30"
                       >
-                        <ThumbsUp className="h-3 w-3 mr-1" />
-                        Accept
-                      </Button>
-                    </div>
-                  )}
+                        <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <p className="text-sm text-muted-foreground">{tip.suggestion}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Section B: AI Recommendations */}
+            {showAiRecommendations && (
+              <>
+                {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
+                  <Separator className="my-4" />
+                )}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    AI Recommendations
+                  </p>
+                  <div className="space-y-2">
+                    {aiRecommendations.map((suggestion, i) => {
+                      const isAccepted = acceptedSuggestions.has(suggestion.original);
+                      const canApply = isApplicableToTemplate(suggestion.original);
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            "flex items-center justify-between p-4 rounded-md border",
+                            isAccepted
+                              ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
+                              : "bg-muted/30 border-border"
+                          )}
+                        >
+                          <div className="flex items-center gap-4 min-w-0">
+                            <div className="text-sm min-w-0">
+                              <span className="text-muted-foreground font-medium">
+                                &ldquo;{suggestion.original}&rdquo;
+                              </span>
+                              <span className="mx-2 text-muted-foreground">&rarr;</span>
+                              <span className="text-foreground">
+                                {suggestion.suggestion}
+                              </span>
+                            </div>
+                          </div>
+                          {isAccepted ? (
+                            <div className="flex flex-col items-end gap-0.5 shrink-0 ml-3">
+                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Applied
+                              </Badge>
+                              {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  in {acceptedDetails.get(suggestion.original).join(" & ")}
+                                </span>
+                              )}
+                            </div>
+                          ) : canApply ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => acceptSuggestion(suggestion)}
+                              data-testid={`button-ai-accept-${i}`}
+                              className="shrink-0 ml-3"
+                            >
+                              <ThumbsUp className="h-3 w-3 mr-1" />
+                              Apply
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              );
-            })}
+              </>
+            )}
           </CardContent>
         </Card>
-      )}
-
-      {analysis?.summary && (
-        <Alert className="border-primary/20 bg-primary/5 dark:bg-primary/10">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <AlertDescription className="text-foreground">
-            <span className="font-medium text-primary">AI-Assisted Analysis: </span>{analysis.summary}
-          </AlertDescription>
-        </Alert>
       )}
 
       {score > 60 && (
@@ -431,7 +609,7 @@ export default function SpamAnalyzer() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button onClick={handleContinue} data-testid="button-next-step">
+        <Button onClick={goNext} data-testid="button-next-step">
           Continue to Confirmation
         </Button>
       </div>
