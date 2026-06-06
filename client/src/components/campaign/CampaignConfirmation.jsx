@@ -48,6 +48,7 @@ export default function CampaignConfirmation() {
   const [name, setName] = useState(campaignName || `Campaign ${new Date().toLocaleDateString()}`);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [validationErrors, setValidationErrors] = useState([]);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
 
@@ -110,16 +111,22 @@ export default function CampaignConfirmation() {
       setStep(7);
     },
     onError: (err) => {
-      let msg = err.message;
       try {
         const parsed = JSON.parse(err.message);
         if (parsed.error === "PLAN_LIMIT") {
           setError(parsed.message + " Visit /app/payments to upgrade.");
           return;
         }
-        msg = parsed.message || msg;
+        if (Array.isArray(parsed.validationErrors) && parsed.validationErrors.length > 0) {
+          setValidationErrors(parsed.validationErrors);
+          return;
+        }
+        if (parsed.message) {
+          setError(parsed.message);
+          return;
+        }
       } catch {}
-      setError(msg || "Failed to start campaign");
+      setError(err.message || "Failed to start campaign");
     }
   });
 
@@ -141,6 +148,8 @@ export default function CampaignConfirmation() {
       return;
     }
 
+    setError("");
+    setValidationErrors([]);
     sendMutation.mutate();
   };
 
@@ -351,6 +360,28 @@ export default function CampaignConfirmation() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {validationErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <p className="font-medium mb-2">Cannot send campaign — fix these issues first:</p>
+            <ul className="list-disc pl-4 space-y-1 text-sm">
+              {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+            {validationErrors.some(e => e.toLowerCase().includes("placeholder")) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 border-red-400 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                onClick={() => setStep(2)}
+              >
+                Fix Column Mapping
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
