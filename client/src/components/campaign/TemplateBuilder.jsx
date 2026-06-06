@@ -38,8 +38,6 @@ import {
 } from "lucide-react";
 import { replacePlaceholders, cn } from "@/lib/utils";
 
-const AI_DAILY_LIMITS = { free: 5, trial: 5, starter: 20, growth: 50, scale: 150, enterprise: Infinity };
-
 const PLACEHOLDERS = [
   { key: "{{name}}", label: "Name", description: "Recipient's name" },
   { key: "{{email}}", label: "Email", description: "Recipient's email" },
@@ -153,10 +151,16 @@ export default function TemplateBuilder() {
 
   const canProceed = localTemplate.subject.trim() && localTemplate.body.trim();
 
-  const aiDailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
-  const aiIsUnlimited = aiDailyLimit === Infinity || aiQuota?.remaining === "unlimited";
-  const aiRemaining = aiQuota ? parseInt(aiQuota.remaining, 10) : Math.max(0, aiDailyLimit - (user?.aiGenerationsToday ?? 0));
-  const aiUsed = aiDailyLimit - aiRemaining;
+  const aiIsUnlimited = user?.aiDailyLimit == null;
+  const aiLimit = user?.aiDailyLimit ?? 0;
+  const aiRemainingFromHeader = aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
+    ? parseInt(aiQuota.remaining, 10) : null;
+  const aiRemaining = aiIsUnlimited ? Infinity
+    : aiRemainingFromHeader != null ? aiRemainingFromHeader
+    : Math.max(0, aiLimit - (user?.aiGenerationsToday ?? 0));
+  const aiUsed = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
+  const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
+  const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
   return (
     <div className="space-y-6">
@@ -185,8 +189,14 @@ export default function TemplateBuilder() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!aiIsUnlimited && (
-                <span className="text-xs text-muted-foreground">{aiRemaining} left today</span>
+              {aiIsUnlimited ? (
+                <span className="text-xs text-green-600 font-medium">Unlimited</span>
+              ) : aiExhausted ? (
+                <span className="text-xs text-red-600 font-medium">Limit reached</span>
+              ) : (
+                <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                  {aiRemaining} left today
+                </span>
               )}
               {aiOpen ? (
                 <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -234,7 +244,7 @@ export default function TemplateBuilder() {
                 </div>
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
-                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending}
+                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending || aiExhausted}
                   className="gap-2"
                   data-testid="button-ai-generate"
                 >
@@ -252,9 +262,13 @@ export default function TemplateBuilder() {
                 </Button>
               </div>
 
-              {!aiIsUnlimited && (
-                <p className="text-xs text-muted-foreground text-right">
-                  {aiUsed} of {aiDailyLimit} AI generation{aiDailyLimit !== 1 ? "s" : ""} used today
+              {aiIsUnlimited ? (
+                <p className="text-xs text-green-600 font-medium text-right">Unlimited AI usage</p>
+              ) : aiExhausted ? (
+                <p className="text-xs text-red-600 font-medium text-right">Daily limit reached — resets in ~24h</p>
+              ) : (
+                <p className={cn("text-xs text-right", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                  {aiUsed} of {aiLimit} AI generation{aiLimit !== 1 ? "s" : ""} used today
                 </p>
               )}
 

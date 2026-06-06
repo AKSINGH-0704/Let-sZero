@@ -219,3 +219,97 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS send_paused_at timestamp;
 - Change: `process.env.NODE_ENV === "production"` → `process.env.STRIPE_SECRET_KEY`
 - Effect: Server starts cleanly when Stripe is not configured. Throw still fires if STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET is absent (correct behavior).
 - Root cause: stripeWebhook.js was added in commit f4e5624 (pre-hardening branch) with an unconditional production throw that contradicted the optional-gateway design in gateways.js.
+
+---
+
+## AI-UX + Bugfix Release — 2026-06-06
+
+### Commit
+`cf92b4f` — [AI-UX] Quota visibility, spam score fixes, AI health, template guard, admin analytics
+
+### Push
+`6a48ddf..cf92b4f  main -> main` — pushed to GitHub at 2026-06-06
+
+### Deployment
+Railway auto-deploy triggered via GitHub push (no CLI available for direct verification).
+**Human verification required:** Confirm Railway dashboard shows build `cf92b4f` completed successfully before signing off production validation below.
+
+### Files Changed
+| File | Change |
+|---|---|
+| `server/ai.js` | AI health tracking; `stripBracketPlaceholders` on template output; system prompt updated; `getAiHealthStatus` exported |
+| `server/storage.js` | `refundAiQuota(userId)` added |
+| `server/memoryStorage.js` | `refundAiQuota` mirror added |
+| `server/routes.js` | `result.ai` in `/api/health`; `refundAiQuota` in 3 AI route catch blocks; `getAiHealthStatus` imported |
+| `client/src/components/campaign/TemplateBuilder.jsx` | `queryClient` imported; `invalidateQueries` on success; quota indicator on trigger button |
+| `client/src/components/campaign/AiPreview.jsx` | Renamed Merge Preview; positive framing alert; trigger renamed; `aiRewriteFailed` state; quota on button; `useAuth`/`queryClient` |
+| `client/src/components/campaign/SpamAnalyzer.jsx` | Lazy `useState` init (Issue 3); structural suggestions as tips (Issue 4A); `escapeRegex` (Issue 4A); `analysisDirty` state (Issues 4B + 5); `analysisSource` tracking; Task I fallback banner; quota from user data |
+| `client/src/lib/utils.js` | `calculateSpamScore` expanded: 15-word alternatives, subject length, word count, exclamation checks, `summary` field, `actionable: false` on all structural suggestions |
+| `client/src/pages/Dashboard.jsx` | AI analytics panel for ROOT_ADMIN (cost, calls, cache hit rate, per-endpoint breakdown, top 5 spenders) |
+
+### Bugs Fixed
+| Issue | Description | Severity |
+|---|---|---|
+| Issue 3 | Spam score flashed 0 on first render — lazy `useState` init eliminates the flash | Medium |
+| Issue 4A | Structural suggestions (subject length, exclamation count, word count) could corrupt the subject line via regex replacement — now rendered as tips with no Accept button | High |
+| Issue 4A | `suggestion.original` passed unescaped to `new RegExp()` — subjects with metacharacters threw or matched incorrectly — `escapeRegex()` added | High |
+| Issue 4B | Accepting an AI suggestion silently replaced AI score with local keyword score — `analysisDirty` state preserves AI score, marks it outdated | Medium |
+| Issue 5 | Score increased after accepting a suggestion (AI 21 → local 41) — dirty state prevents scorer switching; local recalc only runs when analysisSource is already local | Medium |
+
+### Production Validation
+**Status: PENDING human access to production URL**
+
+Manual checks to perform after confirming Railway build `cf92b4f`:
+
+| Check | Expected | Result |
+|---|---|---|
+| Navigate to step 5 (Spam Analysis) for the first time | Score shows immediately — no 0 flash | PENDING |
+| Run AI analysis; observe suggestions | Exclamation / subject length / word count items show as lightbulb tips with no Accept button | PENDING |
+| Try accepting a structural tip | No Accept button present — not possible | PENDING |
+| Run AI analysis; accept a word substitution (e.g. "free" → "complimentary") | Score greys out, badge shows "Outdated — re-analyze", "Re-analyze for updated score" prompt appears | PENDING |
+| Click Re-analyze after accepting | Fresh analysis runs, score updates, dirty state clears | PENDING |
+| Verify `/api/health` response | Response includes `"ai": "ok"` or `"ai": "unknown"` field | PENDING |
+| Generate template via AI | Template body contains no `[Your Name]` or `[Title]` artifacts | PENDING |
+
+### Remaining Known Limitations
+
+**KL-1: Child user plan mismatch in quota display — RESOLVED in commit following cf92b4f**
+- Fix applied: `effectivePlan` and `aiDailyLimit` added to `/api/auth/me` response. Client-side `AI_DAILY_LIMITS` lookup removed from all three components. All now use `user?.aiDailyLimit` (null = unlimited). ROOT_ADMIN/enterprise users now show "Unlimited" instead of blank.
+
+**KL-2: `analysisDirty` not preserved across back-navigation**
+- Description: If a user is in the dirty state (AI score outdated after an accept), navigates back to step 4 (Merge Preview), then returns to step 5 (Spam Analysis), the `SpamAnalyzer` component re-mounts. `analysisDirty` resets to `false`. `spamAnalysis` in CampaignContext holds the pre-accept AI result (no `source` field), so `analysisSource` initializes to `"local"` rather than `"ai"`. The user sees the stale AI score displayed without the outdated badge.
+- Impact: Edge case. Only manifests if the user: runs AI analysis → accepts a suggestion → navigates back → returns. The displayed score is the pre-accept AI value (not wrong, just stale). Local scorer only triggers on subsequent accepts, which is the correct local-scorer path.
+- Fix: Persist `analysisSource` alongside `spamAnalysis` in `CampaignContext`, and restore it on re-mount to determine the correct initial dirty state.
+- Priority: Post-beta.
+
+---
+
+## AI Quota UX + Documentation — 2026-06-06
+
+### Changes
+
+**Item 1 — AI quota visibility (server-side source of truth):**
+- `server/routes.js` `/api/auth/me`: now calls `storage.getEffectivePlan(req.user.id)` and returns `effectivePlan` and `aiDailyLimit` (null = unlimited, number = limit). `AI_DAILY_LIMITS` added to schema import.
+- All three client components (TemplateBuilder, AiPreview, SpamAnalyzer): removed local `AI_DAILY_LIMITS` constant. Quota logic now reads `user?.aiDailyLimit` from server. Fixes KL-1 (child user mismatch) and ROOT_ADMIN blank display.
+
+**Item 2 — AI quota warnings:**
+- 80% consumed: yellow text on quota indicator
+- 100% consumed: red "Limit reached" text; AI trigger button disabled before server round-trip
+- All users with unlimited quota see "Unlimited" / "Unlimited AI usage" — no blank state
+
+**Item 3 — AI status consistency:**
+- Before this commit, three inconsistencies existed: (a) ROOT_ADMIN/enterprise showed blank quota (aiIsUnlimited hid the indicator entirely); (b) child users saw wrong limit (parent's plan not inherited); (c) no warning states at 80%/100%.
+- All three are now resolved. Behavior is identical across TemplateBuilder, AiPreview, SpamAnalyzer.
+
+**Item 4 — Documentation:**
+- PROGRESS.md and REPMAIL_ENGINEERING_HANDOFF.md committed (were locally modified but uncommitted after cf92b4f).
+
+### Files Changed
+| File | Change |
+|---|---|
+| `server/routes.js` | `AI_DAILY_LIMITS` added to schema import; `/api/auth/me` now includes `effectivePlan` and `aiDailyLimit` |
+| `client/src/components/campaign/TemplateBuilder.jsx` | Removed `AI_DAILY_LIMITS` const; quota logic uses server values; unlimited/warning/exhausted display states; button disabled when exhausted |
+| `client/src/components/campaign/AiPreview.jsx` | Same as TemplateBuilder |
+| `client/src/components/campaign/SpamAnalyzer.jsx` | Same as TemplateBuilder |
+| `PROGRESS.md` | This section + KL-1 marked resolved |
+| `REPMAIL_ENGINEERING_HANDOFF.md` | Uncommitted local changes committed |

@@ -1,6 +1,6 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
 import { generatePreviews, analyzeSpam, generateTemplate, getAiHealthStatus } from "./ai.js";
 import passport from "passport";
@@ -798,10 +798,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/auth/me", authMiddleware, async (req, res) => {
     try {
+      const effectivePlan = await storage.getEffectivePlan(req.user.id);
+      const rawLimit = AI_DAILY_LIMITS[effectivePlan] ?? AI_DAILY_LIMITS.free;
       res.json({
         ...req.user,
         isDormant: req.user.isDormant ?? false,
         isSecondaryRoot: req.user.isSecondaryRoot ?? false,
+        effectivePlan,
+        aiDailyLimit: rawLimit === Infinity ? null : rawLimit,
       });
     } catch (error) {
       res.status(500).json({ message: error.message });

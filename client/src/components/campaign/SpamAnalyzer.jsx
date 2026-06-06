@@ -43,8 +43,6 @@ function getScoreLabel(score) {
   return "High Risk";
 }
 
-const AI_DAILY_LIMITS = { free: 5, trial: 5, starter: 20, growth: 50, scale: 150, enterprise: Infinity };
-
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -131,11 +129,16 @@ export default function SpamAnalyzer() {
   const riskyWords = analysis?.riskyWords || [];
   const suggestions = analysis?.suggestions || [];
 
-  const aiDailyLimit = AI_DAILY_LIMITS[user?.plan] ?? AI_DAILY_LIMITS.free;
-  const aiIsUnlimited = aiDailyLimit === Infinity || aiQuota?.remaining === "unlimited";
-  const aiRemaining = aiQuota
-    ? parseInt(aiQuota.remaining, 10)
-    : Math.max(0, aiDailyLimit - (user?.aiGenerationsToday ?? 0));
+  const aiIsUnlimited = user?.aiDailyLimit == null;
+  const aiLimit = user?.aiDailyLimit ?? 0;
+  const aiRemainingFromHeader = aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
+    ? parseInt(aiQuota.remaining, 10) : null;
+  const aiRemaining = aiIsUnlimited ? Infinity
+    : aiRemainingFromHeader != null ? aiRemainingFromHeader
+    : Math.max(0, aiLimit - (user?.aiGenerationsToday ?? 0));
+  const aiUsed = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
+  const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
+  const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
   return (
     <div className="space-y-6">
@@ -168,7 +171,7 @@ export default function SpamAnalyzer() {
                   variant="outline"
                   size="sm"
                   onClick={handleReanalyze}
-                  disabled={analyzeMutation.isPending}
+                  disabled={analyzeMutation.isPending || aiExhausted}
                   data-testid="button-reanalyze"
                 >
                   {analyzeMutation.isPending ? (
@@ -180,8 +183,16 @@ export default function SpamAnalyzer() {
                 {analysisDirty && !analyzeMutation.isPending && (
                   <span className="text-xs text-primary font-medium">Re-analyze for updated score</span>
                 )}
-                {!analysisDirty && !aiIsUnlimited && (
-                  <span className="text-xs text-muted-foreground">{aiRemaining} left today</span>
+                {!analysisDirty && (
+                  aiIsUnlimited ? (
+                    <span className="text-xs text-green-600 font-medium">Unlimited</span>
+                  ) : aiExhausted ? (
+                    <span className="text-xs text-red-600 font-medium">Limit reached</span>
+                  ) : (
+                    <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                      {aiRemaining} left today
+                    </span>
+                  )
                 )}
               </div>
             </div>
