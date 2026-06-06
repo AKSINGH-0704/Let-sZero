@@ -19,6 +19,7 @@ export function getRedisConnection() {
     maxRetriesPerRequest: null, // required by BullMQ
     enableReadyCheck: false,
     lazyConnect: true,
+    connectTimeout: 5000,
   });
 
   _connection.on("error", (err) => {

@@ -9,14 +9,6 @@ import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { stripeWebhookHandler } from "./stripeWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
-import IORedis from "ioredis";
-import { createConnection as netCreateConnection } from "net";
-
-// Top-level probe — fires when this module is first evaluated by Node.js.
-// If this line appears in Railway logs the new build is active.
-// If it never appears Railway is running a cached binary from before this commit.
-console.log("[STARTUP-PROBE] index.js module loaded — build includes redis diagnostic");
-
 const app = express();
 const httpServer = createServer(app);
 
@@ -448,109 +440,6 @@ app.use((req, res, next) => {
   next();
 });
 
-async function runRedisDiagnostic() {
-  const rawUrl = process.env.REDIS_URL;
-  console.log("[REDIS-DIAG] === Redis Connection Diagnostic v2 ===");
-
-  if (!rawUrl) {
-    console.log("[REDIS-DIAG] REDIS_URL not set — Redis disabled");
-    return;
-  }
-
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch (e) {
-    console.error("[REDIS-DIAG] REDIS_URL is not a valid URL:", e.message);
-    return;
-  }
-
-  const host = parsed.hostname;
-  const port = parseInt(parsed.port) || 6379;
-  const username = parsed.username || "";
-  const password = parsed.password || "";
-
-  console.log("[REDIS-DIAG] protocol :", parsed.protocol);
-  console.log("[REDIS-DIAG] hostname :", host);
-  console.log("[REDIS-DIAG] port     :", port);
-  console.log("[REDIS-DIAG] username :", username || "(empty)");
-  console.log("[REDIS-DIAG] password :", password ? `[SET length=${password.length}]` : "[NOT SET]");
-
-  // ── Test 1: IORedis full URL (two-arg AUTH when username present) ──────────
-  console.log("[REDIS-DIAG] --- Test 1: IORedis full URL ---");
-  const redis1 = new IORedis(rawUrl, { maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
-  console.log("[REDIS-DIAG] ioredis options.host    :", redis1.options.host);
-  console.log("[REDIS-DIAG] ioredis options.port    :", redis1.options.port);
-  console.log("[REDIS-DIAG] ioredis options.username:", redis1.options.username ?? "(undefined)");
-  console.log("[REDIS-DIAG] ioredis options.password:", redis1.options.password ? `[SET length=${redis1.options.password.length}]` : "[NOT SET]");
-  try {
-    const p1 = await Promise.race([redis1.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
-    console.log("[REDIS-DIAG] Test 1 RESULT: PONG — auth succeeded");
-  } catch (e1) {
-    console.error("[REDIS-DIAG] Test 1 FAILED:", e1.message);
-  } finally { redis1.disconnect(); }
-
-  // ── Test 2: IORedis password-only (1-arg AUTH, no username field) ──────────
-  console.log("[REDIS-DIAG] --- Test 2: IORedis password-only (no username) ---");
-  const redis2 = new IORedis({ host, port, password, maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
-  try {
-    const p2 = await Promise.race([redis2.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
-    console.log("[REDIS-DIAG] Test 2 RESULT: PONG — 1-arg AUTH succeeded");
-  } catch (e2) {
-    console.error("[REDIS-DIAG] Test 2 FAILED:", e2.message);
-  } finally { redis2.disconnect(); }
-
-  // ── Test 3: IORedis with TLS (rediss://) + rejectUnauthorized:false ────────
-  // Probes whether the public endpoint requires TLS. rejectUnauthorized:false
-  // is needed because Railway proxy certs may not match the proxy hostname.
-  console.log("[REDIS-DIAG] --- Test 3: IORedis TLS (rediss://) ---");
-  const tlsUrl = rawUrl.replace(/^redis:\/\//, "rediss://");
-  const redis3 = new IORedis(tlsUrl, { tls: { rejectUnauthorized: false }, maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
-  console.log("[REDIS-DIAG] Test 3 tls enabled:", !!redis3.options.tls, "| url scheme:", tlsUrl.slice(0, 8));
-  try {
-    const p3 = await Promise.race([redis3.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
-    console.log("[REDIS-DIAG] Test 3 RESULT: PONG — TLS + auth succeeded");
-  } catch (e3) {
-    console.error("[REDIS-DIAG] Test 3 FAILED:", e3.message);
-  } finally { redis3.disconnect(); }
-
-  // ── Test 4: Raw TCP — bypasses IORedis and all URL parsing ────────────────
-  // Each sub-test opens its own socket and sends one RESP command.
-  // Result tells us: (a) what the wire actually returns, (b) whether IORedis
-  // is misreporting the error, (c) whether the proxy speaks Redis protocol at all.
-  console.log("[REDIS-DIAG] --- Test 4: Raw TCP (no IORedis) ---");
-
-  function rawSend(cmd) {
-    return new Promise((resolve) => {
-      const s = netCreateConnection({ host, port });
-      let resp = "";
-      const t = setTimeout(() => { s.destroy(); resolve("TIMEOUT"); }, 6000);
-      s.once("connect", () => { s.write(cmd); });
-      s.on("data", (d) => {
-        resp += d.toString();
-        if (resp.includes("\r\n")) { clearTimeout(t); s.destroy(); resolve(resp.split("\r\n")[0]); }
-      });
-      s.on("error", (e) => { clearTimeout(t); resolve("TCP-ERR: " + e.message); });
-      s.on("close", () => { clearTimeout(t); resolve(resp || "CLOSED-NO-DATA"); });
-    });
-  }
-
-  // 4a: PING without auth — expect "-NOAUTH Authentication required." if Redis is healthy.
-  // If TLS is required at this layer, the response will be binary garbage or CLOSED-NO-DATA.
-  const r4a = await rawSend("*1\r\n$4\r\nPING\r\n");
-  console.log("[REDIS-DIAG] Test 4a PING(no-auth):", JSON.stringify(r4a));
-
-  // 4b: AUTH <password> single-arg — raw password bytes, zero IORedis URL parsing
-  const r4b = await rawSend(`*2\r\n$4\r\nAUTH\r\n$${password.length}\r\n${password}\r\n`);
-  console.log("[REDIS-DIAG] Test 4b AUTH(password-only):", JSON.stringify(r4b));
-
-  // 4c: AUTH default <password> two-arg — mirrors what IORedis sends for Test 1
-  const r4c = await rawSend(`*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n$${password.length}\r\n${password}\r\n`);
-  console.log("[REDIS-DIAG] Test 4c AUTH(default+password):", JSON.stringify(r4c));
-
-  console.log("[REDIS-DIAG] === End Diagnostic v2 ===");
-}
-
 (async () => {
   // Block RepMail routes on production when REPMAIL_PUBLIC is not "true"
   app.use((req, res, next) => {
@@ -580,10 +469,6 @@ async function runRedisDiagnostic() {
 
     return res.redirect('/early-access');
   });
-
-  // Temporary startup diagnostic — must run before registerRoutes and before any
-  // other Redis usage so it has a clean, isolated connection.
-  await runRedisDiagnostic();
 
   await registerRoutes(httpServer, app);
 
@@ -815,6 +700,47 @@ async function runRedisDiagnostic() {
       console.error("[SCHEDULER] Error:", err.message);
     }
   }, 30000);
+
+  // PENDING watchdog — re-enqueues campaigns stuck in PENDING due to Redis being
+  // unavailable at launch time. Only acts on campaigns older than 10 minutes that
+  // have no future scheduledAt (the existing scheduler above handles those).
+  // BullMQ jobId deduplication ensures re-enqueueing an already-queued campaign is a no-op.
+  {
+    let watchdogRunning = false;
+    setInterval(async () => {
+      if (watchdogRunning) return;
+      watchdogRunning = true;
+      try {
+        const allPending = await storage.getCampaignsByStatus("PENDING");
+        const now = Date.now();
+        const STALE_MS = 10 * 60 * 1000;
+        const queue = getCampaignQueue();
+        for (const c of allPending) {
+          if (c.scheduledAt && new Date(c.scheduledAt).getTime() > now) continue;
+          if (now - new Date(c.createdAt).getTime() < STALE_MS) continue;
+          if (queue) {
+            try {
+              const job = await queue.getJob(c.id);
+              if (job) {
+                const state = await job.getState();
+                if (["active", "waiting", "delayed"].includes(state)) continue;
+              }
+            } catch (qErr) {
+              console.warn(`[WATCHDOG] Queue check failed for ${c.id}:`, qErr.message);
+            }
+          }
+          const ageMin = Math.round((now - new Date(c.createdAt).getTime()) / 60000);
+          console.log(`[WATCHDOG] Campaign ${c.id} stale PENDING (${ageMin}m) — re-enqueueing`);
+          const job = await addCampaignJob(c.id, c.userId);
+          if (!job) await executeCampaign(c.id, c.userId);
+        }
+      } catch (err) {
+        console.error("[WATCHDOG] Error:", err.message);
+      } finally {
+        watchdogRunning = false;
+      }
+    }, 2 * 60 * 1000);
+  }
 
   app.use((err, _req, res, _next) => {
     const status = err.status || err.statusCode || 500;

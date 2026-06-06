@@ -752,14 +752,14 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {stats.aiStats.aiCostByEndpoint && Object.keys(stats.aiStats.aiCostByEndpoint).length > 0 && (
+                {Array.isArray(stats.aiStats.aiCostByEndpoint) && stats.aiStats.aiCostByEndpoint.length > 0 && (
                   <div className="mb-6">
                     <p className="text-xs font-medium text-muted-foreground mb-2">Cost by Endpoint</p>
                     <div className="space-y-2">
-                      {Object.entries(stats.aiStats.aiCostByEndpoint).map(([endpoint, cost]) => (
-                        <div key={endpoint} className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">{endpoint}</span>
-                          <span className="font-medium">${Number(cost).toFixed(4)}</span>
+                      {stats.aiStats.aiCostByEndpoint.map((item) => (
+                        <div key={item.endpoint} className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">{item.endpoint}</span>
+                          <span className="font-medium">${Number(item.totalCost).toFixed(4)}</span>
                         </div>
                       ))}
                     </div>
