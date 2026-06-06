@@ -10,6 +10,7 @@ import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { stripeWebhookHandler } from "./stripeWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import IORedis from "ioredis";
+import { createConnection as netCreateConnection } from "net";
 
 // Top-level probe — fires when this module is first evaluated by Node.js.
 // If this line appears in Railway logs the new build is active.
@@ -449,14 +450,13 @@ app.use((req, res, next) => {
 
 async function runRedisDiagnostic() {
   const rawUrl = process.env.REDIS_URL;
-  console.log("[REDIS-DIAG] === Redis Connection Diagnostic ===");
+  console.log("[REDIS-DIAG] === Redis Connection Diagnostic v2 ===");
 
   if (!rawUrl) {
     console.log("[REDIS-DIAG] REDIS_URL not set — Redis disabled");
     return;
   }
 
-  // 1. Parse URL components using Node's URL parser (no IORedis involved yet)
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -464,67 +464,91 @@ async function runRedisDiagnostic() {
     console.error("[REDIS-DIAG] REDIS_URL is not a valid URL:", e.message);
     return;
   }
+
+  const host = parsed.hostname;
+  const port = parseInt(parsed.port) || 6379;
+  const username = parsed.username || "";
+  const password = parsed.password || "";
+
   console.log("[REDIS-DIAG] protocol :", parsed.protocol);
-  console.log("[REDIS-DIAG] hostname :", parsed.hostname);
-  console.log("[REDIS-DIAG] port     :", parsed.port || "(default 6379)");
-  console.log("[REDIS-DIAG] username :", parsed.username || "(empty)");
-  console.log("[REDIS-DIAG] password :", parsed.password ? `[SET length=${parsed.password.length}]` : "[NOT SET]");
+  console.log("[REDIS-DIAG] hostname :", host);
+  console.log("[REDIS-DIAG] port     :", port);
+  console.log("[REDIS-DIAG] username :", username || "(empty)");
+  console.log("[REDIS-DIAG] password :", password ? `[SET length=${password.length}]` : "[NOT SET]");
 
-  // 2. Create a standalone IORedis instance using exactly REDIS_URL — isolated from the app singleton
-  const redis = new IORedis(rawUrl, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-    lazyConnect: true,
-  });
-
-  // 5. Log what IORedis actually parsed from the URL (its internal options object)
-  console.log("[REDIS-DIAG] ioredis options.host    :", redis.options.host);
-  console.log("[REDIS-DIAG] ioredis options.port    :", redis.options.port);
-  console.log("[REDIS-DIAG] ioredis options.username:", redis.options.username ?? "(undefined)");
-  console.log("[REDIS-DIAG] ioredis options.password:", redis.options.password ? `[SET length=${redis.options.password.length}]` : "[NOT SET]");
-
-  // 3 & 4. Execute ping — with 8s hard timeout so it can't block startup forever
+  // ── Test 1: IORedis full URL (two-arg AUTH when username present) ──────────
+  console.log("[REDIS-DIAG] --- Test 1: IORedis full URL ---");
+  const redis1 = new IORedis(rawUrl, { maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
+  console.log("[REDIS-DIAG] ioredis options.host    :", redis1.options.host);
+  console.log("[REDIS-DIAG] ioredis options.port    :", redis1.options.port);
+  console.log("[REDIS-DIAG] ioredis options.username:", redis1.options.username ?? "(undefined)");
+  console.log("[REDIS-DIAG] ioredis options.password:", redis1.options.password ? `[SET length=${redis1.options.password.length}]` : "[NOT SET]");
   try {
-    const pong = await Promise.race([
-      redis.ping(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout after 8s")), 8000)),
-    ]);
-    console.log("[REDIS-DIAG] PING result:", pong, "— AUTH SUCCEEDED");
-  } catch (firstErr) {
-    console.error("[REDIS-DIAG] PING failed:", firstErr.message);
+    const p1 = await Promise.race([redis1.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
+    console.log("[REDIS-DIAG] Test 1 RESULT: PONG — auth succeeded");
+  } catch (e1) {
+    console.error("[REDIS-DIAG] Test 1 FAILED:", e1.message);
+  } finally { redis1.disconnect(); }
 
-    if (firstErr.message.includes("WRONGPASS")) {
-      // Secondary test: omit username entirely — sends AUTH <password> (single-arg)
-      // vs the two-arg AUTH <username> <password> that IORedis sends when username is set.
-      // If this succeeds, the Redis server does not recognise the ACL username 'default'.
-      console.log("[REDIS-DIAG] Retrying with password-only auth (no username field)...");
-      const redis2 = new IORedis({
-        host: redis.options.host,
-        port: redis.options.port,
-        password: redis.options.password,
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-        lazyConnect: true,
+  // ── Test 2: IORedis password-only (1-arg AUTH, no username field) ──────────
+  console.log("[REDIS-DIAG] --- Test 2: IORedis password-only (no username) ---");
+  const redis2 = new IORedis({ host, port, password, maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
+  try {
+    const p2 = await Promise.race([redis2.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
+    console.log("[REDIS-DIAG] Test 2 RESULT: PONG — 1-arg AUTH succeeded");
+  } catch (e2) {
+    console.error("[REDIS-DIAG] Test 2 FAILED:", e2.message);
+  } finally { redis2.disconnect(); }
+
+  // ── Test 3: IORedis with TLS (rediss://) + rejectUnauthorized:false ────────
+  // Probes whether the public endpoint requires TLS. rejectUnauthorized:false
+  // is needed because Railway proxy certs may not match the proxy hostname.
+  console.log("[REDIS-DIAG] --- Test 3: IORedis TLS (rediss://) ---");
+  const tlsUrl = rawUrl.replace(/^redis:\/\//, "rediss://");
+  const redis3 = new IORedis(tlsUrl, { tls: { rejectUnauthorized: false }, maxRetriesPerRequest: null, enableReadyCheck: false, lazyConnect: true });
+  console.log("[REDIS-DIAG] Test 3 tls enabled:", !!redis3.options.tls, "| url scheme:", tlsUrl.slice(0, 8));
+  try {
+    const p3 = await Promise.race([redis3.ping(), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 8000))]);
+    console.log("[REDIS-DIAG] Test 3 RESULT: PONG — TLS + auth succeeded");
+  } catch (e3) {
+    console.error("[REDIS-DIAG] Test 3 FAILED:", e3.message);
+  } finally { redis3.disconnect(); }
+
+  // ── Test 4: Raw TCP — bypasses IORedis and all URL parsing ────────────────
+  // Each sub-test opens its own socket and sends one RESP command.
+  // Result tells us: (a) what the wire actually returns, (b) whether IORedis
+  // is misreporting the error, (c) whether the proxy speaks Redis protocol at all.
+  console.log("[REDIS-DIAG] --- Test 4: Raw TCP (no IORedis) ---");
+
+  function rawSend(cmd) {
+    return new Promise((resolve) => {
+      const s = netCreateConnection({ host, port });
+      let resp = "";
+      const t = setTimeout(() => { s.destroy(); resolve("TIMEOUT"); }, 6000);
+      s.once("connect", () => { s.write(cmd); });
+      s.on("data", (d) => {
+        resp += d.toString();
+        if (resp.includes("\r\n")) { clearTimeout(t); s.destroy(); resolve(resp.split("\r\n")[0]); }
       });
-      try {
-        const pong2 = await Promise.race([
-          redis2.ping(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout after 8s")), 8000)),
-        ]);
-        console.log("[REDIS-DIAG] Password-only PING:", pong2, "— WORKS: server rejects 2-arg AUTH, accepts 1-arg AUTH");
-        console.log("[REDIS-DIAG] FIX: remove username from REDIS_URL — use redis://:password@host:port");
-      } catch (secondErr) {
-        console.error("[REDIS-DIAG] Password-only PING also failed:", secondErr.message);
-        console.log("[REDIS-DIAG] Both auth methods fail — password is wrong or user is disabled");
-      } finally {
-        redis2.disconnect();
-      }
-    }
-  } finally {
-    redis.disconnect();
+      s.on("error", (e) => { clearTimeout(t); resolve("TCP-ERR: " + e.message); });
+      s.on("close", () => { clearTimeout(t); resolve(resp || "CLOSED-NO-DATA"); });
+    });
   }
 
-  console.log("[REDIS-DIAG] === End Diagnostic ===");
+  // 4a: PING without auth — expect "-NOAUTH Authentication required." if Redis is healthy.
+  // If TLS is required at this layer, the response will be binary garbage or CLOSED-NO-DATA.
+  const r4a = await rawSend("*1\r\n$4\r\nPING\r\n");
+  console.log("[REDIS-DIAG] Test 4a PING(no-auth):", JSON.stringify(r4a));
+
+  // 4b: AUTH <password> single-arg — raw password bytes, zero IORedis URL parsing
+  const r4b = await rawSend(`*2\r\n$4\r\nAUTH\r\n$${password.length}\r\n${password}\r\n`);
+  console.log("[REDIS-DIAG] Test 4b AUTH(password-only):", JSON.stringify(r4b));
+
+  // 4c: AUTH default <password> two-arg — mirrors what IORedis sends for Test 1
+  const r4c = await rawSend(`*3\r\n$4\r\nAUTH\r\n$7\r\ndefault\r\n$${password.length}\r\n${password}\r\n`);
+  console.log("[REDIS-DIAG] Test 4c AUTH(default+password):", JSON.stringify(r4c));
+
+  console.log("[REDIS-DIAG] === End Diagnostic v2 ===");
 }
 
 (async () => {
