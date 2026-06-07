@@ -141,7 +141,7 @@ Only **V** is treated as proven.
 | `/api/health` smtp | **V** | `smtp: "verified"` confirmed. DNS OK. TCP port 2587 open. SMTP AUTH accepted by SES. |
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
-| CSV mapping screen UX (field tooltips + status indicators) | **I** | Added ⓘ tooltip per field, Required/Recommended/Optional status, actual template variable references in tooltip copy |
+| CSV mapping screen UX | **I** | Full redesign: header guidance, always-visible descriptions, Required/Recommended/Optional status, auto-detect hints, unmapped consequences, send readiness summary. 6 final polish fixes: no duplicate heading, hint color not blue (removes false link affordance), "Skip this field" replaces em-dash option, Category copy concrete, tooltip trigger keyboard-accessible, decorative element aria-hidden. Commit 3b76cf1. |
 
 **Milestone status: I/V mixed** — 3 of 7 sub-items Verified
 
