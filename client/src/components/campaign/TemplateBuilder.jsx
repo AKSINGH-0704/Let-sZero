@@ -36,24 +36,19 @@ import {
   ChevronUp,
   Wand2,
 } from "lucide-react";
-import { replacePlaceholders, cn } from "@/lib/utils";
+import { replacePlaceholders, computePersonalizationStats, cn } from "@/lib/utils";
 
-// Primary personalization variables — shown prominently in the panel.
 const MAIN_PLACEHOLDERS = [
   { key: "{{name}}",     label: "Name",     description: "Recipient's first name",    mapKey: "name" },
   { key: "{{company}}", label: "Company",  description: "Recipient's company",        mapKey: "company" },
   { key: "{{category}}",label: "Category", description: "Recipient's category/group", mapKey: "category" },
 ];
 
-// Secondary variable — available but rarely needed in email copy.
 const SECONDARY_PLACEHOLDERS = [
   { key: "{{email}}", label: "Email", description: "Recipient's email address", mapKey: "email" },
 ];
 
-const ALL_PLACEHOLDER_KEYS = [
-  ...MAIN_PLACEHOLDERS,
-  ...SECONDARY_PLACEHOLDERS,
-].map((p) => p.key);
+const ALL_PLACEHOLDER_DEFS = [...MAIN_PLACEHOLDERS, ...SECONDARY_PLACEHOLDERS];
 
 const AI_TONES = [
   { value: "professional", label: "Professional" },
@@ -79,24 +74,65 @@ export default function TemplateBuilder() {
   const [aiTone,       setAiTone]       = useState("professional");
   const [aiError,      setAiError]      = useState("");
   const [aiQuota,      setAiQuota]      = useState(null);
-  // Tracks which text field last had focus so placeholder insertion lands correctly.
   const [focusedField, setFocusedField] = useState("body");
 
-  // ── Derived mapping state ──────────────────────────────────────────────────
-  // Maps each placeholder key to the CSV column name the user selected (or undefined).
-  const mappingKeyMap = {
-    "{{name}}":     columnMapping.name,
-    "{{email}}":    columnMapping.email,
-    "{{company}}":  columnMapping.company,
-    "{{category}}": columnMapping.category,
+  // Preview recipient — defaults to the first contact that's missing a placeholder
+  // currently used in the template. Ensures the default preview demonstrates any gaps.
+  const [previewContactIndex, setPreviewContactIndex] = useState(() => {
+    if (contacts.length === 0) return 0;
+    const initSubject = template.subject || "";
+    const initBody    = template.body    || "";
+    const idx = contacts.findIndex(contact =>
+      ALL_PLACEHOLDER_DEFS.some(p => {
+        if (!initSubject.includes(p.key) && !initBody.includes(p.key)) return false;
+        const col = columnMapping[p.mapKey];
+        return !col || !String(contact[col] ?? "").trim();
+      })
+    );
+    return Math.max(0, idx);
+  });
+
+  // ── Personalization stats ──────────────────────────────────────────────────
+  const personalizationStats = computePersonalizationStats(contacts, columnMapping);
+
+  // ── Preview data — real contact data, no synthetic fallbacks ──────────────
+  const previewContact = contacts[previewContactIndex] || {};
+  const mappedData = {
+    name:     columnMapping.name     ? String(previewContact[columnMapping.name]     ?? "").trim() : "",
+    email:    columnMapping.email    ? String(previewContact[columnMapping.email]    ?? "").trim() : "",
+    company:  columnMapping.company  ? String(previewContact[columnMapping.company]  ?? "").trim() : "",
+    category: columnMapping.category ? String(previewContact[columnMapping.category] ?? "").trim() : "",
+  };
+  const previewSubject = replacePlaceholders(localTemplate.subject, mappedData);
+  const previewBody    = replacePlaceholders(localTemplate.body,    mappedData);
+
+  // ── Contact helpers ────────────────────────────────────────────────────────
+  const contactDisplayName = (contact, idx) => {
+    const name  = columnMapping.name  ? String(contact[columnMapping.name]  ?? "").trim() : "";
+    const email = columnMapping.email ? String(contact[columnMapping.email] ?? "").trim() : "";
+    return name || email || `Contact ${idx + 1}`;
   };
 
-  // Placeholders that appear in the current template but have no mapped column.
-  const unmappedUsed = ALL_PLACEHOLDER_KEYS.filter(
-    (k) =>
-      (localTemplate.subject.includes(k) || localTemplate.body.includes(k)) &&
-      !mappingKeyMap[k]
-  );
+  const contactMissingFields = (contact) =>
+    ALL_PLACEHOLDER_DEFS
+      .filter(p => {
+        if (!localTemplate.subject.includes(p.key) && !localTemplate.body.includes(p.key)) return false;
+        const col = columnMapping[p.mapKey];
+        return !col || !String(contact[col] ?? "").trim();
+      })
+      .map(p => p.label);
+
+  // ── Placeholder quality analysis (for warning block) ──────────────────────
+  const placeholderIssues = ALL_PLACEHOLDER_DEFS
+    .filter(p => localTemplate.subject.includes(p.key) || localTemplate.body.includes(p.key))
+    .map(p => {
+      const s = personalizationStats[p.mapKey];
+      if (!s.mapped)             return { p, type: "unmapped" };
+      if (s.available === 0)     return { p, type: "empty",   available: s.available, total: s.total };
+      if (s.available < s.total) return { p, type: "partial", available: s.available, total: s.total };
+      return null;
+    })
+    .filter(Boolean);
 
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
@@ -140,19 +176,7 @@ export default function TemplateBuilder() {
     },
   });
 
-  // ── Preview data ───────────────────────────────────────────────────────────
-  const sampleContact = contacts[0] || {};
-  const mappedData = {
-    name:     sampleContact[columnMapping.name]     || "John Doe",
-    email:    sampleContact[columnMapping.email]    || "john@example.com",
-    company:  sampleContact[columnMapping.company]  || "Acme Inc",
-    category: sampleContact[columnMapping.category] || "Technology",
-  };
-  const previewSubject = replacePlaceholders(localTemplate.subject, mappedData);
-  const previewBody    = replacePlaceholders(localTemplate.body,    mappedData);
-
   // ── Placeholder insertion ──────────────────────────────────────────────────
-  // Inserts the placeholder at the cursor position of whichever field is focused.
   const insertPlaceholder = (placeholder) => {
     const isSubject = focusedField === "subject";
     const fieldId   = isSubject ? "subject" : "email-body";
@@ -165,7 +189,6 @@ export default function TemplateBuilder() {
       const before = localTemplate[fieldKey].slice(0, start);
       const after  = localTemplate[fieldKey].slice(end);
       setLocalTemplate((prev) => ({ ...prev, [fieldKey]: before + placeholder + after }));
-      // Restore focus and cursor position after React re-renders the input value.
       setTimeout(() => {
         input.focus();
         const cursor = start + placeholder.length;
@@ -249,20 +272,11 @@ export default function TemplateBuilder() {
               ) : aiExhausted ? (
                 <span className="text-xs text-red-600 font-medium">Limit reached</span>
               ) : (
-                <span
-                  className={cn(
-                    "text-xs",
-                    aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground"
-                  )}
-                >
+                <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
                   {aiRemaining} left today
                 </span>
               )}
-              {aiOpen ? (
-                <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              )}
+              {aiOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
             </div>
           </Button>
         </CollapsibleTrigger>
@@ -277,10 +291,7 @@ export default function TemplateBuilder() {
                   id="ai-prompt"
                   placeholder="e.g., Cold outreach to fintech founders introducing our AI-powered email marketing platform and offering a free demo"
                   value={aiPrompt}
-                  onChange={(e) => {
-                    setAiPrompt(e.target.value);
-                    setAiError("");
-                  }}
+                  onChange={(e) => { setAiPrompt(e.target.value); setAiError(""); }}
                   className="min-h-[80px] text-sm resize-none bg-background"
                   disabled={generateTemplateMutation.isPending}
                   data-testid="input-ai-prompt"
@@ -290,62 +301,37 @@ export default function TemplateBuilder() {
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 flex-1">
                   <Label className="text-sm font-medium whitespace-nowrap">Tone:</Label>
-                  <Select
-                    value={aiTone}
-                    onValueChange={setAiTone}
-                    disabled={generateTemplateMutation.isPending}
-                  >
+                  <Select value={aiTone} onValueChange={setAiTone} disabled={generateTemplateMutation.isPending}>
                     <SelectTrigger className="w-36 h-9 bg-background" data-testid="select-ai-tone">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {AI_TONES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
-                  disabled={
-                    !aiPrompt.trim() ||
-                    generateTemplateMutation.isPending ||
-                    aiExhausted
-                  }
+                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending || aiExhausted}
                   className="gap-2"
                   data-testid="button-ai-generate"
                 >
                   {generateTemplateMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
+                    <><Loader2 className="h-4 w-4 animate-spin" />Generating...</>
                   ) : (
-                    <>
-                      <Wand2 className="h-4 w-4" />
-                      Generate
-                    </>
+                    <><Wand2 className="h-4 w-4" />Generate</>
                   )}
                 </Button>
               </div>
 
               {aiIsUnlimited ? (
-                <p className="text-xs text-green-600 font-medium text-right">
-                  Unlimited AI usage
-                </p>
+                <p className="text-xs text-green-600 font-medium text-right">Unlimited AI usage</p>
               ) : aiExhausted ? (
-                <p className="text-xs text-red-600 font-medium text-right">
-                  Daily limit reached — resets in ~24h
-                </p>
+                <p className="text-xs text-red-600 font-medium text-right">Daily limit reached — resets in ~24h</p>
               ) : (
-                <p
-                  className={cn(
-                    "text-xs text-right",
-                    aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground"
-                  )}
-                >
+                <p className={cn("text-xs text-right", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
                   {aiUsed} of {aiLimit} AI generation{aiLimit !== 1 ? "s" : ""} used today
                 </p>
               )}
@@ -358,15 +344,14 @@ export default function TemplateBuilder() {
               )}
 
               <p className="text-xs text-muted-foreground">
-                The generated template will replace your current subject and body. You
-                can edit it freely afterwards.
+                The generated template will replace your current subject and body. You can edit it freely afterwards.
               </p>
             </CardContent>
           </Card>
         </CollapsibleContent>
       </Collapsible>
 
-      {/* ── Editor + Sidebar grid ─────────────────────────────────────────────── */}
+      {/* ── Editor + Sidebar ──────────────────────────────────────────────────── */}
       <div className="grid lg:grid-cols-5 gap-4 lg:gap-6">
 
         {/* ── Left: editor ───────────────────────────────────────────────────── */}
@@ -409,8 +394,7 @@ export default function TemplateBuilder() {
                       data-testid="input-template-name"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Used only for saving and reusing this template later.
-                      Recipients never see this name.
+                      Used only for saving and reusing this template later. Recipients never see this name.
                     </p>
                   </div>
 
@@ -420,14 +404,10 @@ export default function TemplateBuilder() {
                       <Label htmlFor="subject">
                         Subject Line <span className="text-destructive">*</span>
                       </Label>
-                      <span
-                        className={cn(
-                          "text-xs tabular-nums",
-                          localTemplate.subject.length >= 50
-                            ? "text-amber-600 font-medium"
-                            : "text-muted-foreground"
-                        )}
-                      >
+                      <span className={cn(
+                        "text-xs tabular-nums",
+                        localTemplate.subject.length >= 50 ? "text-amber-600 font-medium" : "text-muted-foreground"
+                      )}>
                         {localTemplate.subject.length}/50
                       </span>
                     </div>
@@ -444,8 +424,7 @@ export default function TemplateBuilder() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      You can personalize the subject line too — click any variable
-                      in the panel while this field is active.
+                      You can personalize the subject line too — click any variable in the panel while this field is active.
                     </p>
                   </div>
 
@@ -456,17 +435,7 @@ export default function TemplateBuilder() {
                     </Label>
                     <Textarea
                       id="email-body"
-                      placeholder={`Write your email content here...
-
-Click a variable on the right to personalize your message.
-
-Example:
-Hi {{name}},
-
-I hope this message finds you well at {{company}}...
-
-Best regards,
-Your Team`}
+                      placeholder={`Write your email content here...\n\nClick a variable on the right to personalize your message.\n\nExample:\nHi {{name}},\n\nI hope this message finds you well at {{company}}...\n\nBest regards,\nYour Team`}
                       value={localTemplate.body}
                       onChange={(e) => handleChange("body", e.target.value)}
                       onFocus={() => setFocusedField("body")}
@@ -475,33 +444,26 @@ Your Team`}
                     />
                   </div>
 
-                  {/* Unmapped-placeholder warning — shown only when the user has
-                      used a variable whose column was not mapped in step 2. */}
-                  {unmappedUsed.length > 0 && (
+                  {/* Placeholder quality warnings */}
+                  {placeholderIssues.length > 0 && (
                     <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/50 dark:bg-amber-950/20">
                       <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                      <div className="text-sm space-y-1">
-                        <p className="font-medium text-amber-800 dark:text-amber-300">
-                          {unmappedUsed.map((k, i) => (
-                            <span key={k}>
-                              <span className="font-mono">{k}</span>
-                              {i < unmappedUsed.length - 1 ? " and " : ""}
-                            </span>
-                          ))}{" "}
-                          — column{unmappedUsed.length > 1 ? "s" : ""} not mapped
-                        </p>
-                        <p className="text-amber-700 dark:text-amber-400">
-                          {unmappedUsed.length === 1
-                            ? "This variable is"
-                            : "These variables are"}{" "}
-                          in your email but{" "}
-                          {unmappedUsed.length === 1 ? "its column wasn't" : "their columns weren't"}{" "}
-                          selected in the previous step. Recipients will see the
-                          placeholder text as-is instead of real data. Go back to map
-                          the{" "}
-                          {unmappedUsed.length === 1 ? "column" : "columns"}, or remove{" "}
-                          {unmappedUsed.length === 1 ? "it" : "them"} from your email.
-                        </p>
+                      <div className="text-sm space-y-2">
+                        {placeholderIssues.map(({ p, type, available, total }) => {
+                          const msg =
+                            type === "unmapped"
+                              ? `${p.label} column is not mapped — emails will render ${p.key} as blank.`
+                              : type === "empty"
+                              ? `${p.label} information is unavailable for all ${total} contacts — emails using ${p.key} will render as blank.`
+                              : `${p.label} information is available for ${available} of ${total} contacts — the remaining ${total - available} ${total - available === 1 ? "recipient" : "recipients"} will receive a blank value.`;
+                          return (
+                            <p key={p.key} className="text-amber-800 dark:text-amber-300">
+                              <span className="font-mono text-xs font-medium">{p.key}</span>
+                              {" — "}
+                              {msg}
+                            </p>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -509,23 +471,47 @@ Your Team`}
               ) : (
                 /* Preview tab */
                 <div className="space-y-4">
+                  {/* Recipient selector */}
+                  {contacts.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">Preview recipient:</span>
+                      <Select
+                        value={String(previewContactIndex)}
+                        onValueChange={(v) => setPreviewContactIndex(Number(v))}
+                      >
+                        <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-preview-contact">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {contacts.slice(0, 100).map((contact, idx) => {
+                            const label   = contactDisplayName(contact, idx);
+                            const missing = contactMissingFields(contact);
+                            return (
+                              <SelectItem key={idx} value={String(idx)} className="text-xs">
+                                {label}
+                                {missing.length > 0 ? ` — ⚠ Missing: ${missing.join(", ")}` : ""}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Rendered preview */}
                   <div className="p-4 rounded-md bg-muted/50">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                      Subject
-                    </p>
-                    <p className="font-medium">{previewSubject || "No subject"}</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Subject</p>
+                    <p className="font-medium">{previewSubject || <span className="text-muted-foreground italic">No subject</span>}</p>
                   </div>
                   <Separator />
                   <div className="p-4 rounded-md bg-muted/50">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">
-                      Body
-                    </p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Body</p>
                     <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {previewBody || "No content"}
+                      {previewBody || <span className="text-muted-foreground italic">No content</span>}
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Preview using: {mappedData.name} ({mappedData.email})
+                    Showing exactly what this recipient will receive. Blank values indicate missing or unmapped data.
                   </p>
                 </div>
               )}
@@ -543,7 +529,6 @@ Your Team`}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Dynamic insert-target indicator */}
               <p className="text-sm text-muted-foreground">
                 Click to insert into the{" "}
                 <span className="font-medium text-foreground">
@@ -553,31 +538,31 @@ Your Team`}
 
               {/* Primary variables */}
               {MAIN_PLACEHOLDERS.map((placeholder) => {
-                const isMapped = !!mappingKeyMap[placeholder.key];
+                const s       = personalizationStats[placeholder.mapKey];
+                const isMapped = s.mapped;
+                const availText = !isMapped
+                  ? "Not mapped"
+                  : `${s.available}/${s.total} contacts`;
+                const availColor = !isMapped || s.available === 0
+                  ? "text-amber-600 dark:text-amber-500"
+                  : s.available < s.total
+                  ? "text-amber-600 dark:text-amber-500"
+                  : "text-green-600 dark:text-green-500";
+
                 return (
                   <Button
                     key={placeholder.key}
                     variant="outline"
-                    className={cn(
-                      "w-full justify-start gap-3 h-auto py-3",
-                      !isMapped && "opacity-60"
-                    )}
+                    className={cn("w-full justify-start gap-3 h-auto py-3", !isMapped && "opacity-60")}
                     onClick={() => insertPlaceholder(placeholder.key)}
                     data-testid={`placeholder-${placeholder.label.toLowerCase()}`}
                   >
-                    <Badge
-                      variant={isMapped ? "secondary" : "outline"}
-                      className="font-mono shrink-0"
-                    >
+                    <Badge variant={isMapped ? "secondary" : "outline"} className="font-mono shrink-0">
                       {placeholder.key}
                     </Badge>
                     <div className="text-left">
                       <p className="font-medium text-sm">{placeholder.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {isMapped
-                          ? placeholder.description
-                          : "Not mapped — column not selected in previous step"}
-                      </p>
+                      <p className={cn("text-xs tabular-nums", availColor)}>{availText}</p>
                     </div>
                   </Button>
                 );
@@ -587,31 +572,31 @@ Your Team`}
               <Separator className="my-1" />
               <p className="text-xs text-muted-foreground">Other variables</p>
               {SECONDARY_PLACEHOLDERS.map((placeholder) => {
-                const isMapped = !!mappingKeyMap[placeholder.key];
+                const s       = personalizationStats[placeholder.mapKey];
+                const isMapped = s.mapped;
+                const availText = !isMapped
+                  ? "Not mapped"
+                  : `${s.available}/${s.total} contacts`;
+                const availColor = !isMapped || s.available === 0
+                  ? "text-amber-600 dark:text-amber-500"
+                  : s.available < s.total
+                  ? "text-amber-600 dark:text-amber-500"
+                  : "text-green-600 dark:text-green-500";
+
                 return (
                   <Button
                     key={placeholder.key}
                     variant="outline"
-                    className={cn(
-                      "w-full justify-start gap-3 h-auto py-2.5",
-                      !isMapped && "opacity-60"
-                    )}
+                    className={cn("w-full justify-start gap-3 h-auto py-2.5", !isMapped && "opacity-60")}
                     onClick={() => insertPlaceholder(placeholder.key)}
                     data-testid={`placeholder-${placeholder.label.toLowerCase()}`}
                   >
-                    <Badge
-                      variant={isMapped ? "secondary" : "outline"}
-                      className="font-mono shrink-0 text-xs"
-                    >
+                    <Badge variant={isMapped ? "secondary" : "outline"} className="font-mono shrink-0 text-xs">
                       {placeholder.key}
                     </Badge>
                     <div className="text-left">
                       <p className="font-medium text-sm">{placeholder.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {isMapped
-                          ? placeholder.description
-                          : "Not mapped — column not selected in previous step"}
-                      </p>
+                      <p className={cn("text-xs tabular-nums", availColor)}>{availText}</p>
                     </div>
                   </Button>
                 );
@@ -619,13 +604,12 @@ Your Team`}
 
               <Separator className="my-1" />
 
-              {/* Tips */}
               <div className="space-y-1.5">
                 <p className="text-sm font-medium">Tips</p>
                 <ul className="text-xs text-muted-foreground space-y-1">
                   <li>— Keep subject lines under 50 characters</li>
                   <li>— Use a clear call-to-action</li>
-                  <li>— Switch to Preview to see how each contact's email will look</li>
+                  <li>— Switch to Preview to see exactly what each recipient will receive</li>
                 </ul>
               </div>
             </CardContent>
@@ -647,11 +631,7 @@ Your Team`}
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button
-          onClick={validateAndContinue}
-          disabled={!canProceed}
-          data-testid="button-next-step"
-        >
+        <Button onClick={validateAndContinue} disabled={!canProceed} data-testid="button-next-step">
           Continue to Preview
         </Button>
       </div>

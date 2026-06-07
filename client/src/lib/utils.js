@@ -39,8 +39,30 @@ export function calculateCreditsRemaining(received, allocated, used) {
 export function replacePlaceholders(text, data) {
   if (!text) return "";
   return text.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    return data[key] !== undefined && data[key] !== "" ? data[key] : match;
+    const val = data[key];
+    return val != null && val !== "" ? val : "";
   });
+}
+
+// Returns per-field data coverage stats across all contacts.
+// mapped: false means the column was not selected in Column Mapping.
+// available: count of contacts where the mapped column has a non-empty value.
+export function computePersonalizationStats(contacts, columnMapping) {
+  const total = contacts.length;
+  const result = {};
+  for (const field of ["email", "name", "company", "category"]) {
+    const col = columnMapping[field];
+    if (!col) {
+      result[field] = { mapped: false, available: 0, total };
+    } else {
+      const available = contacts.filter(c => {
+        const v = c[col];
+        return v != null && String(v).trim() !== "";
+      }).length;
+      result[field] = { mapped: true, available, total };
+    }
+  }
+  return result;
 }
 
 export function parseCSV(text) {

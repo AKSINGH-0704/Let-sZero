@@ -27,7 +27,7 @@ import {
   ArrowRight,
   Calendar
 } from "lucide-react";
-import { formatNumber, calculateCreditsRemaining, replacePlaceholders } from "@/lib/utils";
+import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePersonalizationStats } from "@/lib/utils";
 
 export default function CampaignConfirmation() {
   const [, setLocation] = useLocation();
@@ -63,26 +63,37 @@ export default function CampaignConfirmation() {
   const hasEnoughCredits = creditsAvailable >= creditsRequired;
   const estimatedTime = Math.ceil(creditsRequired / 100);
 
+  // Preview uses real contact data — no synthetic fallbacks.
+  // replacePlaceholders renders missing values as blank, matching actual send behavior.
   const sampleContact = contacts[0] || {};
   const mappedData = {
-    name: sampleContact[columnMapping.name] || "Recipient",
-    email: sampleContact[columnMapping.email] || "recipient@example.com",
-    company: sampleContact[columnMapping.company] || "Company",
-    category: sampleContact[columnMapping.category] || "Category"
+    name:     columnMapping.name     ? String(sampleContact[columnMapping.name]     ?? "").trim() : "",
+    email:    columnMapping.email    ? String(sampleContact[columnMapping.email]    ?? "").trim() : "",
+    company:  columnMapping.company  ? String(sampleContact[columnMapping.company]  ?? "").trim() : "",
+    category: columnMapping.category ? String(sampleContact[columnMapping.category] ?? "").trim() : "",
   };
 
-  // Placeholders used in the template whose columns were not mapped.
-  // These will send as blank values — not a hard block, but worth surfacing.
-  const OPTIONAL_PLACEHOLDER_KEYS = [
+  // Per-field data coverage across all contacts.
+  const personalizationStats = computePersonalizationStats(contacts, columnMapping);
+
+  // Placeholder keys used in the template — for both the warning and health panel.
+  const ALL_FIELD_DEFS = [
     { key: "{{name}}",     mapKey: "name",     label: "Name" },
     { key: "{{company}}",  mapKey: "company",  label: "Company" },
     { key: "{{category}}", mapKey: "category", label: "Category" },
     { key: "{{email}}",    mapKey: "email",    label: "Email" },
   ];
-  const unmappedUsed = OPTIONAL_PLACEHOLDER_KEYS.filter(
+
+  // Fields whose placeholder is used in the template AND has a quality issue.
+  const unmappedUsed = ALL_FIELD_DEFS.filter(
     ({ key, mapKey }) =>
       (template.subject?.includes(key) || template.body?.includes(key)) &&
       !columnMapping[mapKey]
+  );
+
+  // Fields used in the template — shown in the Personalization Health panel.
+  const healthFields = ALL_FIELD_DEFS.filter(
+    ({ key }) => template.subject?.includes(key) || template.body?.includes(key)
   );
 
   const sendMutation = useMutation({
@@ -321,7 +332,7 @@ export default function CampaignConfirmation() {
                 <Mail className="h-4 w-4" />
                 Email Preview
               </CardTitle>
-              <CardDescription>Sample of personalized email</CardDescription>
+              <CardDescription>Showing first contact — blank values reflect missing or unmapped data</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -344,6 +355,40 @@ export default function CampaignConfirmation() {
               </div>
             </CardContent>
           </Card>
+
+          {/* ── Personalization Health ─────────────────────────────────────────── */}
+          {healthFields.length > 0 && (
+            <Card className="border-card-border">
+              <CardContent className="pt-4 pb-4">
+                <p className="text-sm font-medium mb-3">Personalization Health</p>
+                <div className="space-y-2">
+                  {healthFields.map(({ mapKey, label }) => {
+                    const s = personalizationStats[mapKey];
+                    const allGood = s.mapped && s.available === s.total && s.total > 0;
+                    const noneAvailable = !s.mapped || s.available === 0;
+                    return (
+                      <div key={mapKey} className="flex items-center gap-2 text-sm">
+                        {allGood ? (
+                          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                        )}
+                        <span className={allGood ? "text-foreground" : "text-muted-foreground"}>
+                          {allGood
+                            ? `${label} available for all recipients`
+                            : noneAvailable
+                            ? s.mapped
+                              ? `${label} unavailable for all recipients`
+                              : `${label} column not mapped — will render as blank`
+                            : `${label} available for ${s.available} of ${s.total} recipients`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="border-card-border">
             <CardContent className="pt-6">
@@ -376,16 +421,16 @@ export default function CampaignConfirmation() {
           <div className="text-sm space-y-1">
             <p className="font-medium text-amber-800 dark:text-amber-300">
               {unmappedUsed.map(p => p.label).join(", ")}{" "}
-              {unmappedUsed.length === 1 ? "variable" : "variables"} will send as blank
+              {unmappedUsed.length === 1 ? "column is" : "columns are"} not mapped
             </p>
             <p className="text-amber-700 dark:text-amber-400">
-              {unmappedUsed.map(({ key }) => (
-                <span key={key} className="font-mono">{key} </span>
-              ))}
-              {unmappedUsed.length === 1 ? "is" : "are"} used in your template but{" "}
-              {unmappedUsed.length === 1 ? "its column was" : "their columns were"} not mapped.
-              Recipients will see an empty value instead. To fix this, go back to Column Mapping
-              and select the corresponding column.
+              {unmappedUsed.map(p => p.label).join(", ")}{" "}
+              {unmappedUsed.length === 1
+                ? "information is unavailable — those emails will render"
+                : "information is unavailable — those emails will render these values"}{" "}
+              as blank. Go back to Column Mapping to assign the{" "}
+              {unmappedUsed.length === 1 ? "column" : "columns"}, or remove the{" "}
+              {unmappedUsed.length === 1 ? "variable" : "variables"} from your template.
             </p>
           </div>
         </div>
