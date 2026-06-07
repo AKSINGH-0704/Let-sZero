@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import sanitizeHtml from "sanitize-html";
 import { generateUnsubscribeToken } from "./unsubscribe.js";
+import { linkifyUrls } from "./linkify.js";
 
 const transport = nodemailer.createTransport({
   host: process.env.SES_SMTP_HOST,
@@ -36,7 +37,13 @@ function plainTextToHtml(text) {
   return text
     .split(/\n{2,}/)
     .filter(para => para.trim().length > 0)
-    .map(para => `<p style="margin:0 0 16px 0;">${para.replace(/\n/g, "<br>")}</p>`)
+    .map(para => {
+      // linkifyUrls operates on plain text (before any <br> insertion) so the
+      // regex scans raw text with no pre-existing HTML tags.
+      const linked     = linkifyUrls(para);
+      const withBreaks = linked.replace(/\n/g, "<br>");
+      return `<p style="margin:0 0 16px 0;">${withBreaks}</p>`;
+    })
     .join("");
 }
 
