@@ -1228,21 +1228,10 @@ export async function registerRoutes(httpServer, app) {
         );
       }
 
-      // ── Placeholder cross-reference ───────────────────────────────────────────
-      // Every {{placeholder}} in subject/body must have a matching column in the contact data.
-      if (notRole.length > 0) {
-        const availableColumns = new Set(Object.keys(notRole[0]));
-        const allPlaceholders = new Set([
-          ...extractPlaceholders(subject),
-          ...extractPlaceholders(body),
-        ]);
-        const missingColumns = [...allPlaceholders].filter(p => !availableColumns.has(p));
-        if (missingColumns.length > 0) {
-          validationErrors.push(
-            `Template placeholder(s) not found in contact data: ${missingColumns.map(p => `{{${p}}}`).join(", ")}`
-          );
-        }
-      }
+      // Placeholder cross-reference check intentionally omitted.
+      // sendCampaignEmail() already replaces missing keys with empty string
+      // (e.g. contact.company || ""), so unmapped optional fields send fine.
+      // The UI warns about unmapped placeholders at the Template and Confirmation steps.
 
       // ── Blocking gate — no DB writes before this point ────────────────────────
       if (validationErrors.length > 0) {

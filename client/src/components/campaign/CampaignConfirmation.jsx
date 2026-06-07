@@ -71,6 +71,20 @@ export default function CampaignConfirmation() {
     category: sampleContact[columnMapping.category] || "Category"
   };
 
+  // Placeholders used in the template whose columns were not mapped.
+  // These will send as blank values — not a hard block, but worth surfacing.
+  const OPTIONAL_PLACEHOLDER_KEYS = [
+    { key: "{{name}}",     mapKey: "name",     label: "Name" },
+    { key: "{{company}}",  mapKey: "company",  label: "Company" },
+    { key: "{{category}}", mapKey: "category", label: "Category" },
+    { key: "{{email}}",    mapKey: "email",    label: "Email" },
+  ];
+  const unmappedUsed = OPTIONAL_PLACEHOLDER_KEYS.filter(
+    ({ key, mapKey }) =>
+      (template.subject?.includes(key) || template.body?.includes(key)) &&
+      !columnMapping[mapKey]
+  );
+
   const sendMutation = useMutation({
     mutationFn: async () => {
       const mappedContacts = contacts.map(contact => ({
@@ -356,6 +370,27 @@ export default function CampaignConfirmation() {
         </div>
       </div>
 
+      {unmappedUsed.length > 0 && (
+        <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/50 dark:bg-amber-950/20">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-sm space-y-1">
+            <p className="font-medium text-amber-800 dark:text-amber-300">
+              {unmappedUsed.map(p => p.label).join(", ")}{" "}
+              {unmappedUsed.length === 1 ? "variable" : "variables"} will send as blank
+            </p>
+            <p className="text-amber-700 dark:text-amber-400">
+              {unmappedUsed.map(({ key }) => (
+                <span key={key} className="font-mono">{key} </span>
+              ))}
+              {unmappedUsed.length === 1 ? "is" : "are"} used in your template but{" "}
+              {unmappedUsed.length === 1 ? "its column was" : "their columns were"} not mapped.
+              Recipients will see an empty value instead. To fix this, go back to Column Mapping
+              and select the corresponding column.
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -371,16 +406,6 @@ export default function CampaignConfirmation() {
             <ul className="list-disc pl-4 space-y-1 text-sm">
               {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
             </ul>
-            {validationErrors.some(e => e.toLowerCase().includes("placeholder")) && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3 border-red-400 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
-                onClick={() => setStep(2)}
-              >
-                Fix Column Mapping
-              </Button>
-            )}
           </AlertDescription>
         </Alert>
       )}
