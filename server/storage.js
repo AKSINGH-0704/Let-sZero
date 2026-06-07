@@ -757,14 +757,16 @@ const dbStorage = {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
 
     // Aggregate engagement metrics directly from loaded campaigns (no extra query).
-    const totalSent      = campaignsList.reduce((s, c) => s + (c.sentEmails    || 0), 0);
-    const totalAttempted = campaignsList.reduce((s, c) => s + (c.totalEmails   || 0), 0);
-    const totalOpens     = campaignsList.reduce((s, c) => s + (c.openedEmails  || 0), 0);
-    const totalClicks    = campaignsList.reduce((s, c) => s + (c.clickedEmails || 0), 0);
+    const totalSent       = campaignsList.reduce((s, c) => s + (c.sentEmails      || 0), 0);
+    const totalAttempted  = campaignsList.reduce((s, c) => s + (c.totalEmails     || 0), 0);
+    const totalOpens      = campaignsList.reduce((s, c) => s + (c.openedEmails    || 0), 0);
+    const totalClicks     = campaignsList.reduce((s, c) => s + (c.clickedEmails   || 0), 0);
+    const totalDelivered  = campaignsList.reduce((s, c) => s + (c.deliveredEmails || 0), 0);
 
     // Rates expressed as 0-100 numbers; null when denominator is zero.
-    const avgOpenRate  = totalSent > 0 ? (totalOpens  / totalSent)     * 100 : null;
-    const avgClickRate = totalSent > 0 ? (totalClicks / totalSent)     * 100 : null;
+    const avgOpenRate  = totalSent > 0 ? (totalOpens     / totalSent)      * 100 : null;
+    const avgClickRate = totalSent > 0 ? (totalClicks    / totalSent)      * 100 : null;
+    const deliveryRate = totalSent > 0 ? (totalDelivered / totalSent)      * 100 : null;
     const successRate  = totalAttempted > 0 ? (totalSent / totalAttempted) * 100 : null;
 
     // Active contacts count for this user.
@@ -776,17 +778,19 @@ const dbStorage = {
     }
 
     const base = {
-      totalCampaigns:    campaignsList.length,
-      activeCampaigns:   campaignsList.filter(c => ["RUNNING","PAUSED","PENDING"].includes(c.status)).length,
+      totalCampaigns:     campaignsList.length,
+      activeCampaigns:    campaignsList.filter(c => ["RUNNING","PAUSED","PENDING"].includes(c.status)).length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
-      totalEmailsSent:   totalSent,
+      totalEmailsSent:    totalSent,
+      totalDelivered,
       totalOpens,
       totalClicks,
+      deliveryRate,
       avgOpenRate,
       avgClickRate,
       successRate,
       activeContacts,
-      monthlyChart:      buildMonthlyChart(campaignsList),
+      monthlyChart:       buildMonthlyChart(campaignsList),
     };
 
     if (!isRootAdmin) return base;
@@ -1394,6 +1398,18 @@ const dbStorage = {
     return { wasFirst: rows.length > 0 };
   },
 
+  // Atomically sets deliveredAt only on the first delivery event; returns { wasFirst: boolean }.
+  async updateCampaignEmailDelivered(campaignEmailId) {
+    const rows = await db.update(campaignEmails)
+      .set({ deliveredAt: new Date() })
+      .where(and(
+        eq(campaignEmails.id, campaignEmailId),
+        sql`${campaignEmails.deliveredAt} IS NULL`
+      ))
+      .returning({ id: campaignEmails.id });
+    return { wasFirst: rows.length > 0 };
+  },
+
   async incrementCampaignOpened(campaignId) {
     await db.update(campaigns)
       .set({ openedEmails: sql`${campaigns.openedEmails} + 1` })
@@ -1403,6 +1419,12 @@ const dbStorage = {
   async incrementCampaignClicked(campaignId) {
     await db.update(campaigns)
       .set({ clickedEmails: sql`${campaigns.clickedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
+  async incrementCampaignDelivered(campaignId) {
+    await db.update(campaigns)
+      .set({ deliveredEmails: sql`${campaigns.deliveredEmails} + 1` })
       .where(eq(campaigns.id, campaignId));
   },
 

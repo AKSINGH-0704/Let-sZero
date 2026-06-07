@@ -346,7 +346,7 @@ export default function Dashboard() {
         <motion.div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" variants={itemVariants}>
           {[
             { icon: Mail,         label: 'Emails Sent',      value: stats?.totalEmailsSent ?? 0 },
-            { icon: TrendingUp,   label: 'Avg. Open Rate',   value: stats?.avgOpenRate  != null ? stats.avgOpenRate.toFixed(1)  + '%' : '—' },
+            { icon: Activity,     label: 'Delivery Rate',    value: stats?.deliveryRate != null ? stats.deliveryRate.toFixed(1) + '%' : (stats && !statsLoading ? 'No data yet' : '—') },
             { icon: Users,        label: 'Active Contacts',  value: stats?.activeContacts ?? 0 },
             { icon: ArrowUpRight, label: 'Active Campaigns', value: stats?.activeCampaigns || 0 },
           ].map((stat, idx) => (

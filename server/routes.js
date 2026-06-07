@@ -681,10 +681,10 @@ export async function registerRoutes(httpServer, app) {
 
     try {
       // ── Step 3: Execute all writes ────────────────────────────────────────
-      // For Open/Click, prefer the UUID tag injected at send time for a direct PK lookup;
-      // fall back to SES Message-ID for events from legacy or untagged sends.
+      // For Open/Click/Delivery, prefer the UUID tag injected at send time for a
+      // direct PK lookup; fall back to SES Message-ID for legacy or untagged sends.
       let campaignEmail;
-      if (eventType === "Open" || eventType === "Click") {
+      if (eventType === "Open" || eventType === "Click" || eventType === "Delivery") {
         const taggedId = notification.mail?.tags?.["campaign-email-id"]?.[0];
         if (taggedId) campaignEmail = await storage.getCampaignEmailById(taggedId);
         if (!campaignEmail) campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
@@ -736,6 +736,14 @@ export async function registerRoutes(httpServer, app) {
         if (wasFirst && campaignId) {
           await storage.incrementCampaignClicked(campaignId);
           console.log(`[SNS] Click recorded — link=${link} campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
+        }
+      } else if (eventType === "Delivery") {
+        // Idempotent: UPDATE … WHERE deliveredAt IS NULL guarantees each recipient
+        // is counted at most once regardless of how many times SNS retries this event.
+        const { wasFirst } = await storage.updateCampaignEmailDelivered(campaignEmailId);
+        if (wasFirst && campaignId) {
+          await storage.incrementCampaignDelivered(campaignId);
+          console.log(`[SNS] Delivery confirmed — campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
         }
       }
 

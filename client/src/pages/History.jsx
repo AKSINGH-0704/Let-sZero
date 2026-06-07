@@ -187,9 +187,8 @@ export default function History() {
                       <TableHead>Campaign Name</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Sent</TableHead>
-                      <TableHead className="text-right">Failed</TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">Success Rate</TableHead>
+                      <TableHead className="text-right">Delivered</TableHead>
+                      <TableHead className="text-right">Delivery Rate</TableHead>
                       <TableHead className="text-right">Open Rate</TableHead>
                       <TableHead className="text-right">Click Rate</TableHead>
                       <TableHead>Date</TableHead>
@@ -201,10 +200,9 @@ export default function History() {
                     {filteredCampaigns.map((campaign) => {
                       const config = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.PENDING;
                       const StatusIcon = config.icon;
-                      const total = campaign.sentEmails + campaign.failedEmails;
-                      const successRate = total > 0
-                        ? ((campaign.sentEmails / total) * 100).toFixed(1)
-                        : 0;
+                      const deliveryRate = campaign.sentEmails > 0
+                        ? ((campaign.deliveredEmails / campaign.sentEmails) * 100).toFixed(1)
+                        : null;
                       const openRate = campaign.sentEmails > 0
                         ? ((campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
                         : null;
@@ -232,21 +230,18 @@ export default function History() {
                           <TableCell className="text-right text-green-600 font-medium">
                             {formatNumber(campaign.sentEmails)}
                           </TableCell>
-                          <TableCell className="text-right text-red-600 font-medium">
-                            {formatNumber(campaign.failedEmails)}
+                          <TableCell className="text-right font-medium">
+                            {formatNumber(campaign.deliveredEmails ?? 0)}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatNumber(campaign.creditsUsed)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className={cn(
-                              "font-medium",
-                              successRate >= 95 && "text-green-600",
-                              successRate >= 80 && successRate < 95 && "text-yellow-600",
-                              successRate < 80 && "text-red-600"
-                            )}>
-                              {successRate}%
-                            </span>
+                            {deliveryRate !== null ? (
+                              <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-1">
+                                <Send className="h-3 w-3" />
+                                {deliveryRate}%
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {openRate !== null ? (
@@ -345,10 +340,14 @@ export default function History() {
           {viewCampaign && (
             <div className="space-y-4 pt-2">
               {/* Stats row */}
-              <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="grid grid-cols-4 gap-3 text-center">
                 <div className="rounded-lg border p-3">
                   <div className="text-2xl font-semibold text-green-600">{formatNumber(viewCampaign.sentEmails)}</div>
                   <div className="text-xs text-muted-foreground mt-1">Sent</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-2xl font-semibold text-emerald-600">{formatNumber(viewCampaign.deliveredEmails ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Delivered</div>
                 </div>
                 <div className="rounded-lg border p-3">
                   <div className="text-2xl font-semibold text-red-600">{formatNumber(viewCampaign.failedEmails)}</div>
@@ -372,12 +371,23 @@ export default function History() {
 
               {/* Engagement metrics — populated by SNS events after send */}
               {viewCampaign.sentEmails > 0 && (
-                <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                      <Send className="h-4 w-4 text-emerald-500" />
+                      <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
+                        {((viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Delivery Rate &middot; {formatNumber(viewCampaign.deliveredEmails ?? 0)} delivered
+                    </div>
+                  </div>
                   <div className="rounded-lg border p-3">
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <TrendingUp className="h-4 w-4 text-violet-500" />
                       <div className="text-2xl font-semibold text-violet-600 dark:text-violet-400">
-                        {((viewCampaign.openedEmails / viewCampaign.sentEmails) * 100).toFixed(1)}%
+                        {(viewCampaign.openedEmails / viewCampaign.sentEmails * 100).toFixed(1)}%
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -388,7 +398,7 @@ export default function History() {
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <MousePointerClick className="h-4 w-4 text-blue-500" />
                       <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                        {((viewCampaign.clickedEmails / viewCampaign.sentEmails) * 100).toFixed(1)}%
+                        {(viewCampaign.clickedEmails / viewCampaign.sentEmails * 100).toFixed(1)}%
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">

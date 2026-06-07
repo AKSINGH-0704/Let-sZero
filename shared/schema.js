@@ -211,6 +211,7 @@ export const campaigns = pgTable("campaigns", {
   complainedEmails: integer("complained_emails").notNull().default(0),
   openedEmails: integer("opened_emails").notNull().default(0),
   clickedEmails: integer("clicked_emails").notNull().default(0),
+  deliveredEmails: integer("delivered_emails").notNull().default(0),
   creditsUsed: integer("credits_used").notNull().default(0),
   contactIds: jsonb("contact_ids").notNull().default([]),
   templateSnapshot: jsonb("template_snapshot"),
@@ -239,6 +240,7 @@ export const campaignEmails = pgTable("campaign_emails", {
   sentAt: timestamp("sent_at"),
   openedAt: timestamp("opened_at"),
   clickedAt: timestamp("clicked_at"),
+  deliveredAt: timestamp("delivered_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   // fast SNS bounce/complaint lookup by SES Message-ID
