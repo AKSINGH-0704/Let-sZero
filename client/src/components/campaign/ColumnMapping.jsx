@@ -69,7 +69,7 @@ const FIELDS = [
     icon: Tag,
     status: "optional",
     required: false,
-    description: "Helps organize contacts and target specific groups later.",
+    description: "Helps organize contacts into groups for more targeted sending.",
     unmappedConsequence: "Audience segmentation and filtering will be limited.",
     tooltip: "Groups contacts for filtering and targeting in future campaigns.",
   },
@@ -100,7 +100,7 @@ function FieldHint({ field, mapped, suggestion }) {
 
   if (suggestion) {
     return (
-      <p className="text-xs text-blue-600 dark:text-blue-400">
+      <p className="text-xs text-muted-foreground">
         Suggested:{" "}
         <span className="font-medium">{suggestion}</span>
       </p>
@@ -135,7 +135,7 @@ function ReadinessSummary({ mapping }) {
               {mapped ? (
                 <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />
               ) : (
-                <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 shrink-0" />
+                <div aria-hidden="true" className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 shrink-0" />
               )}
               <span className={mapped ? "text-foreground" : "text-muted-foreground"}>
                 {field.label}
@@ -229,8 +229,7 @@ export default function ColumnMapping() {
       <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3">
         <Info className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-medium">Match Your CSV Columns</p>
-          <p className="text-sm text-muted-foreground mt-0.5 leading-snug">
+          <p className="text-sm text-muted-foreground leading-snug">
             Select the column from your CSV that best matches each RepMail
             field. Only <span className="font-medium text-foreground">Email Address</span> is
             required to send a campaign.
@@ -272,9 +271,13 @@ export default function ColumnMapping() {
                       </Label>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="cursor-help inline-flex items-center text-muted-foreground hover:text-foreground transition-colors">
+                          <button
+                            type="button"
+                            aria-label={`About ${field.label}`}
+                            className="cursor-help inline-flex items-center text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                          >
                             <Info className="h-3 w-3" />
-                          </span>
+                          </button>
                         </TooltipTrigger>
                         <TooltipContent
                           side="right"
@@ -304,7 +307,7 @@ export default function ColumnMapping() {
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">— Not mapped —</SelectItem>
+                      <SelectItem value="none">Skip this field</SelectItem>
                       {headers.map((header) => (
                         <SelectItem key={header} value={header}>
                           {header}
