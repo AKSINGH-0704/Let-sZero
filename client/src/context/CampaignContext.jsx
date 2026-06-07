@@ -12,6 +12,7 @@ const INITIAL_STATE = {
     body: ""
   },
   templateIsAiGenerated: false,
+  campaignType: "general",
   aiPreviews: [],
   spamAnalysis: null,
   acceptedSuggestions: [],
@@ -43,6 +44,10 @@ export function CampaignProvider({ children }) {
 
   const setTemplateIsAiGenerated = (value) => {
     setCampaignState(prev => ({ ...prev, templateIsAiGenerated: value }));
+  };
+
+  const setCampaignType = (type) => {
+    setCampaignState(prev => ({ ...prev, campaignType: type || "general" }));
   };
 
   const setAiPreviews = (previews) => {
@@ -96,6 +101,7 @@ export function CampaignProvider({ children }) {
     setColumnMapping,
     setTemplate,
     setTemplateIsAiGenerated,
+    setCampaignType,
     setAiPreviews,
     setSpamAnalysis,
     setAcceptedSuggestions,

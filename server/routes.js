@@ -1793,7 +1793,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/ai/preview", authMiddleware, aiLimiter, async (req, res) => {
     try {
-      const { subject, body, contacts, tone } = req.body;
+      const { subject, body, contacts, tone, campaignType } = req.body;
 
       const quota = await storage.checkAndIncrementAiQuota(req.user.id);
       if (!quota.allowed) {
@@ -1809,12 +1809,12 @@ export async function registerRoutes(httpServer, app) {
       await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.AI_PREVIEW_GENERATED,
-        details: { contactCount: contacts?.length || 0, tone: tone || "professional" }
+        details: { contactCount: contacts?.length || 0, tone: tone || "professional", campaignType: campaignType || "general" }
       });
 
       // Try OpenAI (gpt-4o-mini) — falls back to local placeholder replacement on failure
       try {
-        const previews = await generatePreviews(subject, body, contacts || [], tone || "professional", { userId: req.user.id });
+        const previews = await generatePreviews(subject, body, contacts || [], tone || "professional", { userId: req.user.id, campaignType: campaignType || "general" });
         return res.json({ previews, aiPowered: true });
       } catch (aiErr) {
         storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));

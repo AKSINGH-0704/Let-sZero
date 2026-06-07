@@ -81,11 +81,13 @@ function logAiUsage({ userId, endpoint, model, inputChars, outputChars }) {
 // Model: gpt-4o-mini  |  Cached: yes (key = subject+body+tone+contacts)
 
 export async function generatePreviews(subject, body, contacts, tone = "professional", opts = {}) {
+  const campaignType = opts.campaignType || "general";
   const cacheKey = cache.makeKey(
     "preview",
     subject,
     body,
     tone,
+    campaignType,
     JSON.stringify(contacts.slice(0, 3).map(c => `${c.name}|${c.email}|${c.company}|${c.category}`))
   );
 
@@ -101,7 +103,7 @@ export async function generatePreviews(subject, body, contacts, tone = "professi
 
   const toneGuide = {
     professional:
-      "Professional: authoritative yet approachable. First-name greeting, clear and concise sentences, confident but not stiff. Best for B2B outreach.",
+      "Professional: authoritative yet approachable. First-name greeting, clear and concise sentences, confident but not stiff.",
     friendly:
       "Friendly: warm and conversational. Uses the recipient's first name frequently, upbeat tone, short sentences, light and engaging. Best for building rapport.",
     formal:
@@ -118,7 +120,21 @@ export async function generatePreviews(subject, body, contacts, tone = "professi
     )
     .join("\n");
 
-  const systemPrompt = `You are an expert email marketing copywriter with 15 years of experience writing high-converting B2B emails. Your task is to personalize email templates for individual contacts.
+  // Campaign-type context for preview personalization — mirrors generateTemplate preambles
+  const previewCampaignContext = {
+    b2b_outreach: "B2B outreach to a business professional. {{company}} references are appropriate. Use business-results vocabulary.",
+    real_estate:  "Personal real estate inquiry — NOT a corporate pitch. Do NOT use {{company}} or corporate language (your organization, your team, ROI, business solution). Keep language personal and property-focused.",
+    recruitment:  "Recruitment outreach about a job opportunity. {{company}} refers to the hiring organization. Use career/talent vocabulary.",
+    partnership:  "Partnership proposal. {{company}} references are appropriate. Use collaboration language.",
+    follow_up:    "Follow-up to a prior conversation. Keep it brief and reference prior context naturally.",
+    general:      "General outreach. Use {{company}} only where it sounds natural.",
+  };
+  const campaignContextNote = previewCampaignContext[campaignType] || previewCampaignContext.general;
+
+  const systemPrompt = `You are an expert email marketing copywriter with 15 years of experience writing high-converting outreach emails across industries. Your task is to personalize email templates for individual contacts.
+
+CAMPAIGN TYPE CONTEXT — apply to every personalization:
+${campaignContextNote}
 
 RULES:
 - Replace every {{placeholder}} with the contact's real data
@@ -344,14 +360,42 @@ function getModelForPlan(effectivePlan, feature) {
   return "gpt-4o-mini";
 }
 
-// Campaign-type-specific preambles — set context before the user's goal is appended.
+// Campaign-type-specific preambles — set domain context, vocabulary, structure, and placeholder rules.
 const CAMPAIGN_TYPE_PREAMBLES = {
-  b2b_outreach: "This is a B2B cold outreach email. The recipient is a business professional. Use {{name}} in the greeting and {{company}} to reference their organization where it sounds natural.",
-  real_estate:  "This is a real estate inquiry email. The sender is reaching out about a property or listing. Do NOT use {{company}} — this is a personal inquiry, not a corporate pitch. Use {{name}} in the greeting only.",
-  recruitment:  "This is a recruitment outreach email. The sender is reaching out about a job opportunity. Use {{name}} in the greeting. {{company}} may be used to reference where the opportunity is based.",
-  partnership:  "This is a partnership proposal email. The sender wants to explore a business collaboration. Use {{name}} and {{company}} naturally.",
-  follow_up:    "This is a follow-up email to a previous conversation or interaction. Acknowledge the prior contact briefly. Use {{name}} in the greeting.",
-  general:      "This is a general outreach email. Use {{name}} in the greeting. Only use {{company}} if it fits naturally given the goal.",
+  b2b_outreach: `This is a B2B cold outreach email to a business professional.
+STRUCTURE: (1) Opening that acknowledges their role or company → (2) specific, concrete value proposition → (3) single question CTA.
+VOCABULARY: Use business-results language — team, growth, process, pipeline, efficiency, partnership, results.
+PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} to reference their organization naturally (e.g., "at {{company}}", "your team at {{company}}"). Use {{category}} to reference their industry vertical if it sharpens the pitch.
+SIGN-OFF FORMAT: Full name, title, company on separate lines.`,
+
+  real_estate: `This is a personal real estate inquiry — NOT a corporate pitch, NOT a B2B email.
+STRUCTURE: (1) Brief personal intro referencing the property or market → (2) specific context (property type, location, interest) → (3) clear next step (viewing, call, more info).
+VOCABULARY: Use real estate language — property, home, listing, neighbourhood, market, viewing, location, price range, bedrooms, sq ft. NEVER use: your organization, your team, business needs, ROI, solution, corporate, enterprise.
+PLACEHOLDERS: Use {{name}} in the greeting. DO NOT use {{company}} anywhere — this is person-to-person contact, not a company pitch. Use {{category}} only if it refers to property type (e.g., residential, commercial, investment).
+SIGN-OFF FORMAT: First name only, or first and last name. No title or company in the sign-off.`,
+
+  recruitment: `This is a recruitment outreach email about a job opportunity.
+STRUCTURE: (1) Brief context on the opportunity or role → (2) why this specific person is a strong fit → (3) single soft CTA (open to a quick call?).
+VOCABULARY: Use talent/career language — opportunity, role, background, experience, fit, team, position, compensation, growth path. Reference their skills or career stage if known.
+PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} to name the hiring organization (e.g., "a role at {{company}}"). Use {{category}} to reference their job function or seniority level.
+SIGN-OFF FORMAT: Full name, title (e.g., Recruiter, Talent Partner, Head of People), company.`,
+
+  partnership: `This is a partnership proposal or collaboration outreach email.
+STRUCTURE: (1) Brief intro establishing who the sender is and their credibility → (2) specific partnership idea and mutual benefit → (3) question to open dialogue.
+VOCABULARY: Use partnership language — collaboration, mutual benefit, audience, opportunity, joint, aligned, synergy, co-create.
+PLACEHOLDERS: Use {{name}} and {{company}} naturally throughout. Use {{category}} to frame the partner's business type if relevant.
+SIGN-OFF FORMAT: Full name, title, company.`,
+
+  follow_up: `This is a follow-up to a previous conversation or prior interaction.
+STRUCTURE: (1) Brief, specific reference to the prior contact (don't be vague) → (2) reason for following up now → (3) single clear next step or question.
+VOCABULARY: Use follow-up language — following up, last time we spoke, wanted to check in, still exploring, circling back. Keep it short — the recipient already has context.
+PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it was part of the prior conversation context. Use {{category}} sparingly.
+SIGN-OFF FORMAT: Full name, title if relevant.`,
+
+  general: `This is a general outreach email.
+STRUCTURE: (1) Brief intro → (2) clear purpose and relevance to recipient → (3) single CTA.
+PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it sounds completely natural in context. Use {{category}} only if it adds specificity.
+SIGN-OFF FORMAT: Full name.`,
 };
 
 export async function generateTemplate(prompt, tone = "professional", opts = {}) {
@@ -363,27 +407,45 @@ export async function generateTemplate(prompt, tone = "professional", opts = {})
   console.log(`[AI] generate-template ${opts.userId ?? "anon"} using ${model} plan=${effectivePlan} type=${campaignType}`);
 
   const toneGuide = {
-    professional: "professional B2B tone — confident, clear, respectful",
+    professional: "professional tone — confident, clear, respectful, no filler phrases",
     friendly: "friendly and warm tone — conversational, approachable, first-name basis",
     formal: "formal tone — no contractions, full professional language, structured",
     casual: "casual tone — relaxed, direct, reads like a colleague wrote it"
   };
 
-  // Build sender identity block — drives the sign-off and "written by a real person" signal
+  // Build sender identity block — drives the sign-off and "written by a real person" signal.
+  // Personal campaign types (real_estate) suppress title+company from the sign-off because
+  // a corporate-looking sign-off contradicts the "personal inquiry, not a pitch" framing.
   const hasSenderProfile = senderCtx.name || senderCtx.title || senderCtx.company;
+  const isPersonalCampaign = campaignType === "real_estate";
   const senderIdentityBlock = hasSenderProfile
-    ? `SENDER IDENTITY (the person writing this email):
+    ? isPersonalCampaign
+      ? `SENDER IDENTITY:
+- Name: ${senderCtx.name || "not provided"}
+Write FROM this person's perspective. Sign off with their name only — do NOT include title or company (this is a personal inquiry, not a corporate pitch).`
+      : `SENDER IDENTITY (the person writing this email):
 - Name: ${senderCtx.name || "not provided"}
 - Title: ${senderCtx.title || "not provided"}
 - Company: ${senderCtx.company || "not provided"}
 Write FROM this person's perspective. Sign off with their full name, title, and company on separate lines.`
-    : `SENDER IDENTITY: Not configured. End the email with:
+    : isPersonalCampaign
+      ? `SENDER IDENTITY: Not configured. End the email with {{sender_name}} only — do NOT add {{sender_title}} or {{sender_company}} (personal inquiry, not a corporate pitch).`
+      : `SENDER IDENTITY: Not configured. End the email with:
 {{sender_name}}
 {{sender_title}}
 {{sender_company}}
 These will be replaced at send time with the sender's real details.`;
 
   const campaignPreamble = CAMPAIGN_TYPE_PREAMBLES[campaignType] || CAMPAIGN_TYPE_PREAMBLES.general;
+
+  const categoryGuide = {
+    b2b_outreach: "{{category}} — recipient's industry vertical (e.g., SaaS, Healthcare, Finance). Use to sharpen the value proposition for their sector.",
+    real_estate:  "{{category}} — property type or buyer segment (e.g., residential, commercial, investment property). Use only if it makes the outreach more specific.",
+    recruitment:  "{{category}} — job function or seniority level (e.g., Engineering, Sales, C-suite). Use to personalize the role pitch.",
+    partnership:  "{{category}} — partner's industry or business type. Use to frame mutual benefit by sector.",
+    follow_up:    "{{category}} — context from prior interaction. Use sparingly and only if it adds relevance.",
+    general:      "{{category}} — recipient's category. Use only if it makes the message more natural and specific.",
+  };
 
   const systemPrompt = `You are an expert email copywriter who writes high-converting outreach emails that sound like they came from a real human, not a marketing platform.
 
@@ -394,9 +456,9 @@ ${senderIdentityBlock}
 
 AVAILABLE RECIPIENT PLACEHOLDERS (use naturally — never mechanically):
 - {{name}} — recipient's first name or full name
-- {{company}} — recipient's company name (B2B only — see campaign context above)
+- {{company}} — recipient's company name (see campaign context above for when to use)
 - {{email}} — recipient's email address (rarely needed)
-- {{category}} — recipient's industry/category (only if goal makes it natural)
+- ${categoryGuide[campaignType] || categoryGuide.general}
 
 RULES:
 - Write from the perspective of a real individual, not a company or platform

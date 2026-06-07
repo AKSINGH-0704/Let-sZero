@@ -44,7 +44,7 @@ const TONES = [
 ];
 
 export default function AiPreview() {
-  const { template, columnMapping, contacts, goNext, goBack, setAiPreviews } = useCampaign();
+  const { template, columnMapping, contacts, campaignType, goNext, goBack, setAiPreviews } = useCampaign();
   const { user } = useAuth();
   const [tone, setTone] = useState("professional");
   const [previews, setPreviews] = useState([]);
@@ -88,6 +88,7 @@ export default function AiPreview() {
         body: template.body,
         contacts: sampleContacts,
         tone,
+        campaignType: campaignType || "general",
       });
       const remaining = res.headers.get("X-AI-Generations-Remaining");
       const resetsAt = res.headers.get("X-AI-Generations-Reset");

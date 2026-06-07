@@ -68,7 +68,7 @@ const CAMPAIGN_TYPES = [
 
 export default function TemplateBuilder() {
   const {
-    template, setTemplate, setTemplateIsAiGenerated, setAiAnalysis,
+    template, setTemplate, setTemplateIsAiGenerated, setCampaignType, setAiAnalysis,
     setAcceptedSuggestions, setAcceptedDetails, templateIsAiGenerated,
     columnMapping, contacts, goNext, goBack,
   } = useCampaign();
@@ -261,6 +261,7 @@ export default function TemplateBuilder() {
     }
     setTemplate(localTemplate);
     setTemplateIsAiGenerated(localIsAiGenerated);
+    setCampaignType(aiCampaignType);
     if (!localIsAiGenerated) {
       setAiAnalysis(null);
       setAcceptedSuggestions([]);
