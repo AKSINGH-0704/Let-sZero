@@ -963,7 +963,25 @@ export async function registerRoutes(httpServer, app) {
         details: { username, role: role || "USER" }
       });
 
-      res.status(201).json(newUser);
+      const base = process.env.APP_URL || "http://localhost:5000";
+      const loginUrl = `${base}/login`;
+      let emailFailed = false;
+      try {
+        await sendTransactionalEmail(
+          email,
+          "Your RepMail account is ready",
+          `Hi ${username},\n\nAn account has been created for you on RepMail.\n\nUsername: ${username}\nLogin: ${loginUrl}\n\nYou will be prompted to set your own password when you first log in.\n\nIf you have any questions, contact your administrator.\n\n— The RepMail Team`
+        );
+      } catch (emailErr) {
+        emailFailed = true;
+        console.error("[ADD_USER] Welcome email failed:", emailErr.message);
+      }
+
+      res.status(201).json({
+        ...newUser,
+        emailFailed,
+        creditsAllocated: (credits && credits > 0) ? credits : 0,
+      });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

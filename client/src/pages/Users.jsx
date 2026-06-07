@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
@@ -63,7 +63,12 @@ import {
   Clock,
   ShieldCheck,
   ShieldOff,
+  Copy,
+  CheckCircle,
+  Info,
 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatNumber, cn } from "@/lib/utils";
 
 
@@ -108,6 +113,9 @@ export default function Users() {
   // dialogs / UI state
   const [isCreateOpen, setIsCreateOpen]   = useState(false);
   const [isInviteOpen, setIsInviteOpen]   = useState(false);
+  const [isCreatedModalOpen, setIsCreatedModalOpen] = useState(false);
+  const [createdUser, setCreatedUser]     = useState(null);
+  const [copied, setCopied]               = useState(false);
   const [showInvites, setShowInvites]     = useState(true);
   const [allocateUserId, setAllocateUserId] = useState(null);
   const [allocateCredits, setAllocateCredits] = useState("");
@@ -144,11 +152,13 @@ export default function Users() {
       const res = await apiRequest("POST", "/api/users", userData);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setIsCreateOpen(false);
       setNewUser({ username: "", email: "", password: "", role: "USER", credits: 0 });
-      toast({ title: "User created successfully" });
+      setCreatedUser(data);
+      setIsCreatedModalOpen(true);
     },
     onError: (err) => {
       let msg = err.message;
@@ -287,6 +297,20 @@ export default function Users() {
 
   const availableRoles = isRootAdmin ? ["USER", "SUB_ADMIN"] : ["USER"];
 
+  const handleCopyLoginDetails = useCallback(() => {
+    const loginUrl = `${window.location.origin}/login`;
+    const text = [
+      `Username: ${createdUser?.username}`,
+      `Email: ${createdUser?.email}`,
+      `Login URL: ${loginUrl}`,
+      `Note: You will be prompted to set a password on first login.`,
+    ].join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }, [createdUser]);
+
   // ─── render ──────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
@@ -303,19 +327,20 @@ export default function Users() {
               <span className="text-xs text-muted-foreground">{secondaryRootCount}/2 secondary admins</span>
             )}
             <div className="flex gap-2">
-            {/* Invite Member */}
+            {/* Invite User (Recommended) */}
             <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2" data-testid="button-invite-member">
                   <Mail className="w-4 h-4" />
-                  Invite Member
+                  Invite User
+                  <span className="text-xs opacity-60 font-normal">(Recommended)</span>
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Invite Team Member</DialogTitle>
+                  <DialogTitle>Invite User</DialogTitle>
                   <DialogDescription>
-                    Send an invite link to a new team member. They'll receive an email to set up their account.
+                    Send an invite link via email. The recipient creates their own username and password — you never handle their credentials.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -363,18 +388,20 @@ export default function Users() {
               </DialogContent>
             </Dialog>
 
-            {/* Add User (direct creation) */}
+            {/* Create User Directly (Advanced) */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-user">
                   <Plus className="w-5 h-5" />
-                  Add User
+                  Create User Directly
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Create New User</DialogTitle>
-                  <DialogDescription>Add a new user to your organization</DialogDescription>
+                  <DialogTitle>Create User Directly</DialogTitle>
+                  <DialogDescription>
+                    Create an account immediately and set credentials yourself. A welcome email is sent automatically — the password is not included.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div>
@@ -456,6 +483,13 @@ export default function Users() {
               </DialogContent>
             </Dialog>
             </div>
+            <p className="text-xs text-muted-foreground text-right flex items-start gap-1">
+              <Info className="h-3 w-3 mt-0.5 shrink-0 opacity-60" />
+              <span>
+                <span className="font-medium">Invite User</span> — recipient sets their own password via email.{" "}
+                <span className="font-medium">Create Directly</span> — admin sets credentials; welcome email sent.
+              </span>
+            </p>
           </div>
         </div>
 
@@ -754,11 +788,11 @@ export default function Users() {
                       <div className="flex justify-center gap-2">
                         <Button variant="outline" onClick={() => setIsInviteOpen(true)} data-testid="button-invite-first">
                           <Mail className="mr-2 h-4 w-4" />
-                          Send Invite
+                          Invite User
                         </Button>
                         <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
                           <Plus className="mr-2 h-4 w-4" />
-                          Add User
+                          Create Directly
                         </Button>
                       </div>
                     </td>
@@ -869,6 +903,72 @@ export default function Users() {
         )}
 
       </div>
+        {/* Created user success modal */}
+        <Dialog open={isCreatedModalOpen} onOpenChange={setIsCreatedModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                Account Created
+              </DialogTitle>
+            </DialogHeader>
+
+            {createdUser?.emailFailed && (
+              <Alert variant="destructive" className="py-2.5">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Account created, but notification email failed. Share the login details below manually.
+                </AlertDescription>
+              </Alert>
+            )}
+            {!createdUser?.emailFailed && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <Mail className="h-4 w-4 shrink-0 text-green-500" />
+                Welcome email sent to <span className="font-medium text-foreground">{createdUser?.email}</span>
+              </p>
+            )}
+
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-2.5 text-sm">
+              <div className="grid grid-cols-[110px,1fr] gap-y-2 gap-x-3">
+                <span className="text-muted-foreground">Username</span>
+                <span className="font-mono font-medium">{createdUser?.username}</span>
+                <span className="text-muted-foreground">Email</span>
+                <span className="font-medium break-all">{createdUser?.email}</span>
+                <span className="text-muted-foreground">Credits</span>
+                <span className="font-medium">{formatNumber(createdUser?.creditsAllocated ?? 0)}</span>
+                <span className="text-muted-foreground">Login URL</span>
+                <span className="font-medium text-indigo-600 dark:text-indigo-400 break-all">
+                  {typeof window !== "undefined" ? window.location.origin : ""}/login
+                </span>
+              </div>
+            </div>
+
+            <Separator />
+
+            <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 opacity-70" />
+              The user will be prompted to set their own password on first login. Do not share the temporary password.
+            </p>
+
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleCopyLoginDetails}
+              >
+                {copied
+                  ? <CheckCircle className="h-4 w-4 text-green-500" />
+                  : <Copy className="h-4 w-4" />
+                }
+                {copied ? "Copied!" : "Copy Login Details"}
+              </Button>
+              <Button onClick={() => { setIsCreatedModalOpen(false); setCopied(false); }}>
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
     </AppLayout>
   );
 }
