@@ -140,6 +140,19 @@ export const users = pgTable("users", {
   sendPaused: boolean("send_paused").notNull().default(false),
   sendPausedReason: text("send_paused_reason"),
   sendPausedAt: timestamp("send_paused_at"),
+
+  // ── Sender identity profile ───────────────────────────────────────────────
+  // Used for From display name, Reply-To routing, and email signature injection.
+  // SQL migration: ALTER TABLE users ADD COLUMN IF NOT EXISTS sender_name text;
+  //               ALTER TABLE users ADD COLUMN IF NOT EXISTS sender_title text;
+  //               ALTER TABLE users ADD COLUMN IF NOT EXISTS sender_company text;
+  //               ALTER TABLE users ADD COLUMN IF NOT EXISTS sender_phone text;
+  //               ALTER TABLE users ADD COLUMN IF NOT EXISTS reply_to_email text;
+  senderName: text("sender_name"),
+  senderTitle: text("sender_title"),
+  senderCompany: text("sender_company"),
+  senderPhone: text("sender_phone"),
+  replyToEmail: text("reply_to_email"),
 }, (table) => ({
   // Supports fast inactivity job query filtering active non-root users
   activeActivityIdx: index("users_active_activity_idx").on(table.isActive, table.lastActivityAt),

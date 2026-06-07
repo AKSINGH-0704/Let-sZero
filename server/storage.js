@@ -127,6 +127,12 @@ const dbStorage = {
     if (updates.sendPaused !== undefined) allowedUpdates.sendPaused = updates.sendPaused;
     if (updates.sendPausedReason !== undefined) allowedUpdates.sendPausedReason = updates.sendPausedReason;
     if (updates.sendPausedAt !== undefined) allowedUpdates.sendPausedAt = updates.sendPausedAt;
+    // Sender identity profile fields
+    if (updates.senderName   !== undefined) allowedUpdates.senderName   = updates.senderName   || null;
+    if (updates.senderTitle  !== undefined) allowedUpdates.senderTitle  = updates.senderTitle  || null;
+    if (updates.senderCompany!== undefined) allowedUpdates.senderCompany= updates.senderCompany|| null;
+    if (updates.senderPhone  !== undefined) allowedUpdates.senderPhone  = updates.senderPhone  || null;
+    if (updates.replyToEmail !== undefined) allowedUpdates.replyToEmail = updates.replyToEmail || null;
     allowedUpdates.updatedAt = new Date();
     
     const [user] = await db.update(users)

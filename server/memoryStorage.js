@@ -95,8 +95,14 @@ export const memoryStorage = {
       isDormant: false,
       isSecondaryRoot: false,
       lastEmergencyRecoveryAt: null,
+      // Sender identity profile
+      senderName: null,
+      senderTitle: null,
+      senderCompany: null,
+      senderPhone: null,
+      replyToEmail: null,
     };
-    
+
     store.users.set(id, user);
     return this.sanitizeUser(user);
   },
@@ -187,6 +193,12 @@ export const memoryStorage = {
     if (updates.sendPaused !== undefined) user.sendPaused = updates.sendPaused;
     if (updates.sendPausedReason !== undefined) user.sendPausedReason = updates.sendPausedReason;
     if (updates.sendPausedAt !== undefined) user.sendPausedAt = updates.sendPausedAt;
+    // Sender identity profile
+    if (updates.senderName    !== undefined) user.senderName    = updates.senderName    || null;
+    if (updates.senderTitle   !== undefined) user.senderTitle   = updates.senderTitle   || null;
+    if (updates.senderCompany !== undefined) user.senderCompany = updates.senderCompany || null;
+    if (updates.senderPhone   !== undefined) user.senderPhone   = updates.senderPhone   || null;
+    if (updates.replyToEmail  !== undefined) user.replyToEmail  = updates.replyToEmail  || null;
     user.updatedAt = new Date();
 
     return this.sanitizeUser(user);

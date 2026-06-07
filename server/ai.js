@@ -321,12 +321,18 @@ export function peekSpamCache(subject, body) {
 // Targets patterns like [Your Name], [Title], [Company Name] that GPT outputs
 // when it doesn't have sender context. Only matches known placeholder words —
 // will not strip legitimate bracket usage like [see attached] or [Q3 results].
-function stripBracketPlaceholders(text) {
+// When a complete sender profile is provided, the model is instructed to use
+// {{sender_name}} etc. instead of bracket placeholders, so this function is
+// a safety net for incomplete profiles only.
+function stripBracketPlaceholders(text, userId) {
+  const BRACKET_RE = /\[\s*(?:Your\s+|The\s+|A\s+)?(?:Name|First\s*Name|Last\s*Name|Full\s*Name|Title|Job\s*Title|Position|Role|Company|Organization|Company\s*Name|Phone(?:\s*Number)?|Email(?:\s*Address)?|Signature|Department|Team)[^\]]{0,30}\]/gi;
+  if (BRACKET_RE.test(text)) {
+    console.warn(`[AI] Bracket placeholders remain in generated template — sender profile incomplete for userId=${userId ?? "unknown"}. Stripping.`);
+    // Reset lastIndex after the test() call before using replace()
+    BRACKET_RE.lastIndex = 0;
+  }
   return text
-    .replace(
-      /\[\s*(?:Your\s+|The\s+|A\s+)?(?:Name|First\s*Name|Last\s*Name|Full\s*Name|Title|Job\s*Title|Position|Role|Company|Organization|Company\s*Name|Phone(?:\s*Number)?|Email(?:\s*Address)?|Signature|Department|Team)[^\]]{0,30}\]/gi,
-      ""
-    )
+    .replace(BRACKET_RE, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -338,11 +344,23 @@ function getModelForPlan(effectivePlan, feature) {
   return "gpt-4o-mini";
 }
 
+// Campaign-type-specific preambles — set context before the user's goal is appended.
+const CAMPAIGN_TYPE_PREAMBLES = {
+  b2b_outreach: "This is a B2B cold outreach email. The recipient is a business professional. Use {{name}} in the greeting and {{company}} to reference their organization where it sounds natural.",
+  real_estate:  "This is a real estate inquiry email. The sender is reaching out about a property or listing. Do NOT use {{company}} — this is a personal inquiry, not a corporate pitch. Use {{name}} in the greeting only.",
+  recruitment:  "This is a recruitment outreach email. The sender is reaching out about a job opportunity. Use {{name}} in the greeting. {{company}} may be used to reference where the opportunity is based.",
+  partnership:  "This is a partnership proposal email. The sender wants to explore a business collaboration. Use {{name}} and {{company}} naturally.",
+  follow_up:    "This is a follow-up email to a previous conversation or interaction. Acknowledge the prior contact briefly. Use {{name}} in the greeting.",
+  general:      "This is a general outreach email. Use {{name}} in the greeting. Only use {{company}} if it fits naturally given the goal.",
+};
+
 export async function generateTemplate(prompt, tone = "professional", opts = {}) {
   const client = getClient();
   const effectivePlan = opts.effectivePlan || "free";
   const model = getModelForPlan(effectivePlan, "generate-template");
-  console.log(`[AI] generate-template ${opts.userId ?? "anon"} using ${model} on effective plan ${effectivePlan}`);
+  const campaignType = opts.campaignType || "general";
+  const senderCtx = opts.senderContext || {};
+  console.log(`[AI] generate-template ${opts.userId ?? "anon"} using ${model} plan=${effectivePlan} type=${campaignType}`);
 
   const toneGuide = {
     professional: "professional B2B tone — confident, clear, respectful",
@@ -351,42 +369,62 @@ export async function generateTemplate(prompt, tone = "professional", opts = {})
     casual: "casual tone — relaxed, direct, reads like a colleague wrote it"
   };
 
-  const systemPrompt = `You are an expert B2B email copywriter who specializes in creating high-converting email templates for marketing campaigns. You write emails that feel personal, not spammy.
+  // Build sender identity block — drives the sign-off and "written by a real person" signal
+  const hasSenderProfile = senderCtx.name || senderCtx.title || senderCtx.company;
+  const senderIdentityBlock = hasSenderProfile
+    ? `SENDER IDENTITY (the person writing this email):
+- Name: ${senderCtx.name || "not provided"}
+- Title: ${senderCtx.title || "not provided"}
+- Company: ${senderCtx.company || "not provided"}
+Write FROM this person's perspective. Sign off with their full name, title, and company on separate lines.`
+    : `SENDER IDENTITY: Not configured. End the email with:
+{{sender_name}}
+{{sender_title}}
+{{sender_company}}
+These will be replaced at send time with the sender's real details.`;
 
-AVAILABLE PLACEHOLDERS (use these naturally in the template):
+  const campaignPreamble = CAMPAIGN_TYPE_PREAMBLES[campaignType] || CAMPAIGN_TYPE_PREAMBLES.general;
+
+  const systemPrompt = `You are an expert email copywriter who writes high-converting outreach emails that sound like they came from a real human, not a marketing platform.
+
+CAMPAIGN CONTEXT:
+${campaignPreamble}
+
+${senderIdentityBlock}
+
+AVAILABLE RECIPIENT PLACEHOLDERS (use naturally — never mechanically):
 - {{name}} — recipient's first name or full name
-- {{company}} — recipient's company name
-- {{email}} — recipient's email address
-- {{category}} — recipient's industry/category
+- {{company}} — recipient's company name (B2B only — see campaign context above)
+- {{email}} — recipient's email address (rarely needed)
+- {{category}} — recipient's industry/category (only if goal makes it natural)
 
 RULES:
-- Always use {{name}} in the greeting
-- Use {{company}} where it makes the email more personal
-- Use {{category}} only if it fits naturally
-- Subject line must be under 50 characters — compelling but never clickbait
+- Write from the perspective of a real individual, not a company or platform
+- Use {{name}} in the greeting — but rephrase the sentence if it sounds forced
+- Only use {{company}} when the campaign context says it is appropriate AND it sounds natural in that specific sentence
+- Subject line must be under 50 characters — specific and honest, never clickbait
 - No ALL CAPS anywhere in subject or body
-- No excessive punctuation — avoid exclamation marks entirely unless the tone demands one
+- No exclamation marks unless the tone specifically calls for one
 - Avoid all spam trigger words: free, winner, urgent, guaranteed, click here, limited time, act now
-- Use plain conversational language — no salesy copy, no hype, no pressure tactics
-- Body should be 3-5 short paragraphs max
-- Include exactly one clear CTA — never stack multiple asks
-- The email must end with a specific invitation: a question, a proposed next step, or a meeting request
-- End with a professional sign-off (e.g. "Best regards," or "Thanks,") — NEVER write [Your Name], [Title], [Company], [Phone], [Email] or any text in square brackets
+- Plain conversational language — no corporate jargon, no hype, no pressure
+- Body: 3–4 short paragraphs maximum (under 180 words total)
+- Exactly one clear CTA — a single specific question or next-step invitation at the end
+- NEVER write [Your Name], [Title], [Company] or any text in square brackets — use {{sender_name}} etc. instead
 - Output ONLY valid JSON, no markdown, no explanation`;
 
-  const userPrompt = `Create a complete email template for this campaign:
+  const userPrompt = `Write a complete email template for this campaign:
 
 GOAL: ${prompt}
-TONE: ${tone} (${toneGuide[tone] || toneGuide.professional})
+TONE: ${tone} — ${toneGuide[tone] || toneGuide.professional}
 
 Return JSON:
 {
-  "subject": "email subject line with {{name}} or {{company}} if natural",
-  "body": "full email body with {{name}}, {{company}}, and other placeholders used naturally"
+  "subject": "subject line under 50 chars",
+  "body": "full email body"
 }`;
 
   try {
-    const requestHash = cache.makeKey(prompt, tone);
+    const requestHash = cache.makeKey(prompt, tone, campaignType, senderCtx.name || "");
     const t0 = Date.now();
     const response = await client.chat.completions.create({
       model,
@@ -416,7 +454,10 @@ Return JSON:
       throw new Error("Invalid template response from AI");
     }
     markAiHealthOk();
-    return { subject: parsed.subject, body: stripBracketPlaceholders(parsed.body) };
+    return {
+      subject: parsed.subject,
+      body: stripBracketPlaceholders(parsed.body, opts.userId),
+    };
   } catch (err) {
     markAiHealthError(err);
     console.error("[AI] generateTemplate error:", err.message);

@@ -177,6 +177,20 @@ export async function executeCampaign(campaignId, userId) {
 
   const template = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
+
+  // Build sender profile once — passed to every sendCampaignEmail call for
+  // From display name, Reply-To, and signature placeholder replacement.
+  const senderProfile = {
+    name:         owner.senderName    || null,
+    title:        owner.senderTitle   || null,
+    company:      owner.senderCompany || null,
+    phone:        owner.senderPhone   || null,
+    replyToEmail: owner.replyToEmail  || null,
+  };
+  if (!senderProfile.name) {
+    console.warn(`[CAMPAIGN] ${campaignId} — sender profile incomplete for userId=${userId}. From name will fall back to platform default.`);
+  }
+
   const rateLimiter = getRateLimiter();
   let rateLimiterFallbackLogged = false;
   let sentCount = 0;
@@ -230,7 +244,7 @@ export async function executeCampaign(campaignId, userId) {
             }
           }
         }
-        const info = await sendCampaignEmail(contact, template, userId, campaignEmailRecord.id);
+        const info = await sendCampaignEmail(contact, template, userId, campaignEmailRecord.id, senderProfile);
         console.log(`[SES SEND] contact=${contact.email} status=ok`);
 
         // Email delivered — mark SENT before credit deduction so a deduction
@@ -808,6 +822,32 @@ export async function registerRoutes(httpServer, app) {
         aiDailyLimit: rawLimit === Infinity ? null : rawLimit,
       });
     } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update sender identity profile fields — used by AI generation and email delivery
+  app.put("/api/profile", authMiddleware, async (req, res) => {
+    try {
+      const { senderName, senderTitle, senderCompany, senderPhone, replyToEmail } = req.body;
+
+      // Validate replyToEmail format if provided
+      if (replyToEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyToEmail)) {
+        return res.status(400).json({ message: "Reply-to email must be a valid email address" });
+      }
+
+      await storage.updateUser(req.user.id, {
+        senderName:    senderName    !== undefined ? (senderName.trim()    || null) : undefined,
+        senderTitle:   senderTitle   !== undefined ? (senderTitle.trim()   || null) : undefined,
+        senderCompany: senderCompany !== undefined ? (senderCompany.trim() || null) : undefined,
+        senderPhone:   senderPhone   !== undefined ? (senderPhone.trim()   || null) : undefined,
+        replyToEmail:  replyToEmail  !== undefined ? (replyToEmail.trim()  || null) : undefined,
+      });
+
+      const updatedUser = await storage.getUserById(req.user.id);
+      res.json({ message: "Profile updated", user: updatedUser });
+    } catch (error) {
+      console.error("[PROFILE] update error:", error.message);
       res.status(500).json({ message: error.message });
     }
   });
@@ -1873,7 +1913,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/ai/generate-template", authMiddleware, aiLimiter, async (req, res) => {
     try {
-      const { prompt, tone } = req.body;
+      const { prompt, tone, campaignType } = req.body;
       if (!prompt || !prompt.trim()) {
         return res.status(400).json({ message: "Prompt is required" });
       }
@@ -1890,7 +1930,20 @@ export async function registerRoutes(httpServer, app) {
       res.set("X-AI-Generations-Remaining", quota.remaining === Infinity ? "unlimited" : String(quota.remaining));
       res.set("X-AI-Generations-Reset", quota.resetsAt ? quota.resetsAt.toISOString() : "");
 
-      const template = await generateTemplate(prompt.trim(), tone || "professional", { userId: req.user.id, effectivePlan });
+      // Build sender context from user's profile — enriches the AI prompt so the
+      // model writes from a real person's perspective and produces a proper sign-off.
+      const senderContext = {
+        name:    req.user.senderName    || null,
+        title:   req.user.senderTitle   || null,
+        company: req.user.senderCompany || null,
+      };
+
+      const template = await generateTemplate(prompt.trim(), tone || "professional", {
+        userId: req.user.id,
+        effectivePlan,
+        campaignType: campaignType || "general",
+        senderContext,
+      });
       res.json(template);
     } catch (error) {
       storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));

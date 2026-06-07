@@ -113,7 +113,7 @@ function isThrottleError(err) {
 // Retry a single email send up to maxAttempts times with linear back-off.
 // Throttle errors (SES rate exceeded) do not consume a retry attempt — they use a
 // separate 2s+jitter delay and return the acquired token since no SES capacity was used.
-async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3) {
+async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3, senderProfile = {}) {
   let lastErr;
   let attempts = 0;
   let throttleRetries = 0;
@@ -121,7 +121,7 @@ async function sendWithRetry(contact, template, userId, campaignId, rateLimiter,
 
   while (attempts < maxAttempts) {
     try {
-      return await sendCampaignEmail(contact, template, userId, campaignEmailId);
+      return await sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile);
     } catch (err) {
       lastErr = err;
 
@@ -272,6 +272,19 @@ async function processCampaign(campaignId, userId, job) {
 
   const template = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
+
+  // Build sender profile once — used for From name, Reply-To, and signature placeholders
+  const senderProfile = {
+    name:         owner.senderName    || null,
+    title:        owner.senderTitle   || null,
+    company:      owner.senderCompany || null,
+    phone:        owner.senderPhone   || null,
+    replyToEmail: owner.replyToEmail  || null,
+  };
+  if (!senderProfile.name) {
+    console.warn(`[WORKER] Campaign ${campaignId} — sender profile incomplete for userId=${userId}. From name will fall back to platform default.`);
+  }
+
   const rateLimiter = getRateLimiter();
   let rateLimiterFallbackLogged = false;
   let sentCount = 0;
@@ -375,7 +388,7 @@ async function processCampaign(campaignId, userId, job) {
             }
           }
         }
-        const info = await sendWithRetry(contact, template, userId, campaignId, usedRateLimiter ? rateLimiter : null, campaignEmailRecord.id);
+        const info = await sendWithRetry(contact, template, userId, campaignId, usedRateLimiter ? rateLimiter : null, campaignEmailRecord.id, 3, senderProfile);
 
         // Email delivered to SES — mark SENT immediately before credit deduction.
         // If deduction fails, the email record correctly shows SENT (not FAILED).

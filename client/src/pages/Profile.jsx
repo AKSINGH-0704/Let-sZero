@@ -1,10 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import AppLayout from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   User,
   Mail,
@@ -12,7 +18,11 @@ import {
   Coins,
   Calendar,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Pencil,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { formatNumber, formatDate, getInitials, calculateCreditsRemaining } from "@/lib/utils";
 
@@ -31,10 +41,52 @@ const ROLE_CONFIG = {
 };
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
 
   const { data: templates } = useQuery({ queryKey: ["/api/templates"] });
   const { data: campaigns } = useQuery({ queryKey: ["/api/campaigns"] });
+
+  // Sender profile form state — initialised from live user object
+  const [senderForm, setSenderForm] = useState({
+    senderName:    user?.senderName    || "",
+    senderTitle:   user?.senderTitle   || "",
+    senderCompany: user?.senderCompany || "",
+    senderPhone:   user?.senderPhone   || "",
+    replyToEmail:  user?.replyToEmail  || "",
+  });
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError,   setSaveError]   = useState("");
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (fields) => {
+      const res = await apiRequest("PUT", "/api/profile", fields);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Failed to save profile");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      setSaveSuccess(true);
+      setSaveError("");
+      setTimeout(() => setSaveSuccess(false), 3000);
+    },
+    onError: (err) => {
+      setSaveError(err.message || "Failed to save profile");
+      setSaveSuccess(false);
+    },
+  });
+
+  const handleSenderChange = (field, value) => {
+    setSenderForm(prev => ({ ...prev, [field]: value }));
+    setSaveSuccess(false);
+    setSaveError("");
+  };
+
+  const handleSenderSave = () => {
+    updateProfileMutation.mutate(senderForm);
+  };
 
   if (!user) return null;
 
@@ -45,13 +97,15 @@ export default function Profile() {
     user.creditsUsed || 0
   );
 
+  const senderProfileComplete = !!(user.senderName && user.senderTitle && user.senderCompany);
+
   return (
     <AppLayout>
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
           <p className="text-muted-foreground">
-            View your account information
+            Manage your account and sender identity
           </p>
         </div>
 
@@ -73,6 +127,120 @@ export default function Profile() {
                   </Badge>
                 </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Sender Identity Profile ───────────────────────────────────────── */}
+        <Card className="border-card-border">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" />
+              Sender Identity
+            </CardTitle>
+            <CardDescription>
+              Your name, title, and company appear in email signatures and control the From display
+              name recipients see. Reply-To routes replies to your inbox.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!senderProfileComplete && (
+              <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
+                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
+                  Complete your sender profile so AI-generated templates include your real name,
+                  title, and company — and so recipients see your name in the From field.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="senderName">Full Name <span className="text-destructive">*</span></Label>
+                <Input
+                  id="senderName"
+                  placeholder="Jane Smith"
+                  value={senderForm.senderName}
+                  onChange={e => handleSenderChange("senderName", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Shown as the From name recipients see</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="senderTitle">Job Title</Label>
+                <Input
+                  id="senderTitle"
+                  placeholder="Account Executive"
+                  value={senderForm.senderTitle}
+                  onChange={e => handleSenderChange("senderTitle", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Used in email signature via {`{{sender_title}}`}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="senderCompany">Company Name</Label>
+                <Input
+                  id="senderCompany"
+                  placeholder="Acme Inc."
+                  value={senderForm.senderCompany}
+                  onChange={e => handleSenderChange("senderCompany", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Used in email signature via {`{{sender_company}}`}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="senderPhone">Phone Number</Label>
+                <Input
+                  id="senderPhone"
+                  placeholder="+1 (555) 000-0000"
+                  value={senderForm.senderPhone}
+                  onChange={e => handleSenderChange("senderPhone", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Used in email signature via {`{{sender_phone}}`}</p>
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="replyToEmail">Reply-To Email</Label>
+                <Input
+                  id="replyToEmail"
+                  type="email"
+                  placeholder="jane@yourcompany.com"
+                  value={senderForm.replyToEmail}
+                  onChange={e => handleSenderChange("replyToEmail", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Replies from recipients go to this address, not the sending address.
+                  Leave blank to use your account email.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-2 min-h-[28px]">
+                {saveSuccess && (
+                  <div className="flex items-center gap-1.5 text-sm text-green-600">
+                    <CheckCircle className="h-4 w-4" />
+                    Saved successfully
+                  </div>
+                )}
+                {saveError && (
+                  <div className="flex items-center gap-1.5 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    {saveError}
+                  </div>
+                )}
+              </div>
+              <Button
+                onClick={handleSenderSave}
+                disabled={updateProfileMutation.isPending}
+                className="gap-2"
+              >
+                {updateProfileMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Saving...</>
+                ) : (
+                  "Save Sender Profile"
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>

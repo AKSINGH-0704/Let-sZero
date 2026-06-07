@@ -57,6 +57,15 @@ const AI_TONES = [
   { value: "casual",       label: "Casual" },
 ];
 
+const CAMPAIGN_TYPES = [
+  { value: "b2b_outreach",  label: "B2B Outreach" },
+  { value: "real_estate",   label: "Real Estate" },
+  { value: "recruitment",   label: "Recruitment" },
+  { value: "partnership",   label: "Partnership" },
+  { value: "follow_up",     label: "Follow-up" },
+  { value: "general",       label: "General" },
+];
+
 export default function TemplateBuilder() {
   const {
     template, setTemplate, setTemplateIsAiGenerated, setAiAnalysis,
@@ -73,10 +82,11 @@ export default function TemplateBuilder() {
   const [localIsAiGenerated, setLocalIsAiGenerated] = useState(() => templateIsAiGenerated);
   const [error,        setError]        = useState("");
   const [activeTab,    setActiveTab]    = useState("edit");
-  const [aiOpen,       setAiOpen]       = useState(false);
-  const [aiPrompt,     setAiPrompt]     = useState("");
-  const [aiTone,       setAiTone]       = useState("professional");
-  const [aiError,      setAiError]      = useState("");
+  const [aiOpen,           setAiOpen]           = useState(false);
+  const [aiPrompt,         setAiPrompt]         = useState("");
+  const [aiTone,           setAiTone]           = useState("professional");
+  const [aiCampaignType,   setAiCampaignType]   = useState("general");
+  const [aiError,          setAiError]          = useState("");
   const [aiQuota,      setAiQuota]      = useState(null);
   const [focusedField, setFocusedField] = useState("body");
 
@@ -162,6 +172,7 @@ export default function TemplateBuilder() {
       const res = await apiRequest("POST", "/api/ai/generate-template", {
         prompt: aiPrompt,
         tone: aiTone,
+        campaignType: aiCampaignType,
       });
       const remaining = res.headers.get("X-AI-Generations-Remaining");
       const resetsAt  = res.headers.get("X-AI-Generations-Reset");
@@ -279,6 +290,17 @@ export default function TemplateBuilder() {
         </p>
       </div>
 
+      {/* ── Incomplete sender profile warning ───────────────────────────────── */}
+      {!(user?.senderName && user?.senderTitle && user?.senderCompany) && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
+            Your <a href="/app/profile" className="underline font-medium">sender profile</a> is incomplete.
+            AI-generated templates will use placeholder sign-offs, and recipients will see "RepMail" instead of your name.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ── AI Template Generator ────────────────────────────────────────────── */}
       <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
         <CollapsibleTrigger asChild>
@@ -330,8 +352,21 @@ export default function TemplateBuilder() {
                 />
               </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 flex-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium whitespace-nowrap">Type:</Label>
+                  <Select value={aiCampaignType} onValueChange={setAiCampaignType} disabled={generateTemplateMutation.isPending}>
+                    <SelectTrigger className="w-40 h-9 bg-background" data-testid="select-ai-campaign-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CAMPAIGN_TYPES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
                   <Label className="text-sm font-medium whitespace-nowrap">Tone:</Label>
                   <Select value={aiTone} onValueChange={setAiTone} disabled={generateTemplateMutation.isPending}>
                     <SelectTrigger className="w-36 h-9 bg-background" data-testid="select-ai-tone">
@@ -347,7 +382,7 @@ export default function TemplateBuilder() {
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
                   disabled={!aiPrompt.trim() || generateTemplateMutation.isPending || aiExhausted}
-                  className="gap-2"
+                  className="gap-2 ml-auto"
                   data-testid="button-ai-generate"
                 >
                   {generateTemplateMutation.isPending ? (
