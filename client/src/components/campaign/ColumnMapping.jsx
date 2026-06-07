@@ -12,17 +12,60 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CheckCircle, ArrowLeft, Mail, User, Building, Tag } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { AlertCircle, CheckCircle, ArrowLeft, Mail, User, Building, Tag, Info } from "lucide-react";
 
 const REQUIRED_FIELDS = [
-  { key: "email", label: "Email Address", icon: Mail, required: true }
+  {
+    key: "email",
+    label: "Email Address",
+    icon: Mail,
+    required: true,
+    status: "required",
+    tooltip: "RepMail delivers your campaign to this address. Every contact must have one.",
+  }
 ];
 
 const OPTIONAL_FIELDS = [
-  { key: "name", label: "Name", icon: User, required: false },
-  { key: "company", label: "Company", icon: Building, required: false },
-  { key: "category", label: "Category", icon: Tag, required: false }
+  {
+    key: "name",
+    label: "Name",
+    icon: User,
+    required: false,
+    status: "recommended",
+    tooltip: "Enables {{name}} personalization in your emails — e.g. \"Hi {{name}},\". Skipping this means every recipient gets a generic greeting.",
+  },
+  {
+    key: "company",
+    label: "Company",
+    icon: Building,
+    required: false,
+    status: "optional",
+    tooltip: "Enables {{company}} in your email templates. Useful for B2B outreach where you reference the recipient's organization.",
+  },
+  {
+    key: "category",
+    label: "Category",
+    icon: Tag,
+    required: false,
+    status: "optional",
+    tooltip: "Groups contacts so you can filter and target specific segments in future campaigns.",
+  }
 ];
+
+function FieldStatus({ status }) {
+  if (status === "required") {
+    return <span className="text-xs font-medium text-destructive">Required</span>;
+  }
+  if (status === "recommended") {
+    return <span className="text-xs font-medium text-amber-600 dark:text-amber-500">Recommended</span>;
+  }
+  return <span className="text-xs text-muted-foreground">Optional</span>;
+}
 
 export default function ColumnMapping() {
   const { contacts, columnMapping, setColumnMapping, goNext, goBack } = useCampaign();
@@ -105,11 +148,23 @@ export default function ColumnMapping() {
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
                     <Icon className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <div>
-                    <Label className="text-sm font-medium">
-                      {field.label}
-                      {field.required && <span className="text-destructive ml-1">*</span>}
-                    </Label>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-sm font-medium leading-none">
+                        {field.label}
+                      </Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-help inline-flex items-center text-muted-foreground hover:text-foreground transition-colors">
+                            <Info className="h-3 w-3" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-56 text-xs">
+                          {field.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <FieldStatus status={field.status} />
                   </div>
                 </div>
                 <div className="w-full sm:flex-1 sm:max-w-xs">
@@ -149,8 +204,8 @@ export default function ColumnMapping() {
           <CardContent>
             <div className="space-y-2">
               {contacts.slice(0, 3).map((contact, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className="flex items-center gap-4 p-3 rounded-md bg-muted/50"
                 >
                   <span className="text-sm font-medium w-8">{i + 1}.</span>
@@ -205,8 +260,8 @@ export default function ColumnMapping() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button 
-          onClick={validateAndContinue} 
+        <Button
+          onClick={validateAndContinue}
           disabled={!mapping.email}
           data-testid="button-next-step"
         >

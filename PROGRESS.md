@@ -141,6 +141,7 @@ Only **V** is treated as proven.
 | `/api/health` smtp | **V** | `smtp: "verified"` confirmed. DNS OK. TCP port 2587 open. SMTP AUTH accepted by SES. |
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
+| CSV mapping screen UX (field tooltips + status indicators) | **I** | Added ⓘ tooltip per field, Required/Recommended/Optional status, actual template variable references in tooltip copy |
 
 **Milestone status: I/V mixed** — 3 of 7 sub-items Verified
 
