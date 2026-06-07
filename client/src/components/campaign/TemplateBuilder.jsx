@@ -113,12 +113,18 @@ export default function TemplateBuilder() {
   );
 
   // ── Preview data — real contact data, no synthetic fallbacks ──────────────
+  // Sender profile fields are included so {{sender_name}} etc. render in preview,
+  // matching what the recipient will actually receive.
   const previewContact = contacts[previewContactIndex] || {};
   const mappedData = {
-    name:     columnMapping.name     ? String(previewContact[columnMapping.name]     ?? "").trim() : "",
-    email:    columnMapping.email    ? String(previewContact[columnMapping.email]    ?? "").trim() : "",
-    company:  columnMapping.company  ? String(previewContact[columnMapping.company]  ?? "").trim() : "",
-    category: columnMapping.category ? String(previewContact[columnMapping.category] ?? "").trim() : "",
+    name:           columnMapping.name     ? String(previewContact[columnMapping.name]     ?? "").trim() : "",
+    email:          columnMapping.email    ? String(previewContact[columnMapping.email]    ?? "").trim() : "",
+    company:        columnMapping.company  ? String(previewContact[columnMapping.company]  ?? "").trim() : "",
+    category:       columnMapping.category ? String(previewContact[columnMapping.category] ?? "").trim() : "",
+    sender_name:    user?.senderName    || "",
+    sender_title:   user?.senderTitle   || "",
+    sender_company: user?.senderCompany || "",
+    sender_phone:   user?.senderPhone   || "",
   };
   const previewSubject = replacePlaceholders(localTemplate.subject, mappedData);
   const previewBody    = replacePlaceholders(localTemplate.body,    mappedData);

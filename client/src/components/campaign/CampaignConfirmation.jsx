@@ -65,12 +65,17 @@ export default function CampaignConfirmation() {
 
   // Preview uses real contact data — no synthetic fallbacks.
   // replacePlaceholders renders missing values as blank, matching actual send behavior.
+  // Sender profile fields are included so {{sender_name}} etc. render in preview.
   const sampleContact = contacts[0] || {};
   const mappedData = {
-    name:     columnMapping.name     ? String(sampleContact[columnMapping.name]     ?? "").trim() : "",
-    email:    columnMapping.email    ? String(sampleContact[columnMapping.email]    ?? "").trim() : "",
-    company:  columnMapping.company  ? String(sampleContact[columnMapping.company]  ?? "").trim() : "",
-    category: columnMapping.category ? String(sampleContact[columnMapping.category] ?? "").trim() : "",
+    name:           columnMapping.name     ? String(sampleContact[columnMapping.name]     ?? "").trim() : "",
+    email:          columnMapping.email    ? String(sampleContact[columnMapping.email]    ?? "").trim() : "",
+    company:        columnMapping.company  ? String(sampleContact[columnMapping.company]  ?? "").trim() : "",
+    category:       columnMapping.category ? String(sampleContact[columnMapping.category] ?? "").trim() : "",
+    sender_name:    user?.senderName    || "",
+    sender_title:   user?.senderTitle   || "",
+    sender_company: user?.senderCompany || "",
+    sender_phone:   user?.senderPhone   || "",
   };
 
   // Per-field data coverage across all contacts.
@@ -123,12 +128,14 @@ export default function CampaignConfirmation() {
       return res.json();
     },
     onSuccess: (data) => {
+      // POST /api/campaigns returns { campaign, contactStats, validationErrors }.
+      // Extract the campaign object — data.id would be undefined on the wrapper.
+      const campaign = data.campaign ?? data;
       setCampaignName(name);
-      setCampaignId(data.id);
-      setCampaignData(data);
-      
-      queryClient.setQueryData(["/api/campaigns", data.id], data);
-      
+      setCampaignId(campaign.id);
+      setCampaignData(campaign);
+      queryClient.setQueryData(["/api/campaigns", campaign.id], campaign);
+
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });

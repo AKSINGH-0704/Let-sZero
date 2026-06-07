@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useCampaign } from "@/context/CampaignContext";
@@ -59,6 +59,9 @@ export default function ProgressTracker() {
   const { contacts, campaignName, campaignId, campaignData, resetCampaign, columnMapping } = useCampaign();
   const [emailStatuses, setEmailStatuses] = useState([]);
 
+  // Track mount time so polling can start fast and slow down once campaign is underway.
+  const mountedAt = useRef(Date.now());
+
   const { data: fetchedCampaign } = useQuery({
     queryKey: ["/api/campaigns", campaignId],
     enabled: !!campaignId,
@@ -67,17 +70,20 @@ export default function ProgressTracker() {
       if (data?.status === "COMPLETED" || data?.status === "FAILED") {
         return false;
       }
-      return 2000;
-    }
+      // Fast polling for the first 30 seconds (catches fast campaigns immediately),
+      // then slow to 2 seconds to reduce server load on long-running campaigns.
+      const elapsed = Date.now() - mountedAt.current;
+      return elapsed < 30_000 ? 500 : 2000;
+    },
   });
 
   const currentCampaign = fetchedCampaign || campaignData || {
-    status: "COMPLETED",
-    sentEmails: contacts.length,
+    status: "PENDING",
+    sentEmails: 0,
     failedEmails: 0,
     totalEmails: contacts.length,
-    creditsUsed: contacts.length,
-    name: campaignName
+    creditsUsed: 0,
+    name: campaignName,
   };
 
   useEffect(() => {
