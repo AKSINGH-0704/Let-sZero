@@ -36,6 +36,30 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+// Build 6-month chart from already-loaded campaign list (no extra DB query).
+function buildMonthlyChart(campaignsList) {
+  const buckets = {};
+  const orderedKeys = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("en-US", { month: "short" });
+    buckets[key] = { month: label, sent: 0, opened: 0 };
+    orderedKeys.push(key);
+  }
+  for (const c of campaignsList) {
+    const d = new Date(c.createdAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (buckets[key]) {
+      buckets[key].sent   += c.sentEmails   || 0;
+      buckets[key].opened += c.openedEmails || 0;
+    }
+  }
+  return orderedKeys.map(k => buckets[k]);
+}
+
 // PostgreSQL-based storage implementation
 const dbStorage = {
   async createUser(userData) {
@@ -731,11 +755,38 @@ const dbStorage = {
 
   async getDashboardStats(userId, isRootAdmin) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
+
+    // Aggregate engagement metrics directly from loaded campaigns (no extra query).
+    const totalSent      = campaignsList.reduce((s, c) => s + (c.sentEmails    || 0), 0);
+    const totalAttempted = campaignsList.reduce((s, c) => s + (c.totalEmails   || 0), 0);
+    const totalOpens     = campaignsList.reduce((s, c) => s + (c.openedEmails  || 0), 0);
+    const totalClicks    = campaignsList.reduce((s, c) => s + (c.clickedEmails || 0), 0);
+
+    // Rates expressed as 0-100 numbers; null when denominator is zero.
+    const avgOpenRate  = totalSent > 0 ? (totalOpens  / totalSent)     * 100 : null;
+    const avgClickRate = totalSent > 0 ? (totalClicks / totalSent)     * 100 : null;
+    const successRate  = totalAttempted > 0 ? (totalSent / totalAttempted) * 100 : null;
+
+    // Active contacts count for this user.
+    let activeContacts = 0;
+    if (userId) {
+      const [contactsAgg] = await db.select({ count: sql`COUNT(*)` })
+        .from(contacts).where(eq(contacts.userId, userId));
+      activeContacts = Number(contactsAgg?.count) || 0;
+    }
+
     const base = {
-      totalCampaigns: campaignsList.length,
-      activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED" || c.status === "PENDING").length,
+      totalCampaigns:    campaignsList.length,
+      activeCampaigns:   campaignsList.filter(c => ["RUNNING","PAUSED","PENDING"].includes(c.status)).length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
-      totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
+      totalEmailsSent:   totalSent,
+      totalOpens,
+      totalClicks,
+      avgOpenRate,
+      avgClickRate,
+      successRate,
+      activeContacts,
+      monthlyChart:      buildMonthlyChart(campaignsList),
     };
 
     if (!isRootAdmin) return base;

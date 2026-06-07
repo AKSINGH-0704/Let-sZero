@@ -137,15 +137,8 @@ export default function Dashboard() {
       )
     : 0);
 
-  // Chart data derived from stats or fallback
-  const chartData = [
-    { month: 'Jan', sent: 12400, delivered: 11800 },
-    { month: 'Feb', sent: 15600, delivered: 14900 },
-    { month: 'Mar', sent: 18200, delivered: 17500 },
-    { month: 'Apr', sent: 21300, delivered: 20400 },
-    { month: 'May', sent: 24800, delivered: 23900 },
-    { month: 'Jun', sent: 28500, delivered: 27400 },
-  ];
+  // Chart data: real monthly aggregates from stats (last 6 calendar months).
+  const chartData = stats?.monthlyChart || [];
 
   const isAdmin = user?.role === 'ROOT_ADMIN' || user?.role === 'SUB_ADMIN' || user?.isSecondaryRoot;
 
@@ -352,30 +345,26 @@ export default function Dashboard() {
         {/* Stats Grid */}
         <motion.div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" variants={itemVariants}>
           {[
-            { icon: Mail, label: 'Emails Sent', value: user?.creditsUsed || 0, color: 'accent', trend: '+12.5%' },
-            { icon: Activity, label: 'Delivery Rate', value: '97.4%', color: 'primary', trend: '+8.2%' },
-            { icon: Users, label: 'Active Contacts', value: stats?.activeContacts || 0, color: 'secondary', trend: '+5.8%' },
-            { icon: ArrowUpRight, label: 'Active Campaigns', value: stats?.activeCampaigns || 0, color: 'accent', trend: '+15.3%' },
+            { icon: Mail,         label: 'Emails Sent',      value: stats?.totalEmailsSent ?? 0 },
+            { icon: TrendingUp,   label: 'Avg. Open Rate',   value: stats?.avgOpenRate  != null ? stats.avgOpenRate.toFixed(1)  + '%' : '—' },
+            { icon: Users,        label: 'Active Contacts',  value: stats?.activeContacts ?? 0 },
+            { icon: ArrowUpRight, label: 'Active Campaigns', value: stats?.activeCampaigns || 0 },
           ].map((stat, idx) => (
-            <motion.div 
+            <motion.div
               key={stat.label}
               className="bg-card rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-lg hover:border-white/20 transition-all group cursor-pointer"
               whileHover={{ y: -4, transition: { duration: 0.2 } }}
             >
               <div className="flex items-start justify-between mb-4">
-                <motion.div 
+                <motion.div
                   className="p-3 bg-cyan-900/20 rounded-lg group-hover:bg-cyan-900/30 transition-colors"
                   whileHover={{ scale: 1.1, rotate: 5 }}
                 >
                   <stat.icon className="w-5 h-5 text-cyan-300" />
                 </motion.div>
-                <div className="flex items-center gap-1 text-green-600 text-sm">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>{stat.trend}</span>
-                </div>
               </div>
               <p className="text-muted-foreground text-sm font-medium mb-1">{stat.label}</p>
-              <motion.h3 
+              <motion.h3
                 className="text-3xl font-bold text-foreground"
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -462,9 +451,9 @@ export default function Dashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { icon: BarChart3, label: 'Total Campaigns', value: stats?.totalCampaigns || 0, color: 'orange', desc: 'All time' },
-                    { icon: Activity, label: 'Active', value: stats?.activeCampaigns || 0, color: 'green', desc: 'Currently running' },
-                    { icon: Mail, label: 'Emails Sent', value: user?.creditsUsed || 0, color: 'blue', desc: 'Total delivered' },
-                    { icon: PieChart, label: 'Avg. Open Rate', value: 'N/A', color: 'orange', desc: 'Engagement metric', highlight: true },
+                    { icon: Activity,  label: 'Active',           value: stats?.activeCampaigns || 0, color: 'green', desc: 'Currently running' },
+                    { icon: Mail,      label: 'Emails Sent',      value: stats?.totalEmailsSent || 0, color: 'blue',   desc: 'Total sent' },
+                    { icon: PieChart,  label: 'Avg. Open Rate',   value: stats?.avgOpenRate != null ? stats.avgOpenRate.toFixed(1) + '%' : '—', color: 'orange', desc: 'Engagement metric', highlight: true },
                   ].map((item, idx) => (
                     <motion.div 
                       key={item.label}
@@ -498,7 +487,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-lg font-semibold text-foreground">Campaign Performance</h3>
-                <p className="text-sm text-muted-foreground">Email delivery trends over time</p>
+                <p className="text-sm text-muted-foreground">Emails sent and opened — last 6 months</p>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <div className="flex items-center gap-1">
@@ -507,44 +496,54 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded" style={{ backgroundColor: 'hsl(var(--chart-2))' }}></div>
-                  <span className="text-muted-foreground">Delivered</span>
+                  <span className="text-muted-foreground">Opened</span>
                 </div>
               </div>
             </div>
-            <motion.div 
-              className="h-56 sm:h-80"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorDelivered" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
-                  <YAxis stroke="hsl(var(--muted-foreground))" />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--card))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
-                    }}
-                  />
-                  <Area type="monotone" dataKey="sent" stroke="hsl(var(--chart-1))" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSent)" />
-                  <Area type="monotone" dataKey="delivered" stroke="hsl(var(--chart-2))" strokeWidth={2} fillOpacity={1} fill="url(#colorDelivered)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </motion.div>
+            {!statsLoading && chartData.every(d => d.sent === 0) ? (
+              <div className="h-56 sm:h-80 flex items-center justify-center">
+                <div className="text-center">
+                  <Send className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">No campaign data yet</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">Send your first campaign to see trends here</p>
+                </div>
+              </div>
+            ) : (
+              <motion.div
+                className="h-56 sm:h-80"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorOpened" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                    <YAxis stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                      }}
+                    />
+                    <Area type="monotone" dataKey="sent"   stroke="hsl(var(--chart-1))" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSent)" />
+                    <Area type="monotone" dataKey="opened" stroke="hsl(var(--chart-2))" strokeWidth={2}   fillOpacity={1} fill="url(#colorOpened)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </motion.div>
+            )}
           </motion.div>
 
           <motion.div 
