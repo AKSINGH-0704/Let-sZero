@@ -156,7 +156,7 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setIsCreateOpen(false);
-      setNewUser({ username: "", email: "", password: "", role: "USER", credits: 0 });
+      setNewUser({ username: "", email: "", password: "", role: createUserRoles[0], credits: 0 });
       setCreatedUser(data);
       setIsCreatedModalOpen(true);
     },
@@ -295,7 +295,11 @@ export default function Users() {
     allocateMutation.mutate({ userId: allocateUserId, credits });
   };
 
-  const availableRoles = isRootAdmin ? ["USER", "SUB_ADMIN"] : ["USER"];
+  // ROOT_ADMIN creates SUB_ADMINs directly (server enforces this).
+  // ROOT_ADMIN invites both USER and SUB_ADMIN (invite flow allows both).
+  // SUB_ADMIN creates and invites USER only.
+  const createUserRoles = (isRootAdmin || isSecondaryRoot) ? ["SUB_ADMIN"] : ["USER"];
+  const inviteUserRoles = (isRootAdmin || isSecondaryRoot) ? ["USER", "SUB_ADMIN"] : ["USER"];
 
   const handleCopyLoginDetails = useCallback(() => {
     const loginUrl = `${window.location.origin}/login`;
@@ -366,7 +370,7 @@ export default function Users() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableRoles.map(r => (
+                        {inviteUserRoles.map(r => (
                           <SelectItem key={r} value={r}>{ROLE_CONFIG[r].label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -389,7 +393,13 @@ export default function Users() {
             </Dialog>
 
             {/* Create User Directly (Advanced) */}
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Dialog
+              open={isCreateOpen}
+              onOpenChange={(open) => {
+                setIsCreateOpen(open);
+                if (open) setNewUser({ username: "", email: "", password: "", role: createUserRoles[0], credits: 0 });
+              }}
+            >
               <DialogTrigger asChild>
                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-user">
                   <Plus className="w-5 h-5" />
@@ -449,7 +459,7 @@ export default function Users() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableRoles.map(r => (
+                        {createUserRoles.map(r => (
                           <SelectItem key={r} value={r}>{ROLE_CONFIG[r].label}</SelectItem>
                         ))}
                       </SelectContent>

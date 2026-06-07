@@ -278,41 +278,43 @@ const dbStorage = {
       throw new Error("Insufficient credits available");
     }
     
-    const fromBalanceBefore = fromUser.creditsAllocated;
-    const toBalanceBefore = toUser.creditsReceived;
-    
+    // Record remaining balance (not the allocated pool) so the transaction log
+    // shows the meaningful "available credits before/after" for each party.
+    const fromRemainingBefore = fromUser.creditsRemaining;
+    const toRemainingBefore   = toUser.creditsRemaining;
+
     await db.transaction(async (tx) => {
       await tx.update(users)
-        .set({ 
+        .set({
           creditsAllocated: sql`credits_allocated + ${amount}`,
           updatedAt: new Date()
         })
         .where(eq(users.id, fromUserId));
-      
+
       await tx.update(users)
-        .set({ 
+        .set({
           creditsReceived: sql`credits_received + ${amount}`,
           updatedAt: new Date()
         })
         .where(eq(users.id, toUserId));
-      
+
       await tx.insert(creditTransactions).values({
         userId: fromUserId,
         type: "allocation_out",
         amount: -amount,
-        balanceBefore: fromBalanceBefore,
-        balanceAfter: fromBalanceBefore + amount,
+        balanceBefore: fromRemainingBefore,
+        balanceAfter: fromRemainingBefore - amount,
         fromUserId,
         toUserId,
         description: `Allocated ${amount} credits to ${toUser.username}`
       });
-      
+
       await tx.insert(creditTransactions).values({
         userId: toUserId,
         type: "allocation_in",
         amount: amount,
-        balanceBefore: toBalanceBefore,
-        balanceAfter: toBalanceBefore + amount,
+        balanceBefore: toRemainingBefore,
+        balanceAfter: toRemainingBefore + amount,
         fromUserId,
         toUserId,
         description: `Received ${amount} credits from ${fromUser.username}`
