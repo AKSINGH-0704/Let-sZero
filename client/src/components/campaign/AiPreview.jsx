@@ -64,15 +64,15 @@ export default function AiPreview() {
   const generateLocalPreviews = () =>
     sampleContacts.map(contact => {
       const data = {
-        name: contact.name || "Valued Customer",
-        email: contact.email || "customer@example.com",
-        company: contact.company || "Your Company",
-        category: contact.category || "General",
+        name:     contact.name     || "",
+        email:    contact.email    || "",
+        company:  contact.company  || "",
+        category: contact.category || "",
       };
       return {
         contact: data,
         subject: replacePlaceholders(template.subject, data),
-        body: replacePlaceholders(template.body, data),
+        body:    replacePlaceholders(template.body,    data),
       };
     });
 

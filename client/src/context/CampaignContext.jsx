@@ -11,8 +11,12 @@ const INITIAL_STATE = {
     subject: "",
     body: ""
   },
+  templateIsAiGenerated: false,
   aiPreviews: [],
   spamAnalysis: null,
+  acceptedSuggestions: [],
+  acceptedDetails: {},
+  aiAnalysis: null,
   campaignName: "",
   campaignId: null,
   campaignData: null
@@ -33,8 +37,12 @@ export function CampaignProvider({ children }) {
     setCampaignState(prev => ({ ...prev, columnMapping: mapping }));
   };
 
-  const setTemplate = (template) => {
-    setCampaignState(prev => ({ ...prev, template: { ...prev.template, ...template } }));
+  const setTemplate = (updates) => {
+    setCampaignState(prev => ({ ...prev, template: { ...prev.template, ...updates } }));
+  };
+
+  const setTemplateIsAiGenerated = (value) => {
+    setCampaignState(prev => ({ ...prev, templateIsAiGenerated: value }));
   };
 
   const setAiPreviews = (previews) => {
@@ -43,6 +51,18 @@ export function CampaignProvider({ children }) {
 
   const setSpamAnalysis = (analysis) => {
     setCampaignState(prev => ({ ...prev, spamAnalysis: analysis }));
+  };
+
+  const setAcceptedSuggestions = (suggestions) => {
+    setCampaignState(prev => ({ ...prev, acceptedSuggestions: suggestions }));
+  };
+
+  const setAcceptedDetails = (details) => {
+    setCampaignState(prev => ({ ...prev, acceptedDetails: details }));
+  };
+
+  const setAiAnalysis = (analysis) => {
+    setCampaignState(prev => ({ ...prev, aiAnalysis: analysis }));
   };
 
   const setCampaignName = (name) => {
@@ -75,8 +95,12 @@ export function CampaignProvider({ children }) {
     setContacts,
     setColumnMapping,
     setTemplate,
+    setTemplateIsAiGenerated,
     setAiPreviews,
     setSpamAnalysis,
+    setAcceptedSuggestions,
+    setAcceptedDetails,
+    setAiAnalysis,
     setCampaignName,
     setCampaignId,
     setCampaignData,

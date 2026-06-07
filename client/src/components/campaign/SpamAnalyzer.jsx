@@ -22,8 +22,9 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Info,
 } from "lucide-react";
-import { calculateSpamScore, replacePlaceholders, cn } from "@/lib/utils";
+import { calculateSpamScore, replacePlaceholders, computePersonalizationStats, cn } from "@/lib/utils";
 
 function getScoreColor(score) {
   if (score <= 30) return "text-green-600";
@@ -48,56 +49,87 @@ const DEMO_MERGE_VARS = {
   email: "alex@example.com",
 };
 
+const ALL_PLACEHOLDER_DEFS = [
+  { key: "{{name}}",     mapKey: "name",     label: "Name" },
+  { key: "{{company}}",  mapKey: "company",  label: "Company" },
+  { key: "{{category}}", mapKey: "category", label: "Category" },
+  { key: "{{email}}",    mapKey: "email",    label: "Email" },
+];
+
 export default function SpamAnalyzer() {
-  const { template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate, contacts, columnMapping } = useCampaign();
+  const {
+    template, setSpamAnalysis, spamAnalysis, goNext, goBack, setTemplate,
+    contacts, columnMapping,
+    templateIsAiGenerated,
+    acceptedSuggestions: contextAcceptedSuggestions,
+    acceptedDetails:     contextAcceptedDetails,
+    aiAnalysis:          contextAiAnalysis,
+    setAcceptedSuggestions: setContextAcceptedSuggestions,
+    setAcceptedDetails:     setContextAcceptedDetails,
+    setAiAnalysis:          setContextAiAnalysis,
+  } = useCampaign();
   const { user } = useAuth();
 
   const initialAnalysis = spamAnalysis || calculateSpamScore(template.subject, template.body);
 
-  // Live analysis — always reflects the current template after each accept; carries score + breakdown
   const [localAnalysisLive, setLocalAnalysisLive] = useState(() => initialAnalysis);
+  const [displayAnalysis,   setDisplayAnalysis]   = useState(() => initialAnalysis);
 
-  // Stable display snapshot — used for risky words and keyword suggestions
-  // Resets to current template state after each AI analysis run
-  const [displayAnalysis, setDisplayAnalysis] = useState(() => initialAnalysis);
+  // Initialize from context so Back→Forward navigation preserves results
+  const [aiAnalysis, setAiAnalysisLocal] = useState(contextAiAnalysis);
+  const [prevScore,  setPrevScore]       = useState(null);
+  const [acceptedSuggestions, setAcceptedSuggestionsLocal] = useState(
+    () => new Set(contextAcceptedSuggestions)
+  );
+  const [acceptedDetails, setAcceptedDetailsLocal] = useState(
+    () => new Map(Object.entries(contextAcceptedDetails))
+  );
 
-  // AI analysis result — null until the first AI call completes
-  const [aiAnalysis, setAiAnalysis] = useState(null);
-
-  // Score at the time of the most recent AI analysis run; null = no baseline yet
-  const [prevScore, setPrevScore] = useState(null);
-
-  // Accepted suggestions — accumulates across accepts, reset on re-analysis
-  const [acceptedSuggestions, setAcceptedSuggestions] = useState(new Set());
-  const [acceptedDetails, setAcceptedDetails] = useState(new Map());
-
-  // Quota + error state
-  const [aiQuota, setAiQuota] = useState(null);
-  const [quotaError, setQuotaError] = useState(null);
+  const [aiQuota,          setAiQuota]          = useState(null);
+  const [quotaError,       setQuotaError]       = useState(null);
   const [aiAnalysisFailed, setAiAnalysisFailed] = useState(false);
+
+  // Sync accepted state to both local and context in one call
+  const syncAccepted = (newSet, newMap) => {
+    setAcceptedSuggestionsLocal(newSet);
+    setAcceptedDetailsLocal(newMap);
+    setContextAcceptedSuggestions([...newSet]);
+    setContextAcceptedDetails(Object.fromEntries(newMap));
+  };
+
+  // ── Quota helpers (needed before useEffect) ────────────────────────────────
+  const aiIsUnlimited     = user?.aiDailyLimit == null;
+  const aiLimit           = user?.aiDailyLimit ?? 0;
+  const aiRemainingFromHeader =
+    aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
+      ? parseInt(aiQuota.remaining, 10) : null;
+  const aiRemaining = aiIsUnlimited ? Infinity
+    : aiRemainingFromHeader != null  ? aiRemainingFromHeader
+    : Math.max(0, aiLimit - (user?.aiGenerationsToday ?? 0));
+  const aiUsed     = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
+  const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
+  const aiWarning   = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
-      // Substitute merge tags before sending to AI so GPT evaluates rendered content,
-      // not raw placeholder syntax like {{name}} which triggers mass-template penalties.
       const firstContact = contacts[0] || {};
       const mergeData = {
-        name: (columnMapping?.name && firstContact[columnMapping.name]) || DEMO_MERGE_VARS.name,
-        company: (columnMapping?.company && firstContact[columnMapping.company]) || DEMO_MERGE_VARS.company,
+        name:     (columnMapping?.name     && firstContact[columnMapping.name])     || DEMO_MERGE_VARS.name,
+        company:  (columnMapping?.company  && firstContact[columnMapping.company])  || DEMO_MERGE_VARS.company,
         category: (columnMapping?.category && firstContact[columnMapping.category]) || DEMO_MERGE_VARS.category,
-        email: (columnMapping?.email && firstContact[columnMapping.email]) || DEMO_MERGE_VARS.email,
+        email:    (columnMapping?.email    && firstContact[columnMapping.email])    || DEMO_MERGE_VARS.email,
       };
       const renderedSubject = replacePlaceholders(template.subject, mergeData);
-      const renderedBody = replacePlaceholders(template.body, mergeData);
+      const renderedBody    = replacePlaceholders(template.body,    mergeData);
 
       const res = await apiRequest("POST", "/api/ai/spam-analysis", {
         subject: renderedSubject,
-        body: renderedBody,
+        body:    renderedBody,
         acceptedSuggestions: [...acceptedSuggestions],
       });
       const remaining = res.headers.get("X-AI-Generations-Remaining");
-      const resetsAt = res.headers.get("X-AI-Generations-Reset");
-      const data = await res.json();
+      const resetsAt  = res.headers.get("X-AI-Generations-Reset");
+      const data      = await res.json();
       return { ...data, _quota: { remaining, resetsAt } };
     },
     onSuccess: (data) => {
@@ -108,22 +140,23 @@ export default function SpamAnalyzer() {
       setQuotaError(null);
       setAiAnalysisFailed(false);
 
-      // Baseline for delta: score at the moment this analysis completed
       setPrevScore(localAnalysisLive.score);
 
-      const { _quota, fromCache, ...analysisData } = data;
-      setAiAnalysis({
-        suggestions: analysisData.suggestions || [],
-        summary: analysisData.summary || null,
-      });
+      const { _quota, fromCache, ...rest } = data;
+      const analysisResult = {
+        suggestions: rest.suggestions || [],
+        summary:     rest.summary     || null,
+      };
+      setAiAnalysisLocal(analysisResult);
+      setContextAiAnalysis(analysisResult);
 
-      // Reset keyword display snapshot to the current (post-accept) template state
       const currentKeywords = calculateSpamScore(template.subject, template.body);
       setLocalAnalysisLive(currentKeywords);
       setDisplayAnalysis(currentKeywords);
       setSpamAnalysis(currentKeywords);
-      setAcceptedSuggestions(new Set());
-      setAcceptedDetails(new Map());
+
+      // Reset accepted state — fresh analysis, prior accepts no longer apply
+      syncAccepted(new Set(), new Map());
     },
     onError: (err) => {
       try {
@@ -144,58 +177,45 @@ export default function SpamAnalyzer() {
   const acceptSuggestion = (suggestion) => {
     if (suggestion.actionable === false) return;
 
-    const pattern = new RegExp(escapeRegex(suggestion.original), "gi");
+    const pattern    = new RegExp(escapeRegex(suggestion.original), "gi");
     const newSubject = template.subject.replace(pattern, suggestion.suggestion);
-    const newBody = template.body.replace(pattern, suggestion.suggestion);
+    const newBody    = template.body.replace(pattern, suggestion.suggestion);
 
     setTemplate({ subject: newSubject, body: newBody });
 
     const changedFields = [];
     if (newSubject !== template.subject) changedFields.push("subject line");
-    if (newBody !== template.body) changedFields.push("body");
-    setAcceptedSuggestions(prev => new Set([...prev, suggestion.original]));
-    setAcceptedDetails(prev => new Map([...prev, [suggestion.original, changedFields]]));
+    if (newBody    !== template.body)    changedFields.push("body");
 
-    // Always recalculate live — no AI-source branching
+    const newSet = new Set([...acceptedSuggestions, suggestion.original]);
+    const newMap = new Map([...acceptedDetails, [suggestion.original, changedFields]]);
+    syncAccepted(newSet, newMap);
+
     const newAnalysis = calculateSpamScore(newSubject, newBody);
     setLocalAnalysisLive(newAnalysis);
     setSpamAnalysis(newAnalysis);
   };
 
-  // Quota derived values
-  const aiIsUnlimited = user?.aiDailyLimit == null;
-  const aiLimit = user?.aiDailyLimit ?? 0;
-  const aiRemainingFromHeader = aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
-    ? parseInt(aiQuota.remaining, 10) : null;
-  const aiRemaining = aiIsUnlimited ? Infinity
-    : aiRemainingFromHeader != null ? aiRemainingFromHeader
-    : Math.max(0, aiLimit - (user?.aiGenerationsToday ?? 0));
-  const aiUsed = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
-  const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
-  const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
-
-  // Auto-run AI analysis on mount; cache hits are served free by peekSpamCache
+  // Auto-run AI analysis on mount.
+  // Skip if: AI-generated template (don't criticize own output), or results already in context.
   useEffect(() => {
-    if (!aiExhausted) {
+    if (!aiExhausted && contextAiAnalysis === null && !templateIsAiGenerated) {
       analyzeMutation.mutate();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const score = localAnalysisLive.score;
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const score     = localAnalysisLive.score;
   const breakdown = localAnalysisLive.breakdown || [];
   const { riskyWords, suggestions } = displayAnalysis;
 
-  // Score delta — shown once AI has run and local score has moved from that baseline
   const scoreDelta = prevScore !== null && prevScore !== score ? score - prevScore : null;
 
-  // Keyword improvements from deterministic local analysis (stable snapshot)
   const keywordSuggestions = (suggestions || []).filter(s => s.actionable !== false);
-  const structuralTips = (suggestions || []).filter(s => s.actionable === false);
+  const structuralTips     = (suggestions || []).filter(s => s.actionable === false);
 
-  // AI observations (non-actionable) rendered inside the AI Deliverability Review card
   const aiObservations = (aiAnalysis?.suggestions || []).filter(s => s.actionable === false);
 
-  // AI recommendations: actionable suggestions not already covered by local keyword list
   const localKeywordOriginals = new Set(
     keywordSuggestions.map(s => (s.original || "").toLowerCase())
   );
@@ -205,28 +225,102 @@ export default function SpamAnalyzer() {
     !acceptedSuggestions.has(s.original)
   );
 
-  // An AI recommendation can only be applied if its original phrase exists in the raw template
   const isApplicableToTemplate = (originalText) => {
     const combined = ((template.subject || "") + " " + (template.body || "")).toLowerCase();
     return combined.includes((originalText || "").toLowerCase());
   };
 
-  const showAiPanel = aiAnalysis !== null || analyzeMutation.isPending;
+  const showAiPanel           = aiAnalysis !== null || analyzeMutation.isPending;
   const showAiRecommendations = aiRecommendations.length > 0;
-  const showSuggestionsCard = keywordSuggestions.length > 0 || structuralTips.length > 0 || showAiRecommendations;
+  const showSuggestionsCard   = keywordSuggestions.length > 0 || structuralTips.length > 0 || showAiRecommendations;
+
+  // ── Objective quality signals ──────────────────────────────────────────────
+  const personalizationStats = computePersonalizationStats(contacts, columnMapping);
+
+  const subjectLen    = (template.subject || "").length;
+  const subjectSignal = subjectLen === 0 ? null
+    : subjectLen <= 50 ? "good" : subjectLen <= 70 ? "caution" : "bad";
+
+  const bodyWords  = (template.body || "").trim().split(/\s+/).filter(Boolean).length;
+  const bodySignal = bodyWords === 0 ? null
+    : bodyWords <= 200 ? "good" : bodyWords <= 350 ? "caution" : "bad";
+
+  const usedPlaceholders = ALL_PLACEHOLDER_DEFS.filter(
+    p => template.subject?.includes(p.key) || template.body?.includes(p.key)
+  );
+  const coveredPlaceholders = usedPlaceholders.filter(p => {
+    const s = personalizationStats[p.mapKey];
+    return s.mapped && s.available > 0;
+  });
+  const coverageSignal = usedPlaceholders.length === 0 ? "none"
+    : coveredPlaceholders.length === usedPlaceholders.length ? "good"
+    : coveredPlaceholders.length > 0 ? "caution"
+    : "bad";
+
+  const INVALID_PH_RE = /\{\{[^}]*@[^}]*\}\}/g;
+  const invalidPlaceholders = [...new Set([
+    ...Array.from((template.subject || "").matchAll(INVALID_PH_RE), m => m[0]),
+    ...Array.from((template.body    || "").matchAll(INVALID_PH_RE), m => m[0]),
+  ])];
+
+  // ── Email Ready state ──────────────────────────────────────────────────────
+  const analysisRan     = aiAnalysis !== null || aiAnalysisFailed;
+  const pendingKeyFixes = keywordSuggestions.filter(s => !acceptedSuggestions.has(s.original)).length;
+  const emailIsReady    = score <= 30
+    && (analysisRan || templateIsAiGenerated)
+    && aiRecommendations.length === 0
+    && pendingKeyFixes === 0
+    && invalidPlaceholders.length === 0;
+
+  // ── Signal helpers ─────────────────────────────────────────────────────────
+  const signalIcon = (sig) => {
+    if (sig === "good")    return <CheckCircle   className="h-4 w-4 text-green-600 shrink-0" />;
+    if (sig === "caution") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />;
+    if (sig === "bad")     return <AlertCircle   className="h-4 w-4 text-red-600 shrink-0" />;
+    return <Info className="h-4 w-4 text-muted-foreground shrink-0" />;
+  };
+  const signalColor = (sig) =>
+    sig === "good"    ? "text-green-600"
+    : sig === "caution" ? "text-amber-600"
+    : sig === "bad"     ? "text-red-600"
+    : "text-muted-foreground";
 
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold flex items-center justify-center gap-2">
           <Shield className="h-5 w-5 text-primary" />
-          Anti-Spam Analysis
+          Email Quality Check
         </h2>
         <p className="text-muted-foreground mt-1">
-          Check your email for spam triggers and improve deliverability
+          Spam risk analysis and deliverability signals for your campaign
         </p>
       </div>
 
+      {/* ── Email Ready banner ──────────────────────────────────────────────── */}
+      {emailIsReady && (
+        <Alert className="border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-900">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800 dark:text-green-400">
+            <span className="font-medium">Email ready to send.</span>{" "}
+            Low spam risk, clean formatting, no outstanding issues.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ── AI-generated template notice ────────────────────────────────────── */}
+      {templateIsAiGenerated && !aiAnalysis && !analyzeMutation.isPending && (
+        <Alert className="border-primary/30 bg-primary/5 dark:bg-primary/10">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <AlertDescription className="text-sm">
+            <span className="font-medium">AI-generated template.</span>{" "}
+            This content was written to minimize spam triggers. Review the score below,
+            or click Reanalyze for an additional AI review.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ── AI analysis failure notice ─────────────────────────────────────── */}
       {aiAnalysisFailed && (
         <Alert className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-900">
           <AlertCircle className="h-4 w-4 text-yellow-600" />
@@ -236,8 +330,85 @@ export default function SpamAnalyzer() {
         </Alert>
       )}
 
+      {/* ── Objective quality signals ─────────────────────────────────────── */}
+      <Card className="border-card-border">
+        <CardContent className="pt-4 pb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+            {/* Spam Risk */}
+            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
+              {signalIcon(score <= 30 ? "good" : score <= 60 ? "caution" : "bad")}
+              <div>
+                <p className="text-xs text-muted-foreground">Spam Risk</p>
+                <p className={cn("text-sm font-medium", getScoreColor(score))}>
+                  {getScoreLabel(score)}
+                </p>
+              </div>
+            </div>
+
+            {/* Subject Length */}
+            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
+              {signalIcon(subjectSignal)}
+              <div>
+                <p className="text-xs text-muted-foreground">Subject</p>
+                <p className={cn("text-sm font-medium", signalColor(subjectSignal))}>
+                  {subjectLen === 0 ? "Empty" : `${subjectLen} chars`}
+                </p>
+              </div>
+            </div>
+
+            {/* Body Length */}
+            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
+              {signalIcon(bodySignal)}
+              <div>
+                <p className="text-xs text-muted-foreground">Body Length</p>
+                <p className={cn("text-sm font-medium", signalColor(bodySignal))}>
+                  {bodyWords === 0 ? "Empty" : `${bodyWords} words`}
+                </p>
+              </div>
+            </div>
+
+            {/* Personalization coverage */}
+            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
+              {usedPlaceholders.length === 0
+                ? <Info className="h-4 w-4 text-muted-foreground shrink-0" />
+                : signalIcon(coverageSignal)}
+              <div>
+                <p className="text-xs text-muted-foreground">Personalization</p>
+                <p className={cn("text-sm font-medium",
+                  usedPlaceholders.length === 0 ? "text-muted-foreground" : signalColor(coverageSignal)
+                )}>
+                  {usedPlaceholders.length === 0
+                    ? "None used"
+                    : `${coveredPlaceholders.length}/${usedPlaceholders.length} covered`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Invalid placeholder details */}
+          {invalidPlaceholders.length > 0 && (
+            <div className="mt-3 flex gap-2 rounded-md border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800/50 px-3 py-2.5">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-medium text-red-800 dark:text-red-300">
+                  Invalid placeholder{invalidPlaceholders.length > 1 ? "s" : ""} found
+                </p>
+                {invalidPlaceholders.map(ph => (
+                  <p key={ph} className="text-red-700 dark:text-red-400">
+                    <span className="font-mono">{ph}</span>
+                    {" — "}email addresses can't be placeholders. Go back and type it as plain text.
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Spam Score + Risky Words ──────────────────────────────────────── */}
       <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* Primary Spam Score — deterministic, always reflects current template */}
+        {/* Spam Score card */}
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-2">
@@ -348,7 +519,7 @@ export default function SpamAnalyzer() {
           </CardContent>
         </Card>
 
-        {/* Risky Words — from deterministic local analysis */}
+        {/* Risky Words card */}
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -358,7 +529,7 @@ export default function SpamAnalyzer() {
             <CardDescription>
               {riskyWords.length === 0
                 ? "No spam trigger words found"
-                : `Found ${riskyWords.length} potential spam triggers`}
+                : `Found ${riskyWords.length} potential spam trigger${riskyWords.length > 1 ? "s" : ""}`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -401,7 +572,7 @@ export default function SpamAnalyzer() {
         </Alert>
       )}
 
-      {/* AI Deliverability Review — qualitative guidance, no numeric AI score */}
+      {/* ── AI Deliverability Review ─────────────────────────────────────────── */}
       {showAiPanel && (
         <Card className="border-card-border">
           <CardHeader className="pb-3">
@@ -446,7 +617,7 @@ export default function SpamAnalyzer() {
         </Card>
       )}
 
-      {/* Suggested Improvements — two subsections: keyword (local) + AI recommendations */}
+      {/* ── Suggested Improvements ──────────────────────────────────────────── */}
       {showSuggestionsCard && (
         <Card className="border-card-border">
           <CardHeader className="pb-4">
@@ -456,7 +627,7 @@ export default function SpamAnalyzer() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Section A: Keyword Improvements (deterministic) */}
+            {/* Keyword improvements */}
             {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
               <div>
                 {keywordSuggestions.length > 0 && (
@@ -534,7 +705,7 @@ export default function SpamAnalyzer() {
               </div>
             )}
 
-            {/* Section B: AI Recommendations */}
+            {/* AI Recommendations */}
             {showAiRecommendations && (
               <>
                 {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
@@ -548,7 +719,7 @@ export default function SpamAnalyzer() {
                   <div className="space-y-2">
                     {aiRecommendations.map((suggestion, i) => {
                       const isAccepted = acceptedSuggestions.has(suggestion.original);
-                      const canApply = isApplicableToTemplate(suggestion.original);
+                      const canApply   = isApplicableToTemplate(suggestion.original);
                       return (
                         <div
                           key={i}
@@ -610,15 +781,6 @@ export default function SpamAnalyzer() {
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
             Your email has a high spam score. Consider accepting the suggestions above or revising your content to improve deliverability.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {score <= 30 && (
-        <Alert className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800 dark:text-green-400">
-            Your email has a low spam score and should have good deliverability.
           </AlertDescription>
         </Alert>
       )}

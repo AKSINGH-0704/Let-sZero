@@ -58,8 +58,11 @@ const AI_TONES = [
 ];
 
 export default function TemplateBuilder() {
-  const { template, setTemplate, columnMapping, contacts, goNext, goBack } =
-    useCampaign();
+  const {
+    template, setTemplate, setTemplateIsAiGenerated, setAiAnalysis,
+    setAcceptedSuggestions, setAcceptedDetails, templateIsAiGenerated,
+    columnMapping, contacts, goNext, goBack,
+  } = useCampaign();
   const { user } = useAuth();
 
   const [localTemplate, setLocalTemplate] = useState({
@@ -67,6 +70,7 @@ export default function TemplateBuilder() {
     subject: template.subject || "",
     body:    template.body    || "",
   });
+  const [localIsAiGenerated, setLocalIsAiGenerated] = useState(() => templateIsAiGenerated);
   const [error,        setError]        = useState("");
   const [activeTab,    setActiveTab]    = useState("edit");
   const [aiOpen,       setAiOpen]       = useState(false);
@@ -134,6 +138,15 @@ export default function TemplateBuilder() {
     })
     .filter(Boolean);
 
+  // ── Invalid placeholder detection — e.g. {{support@domain.com}} ─────────
+  const INVALID_PH_RE = /\{\{[^}]*@[^}]*\}\}/g;
+  const invalidPlaceholders = [
+    ...new Set([
+      ...Array.from((localTemplate.subject || "").matchAll(INVALID_PH_RE), m => m[0]),
+      ...Array.from((localTemplate.body    || "").matchAll(INVALID_PH_RE), m => m[0]),
+    ]),
+  ];
+
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
     mutationFn: async () => {
@@ -154,6 +167,7 @@ export default function TemplateBuilder() {
         subject: data.subject || prev.subject,
         body:    data.body    || prev.body,
       }));
+      setLocalIsAiGenerated(true);
       setAiOpen(false);
       setAiError("");
       setActiveTab("edit");
@@ -205,6 +219,9 @@ export default function TemplateBuilder() {
   const handleChange = (field, value) => {
     setLocalTemplate((prev) => ({ ...prev, [field]: value }));
     setError("");
+    if (field === "subject" || field === "body") {
+      setLocalIsAiGenerated(false);
+    }
   };
 
   const validateAndContinue = () => {
@@ -217,6 +234,12 @@ export default function TemplateBuilder() {
       return;
     }
     setTemplate(localTemplate);
+    setTemplateIsAiGenerated(localIsAiGenerated);
+    if (!localIsAiGenerated) {
+      setAiAnalysis(null);
+      setAcceptedSuggestions([]);
+      setAcceptedDetails({});
+    }
     goNext();
   };
 
@@ -443,6 +466,24 @@ export default function TemplateBuilder() {
                       data-testid="input-body"
                     />
                   </div>
+
+                  {/* Invalid placeholder warnings — e.g. {{support@domain.com}} */}
+                  {invalidPlaceholders.length > 0 && (
+                    <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 dark:border-red-800/50 dark:bg-red-950/20">
+                      <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                      <div className="text-sm space-y-1.5">
+                        <p className="font-medium text-red-800 dark:text-red-300">
+                          Invalid placeholder{invalidPlaceholders.length > 1 ? "s" : ""} detected
+                        </p>
+                        {invalidPlaceholders.map(ph => (
+                          <p key={ph} className="text-red-700 dark:text-red-400">
+                            <span className="font-mono text-xs">{ph}</span>
+                            {" — "}Email addresses cannot be used as placeholders. Type it as plain text instead.
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Placeholder quality warnings */}
                   {placeholderIssues.length > 0 && (
