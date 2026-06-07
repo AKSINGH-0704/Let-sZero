@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -24,7 +24,8 @@ import {
   TrendingUp,
   Info,
 } from "lucide-react";
-import { calculateSpamScore, replacePlaceholders, computePersonalizationStats, cn } from "@/lib/utils";
+import { calculateSpamScore, replacePlaceholders, computePersonalizationStats, formatNumber, cn } from "@/lib/utils";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 function getScoreColor(score) {
   if (score <= 30) return "text-green-600";
@@ -234,8 +235,11 @@ export default function SpamAnalyzer() {
   const showAiRecommendations = aiRecommendations.length > 0;
   const showSuggestionsCard   = keywordSuggestions.length > 0 || structuralTips.length > 0 || showAiRecommendations;
 
-  // ── Objective quality signals ──────────────────────────────────────────────
-  const personalizationStats = computePersonalizationStats(contacts, columnMapping);
+  // ── Objective quality signals — memoized on template content + contact data
+  const personalizationStats = useMemo(
+    () => computePersonalizationStats(contacts, columnMapping),
+    [contacts, columnMapping]
+  );
 
   const subjectLen    = (template.subject || "").length;
   const subjectSignal = subjectLen === 0 ? null
@@ -245,32 +249,41 @@ export default function SpamAnalyzer() {
   const bodySignal = bodyWords === 0 ? null
     : bodyWords <= 200 ? "good" : bodyWords <= 350 ? "caution" : "bad";
 
-  const usedPlaceholders = ALL_PLACEHOLDER_DEFS.filter(
-    p => template.subject?.includes(p.key) || template.body?.includes(p.key)
-  );
-  const coveredPlaceholders = usedPlaceholders.filter(p => {
-    const s = personalizationStats[p.mapKey];
-    return s.mapped && s.available > 0;
-  });
-  const coverageSignal = usedPlaceholders.length === 0 ? "none"
-    : coveredPlaceholders.length === usedPlaceholders.length ? "good"
-    : coveredPlaceholders.length > 0 ? "caution"
-    : "bad";
+  const [usedPlaceholders, coveredPlaceholders, coverageSignal] = useMemo(() => {
+    const used = ALL_PLACEHOLDER_DEFS.filter(
+      p => template.subject?.includes(p.key) || template.body?.includes(p.key)
+    );
+    const covered = used.filter(p => {
+      const s = personalizationStats[p.mapKey];
+      return s.mapped && s.available > 0;
+    });
+    const signal = used.length === 0 ? "none"
+      : covered.length === used.length ? "good"
+      : covered.length > 0 ? "caution"
+      : "bad";
+    return [used, covered, signal];
+  }, [template.subject, template.body, personalizationStats]);
 
-  const INVALID_PH_RE = /\{\{[^}]*@[^}]*\}\}/g;
-  const invalidPlaceholders = [...new Set([
-    ...Array.from((template.subject || "").matchAll(INVALID_PH_RE), m => m[0]),
-    ...Array.from((template.body    || "").matchAll(INVALID_PH_RE), m => m[0]),
-  ])];
+  const invalidPlaceholders = useMemo(() => {
+    const re = /\{\{[^}]*@[^}]*\}\}/g;
+    return [...new Set([
+      ...Array.from((template.subject || "").matchAll(re), m => m[0]),
+      ...Array.from((template.body    || "").matchAll(re), m => m[0]),
+    ])];
+  }, [template.subject, template.body]);
 
   // ── Email Ready state ──────────────────────────────────────────────────────
   const analysisRan     = aiAnalysis !== null || aiAnalysisFailed;
   const pendingKeyFixes = keywordSuggestions.filter(s => !acceptedSuggestions.has(s.original)).length;
-  const emailIsReady    = score <= 30
+  // Partial coverage (caution) keeps the ready state but shows an informational note.
+  // Zero coverage (bad) for a used variable downgrades to not-ready — blank personalization
+  // for every recipient is a notable issue even if spam score is clean.
+  const emailIsReady = score <= 30
     && (analysisRan || templateIsAiGenerated)
     && aiRecommendations.length === 0
     && pendingKeyFixes === 0
-    && invalidPlaceholders.length === 0;
+    && invalidPlaceholders.length === 0
+    && coverageSignal !== "bad";
 
   // ── Signal helpers ─────────────────────────────────────────────────────────
   const signalIcon = (sig) => {
@@ -304,6 +317,13 @@ export default function SpamAnalyzer() {
           <AlertDescription className="text-green-800 dark:text-green-400">
             <span className="font-medium">Email ready to send.</span>{" "}
             Low spam risk, clean formatting, no outstanding issues.
+            {coverageSignal === "caution" && (
+              <span className="block mt-1 text-sm text-green-700 dark:text-green-500">
+                {usedPlaceholders.length - coveredPlaceholders.length} of {usedPlaceholders.length} personalization{" "}
+                {(usedPlaceholders.length - coveredPlaceholders.length) === 1 ? "variable has" : "variables have"}{" "}
+                limited coverage — some recipients will receive a less personalized email.
+              </span>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -368,23 +388,97 @@ export default function SpamAnalyzer() {
               </div>
             </div>
 
-            {/* Personalization coverage */}
-            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
-              {usedPlaceholders.length === 0
-                ? <Info className="h-4 w-4 text-muted-foreground shrink-0" />
-                : signalIcon(coverageSignal)}
-              <div>
-                <p className="text-xs text-muted-foreground">Personalization</p>
-                <p className={cn("text-sm font-medium",
-                  usedPlaceholders.length === 0 ? "text-muted-foreground" : signalColor(coverageSignal)
-                )}>
-                  {usedPlaceholders.length === 0
-                    ? "None used"
-                    : `${coveredPlaceholders.length}/${usedPlaceholders.length} covered`}
-                </p>
-              </div>
-            </div>
+            {/* Personalization coverage — with tooltip breakdown */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40 cursor-default">
+                    {usedPlaceholders.length === 0
+                      ? <Info className="h-4 w-4 text-muted-foreground shrink-0" />
+                      : signalIcon(coverageSignal)}
+                    <div>
+                      <p className="text-xs text-muted-foreground">Personalization</p>
+                      <p className={cn("text-sm font-medium",
+                        usedPlaceholders.length === 0 ? "text-muted-foreground" : signalColor(coverageSignal)
+                      )}>
+                        {usedPlaceholders.length === 0
+                          ? "None used"
+                          : `${coveredPlaceholders.length} of ${usedPlaceholders.length} variables ready`}
+                      </p>
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                {usedPlaceholders.length > 0 && (
+                  <TooltipContent className="max-w-xs space-y-1.5 text-xs" sideOffset={6}>
+                    <p className="font-semibold mb-1">Personalization variables in this email</p>
+                    {usedPlaceholders.map(p => {
+                      const s = personalizationStats[p.mapKey];
+                      const total = s.total;
+                      const fmt = n => total > 1000 ? formatNumber(n) : String(n);
+                      const ok = s.mapped && s.available > 0;
+                      const statusText = !s.mapped
+                        ? "not mapped"
+                        : s.available === 0
+                        ? "mapped — no data found"
+                        : s.available === total
+                        ? `all ${fmt(total)} recipients`
+                        : `${fmt(s.available)} of ${fmt(total)} recipients have data`;
+                      return (
+                        <div key={p.key} className="flex items-start gap-1.5">
+                          {ok
+                            ? <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+                            : <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 shrink-0" />}
+                          <span>
+                            <span className="font-medium">{p.label}</span>
+                            {" — "}{statusText}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <p className="text-muted-foreground pt-1 border-t border-border/50">
+                      Sending is not blocked — missing values render as blank.
+                    </p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </div>
+
+          {/* Personalization Health breakdown */}
+          {usedPlaceholders.length > 0 && (
+            <div className="mt-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
+              <p className="text-xs font-medium text-foreground mb-2">Personalization Health</p>
+              <div className="space-y-1.5">
+                {usedPlaceholders.map(p => {
+                  const s = personalizationStats[p.mapKey];
+                  const total = s.total;
+                  const fmt = n => total > 1000 ? formatNumber(n) : String(n);
+                  const ok = s.mapped && s.available > 0;
+                  const statusText = !s.mapped
+                    ? "not mapped"
+                    : s.available === 0
+                    ? "mapped — no data found"
+                    : s.available === total
+                    ? `all ${fmt(total)} recipients`
+                    : `${fmt(s.available)} of ${fmt(total)} (${Math.round(s.available / total * 100)}%) recipients`;
+                  return (
+                    <div key={p.key} className="flex items-center gap-2 text-xs">
+                      {ok
+                        ? <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                        : <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                      <span>
+                        <span className="font-medium">{p.label}</span>
+                        {" — "}{statusText}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border/50">
+                Recipients with missing values receive that field as blank. Sending is unaffected.
+              </p>
+            </div>
+          )}
 
           {/* Invalid placeholder details */}
           {invalidPlaceholders.length > 0 && (

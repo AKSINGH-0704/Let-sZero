@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -96,8 +96,11 @@ export default function TemplateBuilder() {
     return Math.max(0, idx);
   });
 
-  // ── Personalization stats ──────────────────────────────────────────────────
-  const personalizationStats = computePersonalizationStats(contacts, columnMapping);
+  // ── Personalization stats — memoized so deps on it stay stable ───────────
+  const personalizationStats = useMemo(
+    () => computePersonalizationStats(contacts, columnMapping),
+    [contacts, columnMapping]
+  );
 
   // ── Preview data — real contact data, no synthetic fallbacks ──────────────
   const previewContact = contacts[previewContactIndex] || {};
@@ -126,26 +129,32 @@ export default function TemplateBuilder() {
       })
       .map(p => p.label);
 
-  // ── Placeholder quality analysis (for warning block) ──────────────────────
-  const placeholderIssues = ALL_PLACEHOLDER_DEFS
-    .filter(p => localTemplate.subject.includes(p.key) || localTemplate.body.includes(p.key))
-    .map(p => {
-      const s = personalizationStats[p.mapKey];
-      if (!s.mapped)             return { p, type: "unmapped" };
-      if (s.available === 0)     return { p, type: "empty",   available: s.available, total: s.total };
-      if (s.available < s.total) return { p, type: "partial", available: s.available, total: s.total };
-      return null;
-    })
-    .filter(Boolean);
+  // ── Placeholder quality analysis — recomputes only when template content or
+  //    contact mapping changes; never reads stale closure values ─────────────
+  const placeholderIssues = useMemo(() =>
+    ALL_PLACEHOLDER_DEFS
+      .filter(p => localTemplate.subject.includes(p.key) || localTemplate.body.includes(p.key))
+      .map(p => {
+        const s = personalizationStats[p.mapKey];
+        if (!s.mapped)             return { p, type: "unmapped" };
+        if (s.available === 0)     return { p, type: "empty",   available: s.available, total: s.total };
+        if (s.available < s.total) return { p, type: "partial", available: s.available, total: s.total };
+        return null;
+      })
+      .filter(Boolean),
+  [localTemplate.subject, localTemplate.body, personalizationStats]);
 
-  // ── Invalid placeholder detection — e.g. {{support@domain.com}} ─────────
-  const INVALID_PH_RE = /\{\{[^}]*@[^}]*\}\}/g;
-  const invalidPlaceholders = [
-    ...new Set([
-      ...Array.from((localTemplate.subject || "").matchAll(INVALID_PH_RE), m => m[0]),
-      ...Array.from((localTemplate.body    || "").matchAll(INVALID_PH_RE), m => m[0]),
-    ]),
-  ];
+  // ── Invalid placeholder detection — regex created inside memo so there is
+  //    no shared /g lastIndex state across renders ────────────────────────────
+  const invalidPlaceholders = useMemo(() => {
+    const re = /\{\{[^}]*@[^}]*\}\}/g;
+    return [
+      ...new Set([
+        ...Array.from((localTemplate.subject || "").matchAll(re), m => m[0]),
+        ...Array.from((localTemplate.body    || "").matchAll(re), m => m[0]),
+      ]),
+    ];
+  }, [localTemplate.subject, localTemplate.body]);
 
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
