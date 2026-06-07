@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -16,17 +16,17 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
+  SelectValue,
 } from "@/components/ui/select";
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger
+  CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
   ArrowLeft,
   AlertCircle,
-  Code,
+  PenLine,
   Eye,
   Mail,
   Type,
@@ -34,58 +34,89 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  Wand2
+  Wand2,
 } from "lucide-react";
 import { replacePlaceholders, cn } from "@/lib/utils";
 
-const PLACEHOLDERS = [
-  { key: "{{name}}", label: "Name", description: "Recipient's name" },
-  { key: "{{email}}", label: "Email", description: "Recipient's email" },
-  { key: "{{company}}", label: "Company", description: "Recipient's company" },
-  { key: "{{category}}", label: "Category", description: "Recipient's category" }
+// Primary personalization variables — shown prominently in the panel.
+const MAIN_PLACEHOLDERS = [
+  { key: "{{name}}",     label: "Name",     description: "Recipient's first name",    mapKey: "name" },
+  { key: "{{company}}", label: "Company",  description: "Recipient's company",        mapKey: "company" },
+  { key: "{{category}}",label: "Category", description: "Recipient's category/group", mapKey: "category" },
 ];
+
+// Secondary variable — available but rarely needed in email copy.
+const SECONDARY_PLACEHOLDERS = [
+  { key: "{{email}}", label: "Email", description: "Recipient's email address", mapKey: "email" },
+];
+
+const ALL_PLACEHOLDER_KEYS = [
+  ...MAIN_PLACEHOLDERS,
+  ...SECONDARY_PLACEHOLDERS,
+].map((p) => p.key);
 
 const AI_TONES = [
   { value: "professional", label: "Professional" },
-  { value: "friendly", label: "Friendly" },
-  { value: "formal", label: "Formal" },
-  { value: "casual", label: "Casual" }
+  { value: "friendly",     label: "Friendly" },
+  { value: "formal",       label: "Formal" },
+  { value: "casual",       label: "Casual" },
 ];
 
 export default function TemplateBuilder() {
-  const { template, setTemplate, columnMapping, contacts, goNext, goBack } = useCampaign();
+  const { template, setTemplate, columnMapping, contacts, goNext, goBack } =
+    useCampaign();
   const { user } = useAuth();
-  const [localTemplate, setLocalTemplate] = useState({
-    name: template.name || "",
-    subject: template.subject || "",
-    body: template.body || ""
-  });
-  const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("edit");
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiTone, setAiTone] = useState("professional");
-  const [aiError, setAiError] = useState("");
-  const [aiQuota, setAiQuota] = useState(null);
 
+  const [localTemplate, setLocalTemplate] = useState({
+    name:    template.name    || "",
+    subject: template.subject || "",
+    body:    template.body    || "",
+  });
+  const [error,        setError]        = useState("");
+  const [activeTab,    setActiveTab]    = useState("edit");
+  const [aiOpen,       setAiOpen]       = useState(false);
+  const [aiPrompt,     setAiPrompt]     = useState("");
+  const [aiTone,       setAiTone]       = useState("professional");
+  const [aiError,      setAiError]      = useState("");
+  const [aiQuota,      setAiQuota]      = useState(null);
+  // Tracks which text field last had focus so placeholder insertion lands correctly.
+  const [focusedField, setFocusedField] = useState("body");
+
+  // ── Derived mapping state ──────────────────────────────────────────────────
+  // Maps each placeholder key to the CSV column name the user selected (or undefined).
+  const mappingKeyMap = {
+    "{{name}}":     columnMapping.name,
+    "{{email}}":    columnMapping.email,
+    "{{company}}":  columnMapping.company,
+    "{{category}}": columnMapping.category,
+  };
+
+  // Placeholders that appear in the current template but have no mapped column.
+  const unmappedUsed = ALL_PLACEHOLDER_KEYS.filter(
+    (k) =>
+      (localTemplate.subject.includes(k) || localTemplate.body.includes(k)) &&
+      !mappingKeyMap[k]
+  );
+
+  // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/generate-template", {
         prompt: aiPrompt,
-        tone: aiTone
+        tone: aiTone,
       });
       const remaining = res.headers.get("X-AI-Generations-Remaining");
-      const resetsAt = res.headers.get("X-AI-Generations-Reset");
-      const data = await res.json();
+      const resetsAt  = res.headers.get("X-AI-Generations-Reset");
+      const data      = await res.json();
       return { ...data, _quota: { remaining, resetsAt } };
     },
     onSuccess: (data) => {
       if (data._quota?.remaining != null) setAiQuota(data._quota);
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      setLocalTemplate(prev => ({
+      setLocalTemplate((prev) => ({
         ...prev,
         subject: data.subject || prev.subject,
-        body: data.body || prev.body
+        body:    data.body    || prev.body,
       }));
       setAiOpen(false);
       setAiError("");
@@ -95,43 +126,61 @@ export default function TemplateBuilder() {
       try {
         const body = JSON.parse(err.message);
         if (body?.resetsAt) {
-          const resetTime = new Date(body.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          setAiError(`Daily AI limit reached — resets at ${resetTime}. ${body.upgradeMessage}`);
+          const resetTime = new Date(body.resetsAt).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          setAiError(
+            `Daily AI limit reached — resets at ${resetTime}. ${body.upgradeMessage}`
+          );
           return;
         }
       } catch {}
       setAiError(err.message || "Failed to generate template. Please try again.");
-    }
+    },
   });
 
+  // ── Preview data ───────────────────────────────────────────────────────────
   const sampleContact = contacts[0] || {};
   const mappedData = {
-    name: sampleContact[columnMapping.name] || "John Doe",
-    email: sampleContact[columnMapping.email] || "john@example.com",
-    company: sampleContact[columnMapping.company] || "Acme Inc",
-    category: sampleContact[columnMapping.category] || "Technology"
+    name:     sampleContact[columnMapping.name]     || "John Doe",
+    email:    sampleContact[columnMapping.email]    || "john@example.com",
+    company:  sampleContact[columnMapping.company]  || "Acme Inc",
+    category: sampleContact[columnMapping.category] || "Technology",
   };
-
   const previewSubject = replacePlaceholders(localTemplate.subject, mappedData);
-  const previewBody = replacePlaceholders(localTemplate.body, mappedData);
+  const previewBody    = replacePlaceholders(localTemplate.body,    mappedData);
 
+  // ── Placeholder insertion ──────────────────────────────────────────────────
+  // Inserts the placeholder at the cursor position of whichever field is focused.
   const insertPlaceholder = (placeholder) => {
-    const textarea = document.getElementById("email-body");
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const newBody = 
-        localTemplate.body.slice(0, start) + 
-        placeholder + 
-        localTemplate.body.slice(end);
-      setLocalTemplate(prev => ({ ...prev, body: newBody }));
+    const isSubject = focusedField === "subject";
+    const fieldId   = isSubject ? "subject" : "email-body";
+    const fieldKey  = isSubject ? "subject" : "body";
+    const input     = document.getElementById(fieldId);
+
+    if (input) {
+      const start  = input.selectionStart ?? input.value.length;
+      const end    = input.selectionEnd   ?? input.value.length;
+      const before = localTemplate[fieldKey].slice(0, start);
+      const after  = localTemplate[fieldKey].slice(end);
+      setLocalTemplate((prev) => ({ ...prev, [fieldKey]: before + placeholder + after }));
+      // Restore focus and cursor position after React re-renders the input value.
+      setTimeout(() => {
+        input.focus();
+        const cursor = start + placeholder.length;
+        input.setSelectionRange(cursor, cursor);
+      }, 0);
     } else {
-      setLocalTemplate(prev => ({ ...prev, body: prev.body + placeholder }));
+      setLocalTemplate((prev) => ({
+        ...prev,
+        [fieldKey]: prev[fieldKey] + placeholder,
+      }));
     }
   };
 
   const handleChange = (field, value) => {
-    setLocalTemplate(prev => ({ ...prev, [field]: value }));
+    setLocalTemplate((prev) => ({ ...prev, [field]: value }));
     setError("");
   };
 
@@ -144,34 +193,38 @@ export default function TemplateBuilder() {
       setError("Email body is required");
       return;
     }
-
     setTemplate(localTemplate);
     goNext();
   };
 
   const canProceed = localTemplate.subject.trim() && localTemplate.body.trim();
 
-  const aiIsUnlimited = user?.aiDailyLimit == null;
-  const aiLimit = user?.aiDailyLimit ?? 0;
-  const aiRemainingFromHeader = aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
-    ? parseInt(aiQuota.remaining, 10) : null;
-  const aiRemaining = aiIsUnlimited ? Infinity
-    : aiRemainingFromHeader != null ? aiRemainingFromHeader
+  // ── AI quota helpers ───────────────────────────────────────────────────────
+  const aiIsUnlimited      = user?.aiDailyLimit == null;
+  const aiLimit            = user?.aiDailyLimit ?? 0;
+  const aiRemainingFromHeader =
+    aiQuota?.remaining != null && aiQuota.remaining !== "unlimited"
+      ? parseInt(aiQuota.remaining, 10)
+      : null;
+  const aiRemaining  = aiIsUnlimited ? Infinity
+    : aiRemainingFromHeader != null  ? aiRemainingFromHeader
     : Math.max(0, aiLimit - (user?.aiGenerationsToday ?? 0));
-  const aiUsed = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
-  const aiExhausted = !aiIsUnlimited && aiRemaining <= 0;
-  const aiWarning = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
+  const aiUsed       = aiIsUnlimited ? 0 : Math.max(0, aiLimit - aiRemaining);
+  const aiExhausted  = !aiIsUnlimited && aiRemaining <= 0;
+  const aiWarning    = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold">Create Your Email Template</h2>
         <p className="text-muted-foreground mt-1">
-          Compose your email with dynamic placeholders
+          Write your email. Use the variables on the right to personalize each
+          message for its recipient.
         </p>
       </div>
 
-      {/* AI Template Generator */}
+      {/* ── AI Template Generator ────────────────────────────────────────────── */}
       <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
         <CollapsibleTrigger asChild>
           <Button
@@ -185,7 +238,9 @@ export default function TemplateBuilder() {
               </div>
               <div className="text-left">
                 <p className="font-medium text-sm">Generate with AI</p>
-                <p className="text-xs text-muted-foreground">Describe your campaign goal — AI drafts a starting template</p>
+                <p className="text-xs text-muted-foreground">
+                  Describe your campaign goal — AI drafts a starting template
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -194,7 +249,12 @@ export default function TemplateBuilder() {
               ) : aiExhausted ? (
                 <span className="text-xs text-red-600 font-medium">Limit reached</span>
               ) : (
-                <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                <span
+                  className={cn(
+                    "text-xs",
+                    aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground"
+                  )}
+                >
                   {aiRemaining} left today
                 </span>
               )}
@@ -217,7 +277,10 @@ export default function TemplateBuilder() {
                   id="ai-prompt"
                   placeholder="e.g., Cold outreach to fintech founders introducing our AI-powered email marketing platform and offering a free demo"
                   value={aiPrompt}
-                  onChange={(e) => { setAiPrompt(e.target.value); setAiError(""); }}
+                  onChange={(e) => {
+                    setAiPrompt(e.target.value);
+                    setAiError("");
+                  }}
                   className="min-h-[80px] text-sm resize-none bg-background"
                   disabled={generateTemplateMutation.isPending}
                   data-testid="input-ai-prompt"
@@ -236,15 +299,21 @@ export default function TemplateBuilder() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {AI_TONES.map(t => (
-                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      {AI_TONES.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
-                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending || aiExhausted}
+                  disabled={
+                    !aiPrompt.trim() ||
+                    generateTemplateMutation.isPending ||
+                    aiExhausted
+                  }
                   className="gap-2"
                   data-testid="button-ai-generate"
                 >
@@ -263,11 +332,20 @@ export default function TemplateBuilder() {
               </div>
 
               {aiIsUnlimited ? (
-                <p className="text-xs text-green-600 font-medium text-right">Unlimited AI usage</p>
+                <p className="text-xs text-green-600 font-medium text-right">
+                  Unlimited AI usage
+                </p>
               ) : aiExhausted ? (
-                <p className="text-xs text-red-600 font-medium text-right">Daily limit reached — resets in ~24h</p>
+                <p className="text-xs text-red-600 font-medium text-right">
+                  Daily limit reached — resets in ~24h
+                </p>
               ) : (
-                <p className={cn("text-xs text-right", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                <p
+                  className={cn(
+                    "text-xs text-right",
+                    aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground"
+                  )}
+                >
                   {aiUsed} of {aiLimit} AI generation{aiLimit !== 1 ? "s" : ""} used today
                 </p>
               )}
@@ -280,14 +358,18 @@ export default function TemplateBuilder() {
               )}
 
               <p className="text-xs text-muted-foreground">
-                The generated template will replace your current subject and body. You can edit it freely afterwards.
+                The generated template will replace your current subject and body. You
+                can edit it freely afterwards.
               </p>
             </CardContent>
           </Card>
         </CollapsibleContent>
       </Collapsible>
 
+      {/* ── Editor + Sidebar grid ─────────────────────────────────────────────── */}
       <div className="grid lg:grid-cols-5 gap-4 lg:gap-6">
+
+        {/* ── Left: editor ───────────────────────────────────────────────────── */}
         <div className="lg:col-span-3 space-y-4">
           <Card className="border-card-border">
             <CardHeader className="pb-4">
@@ -298,7 +380,7 @@ export default function TemplateBuilder() {
                   onClick={() => setActiveTab("edit")}
                   className="gap-2"
                 >
-                  <Code className="h-4 w-4" />
+                  <PenLine className="h-4 w-4" />
                   Edit
                 </Button>
                 <Button
@@ -312,26 +394,43 @@ export default function TemplateBuilder() {
                 </Button>
               </div>
             </CardHeader>
+
             <CardContent className="space-y-4">
               {activeTab === "edit" ? (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="template-name">
-                      Template Name (optional)
-                    </Label>
+                  {/* Template name */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="template-name">Template Name</Label>
                     <Input
                       id="template-name"
-                      placeholder="e.g., Welcome Email, Newsletter..."
+                      placeholder="e.g., Welcome Email, Q2 Outreach..."
                       value={localTemplate.name}
                       onChange={(e) => handleChange("name", e.target.value)}
                       data-testid="input-template-name"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Used only for saving and reusing this template later.
+                      Recipients never see this name.
+                    </p>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="subject">
-                      Subject Line <span className="text-destructive">*</span>
-                    </Label>
+                  {/* Subject line */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="subject">
+                        Subject Line <span className="text-destructive">*</span>
+                      </Label>
+                      <span
+                        className={cn(
+                          "text-xs tabular-nums",
+                          localTemplate.subject.length >= 50
+                            ? "text-amber-600 font-medium"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {localTemplate.subject.length}/50
+                      </span>
+                    </div>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -339,24 +438,27 @@ export default function TemplateBuilder() {
                         placeholder="Enter your email subject..."
                         value={localTemplate.subject}
                         onChange={(e) => handleChange("subject", e.target.value)}
+                        onFocus={() => setFocusedField("subject")}
                         className="pl-10"
                         data-testid="input-subject"
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Use placeholders like {"{{name}}"} for personalization
+                      You can personalize the subject line too — click any variable
+                      in the panel while this field is active.
                     </p>
                   </div>
 
-                  <div className="space-y-2">
+                  {/* Email body */}
+                  <div className="space-y-1.5">
                     <Label htmlFor="email-body">
                       Email Body <span className="text-destructive">*</span>
                     </Label>
                     <Textarea
                       id="email-body"
-                      placeholder="Write your email content here...
+                      placeholder={`Write your email content here...
 
-Use placeholders like {{name}} to personalize your message.
+Click a variable on the right to personalize your message.
 
 Example:
 Hi {{name}},
@@ -364,15 +466,48 @@ Hi {{name}},
 I hope this message finds you well at {{company}}...
 
 Best regards,
-Your Team"
+Your Team`}
                       value={localTemplate.body}
                       onChange={(e) => handleChange("body", e.target.value)}
-                      className="min-h-[300px] font-mono text-sm"
+                      onFocus={() => setFocusedField("body")}
+                      className="min-h-[300px] text-sm"
                       data-testid="input-body"
                     />
                   </div>
+
+                  {/* Unmapped-placeholder warning — shown only when the user has
+                      used a variable whose column was not mapped in step 2. */}
+                  {unmappedUsed.length > 0 && (
+                    <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/50 dark:bg-amber-950/20">
+                      <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                      <div className="text-sm space-y-1">
+                        <p className="font-medium text-amber-800 dark:text-amber-300">
+                          {unmappedUsed.map((k, i) => (
+                            <span key={k}>
+                              <span className="font-mono">{k}</span>
+                              {i < unmappedUsed.length - 1 ? " and " : ""}
+                            </span>
+                          ))}{" "}
+                          — column{unmappedUsed.length > 1 ? "s" : ""} not mapped
+                        </p>
+                        <p className="text-amber-700 dark:text-amber-400">
+                          {unmappedUsed.length === 1
+                            ? "This variable is"
+                            : "These variables are"}{" "}
+                          in your email but{" "}
+                          {unmappedUsed.length === 1 ? "its column wasn't" : "their columns weren't"}{" "}
+                          selected in the previous step. Recipients will see the
+                          placeholder text as-is instead of real data. Go back to map
+                          the{" "}
+                          {unmappedUsed.length === 1 ? "column" : "columns"}, or remove{" "}
+                          {unmappedUsed.length === 1 ? "it" : "them"} from your email.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
+                /* Preview tab */
                 <div className="space-y-4">
                   <div className="p-4 rounded-md bg-muted/50">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
@@ -389,56 +524,108 @@ Your Team"
                       {previewBody || "No content"}
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Preview using: {mappedData.name} ({mappedData.email})
-                  </div>
+                  </p>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
+        {/* ── Right: variable panel ──────────────────────────────────────────── */}
         <div className="lg:col-span-2">
           <Card className="border-card-border lg:sticky lg:top-24">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg flex items-center gap-2">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
                 <Type className="h-4 w-4" />
-                Placeholders
+                Personalization Variables
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Dynamic insert-target indicator */}
               <p className="text-sm text-muted-foreground">
-                Click to insert a placeholder at cursor position
+                Click to insert into the{" "}
+                <span className="font-medium text-foreground">
+                  {focusedField === "subject" ? "subject line" : "email body"}
+                </span>.
               </p>
-              {PLACEHOLDERS.map((placeholder) => (
-                <Button
-                  key={placeholder.key}
-                  variant="outline"
-                  className="w-full justify-start gap-3 h-auto py-3"
-                  onClick={() => insertPlaceholder(placeholder.key)}
-                  data-testid={`placeholder-${placeholder.label.toLowerCase()}`}
-                >
-                  <Badge variant="secondary" className="font-mono">
-                    {placeholder.key}
-                  </Badge>
-                  <div className="text-left">
-                    <p className="font-medium text-sm">{placeholder.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {placeholder.description}
-                    </p>
-                  </div>
-                </Button>
-              ))}
 
-              <Separator className="my-4" />
+              {/* Primary variables */}
+              {MAIN_PLACEHOLDERS.map((placeholder) => {
+                const isMapped = !!mappingKeyMap[placeholder.key];
+                return (
+                  <Button
+                    key={placeholder.key}
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start gap-3 h-auto py-3",
+                      !isMapped && "opacity-60"
+                    )}
+                    onClick={() => insertPlaceholder(placeholder.key)}
+                    data-testid={`placeholder-${placeholder.label.toLowerCase()}`}
+                  >
+                    <Badge
+                      variant={isMapped ? "secondary" : "outline"}
+                      className="font-mono shrink-0"
+                    >
+                      {placeholder.key}
+                    </Badge>
+                    <div className="text-left">
+                      <p className="font-medium text-sm">{placeholder.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isMapped
+                          ? placeholder.description
+                          : "Not mapped — column not selected in previous step"}
+                      </p>
+                    </div>
+                  </Button>
+                );
+              })}
 
-              <div className="space-y-2">
+              {/* Secondary variables */}
+              <Separator className="my-1" />
+              <p className="text-xs text-muted-foreground">Other variables</p>
+              {SECONDARY_PLACEHOLDERS.map((placeholder) => {
+                const isMapped = !!mappingKeyMap[placeholder.key];
+                return (
+                  <Button
+                    key={placeholder.key}
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start gap-3 h-auto py-2.5",
+                      !isMapped && "opacity-60"
+                    )}
+                    onClick={() => insertPlaceholder(placeholder.key)}
+                    data-testid={`placeholder-${placeholder.label.toLowerCase()}`}
+                  >
+                    <Badge
+                      variant={isMapped ? "secondary" : "outline"}
+                      className="font-mono shrink-0 text-xs"
+                    >
+                      {placeholder.key}
+                    </Badge>
+                    <div className="text-left">
+                      <p className="font-medium text-sm">{placeholder.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isMapped
+                          ? placeholder.description
+                          : "Not mapped — column not selected in previous step"}
+                      </p>
+                    </div>
+                  </Button>
+                );
+              })}
+
+              <Separator className="my-1" />
+
+              {/* Tips */}
+              <div className="space-y-1.5">
                 <p className="text-sm font-medium">Tips</p>
                 <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>- Personalized emails have higher open rates</li>
-                  <li>- Keep subject lines under 50 characters</li>
-                  <li>- Use a clear call-to-action</li>
-                  <li>- Missing data shows the placeholder as-is</li>
+                  <li>— Keep subject lines under 50 characters</li>
+                  <li>— Use a clear call-to-action</li>
+                  <li>— Switch to Preview to see how each contact's email will look</li>
                 </ul>
               </div>
             </CardContent>
@@ -446,6 +633,7 @@ Your Team"
         </div>
       </div>
 
+      {/* ── Validation error ──────────────────────────────────────────────────── */}
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -453,13 +641,14 @@ Your Team"
         </Alert>
       )}
 
+      {/* ── Navigation ───────────────────────────────────────────────────────── */}
       <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={goBack} data-testid="button-back">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button 
-          onClick={validateAndContinue} 
+        <Button
+          onClick={validateAndContinue}
           disabled={!canProceed}
           data-testid="button-next-step"
         >

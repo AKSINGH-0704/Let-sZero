@@ -142,6 +142,7 @@ Only **V** is treated as proven.
 | `/api/health` sendPaused | **I** | Not confirmed `false` from live response |
 | Dashboard cost-by-endpoint NaN fix | **I** | e6ed49c; not observed in production UI |
 | CSV mapping screen UX | **V** | Launch-ready. Full redesign committed 3b76cf1. Header guidance, always-visible field descriptions, Required/Recommended/Optional status, auto-detect hints, unmapped consequences, send readiness summary, keyboard-accessible tooltips. No further enhancements scheduled before launch. |
+| Template Builder UX | **I** | Launch-ready. focusedField state targets placeholder insertion to subject or body. Placeholder panel shows mapped vs unmapped state from columnMapping context. Unmapped-placeholder amber warning when {{name}}/{{company}}/{{category}} used but column not mapped. Subject character counter (turns amber ≥50). Template Name helper text. Removed font-mono from body. PenLine replaces Code icon on Edit tab. Secondary section for {{email}}. Customer-oriented subtitle. |
 
 **Milestone status: I/V mixed** — 3 of 7 sub-items Verified
 
