@@ -17,140 +17,257 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AlertCircle, CheckCircle, ArrowLeft, Mail, User, Building, Tag, Info } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  ArrowLeft,
+  Mail,
+  User,
+  Building,
+  Tag,
+  Info,
+} from "lucide-react";
 
-const REQUIRED_FIELDS = [
+// ─── Field definitions ────────────────────────────────────────────────────────
+// description: always-visible business explanation (no tech jargon)
+// unmappedConsequence: shown below the select when field is left unmapped
+// tooltip: one sentence, reinforces value without repeating the label
+const FIELDS = [
   {
     key: "email",
     label: "Email Address",
     icon: Mail,
-    required: true,
     status: "required",
-    tooltip: "RepMail delivers your campaign to this address. Every contact must have one.",
-  }
-];
-
-const OPTIONAL_FIELDS = [
+    required: true,
+    description: "The recipient's email address. Required for campaign delivery.",
+    unmappedConsequence: null,
+    tooltip: "Every contact must have a valid email address to receive your campaign.",
+  },
   {
     key: "name",
     label: "Name",
     icon: User,
-    required: false,
     status: "recommended",
-    tooltip: "Enables {{name}} personalization in your emails — e.g. \"Hi {{name}},\". Skipping this means every recipient gets a generic greeting.",
+    required: false,
+    description: "Allows personalized greetings and more human outreach.",
+    unmappedConsequence: "Emails will use generic greetings instead of the recipient's name.",
+    tooltip: "Used to personalize subject lines and email body with the recipient's name.",
   },
   {
     key: "company",
     label: "Company",
     icon: Building,
-    required: false,
     status: "optional",
-    tooltip: "Enables {{company}} in your email templates. Useful for B2B outreach where you reference the recipient's organization.",
+    required: false,
+    description: "Useful for B2B outreach and company-specific messaging.",
+    unmappedConsequence: "Company name personalization will be unavailable.",
+    tooltip: "Reference the recipient's company name in your email templates.",
   },
   {
     key: "category",
     label: "Category",
     icon: Tag,
-    required: false,
     status: "optional",
-    tooltip: "Groups contacts so you can filter and target specific segments in future campaigns.",
-  }
+    required: false,
+    description: "Helps organize contacts and target specific groups later.",
+    unmappedConsequence: "Audience segmentation and filtering will be limited.",
+    tooltip: "Groups contacts for filtering and targeting in future campaigns.",
+  },
 ];
 
-function FieldStatus({ status }) {
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatusLabel({ status }) {
   if (status === "required") {
-    return <span className="text-xs font-medium text-destructive">Required</span>;
+    return (
+      <span className="text-xs font-medium text-destructive">Required</span>
+    );
   }
   if (status === "recommended") {
-    return <span className="text-xs font-medium text-amber-600 dark:text-amber-500">Recommended</span>;
+    return (
+      <span className="text-xs font-medium text-amber-600 dark:text-amber-500">
+        Recommended
+      </span>
+    );
   }
   return <span className="text-xs text-muted-foreground">Optional</span>;
 }
 
+// One-line hint below the select: suggestion takes priority over consequence.
+// For email (required), readiness summary handles the missing-state messaging.
+function FieldHint({ field, mapped, suggestion }) {
+  if (mapped || field.key === "email") return null;
+
+  if (suggestion) {
+    return (
+      <p className="text-xs text-blue-600 dark:text-blue-400">
+        Suggested:{" "}
+        <span className="font-medium">{suggestion}</span>
+      </p>
+    );
+  }
+
+  if (field.unmappedConsequence) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Not mapped — {field.unmappedConsequence.charAt(0).toLowerCase()}
+        {field.unmappedConsequence.slice(1)}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-xs text-muted-foreground">No matching column detected.</p>
+  );
+}
+
+// Compact send-readiness summary rendered at the bottom of the mapping card.
+function ReadinessSummary({ mapping }) {
+  const emailMapped = !!mapping.email;
+
+  return (
+    <div className="border-t pt-4 mt-1">
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-3">
+        {FIELDS.map((field) => {
+          const mapped = !!mapping[field.key];
+          return (
+            <div key={field.key} className="flex items-center gap-1.5 text-sm">
+              {mapped ? (
+                <CheckCircle className="h-3.5 w-3.5 text-green-600 shrink-0" />
+              ) : (
+                <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30 shrink-0" />
+              )}
+              <span className={mapped ? "text-foreground" : "text-muted-foreground"}>
+                {field.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {emailMapped ? (
+        <p className="text-sm font-medium text-green-700 dark:text-green-500">
+          Ready to continue
+        </p>
+      ) : (
+        <p className="text-sm font-medium text-destructive">
+          Email Address must be mapped before you can continue.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function ColumnMapping() {
   const { contacts, columnMapping, setColumnMapping, goNext, goBack } = useCampaign();
   const [mapping, setMapping] = useState(columnMapping);
+  const [suggestions, setSuggestions] = useState({});
   const [error, setError] = useState("");
 
   const headers = contacts.length > 0 ? Object.keys(contacts[0]) : [];
 
+  // Auto-map on first load; record suggestions separately so we can show
+  // "Suggested: X" even after the user manually clears a pre-filled field.
   useEffect(() => {
     const autoMap = {};
-    headers.forEach(header => {
-      const lowerHeader = header.toLowerCase();
-      if (lowerHeader.includes("email")) {
+    const sugg = {};
+    headers.forEach((header) => {
+      const h = header.toLowerCase();
+      if (h.includes("email")) {
         autoMap.email = header;
-      } else if (lowerHeader.includes("name") && !lowerHeader.includes("company")) {
+        sugg.email = header;
+      } else if (h.includes("name") && !h.includes("company")) {
         autoMap.name = header;
-      } else if (lowerHeader.includes("company") || lowerHeader.includes("organization")) {
+        sugg.name = header;
+      } else if (h.includes("company") || h.includes("organization")) {
         autoMap.company = header;
-      } else if (lowerHeader.includes("category") || lowerHeader.includes("type")) {
+        sugg.company = header;
+      } else if (h.includes("category") || h.includes("type")) {
         autoMap.category = header;
+        sugg.category = header;
       }
     });
-    setMapping(prev => ({ ...autoMap, ...prev }));
-  }, [headers]);
+    setMapping((prev) => ({ ...autoMap, ...prev }));
+    setSuggestions(sugg);
+  }, [headers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMappingChange = (field, value) => {
-    setMapping(prev => ({
+    setMapping((prev) => ({
       ...prev,
-      [field]: value === "none" ? undefined : value
+      [field]: value === "none" ? undefined : value,
     }));
     setError("");
   };
 
   const validateAndContinue = () => {
     if (!mapping.email) {
-      setError("Email field mapping is required");
+      setError("Email Address must be mapped before you can continue.");
       return;
     }
-
     const sampleEmail = contacts[0]?.[mapping.email];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (sampleEmail && !emailRegex.test(sampleEmail)) {
-      setError("The selected email column doesn't appear to contain valid email addresses");
+      setError("The selected column doesn't appear to contain valid email addresses.");
       return;
     }
-
     setColumnMapping(mapping);
     goNext();
   };
 
-  const allFields = [...REQUIRED_FIELDS, ...OPTIONAL_FIELDS];
-
   return (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
+    <div className="space-y-5">
+      {/* ── Page title ───────────────────────────────────────────────────────── */}
+      <div className="text-center">
         <h2 className="text-xl font-semibold">Map Your Columns</h2>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-muted-foreground mt-1 text-sm">
           Match your CSV columns to the required fields
         </p>
       </div>
 
+      {/* ── Phase 1: Header guidance ─────────────────────────────────────────── */}
+      <div className="flex items-start gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+        <Info className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+        <div>
+          <p className="text-sm font-medium">Match Your CSV Columns</p>
+          <p className="text-sm text-muted-foreground mt-0.5 leading-snug">
+            Select the column from your CSV that best matches each RepMail
+            field. Only <span className="font-medium text-foreground">Email Address</span> is
+            required to send a campaign.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Phase 2–5: Field mapping card ────────────────────────────────────── */}
       <Card className="border-card-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg flex items-center gap-2">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
             Field Mapping
-            <Badge variant="secondary" className="ml-2">
+            <Badge variant="secondary" className="ml-1 text-xs font-normal">
               {headers.length} columns detected
             </Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {allFields.map((field) => {
+
+        <CardContent className="space-y-5">
+          {FIELDS.map((field) => {
             const Icon = field.icon;
             const selectedValue = mapping[field.key];
-            const isValid = !field.required || selectedValue;
 
             return (
-              <div key={field.key} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-                <div className="flex items-center gap-3 w-full sm:w-48 shrink-0">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+              <div
+                key={field.key}
+                className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4"
+              >
+                {/* Left: field identity — label, status, description */}
+                <div className="flex items-start gap-3 w-full sm:w-56 shrink-0">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted mt-0.5 shrink-0">
                     <Icon className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1">
-                      <Label className="text-sm font-medium leading-none">
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    {/* Label + tooltip trigger */}
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-sm font-medium leading-none cursor-default">
                         {field.label}
                       </Label>
                       <Tooltip>
@@ -159,15 +276,26 @@ export default function ColumnMapping() {
                             <Info className="h-3 w-3" />
                           </span>
                         </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-56 text-xs">
+                        <TooltipContent
+                          side="right"
+                          sideOffset={8}
+                          className="max-w-52 text-xs leading-relaxed"
+                        >
                           {field.tooltip}
                         </TooltipContent>
                       </Tooltip>
                     </div>
-                    <FieldStatus status={field.status} />
+                    {/* Status: always visible */}
+                    <StatusLabel status={field.status} />
+                    {/* Description: always visible, no hover required */}
+                    <p className="text-xs text-muted-foreground leading-snug mt-0.5">
+                      {field.description}
+                    </p>
                   </div>
                 </div>
-                <div className="w-full sm:flex-1 sm:max-w-xs">
+
+                {/* Right: select + auto-detect or unmapped consequence */}
+                <div className="w-full sm:flex-1 sm:max-w-xs space-y-1.5">
                   <Select
                     value={selectedValue || "none"}
                     onValueChange={(value) => handleMappingChange(field.key, value)}
@@ -176,7 +304,7 @@ export default function ColumnMapping() {
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">-- Not mapped --</SelectItem>
+                      <SelectItem value="none">— Not mapped —</SelectItem>
                       {headers.map((header) => (
                         <SelectItem key={header} value={header}>
                           {header}
@@ -184,22 +312,34 @@ export default function ColumnMapping() {
                       ))}
                     </SelectContent>
                   </Select>
+
+                  <FieldHint
+                    field={field}
+                    mapped={!!selectedValue}
+                    suggestion={suggestions[field.key]}
+                  />
                 </div>
-                <div className="hidden sm:block w-8">
-                  {isValid && selectedValue && (
+
+                {/* Mapped checkmark (desktop only) */}
+                <div className="hidden sm:flex items-start pt-1.5 w-8 shrink-0">
+                  {selectedValue && (
                     <CheckCircle className="h-5 w-5 text-green-600" />
                   )}
                 </div>
               </div>
             );
           })}
+
+          {/* Phase 6: Send readiness summary */}
+          <ReadinessSummary mapping={mapping} />
         </CardContent>
       </Card>
 
+      {/* ── Sample data preview (unchanged) ──────────────────────────────────── */}
       {mapping.email && contacts.length > 0 && (
         <Card className="border-card-border">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Sample Data Preview</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Sample Data Preview</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -208,19 +348,21 @@ export default function ColumnMapping() {
                   key={i}
                   className="flex items-center gap-4 p-3 rounded-md bg-muted/50"
                 >
-                  <span className="text-sm font-medium w-8">{i + 1}.</span>
-                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-sm">
+                  <span className="text-sm font-medium w-6 text-muted-foreground">
+                    {i + 1}.
+                  </span>
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                     <div>
                       <span className="text-muted-foreground">Email:</span>{" "}
                       <span className="font-medium">
-                        {contact[mapping.email] || "-"}
+                        {contact[mapping.email] || "—"}
                       </span>
                     </div>
                     {mapping.name && (
                       <div>
                         <span className="text-muted-foreground">Name:</span>{" "}
                         <span className="font-medium">
-                          {contact[mapping.name] || "-"}
+                          {contact[mapping.name] || "—"}
                         </span>
                       </div>
                     )}
@@ -228,7 +370,7 @@ export default function ColumnMapping() {
                       <div>
                         <span className="text-muted-foreground">Company:</span>{" "}
                         <span className="font-medium">
-                          {contact[mapping.company] || "-"}
+                          {contact[mapping.company] || "—"}
                         </span>
                       </div>
                     )}
@@ -236,7 +378,7 @@ export default function ColumnMapping() {
                       <div>
                         <span className="text-muted-foreground">Category:</span>{" "}
                         <span className="font-medium">
-                          {contact[mapping.category] || "-"}
+                          {contact[mapping.category] || "—"}
                         </span>
                       </div>
                     )}
@@ -248,6 +390,7 @@ export default function ColumnMapping() {
         </Card>
       )}
 
+      {/* ── Validation error ──────────────────────────────────────────────────── */}
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -255,7 +398,8 @@ export default function ColumnMapping() {
         </Alert>
       )}
 
-      <div className="flex justify-between pt-4">
+      {/* ── Navigation ───────────────────────────────────────────────────────── */}
+      <div className="flex justify-between pt-2">
         <Button variant="outline" onClick={goBack} data-testid="button-back">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
