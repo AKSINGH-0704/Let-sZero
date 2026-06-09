@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { getRateLimiter } from "./rateLimiter.js";
+import { sendWithRetry } from "./worker.js";
 
 // SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
 let smtpHealthCache = { status: "unknown", checkedAt: 0 };
@@ -209,6 +210,48 @@ export async function executeCampaign(campaignId, userId) {
     return;
   }
 
+  // ── Pre-loop: per-user manual pause check ─────────────────────────────────
+  if (owner.sendPaused) {
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "sender_paused", pausedReason: owner.sendPausedReason },
+    });
+    console.warn(`[CAMPAIGN] ${campaignId} failed — sender ${userId} is paused`);
+    return;
+  }
+
+  // ── Pre-loop: auto-pause check (7-day rolling bounce/complaint rate) ───────
+  const senderHealth = await storage.getUserSenderHealth(userId);
+  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.15");
+  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.005");
+
+  if (senderHealth.sent >= 50 && (senderHealth.bounceRate > bounceThreshold || senderHealth.complaintRate > complaintThreshold)) {
+    await storage.updateUser(userId, {
+      sendPaused: true,
+      sendPausedReason: `auto_paused: bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`,
+      sendPausedAt: new Date(),
+    });
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: {
+        reason: "sender_auto_paused",
+        bounceRate: senderHealth.bounceRate,
+        complaintRate: senderHealth.complaintRate,
+        threshold: { bounce: bounceThreshold, complaint: complaintThreshold },
+      },
+    });
+    console.warn(`[CAMPAIGN] User ${userId} auto-paused — bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`);
+    return;
+  }
+
   const template = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
 
@@ -295,7 +338,7 @@ export async function executeCampaign(campaignId, userId) {
             }
           }
         }
-        const info = await sendCampaignEmail(contact, template, userId, campaignEmailRecord.id, senderProfile);
+        const info = await sendWithRetry(contact, template, userId, campaignId, usedRateLimiter ? rateLimiter : null, campaignEmailRecord.id, 3, senderProfile);
         console.log(`[SES SEND] contact=${contact.email} status=ok`);
 
         // Email delivered — mark SENT before credit deduction so a deduction
@@ -355,6 +398,10 @@ export async function executeCampaign(campaignId, userId) {
   const currentState = await storage.getCampaign(campaignId);
   if (currentState?.status === "FAILED") {
     console.warn(`[CAMPAIGN ${campaignId}] externally terminated (status=FAILED) — not overwriting to COMPLETED`);
+    return currentState;
+  }
+  if (currentState?.status === "PAUSED") {
+    console.warn(`[CAMPAIGN ${campaignId}] externally paused — not overwriting to COMPLETED`);
     return currentState;
   }
 

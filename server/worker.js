@@ -113,7 +113,7 @@ function isThrottleError(err) {
 // Retry a single email send up to maxAttempts times with linear back-off.
 // Throttle errors (SES rate exceeded) do not consume a retry attempt — they use a
 // separate 2s+jitter delay and return the acquired token since no SES capacity was used.
-async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3, senderProfile = {}) {
+export async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3, senderProfile = {}) {
   let lastErr;
   let attempts = 0;
   let throttleRetries = 0;
