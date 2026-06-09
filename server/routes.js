@@ -2,7 +2,7 @@ import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
-import { generatePreviews, analyzeSpam, generateTemplate, getAiHealthStatus, peekSpamCache } from "./ai.js";
+import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
@@ -2043,7 +2043,27 @@ export async function registerRoutes(httpServer, app) {
         campaignType: campaignType || "general",
         senderContext,
       });
-      res.json(template);
+
+      const validation = validateTemplate(template.subject, template.body, {
+        campaignType: campaignType || "general",
+        intake,
+        model:  template._model,
+        userId: req.user.id,
+      });
+
+      if (validation.hardBlocked) {
+        storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
+        return res.status(422).json({
+          message:    "Template generation produced an unusable output. Please try again.",
+          validation,
+        });
+      }
+
+      res.json({
+        subject:  validation.subject,
+        body:     validation.body,
+        warnings: validation.warnings,
+      });
     } catch (error) {
       storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
       console.error("[AI] generate-template error:", error.message);

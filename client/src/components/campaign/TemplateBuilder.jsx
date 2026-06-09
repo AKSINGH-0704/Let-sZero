@@ -88,8 +88,9 @@ export default function TemplateBuilder() {
     body:    template.body    || "",
   });
   const [localIsAiGenerated, setLocalIsAiGenerated] = useState(() => templateIsAiGenerated);
-  const [error,        setError]        = useState("");
-  const [activeTab,    setActiveTab]    = useState("edit");
+  const [error,                  setError]                  = useState("");
+  const [activeTab,              setActiveTab]              = useState("edit");
+  const [aiGenerationWarnings,   setAiGenerationWarnings]   = useState([]);
   const [aiOpen,         setAiOpen]         = useState(false);
   const [aiIntake,       setAiIntake]       = useState({
     recipientDescription: "",
@@ -247,18 +248,18 @@ export default function TemplateBuilder() {
       setAiOpen(false);
       setAiError("");
       setActiveTab("edit");
+      setAiGenerationWarnings(data.warnings?.length > 0 ? data.warnings : []);
     },
     onError: (err) => {
       try {
-        const body = JSON.parse(err.message);
-        if (body?.resetsAt) {
-          const resetTime = new Date(body.resetsAt).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-          setAiError(
-            `Daily AI limit reached — resets at ${resetTime}. ${body.upgradeMessage}`
-          );
+        const parsed = JSON.parse(err.message);
+        if (parsed?.resetsAt) {
+          const resetTime = new Date(parsed.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          setAiError(`Daily AI limit reached — resets at ${resetTime}. ${parsed.upgradeMessage}`);
+          return;
+        }
+        if (parsed?.validation?.hardBlocked) {
+          setAiError("The generated template failed validation and cannot be used. Please try again or write your template manually.");
           return;
         }
       } catch {}
@@ -297,6 +298,7 @@ export default function TemplateBuilder() {
     setError("");
     if (field === "subject" || field === "body") {
       setLocalIsAiGenerated(false);
+      setAiGenerationWarnings([]);
     }
   };
 
@@ -354,6 +356,19 @@ export default function TemplateBuilder() {
           <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
             Your <a href="/app/profile" className="underline font-medium">sender profile</a> is incomplete.
             AI-generated templates will use placeholder sign-offs, and recipients will see "RepMail" instead of your name.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* ── AI generation validation warnings ──────────────────────────────────── */}
+      {aiGenerationWarnings.length > 0 && (
+        <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm space-y-1">
+            <p className="font-medium">Review before using this template:</p>
+            {aiGenerationWarnings.map((w, i) => (
+              <p key={i} className="text-xs">{w.message}</p>
+            ))}
           </AlertDescription>
         </Alert>
       )}
