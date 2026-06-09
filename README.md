@@ -327,7 +327,7 @@ Every call is logged: model, token counts, cost estimate, latency, SHA-256 reque
 | Nodemailer | Email delivery over SES SMTP |
 | OpenAI SDK | GPT-4 for template gen, preview, spam scoring |
 | Passport.js + express-session | Auth and session management |
-| Stripe + Razorpay | Dual-gateway payments (USD + INR) |
+| Razorpay | Payments (INR only) |
 | Zod | Runtime validation |
 
 </div>
@@ -357,13 +357,20 @@ Server starts at `http://localhost:5000`.
 |:---------|:------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |
-| `AWS_SES_HOST` / `USER` / `PASS` | SES SMTP credentials |
+| `SES_SMTP_HOST` / `SES_SMTP_USER` / `SES_SMTP_PASS` | AWS SES SMTP credentials |
+| `SES_FROM_EMAIL` / `SES_FROM_NAME` | Sender identity for all outgoing mail |
 | `SES_CONFIGURATION_SET` | AWS configuration set for event routing |
-| `SES_RATE_PER_SECOND` | Must match your SES account sending limit |
-| `OPENAI_API_KEY` | GPT-4 access |
-| `STRIPE_SECRET_KEY` / `RAZORPAY_KEY_ID` | Payment gateways |
-| `SESSION_SECRET` | Express session signing key |
+| `SES_RATE_PER_SECOND` | Must match your SES account sending limit (default `14`) |
 | `SNS_TOPIC_ARN` | Restricts webhooks to known SNS topic only |
+| `OPENAI_API_KEY` | GPT-4 access |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Razorpay payment credentials |
+| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook HMAC-SHA256 secret |
+| `SESSION_SECRET` | Express session signing key |
+| `APP_URL` | Production URL (used in unsubscribe footer links) |
+| `REPMAIL_PUBLIC` | Set to `true` to enable full API in production |
+| `RECOVERY_EMAIL` | Emergency recovery contact address |
+| `BOUNCE_RATE_PAUSE_THRESHOLD` | Auto-pause bounce threshold (default `0.15`) |
+| `COMPLAINT_RATE_PAUSE_THRESHOLD` | Auto-pause complaint threshold (default `0.005`) |
 
 </div>
 
@@ -430,10 +437,11 @@ Let-sZero/
 │   ├── memoryStorage.js         In-memory dev shim
 │   ├── queue.js                 BullMQ setup + worker
 │   ├── rateLimiter.js           Token bucket (Lua scripts)
-│   ├── aiService.js             OpenAI integration
-│   ├── emailService.js          Nodemailer + SES
-│   ├── snsHandler.js            SNS webhook processor
-│   └── cleanupJobs.js           Scheduled maintenance
+│   ├── ai.js                    OpenAI integration
+│   ├── email.js                 Nodemailer + SES transport
+│   ├── sns.js                   SNS signature verification + event dispatch
+│   ├── razorpayWebhook.js       Razorpay HMAC webhook handler
+│   └── gateways.js              Payment gateway abstraction (Razorpay)
 │
 ├── shared/schema.js             Drizzle tables + Zod schemas + constants
 └── script/build.js              Production build orchestrator

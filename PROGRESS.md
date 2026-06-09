@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
-**Last updated:** 2026-06-07
-**Current commit:** f3f2f3e
+**Last updated:** 2026-06-09
+**Current commit:** 47e0d49
 
 ---
 
@@ -123,10 +123,11 @@ Only **V** is treated as proven.
 |---|---|---|
 | Credit deduction correct after send | **I** | No test campaign |
 | Credit transaction rows created | **I** | No test campaign |
-| Stripe payment flow | **I** | Not tested |
-| Razorpay payment flow | **I** | Not tested |
+| Razorpay checkout (initiate → modal → verify) | **I** | Not tested in production |
+| Razorpay webhook (order.paid → completePayment) | **I** | Not tested in production |
+| completePayment idempotency (double-credit guard) | **D** | storage.js:1006,1018 — early-return on SUCCESS + WHERE clause |
 
-**Milestone status: I** — 0 of 4 sub-items Verified
+**Milestone status: I** — 0 of 5 sub-items Verified
 
 ---
 
@@ -161,6 +162,33 @@ Only **V** is treated as proven.
 | Mail Tester score ≥ 8/10 | **D** | Not run |
 
 **Milestone status: D** — 0 of 5 sub-items Verified
+
+---
+
+### 10 · Phase A Hardening (commits f7f892e + 47e0d49)
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Razorpay-only checkout (Stripe fully removed) | **D** | gateways.js — no Stripe imports; Pricing.jsx INR-only |
+| `mustResetPassword` server-side enforcement | **D** | routes.js:115 — authMiddleware 403 with exempt paths |
+| Global send pause in `routes.js executeCampaign` | **D** | routes.js:199 (pre-loop) + 242 (every 50 contacts) |
+| `sendPaused` blocks POST /api/campaigns | **D** | routes.js:106 authMiddleware |
+| Invite accept member-limit bypass fix | **D** | routes.js:1780-1788 — checks inviter.plan before user creation |
+| Password minimum 8 chars at change-password | **D** | routes.js:1761 |
+| `sesTracking` field in `/api/health` | **D** | routes.js:498 |
+| `openedEmails` / `clickedEmails` null guards in History.jsx | **D** | History.jsx:390,401 — detail view `?? 0` guards |
+| `buildMonthlyChart` uses `startedAt \|\| completedAt \|\| createdAt` | **D** | storage.js:54 |
+| `getPaymentByRazorpayOrderId` via JSONB | **D** | storage.js:1071 |
+| `completePayment` idempotency guard | **D** | storage.js:1006+1018 |
+| 6 AI campaign type preambles | **D** | ai.js:364 — b2b_outreach, real_estate, recruitment, partnership, follow_up, general |
+
+**Gap items (NOT fixed — scheduled Week 1):**
+- GAP 1: `senderHealth` auto-pause absent from `routes.js executeCampaign` (only in `worker.js`)
+- GAP 2: `getPreCampaignSuppressionCount` N+1 loop in `storage.js:1334-1340`
+- GAP 3: `getContactsByIds` batch method absent from `storage.js`
+- GAP 4: No server-side AI generation validation beyond subject/body presence
+
+**Milestone status: D** — all items code-verified, none runtime-verified
 
 ---
 

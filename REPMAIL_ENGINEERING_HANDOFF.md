@@ -36,7 +36,7 @@
   ├──────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
   │ UI components    │ Radix UI + Tailwind CSS + shadcn/ui                                                     │
   ├──────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Payments         │ Stripe + Razorpay (dual gateway)                                                        │
+  │ Payments         │ Razorpay (INR only — Stripe fully removed as of commit f7f892e)                        │
   ├──────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
   │ File parsing     │ xlsx (SheetJS)                                                                          │
   ├──────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
@@ -97,8 +97,7 @@
   The backend is production-hardened for the following subsystems: auth, sessions, campaign execution, BullMQ queuing, SNS webhook processing
   (bounce/complaint/open/click), suppression system, credit system, rate limiting, inactivity governance, emergency recovery, and data cleanup jobs.
 
-  Not yet production-ready: no /health endpoint, no queue observability API, no SES delivery health dashboard, no admin intervention tooling for stuck
-  campaigns, no time-series AI cost analytics. The frontend is functional but tracking metrics (openedEmails, clickedEmails) are not yet surfaced in the UI.
+  Not yet production-ready: no queue observability API, no SES delivery health dashboard, no admin intervention tooling for stuck campaigns, no time-series AI cost analytics. GET /api/health is implemented (postgres, redis, worker, smtp, sendPaused, sesTracking, ai fields). openedEmails and clickedEmails are surfaced in the History.jsx campaign detail view. Inline executor (routes.js executeCampaign) is missing senderHealth auto-pause — this path only runs when Redis is unavailable.
 
   ---
   Section 2 — Infrastructure Overview
@@ -485,7 +484,7 @@
   - contacts — per-user contact records. Unique constraint on (user_id, email).
   - credit_transactions — immutable ledger of every credit operation.
   - audit_logs — system-wide audit trail. target_type + target_id identify the affected entity.
-  - payments — Stripe/Razorpay payment records.
+  - payments — Razorpay payment records (Stripe fully removed). metadata JSONB stores razorpay_order_id, razorpay_key_id.
   - contact_submissions — public contact form submissions.
   - waitlist — email waitlist for early access.
   - invites — admin-sent invite tokens. SHA-256 of raw token stored.
