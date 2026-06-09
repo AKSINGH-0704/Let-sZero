@@ -66,6 +66,14 @@ const CAMPAIGN_TYPES = [
   { value: "general",       label: "General" },
 ];
 
+const AI_OBJECTIVES = [
+  { value: "intro_chat",       label: "Intro chat" },
+  { value: "schedule_call",    label: "Schedule a call" },
+  { value: "demo",             label: "Book a demo" },
+  { value: "confirm_interest", label: "Quick reply to confirm interest" },
+  { value: "referral",         label: "Refer to the right person" },
+];
+
 export default function TemplateBuilder() {
   const {
     template, setTemplate, setTemplateIsAiGenerated, setCampaignType, setAiAnalysis,
@@ -82,11 +90,25 @@ export default function TemplateBuilder() {
   const [localIsAiGenerated, setLocalIsAiGenerated] = useState(() => templateIsAiGenerated);
   const [error,        setError]        = useState("");
   const [activeTab,    setActiveTab]    = useState("edit");
-  const [aiOpen,           setAiOpen]           = useState(false);
-  const [aiPrompt,         setAiPrompt]         = useState("");
-  const [aiTone,           setAiTone]           = useState("professional");
-  const [aiCampaignType,   setAiCampaignType]   = useState("general");
-  const [aiError,          setAiError]          = useState("");
+  const [aiOpen,         setAiOpen]         = useState(false);
+  const [aiIntake,       setAiIntake]       = useState({
+    recipientDescription: "",
+    valueProposition:     "",
+    objectiveType:        "intro_chat",
+    objectiveDetail:      "",
+    relevanceReason:      "",
+    previousContext:      "",
+    roleSummary:          "",
+    additionalInstructions: "",
+  });
+  const [aiTone,         setAiTone]         = useState("professional");
+  const [aiCampaignType, setAiCampaignType] = useState("general");
+  const [aiError,        setAiError]        = useState("");
+
+  const updateIntake = (field, value) => {
+    setAiIntake(prev => ({ ...prev, [field]: value }));
+    setAiError("");
+  };
   const [aiQuota,      setAiQuota]      = useState(null);
   const [focusedField, setFocusedField] = useState("body");
 
@@ -172,11 +194,39 @@ export default function TemplateBuilder() {
     ];
   }, [localTemplate.subject, localTemplate.body]);
 
+  // ── Intake quality warnings — non-blocking, shown before Generate ─────────
+  const intakeWarnings = useMemo(() => {
+    const warnings = [];
+    const desc = aiIntake.recipientDescription.trim();
+    const vp   = aiIntake.valueProposition.trim();
+    const rel  = aiIntake.relevanceReason.trim();
+    if (desc.length > 0 && desc.length < 20) {
+      warnings.push("Recipient description is too brief. More specific audiences produce better emails.");
+    } else if (/^(companies|businesses|people|clients|customers|users|organizations|teams|firms|professionals)\.?$/i.test(desc)) {
+      warnings.push("Recipient description is too generic. Add role, industry, or situation context.");
+    }
+    if (vp.length > 0 && vp.length < 25) {
+      warnings.push("Value proposition is too brief. Describe a specific outcome, not a category.");
+    } else if (vp.length >= 25 && /^(help|improve|better|great|success|value|results|solutions?|services?|products?)\b/i.test(vp)) {
+      warnings.push("Value proposition may be too vague. What specific outcome does the recipient experience?");
+    }
+    if (rel.length > 0 && rel.length < 20) {
+      warnings.push("Relevance context is too brief to be useful.");
+    }
+    return warnings;
+  }, [aiIntake.recipientDescription, aiIntake.valueProposition, aiIntake.relevanceReason]);
+
+  const canGenerate =
+    !!aiIntake.recipientDescription.trim() &&
+    !!aiIntake.valueProposition.trim() &&
+    !!aiIntake.objectiveType &&
+    (aiCampaignType !== "follow_up" || !!aiIntake.previousContext.trim());
+
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/generate-template", {
-        prompt: aiPrompt,
+        intake: aiIntake,
         tone: aiTone,
         campaignType: aiCampaignType,
       });
@@ -323,7 +373,7 @@ export default function TemplateBuilder() {
               <div className="text-left">
                 <p className="font-medium text-sm">Generate with AI</p>
                 <p className="text-xs text-muted-foreground">
-                  Describe your campaign goal — AI drafts a starting template
+                  Answer a few questions — AI drafts a targeted starting template
                 </p>
               </div>
             </div>
@@ -344,22 +394,9 @@ export default function TemplateBuilder() {
         <CollapsibleContent>
           <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 mt-2">
             <CardContent className="pt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="ai-prompt" className="text-sm font-medium">
-                  What is this campaign about?
-                </Label>
-                <Textarea
-                  id="ai-prompt"
-                  placeholder="e.g., Cold outreach to fintech founders introducing our AI-powered email marketing platform and offering a free demo"
-                  value={aiPrompt}
-                  onChange={(e) => { setAiPrompt(e.target.value); setAiError(""); }}
-                  className="min-h-[80px] text-sm resize-none bg-background"
-                  disabled={generateTemplateMutation.isPending}
-                  data-testid="input-ai-prompt"
-                />
-              </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              {/* Campaign type + tone */}
+              <div className="flex flex-wrap gap-3">
                 <div className="flex items-center gap-2">
                   <Label className="text-sm font-medium whitespace-nowrap">Type:</Label>
                   <Select value={aiCampaignType} onValueChange={setAiCampaignType} disabled={generateTemplateMutation.isPending}>
@@ -386,10 +423,153 @@ export default function TemplateBuilder() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Recipients */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  Who are your recipients? <span className="text-destructive text-xs">*</span>
+                </Label>
+                <Input
+                  placeholder="e.g., Series A SaaS founders who've just made their first two sales hires"
+                  value={aiIntake.recipientDescription}
+                  onChange={e => updateIntake("recipientDescription", e.target.value)}
+                  disabled={generateTemplateMutation.isPending}
+                  className="text-sm bg-background"
+                  data-testid="input-ai-recipients"
+                />
+              </div>
+
+              {/* Value proposition */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  What outcome does your offer produce? <span className="text-destructive text-xs">*</span>
+                </Label>
+                <Input
+                  placeholder="e.g., Sales process and CRM set up in under two weeks, without a full-time ops hire"
+                  value={aiIntake.valueProposition}
+                  onChange={e => updateIntake("valueProposition", e.target.value)}
+                  disabled={generateTemplateMutation.isPending}
+                  className="text-sm bg-background"
+                  data-testid="input-ai-value-prop"
+                />
+              </div>
+
+              {/* Objective */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">
+                  What does a successful reply look like? <span className="text-destructive text-xs">*</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Select value={aiIntake.objectiveType} onValueChange={v => updateIntake("objectiveType", v)} disabled={generateTemplateMutation.isPending}>
+                    <SelectTrigger className="w-56 h-9 bg-background text-sm" data-testid="select-ai-objective">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AI_OBJECTIVES.map(o => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Optional: e.g., 15-minute discovery call"
+                    value={aiIntake.objectiveDetail}
+                    onChange={e => updateIntake("objectiveDetail", e.target.value)}
+                    disabled={generateTemplateMutation.isPending}
+                    className="text-sm bg-background flex-1"
+                  />
+                </div>
+              </div>
+
+              {/* Relevance reason — optional */}
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium text-muted-foreground">
+                  Why are you reaching out to this group?{" "}
+                  <span className="text-xs font-normal">(optional)</span>
+                </Label>
+                <Input
+                  placeholder="e.g., We've worked with 40+ early-stage SaaS teams at exactly this growth stage"
+                  value={aiIntake.relevanceReason}
+                  onChange={e => updateIntake("relevanceReason", e.target.value)}
+                  disabled={generateTemplateMutation.isPending}
+                  className="text-sm bg-background"
+                />
+              </div>
+
+              {/* Prior interaction — follow_up only, required */}
+              {aiCampaignType === "follow_up" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">
+                    What was the prior interaction? <span className="text-destructive text-xs">*</span>
+                  </Label>
+                  <Input
+                    placeholder="e.g., Sent an intro email about our analytics platform two weeks ago — no response yet"
+                    value={aiIntake.previousContext}
+                    onChange={e => updateIntake("previousContext", e.target.value)}
+                    disabled={generateTemplateMutation.isPending}
+                    className="text-sm bg-background"
+                    data-testid="input-ai-prior-context"
+                  />
+                </div>
+              )}
+
+              {/* Role summary — recruitment only, optional */}
+              {aiCampaignType === "recruitment" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    Describe the role you're hiring for{" "}
+                    <span className="text-xs font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    placeholder="e.g., Head of Backend Engineering, Series B fintech, remote-first, competitive equity"
+                    value={aiIntake.roleSummary}
+                    onChange={e => updateIntake("roleSummary", e.target.value)}
+                    disabled={generateTemplateMutation.isPending}
+                    className="text-sm bg-background"
+                  />
+                </div>
+              )}
+
+              {/* Additional instructions — optional catch-all */}
+              <div className="space-y-1.5">
+                <Label className="text-sm text-muted-foreground">
+                  Anything else the AI should know?{" "}
+                  <span className="text-xs font-normal">(optional)</span>
+                </Label>
+                <Textarea
+                  placeholder="e.g., Pricing starts at $500/mo. Integrates with Salesforce and HubSpot. Avoid mentioning competitors."
+                  value={aiIntake.additionalInstructions}
+                  onChange={e => updateIntake("additionalInstructions", e.target.value)}
+                  disabled={generateTemplateMutation.isPending}
+                  className="min-h-[56px] text-sm resize-none bg-background"
+                />
+              </div>
+
+              {/* Intake quality warnings */}
+              {intakeWarnings.length > 0 && (
+                <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20 py-2">
+                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
+                  <AlertDescription className="text-amber-800 dark:text-amber-300 text-xs space-y-0.5">
+                    {intakeWarnings.map((w, i) => <p key={i}>{w}</p>)}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Quota display + generate button */}
+              <div className="flex items-center justify-between gap-3">
+                {aiIsUnlimited ? (
+                  <p className="text-xs text-green-600 font-medium">Unlimited AI usage</p>
+                ) : aiExhausted ? (
+                  <p className="text-xs text-red-600 font-medium">Daily limit reached — resets in ~24h</p>
+                ) : (
+                  <p className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+                    {aiUsed} of {aiLimit} AI generation{aiLimit !== 1 ? "s" : ""} used today
+                  </p>
+                )}
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
-                  disabled={!aiPrompt.trim() || generateTemplateMutation.isPending || aiExhausted}
-                  className="gap-2 ml-auto"
+                  disabled={!canGenerate || generateTemplateMutation.isPending || aiExhausted}
+                  className="gap-2"
                   data-testid="button-ai-generate"
                 >
                   {generateTemplateMutation.isPending ? (
@@ -399,16 +579,6 @@ export default function TemplateBuilder() {
                   )}
                 </Button>
               </div>
-
-              {aiIsUnlimited ? (
-                <p className="text-xs text-green-600 font-medium text-right">Unlimited AI usage</p>
-              ) : aiExhausted ? (
-                <p className="text-xs text-red-600 font-medium text-right">Daily limit reached — resets in ~24h</p>
-              ) : (
-                <p className={cn("text-xs text-right", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
-                  {aiUsed} of {aiLimit} AI generation{aiLimit !== 1 ? "s" : ""} used today
-                </p>
-              )}
 
               {aiError && (
                 <Alert variant="destructive" className="py-2">

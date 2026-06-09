@@ -387,8 +387,9 @@ PLACEHOLDERS: Use {{name}} and {{company}} naturally throughout. Use {{category}
 SIGN-OFF FORMAT: Full name, title, company.`,
 
   follow_up: `This is a follow-up to a previous conversation or prior interaction.
-STRUCTURE: (1) Brief, specific reference to the prior contact (don't be vague) → (2) reason for following up now → (3) single clear next step or question.
+STRUCTURE: (1) Brief, honest reference to the prior contact → (2) reason for following up now → (3) single clear next step or question.
 VOCABULARY: Use follow-up language — following up, last time we spoke, wanted to check in, still exploring, circling back. Keep it short — the recipient already has context.
+HONESTY RULE: Only reference specific prior conversation details if they are explicitly provided in the campaign goal below. If no prior context is provided, keep the opening minimal and honest — "I reached out recently and wanted to follow up" is correct. Do NOT invent details about meetings, discussions, or commitments that were not described. A vague but honest reference is better than a specific fabrication.
 PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it was part of the prior conversation context. Use {{category}} sparingly.
 SIGN-OFF FORMAT: Full name, title if relevant.`,
 
@@ -398,13 +399,29 @@ PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it sounds co
 SIGN-OFF FORMAT: Full name.`,
 };
 
-export async function generateTemplate(prompt, tone = "professional", opts = {}) {
+export async function generateTemplate(intake, tone = "professional", opts = {}) {
   const client = getClient();
   const effectivePlan = opts.effectivePlan || "free";
   const model = getModelForPlan(effectivePlan, "generate-template");
   const campaignType = opts.campaignType || "general";
   const senderCtx = opts.senderContext || {};
   console.log(`[AI] generate-template ${opts.userId ?? "anon"} using ${model} plan=${effectivePlan} type=${campaignType}`);
+
+  // Compose user prompt from structured intake fields.
+  // Optional fields are only included when non-empty so the model is not misled by blank labels.
+  const objectiveLine = intake.objectiveDetail?.trim()
+    ? `${intake.objectiveType} — specifically: ${intake.objectiveDetail.trim()}`
+    : intake.objectiveType;
+  const promptParts = [
+    `RECIPIENTS: ${intake.recipientDescription}`,
+    `OFFER: ${intake.valueProposition}`,
+    `OBJECTIVE: ${objectiveLine}`,
+  ];
+  if (intake.relevanceReason?.trim())        promptParts.push(`RELEVANCE CONTEXT: ${intake.relevanceReason.trim()}`);
+  if (intake.previousContext?.trim())        promptParts.push(`PRIOR INTERACTION: ${intake.previousContext.trim()}`);
+  if (intake.roleSummary?.trim())            promptParts.push(`ROLE DETAILS: ${intake.roleSummary.trim()}`);
+  if (intake.additionalInstructions?.trim()) promptParts.push(`ADDITIONAL CONTEXT: ${intake.additionalInstructions.trim()}`);
+  const composedPrompt = promptParts.join("\n");
 
   const toneGuide = {
     professional: "professional tone — confident, clear, respectful, no filler phrases",
@@ -462,21 +479,23 @@ AVAILABLE RECIPIENT PLACEHOLDERS (use naturally — never mechanically):
 
 RULES:
 - Write from the perspective of a real individual, not a company or platform
+- The email must explain WHY this recipient is relevant to receive this message — not just acknowledge who they are. Avoid superficial personalization such as "I noticed you work at {{company}}." Instead, connect the outreach to a business problem, industry context, company context, or role context that makes the message relevant. Personalization should be grounded in information actually available in the prompt.
+- Do not imply knowledge of the recipient's priorities, projects, conversations, initiatives, or business challenges unless they are explicitly provided in the campaign context.
 - Use {{name}} in the greeting — but rephrase the sentence if it sounds forced
 - Only use {{company}} when the campaign context says it is appropriate AND it sounds natural in that specific sentence
-- Subject line must be under 50 characters — specific and honest, never clickbait
+- Subject line: under 50 characters, aim for under 40. Personalize with {{name}} or {{company}} when it reads naturally. Write what a real person would type as a message subject — not a campaign header. Avoid generic patterns: "Quick question", "Following up", "Introduction", "[Sender] + [Recipient]"
 - No ALL CAPS anywhere in subject or body
 - No exclamation marks unless the tone specifically calls for one
 - Avoid all spam trigger words: free, winner, urgent, guaranteed, click here, limited time, act now
 - Plain conversational language — no corporate jargon, no hype, no pressure
 - Body: 3–4 short paragraphs maximum (under 180 words total)
-- Exactly one clear CTA — a single specific question or next-step invitation at the end
+- Exactly one CTA at the end. Frame it as a low-commitment permission question, not a request or demonstration offer. "Worth a quick conversation?" outperforms "Would you like to schedule a call?". "Open to a brief chat?" outperforms "I'd love to show you a demo." The reader should feel like saying yes costs them nothing.
 - NEVER write [Your Name], [Title], [Company] or any text in square brackets — use {{sender_name}} etc. instead
 - Output ONLY valid JSON, no markdown, no explanation`;
 
   const userPrompt = `Write a complete email template for this campaign:
 
-GOAL: ${prompt}
+${composedPrompt}
 TONE: ${tone} — ${toneGuide[tone] || toneGuide.professional}
 
 Return JSON:
@@ -486,7 +505,19 @@ Return JSON:
 }`;
 
   try {
-    const requestHash = cache.makeKey(prompt, tone, campaignType, senderCtx.name || "");
+    const requestHash = cache.makeKey(
+      intake.recipientDescription,
+      intake.valueProposition,
+      intake.objectiveType,
+      intake.objectiveDetail || "",
+      intake.relevanceReason || "",
+      intake.previousContext || "",
+      intake.roleSummary || "",
+      intake.additionalInstructions || "",
+      tone,
+      campaignType,
+      senderCtx.name || ""
+    );
     const t0 = Date.now();
     const response = await client.chat.completions.create({
       model,

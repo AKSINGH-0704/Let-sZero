@@ -2009,9 +2009,12 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/ai/generate-template", authMiddleware, aiLimiter, async (req, res) => {
     try {
-      const { prompt, tone, campaignType } = req.body;
-      if (!prompt || !prompt.trim()) {
-        return res.status(400).json({ message: "Prompt is required" });
+      const { intake, tone, campaignType } = req.body;
+      if (!intake?.recipientDescription?.trim() || !intake?.valueProposition?.trim() || !intake?.objectiveType) {
+        return res.status(400).json({ message: "Recipient description, value proposition, and objective are required" });
+      }
+      if ((campaignType || "general") === "follow_up" && !intake?.previousContext?.trim()) {
+        return res.status(400).json({ message: "Prior interaction context is required for follow-up campaigns" });
       }
 
       const effectivePlan = await storage.getEffectivePlan(req.user.id);
@@ -2034,7 +2037,7 @@ export async function registerRoutes(httpServer, app) {
         company: req.user.senderCompany || null,
       };
 
-      const template = await generateTemplate(prompt.trim(), tone || "professional", {
+      const template = await generateTemplate(intake, tone || "professional", {
         userId: req.user.id,
         effectivePlan,
         campaignType: campaignType || "general",
