@@ -9,15 +9,14 @@ import { sendTransactionalEmail } from "./email.js";
 import { createServer } from "http";
 import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
-import { stripeWebhookHandler } from "./stripeWebhook.js";
+import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 const app = express();
 const httpServer = createServer(app);
 
-// Stripe webhook MUST be registered before express.json() — Stripe signature
-// verification requires the raw request body. Once express.json() consumes
-// the stream, constructEvent() will always throw.
-app.post("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler);
+// Razorpay webhook MUST be registered before express.json() — HMAC-SHA256
+// signature verification requires the raw request body as a Buffer.
+app.post("/api/webhooks/razorpay", express.raw({ type: "application/json" }), razorpayWebhookHandler);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

@@ -798,22 +798,41 @@ function PaymentHistory() {
   );
 }
 
-// ─── Process Payment (payment completion flow — keep existing logic) ───────────
+// ─── Razorpay script loader (singleton) ───────────────────────────────────────
+function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) { resolve(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+// ─── Process Payment (Razorpay checkout) ──────────────────────────────────────
 function ProcessPayment({ paymentId }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [checkoutOpened, setCheckoutOpened] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
 
-  const { data: payment } = useQuery({
+  const { data: payment, isLoading } = useQuery({
     queryKey: ["/api/payments", paymentId],
     queryFn: async () => {
-      const payments = await fetch("/api/payments").then(r => r.json());
-      return payments.find(p => p.id === paymentId);
+      const list = await fetch("/api/payments").then(r => r.json());
+      return list.find(p => p.id === paymentId) || null;
     },
   });
 
-  const completeMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/payments/${paymentId}/complete`);
+  const verifyMutation = useMutation({
+    mutationFn: async ({ razorpay_payment_id, razorpay_order_id, razorpay_signature }) => {
+      const res = await apiRequest("POST", "/api/payments/razorpay/verify", {
+        razorpay_payment_id,
+        razorpay_order_id,
+        razorpay_signature,
+        repmail_payment_id: paymentId,
+      });
       return res.json();
     },
     onSuccess: (data) => {
@@ -827,13 +846,14 @@ function ProcessPayment({ paymentId }) {
       setLocation("/app/payments");
     },
     onError: (err) => {
-      toast({ title: "Payment failed", description: err.message, variant: "destructive" });
+      setCheckoutError(err.message || "Payment verification failed. Contact support.");
+      toast({ title: "Payment verification failed", description: err.message, variant: "destructive" });
     },
   });
 
   const failMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/payments/${paymentId}/fail`, { reason: "User cancelled" });
+    mutationFn: async (reason) => {
+      const res = await apiRequest("POST", `/api/payments/${paymentId}/fail`, { reason });
       return res.json();
     },
     onSuccess: () => {
@@ -843,9 +863,111 @@ function ProcessPayment({ paymentId }) {
     },
   });
 
-  const currency = payment?.currency || "USD";
+  const openRazorpay = async () => {
+    if (!payment) return;
+    const orderId = payment.metadata?.razorpay_order_id;
+    const keyId = payment.metadata?.razorpay_key_id;
+    if (!orderId || !keyId) {
+      setCheckoutError("Payment session data missing. Please start a new payment.");
+      return;
+    }
+
+    const loaded = await loadRazorpayScript();
+    if (!loaded) {
+      setCheckoutError("Could not load payment gateway. Check your connection and try again.");
+      return;
+    }
+
+    setCheckoutOpened(true);
+
+    const options = {
+      key: keyId,
+      amount: payment.amountLocal * 100, // paise
+      currency: "INR",
+      name: "RepMail",
+      description: `${payment.planName} — ${formatNumber(payment.credits)} credits`,
+      order_id: orderId,
+      handler: (response) => {
+        verifyMutation.mutate({
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_signature: response.razorpay_signature,
+        });
+      },
+      modal: {
+        ondismiss: () => {
+          setCheckoutOpened(false);
+          // User dismissed the modal without paying — mark as failed so it's visible in history
+          failMutation.mutate("User dismissed Razorpay checkout");
+        },
+      },
+      prefill: {},
+      theme: { color: "#00E5C8" },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.on("payment.failed", (response) => {
+      setCheckoutOpened(false);
+      const reason = response.error?.description || response.error?.code || "payment_failed";
+      failMutation.mutate(reason);
+    });
+    rzp.open();
+  };
+
   const amountLocal = payment?.amountLocal || 0;
-  const paymentMethod = payment?.paymentMethod || "CARD";
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center" style={{ background: "#06060B" }}>
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#00E5C8" }} />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (!payment) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#06060B" }}>
+          <div className="text-center" style={{ color: "#F0F0F5" }}>
+            <p className="text-lg font-semibold mb-2">Payment not found</p>
+            <button
+              className="text-sm underline mt-4"
+              style={{ color: "#00E5C8" }}
+              onClick={() => setLocation("/app/payments")}
+            >
+              Back to Payments
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Already completed — show success and redirect
+  if (payment.status === "SUCCESS") {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#06060B" }}>
+          <div className="text-center w-full max-w-md">
+            <CheckCircle className="h-12 w-12 mx-auto mb-4" style={{ color: "#00E5C8" }} />
+            <p className="text-lg font-semibold mb-1" style={{ color: "#F0F0F5" }}>Payment already completed</p>
+            <p className="text-sm mb-6" style={{ color: "#7878A0" }}>
+              {formatNumber(payment.credits)} credits were added to your account.
+            </p>
+            <button
+              className="text-sm underline"
+              style={{ color: "#00E5C8" }}
+              onClick={() => setLocation("/app/payments")}
+            >
+              Back to Payments
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -862,11 +984,7 @@ function ProcessPayment({ paymentId }) {
               className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
               style={{ background: "rgba(0,229,200,0.08)", border: "1px solid rgba(0,229,200,0.15)" }}
             >
-              {currency === "INR" && paymentMethod === "UPI" ? (
-                <Smartphone className="h-8 w-8" style={{ color: "#00E5C8" }} />
-              ) : (
-                <CreditCard className="h-8 w-8" style={{ color: "#00E5C8" }} />
-              )}
+              <CreditCard className="h-8 w-8" style={{ color: "#00E5C8" }} />
             </div>
             <h2
               className="text-xl font-bold mb-1"
@@ -875,72 +993,75 @@ function ProcessPayment({ paymentId }) {
               Complete Your Payment
             </h2>
             <p className="text-sm" style={{ color: "#7878A0" }}>
-              {currency === "INR" ? "Pay with UPI, cards, or net banking" : "Pay with international credit card"}
+              Pay securely with UPI, cards, or net banking via Razorpay
             </p>
           </div>
 
-          {payment && (
-            <div className="rounded-xl p-4 space-y-2 mb-6" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
-              {[
-                { label: "Plan", value: payment.planName },
-                { label: "Credits", value: formatNumber(payment.credits) },
-                { label: "Amount", value: formatCurrency(amountLocal, currency) },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between text-sm">
-                  <span style={{ color: "#7878A0" }}>{label}</span>
-                  <span className="font-medium" style={{ color: "#F0F0F5" }}>{value}</span>
-                </div>
-              ))}
-              {currency === "INR" && payment.exchangeRate && (
-                <div className="text-xs pt-2 border-t" style={{ color: "#55556A", borderColor: "#1A1A2E" }}>
-                  Exchange rate: 1 USD = ₹{payment.exchangeRate}
-                </div>
-              )}
+          <div className="rounded-xl p-4 space-y-2 mb-6" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
+            {[
+              { label: "Plan", value: payment.planName },
+              { label: "Credits", value: formatNumber(payment.credits) },
+              { label: "Amount", value: `₹${amountLocal.toLocaleString("en-IN")}` },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex justify-between text-sm">
+                <span style={{ color: "#7878A0" }}>{label}</span>
+                <span className="font-medium" style={{ color: "#F0F0F5" }}>{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {checkoutError && (
+            <div
+              className="rounded-xl p-3 mb-4 text-sm"
+              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5" }}
+            >
+              {checkoutError}
             </div>
           )}
 
-          <div className="text-center text-xs mb-6" style={{ color: "#55556A" }}>
-            This is a demo payment flow. In production, this would redirect to a payment gateway.
-          </div>
+          {verifyMutation.isPending && (
+            <div className="text-center text-sm mb-4" style={{ color: "#7878A0" }}>
+              <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+              Verifying payment…
+            </div>
+          )}
 
           <div className="space-y-3">
             <button
-              className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-50"
               style={{
                 background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
                 color: "#06060B",
                 fontWeight: 700,
               }}
-              onClick={() => completeMutation.mutate()}
-              disabled={completeMutation.isPending}
-              data-testid="button-complete-payment"
+              onClick={openRazorpay}
+              disabled={checkoutOpened || verifyMutation.isPending || failMutation.isPending}
+              data-testid="button-open-razorpay"
             >
-              {completeMutation.isPending ? (
+              {checkoutOpened || verifyMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
-                  <CheckCircle className="h-4 w-4" />
-                  Simulate Successful Payment
+                  <Shield className="h-4 w-4" />
+                  Pay ₹{amountLocal.toLocaleString("en-IN")} via Razorpay
                 </>
               )}
             </button>
             <button
               className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
               style={{ background: "#16162A", border: "1px solid #2A2A45", color: "#E5E7EB" }}
-              onClick={() => failMutation.mutate()}
-              disabled={failMutation.isPending}
+              onClick={() => setLocation("/app/payments")}
+              disabled={checkoutOpened || verifyMutation.isPending}
               data-testid="button-cancel-payment"
             >
-              {failMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <XCircle className="h-4 w-4" />
-                  Cancel Payment
-                </>
-              )}
+              <XCircle className="h-4 w-4" />
+              Cancel
             </button>
           </div>
+
+          <p className="text-center text-xs mt-4" style={{ color: "#55556A" }}>
+            Secured by Razorpay · 256-bit SSL encryption
+          </p>
         </div>
       </div>
     </AppLayout>

@@ -50,7 +50,8 @@ function buildMonthlyChart(campaignsList) {
     orderedKeys.push(key);
   }
   for (const c of campaignsList) {
-    const d = new Date(c.createdAt);
+    // Use the actual send date so draft-in-Jan / sent-in-Feb campaigns land in Feb.
+    const d = new Date(c.startedAt || c.completedAt || c.createdAt);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     if (buckets[key]) {
       buckets[key].sent   += c.sentEmails   || 0;
@@ -1000,6 +1001,9 @@ const dbStorage = {
   async completePayment(paymentId, transactionId) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
+    // Idempotency: if already completed, return immediately without re-crediting.
+    // Guards against both webhook + client-side verify firing for the same payment.
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return payment;
 
     const user = await this.getUserById(payment.userId);
     const balanceBefore = user?.creditsRemaining ?? 0;
@@ -1011,7 +1015,7 @@ const dbStorage = {
           transactionId,
           completedAt: new Date()
         })
-        .where(eq(payments.id, paymentId));
+        .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`));
 
       await tx.update(users)
         .set({
@@ -1061,6 +1065,12 @@ const dbStorage = {
 
   async getPayment(id) {
     const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+    return payment || null;
+  },
+
+  async getPaymentByRazorpayOrderId(orderId) {
+    const [payment] = await db.select().from(payments)
+      .where(sql`metadata->>'razorpay_order_id' = ${orderId}`);
     return payment || null;
   },
 

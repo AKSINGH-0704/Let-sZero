@@ -131,7 +131,7 @@ export default function Pricing() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [currency, setCurrency] = useState("USD");
+  const [currency] = useState("INR");
 
   const { data: pricingData, isLoading } = useQuery({
     queryKey: ["/api/pricing/plans"]
@@ -149,7 +149,7 @@ export default function Pricing() {
       return res.json();
     },
     onSuccess: (data) => {
-      setLocation(data.redirectUrl);
+      setLocation(data.redirectUrl || "/app/payments");
     },
     onError: (err) => {
       toast({ title: "Failed to initiate payment", description: err.message, variant: "destructive" });
@@ -210,17 +210,9 @@ export default function Pricing() {
             1 credit = 1 email sent.
           </p>
           
-          <div className="flex flex-col items-center gap-4">
-            <CurrencyToggle currency={currency} onChange={setCurrency} />
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Info className="h-4 w-4" />
-              <span>
-                {currency === "INR" 
-                  ? `1 USD = ₹${exchangeRate.toFixed(2)} (indicative rate)`
-                  : "Switch to INR for local pricing"
-                }
-              </span>
-            </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Info className="h-4 w-4" />
+            <span>Prices shown in INR. Powered by Razorpay.</span>
           </div>
         </div>
 
@@ -440,10 +432,7 @@ export default function Pricing() {
               <span>256-bit SSL encryption</span>
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-md">
-              {currency === "INR" 
-                ? "Billed in USD. Local currency shown for convenience at current exchange rates."
-                : "All transactions are processed securely in USD."
-              }
+Billed in INR via Razorpay. All transactions are processed securely.
             </p>
           </div>
         </div>
