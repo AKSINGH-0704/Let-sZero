@@ -387,7 +387,7 @@ export default function History() {
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <TrendingUp className="h-4 w-4 text-violet-500" />
                       <div className="text-2xl font-semibold text-violet-600 dark:text-violet-400">
-                        {(viewCampaign.openedEmails / viewCampaign.sentEmails * 100).toFixed(1)}%
+                        {((viewCampaign.openedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -398,7 +398,7 @@ export default function History() {
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <MousePointerClick className="h-4 w-4 text-blue-500" />
                       <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                        {(viewCampaign.clickedEmails / viewCampaign.sentEmails * 100).toFixed(1)}%
+                        {((viewCampaign.clickedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">

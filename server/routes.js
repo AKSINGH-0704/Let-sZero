@@ -13,7 +13,7 @@ import { addCampaignJob, getCampaignQueue, getRedisConnection } from "./queue.js
 import { verifyUnsubscribeToken } from "./unsubscribe.js";
 import { verifySnsMessage } from "./sns.js";
 import crypto from "crypto";
-import { rzp, stripe, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
+import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { getRateLimiter } from "./rateLimiter.js";
 
@@ -110,6 +110,20 @@ async function authMiddleware(req, res, next) {
     });
   }
 
+  // Block all actions until the user resets their admin-set password.
+  // Exempt: auth/me (frontend reads state), change-password (the reset form), logout.
+  if (user.mustResetPassword) {
+    const allowed = req.path === "/api/auth/me" ||
+                    req.path === "/api/auth/change-password" ||
+                    req.path === "/api/auth/logout";
+    if (!allowed) {
+      return res.status(403).json({
+        mustResetPassword: true,
+        message: "You must set a new password before using RepMail.",
+      });
+    }
+  }
+
   req.user = user;
   req.token = token;
   // Precompute so routes don't need to re-derive isSecondaryRoot inline
@@ -175,6 +189,26 @@ export async function executeCampaign(campaignId, userId) {
     targetId: campaignId,
   });
 
+  // ── Global send-pause helpers (mirrors BullMQ worker) ────────────────────
+  async function isGlobalSendPaused() {
+    const setting = await storage.getPlatformSetting("send_pause_enabled");
+    return setting?.value === "true";
+  }
+
+  // Pre-loop: global platform pause check
+  if (await isGlobalSendPaused()) {
+    await storage.updateCampaign(campaignId, { status: "PAUSED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "global_send_pause_active" },
+    });
+    console.warn(`[CAMPAIGN] ${campaignId} paused — global send pause is active`);
+    return;
+  }
+
   const template = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
 
@@ -202,6 +236,23 @@ export async function executeCampaign(campaignId, userId) {
   console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
 
   for (let i = 0; i < contactIds.length; i++) {
+    // Re-check global pause every 50 contacts — allows admin to stop a live campaign
+    // without a DB query on every single email. Skip i=0 (already checked pre-loop).
+    if (i > 0 && i % 50 === 0) {
+      if (await isGlobalSendPaused()) {
+        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.createAuditLog({
+          userId,
+          action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+          targetType: "campaign",
+          targetId: campaignId,
+          details: { reason: "global_send_pause_active", pausedAtContact: i },
+        });
+        console.warn(`[CAMPAIGN] ${campaignId} paused at contact ${i} — global send pause activated`);
+        return;
+      }
+    }
+
     const contactId = contactIds[i];
     const contact = await storage.getContactById(contactId);
 
@@ -444,6 +495,9 @@ export async function registerRoutes(httpServer, app) {
       result.sendPaused = false;
     }
     result.ai = getAiHealthStatus().status;
+    result.sesTracking = process.env.SES_CONFIGURATION_SET
+      ? "configured"
+      : "not-configured — open/click/delivery tracking disabled";
     result.timestamp = new Date().toISOString();
 
     res.json(result);
@@ -864,8 +918,8 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { currentPassword, newPassword } = req.body;
 
-      if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ message: "New password must be at least 6 characters" });
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ message: "New password must be at least 8 characters" });
       }
 
       // Skip current password check on forced first-login reset (user just authenticated moments ago)
@@ -1721,6 +1775,22 @@ export async function registerRoutes(httpServer, app) {
       const takenEmail = await storage.getUserByEmail(invite.email);
       if (takenEmail) return res.status(409).json({ message: "A user with that email already exists" });
 
+      // Enforce inviter's team member limit at accept time — prevents over-provisioning
+      // if the admin's plan was downgraded after the invite was sent.
+      const inviter = await storage.getUserById(invite.invitedBy);
+      if (inviter) {
+        const limit = MAX_TEAM_MEMBERS[inviter.plan] ?? 0;
+        if (limit !== Infinity) {
+          const activeCount = await storage.getChildUserCount(inviter.id);
+          if (activeCount >= limit) {
+            return res.status(403).json({
+              error: "PLAN_LIMIT",
+              message: `The admin's plan limit has been reached. Ask your admin to upgrade before accepting this invite.`,
+            });
+          }
+        }
+      }
+
       const newUser = await storage.createUser({
         username,
         email: invite.email,
@@ -2099,7 +2169,8 @@ export async function registerRoutes(httpServer, app) {
           exchangeRate: exchangeRate.toString(),
           paymentMethod: "RAZORPAY",
           status: PAYMENT_STATUS.PENDING,
-          metadata: { razorpay_order_id: rzpOrder.id },
+          // Store both IDs so ProcessPayment can reopen the modal without a server round-trip
+          metadata: { razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
         });
 
         return res.json({
@@ -2109,37 +2180,12 @@ export async function registerRoutes(httpServer, app) {
           razorpayKeyId: RAZORPAY_KEY_ID,
           amount: amountInr * 100,
           currency: "INR",
+          redirectUrl: `/app/payments/process/${payment.id}`,
         });
       }
 
-      // USD → Stripe
-      if (!stripe) return res.status(503).json({ message: "USD payments not configured. Contact support." });
-
-      const payment = await storage.createPayment({
-        userId: req.user.id,
-        planName: plan.name,
-        credits: plan.credits,
-        amountUsd,
-        amountInr,
-        amountLocal,
-        currency: "USD",
-        exchangeRate: exchangeRate.toString(),
-        paymentMethod: "STRIPE",
-        status: PAYMENT_STATUS.PENDING,
-      });
-
-      const intent = await stripe.paymentIntents.create({
-        amount: amountUsd * 100, // Stripe uses cents
-        currency: "usd",
-        metadata: { repmail_payment_id: payment.id },
-      });
-
-      return res.json({
-        payment,
-        gateway: "stripe",
-        clientSecret: intent.client_secret,
-        currency: "USD",
-      });
+      // Only Razorpay is supported. USD/Stripe is not configured.
+      return res.status(503).json({ message: "Only INR payments are supported. Please select INR currency." });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -2196,7 +2242,7 @@ export async function registerRoutes(httpServer, app) {
   // ── Dev-only: manually complete a pending payment (locked in production) ──
   app.post("/api/payments/:id/complete", authMiddleware, async (req, res) => {
     if (process.env.NODE_ENV === "production") {
-      return res.status(403).json({ message: "This endpoint is disabled in production. Payments complete via Razorpay or Stripe." });
+      return res.status(403).json({ message: "This endpoint is disabled in production. Payments complete via Razorpay webhook." });
     }
     try {
       const { id } = req.params;
