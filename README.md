@@ -470,6 +470,15 @@ All endpoints prefixed `/api/`. Auth via HTTP-only session cookie or `Authorizat
 
 </details>
 
+## Documentation Guide
+
+| Document | Purpose |
+|:---------|:--------|
+| [HANDOFF.md](./HANDOFF.md) | **Start here.** New-engineer onboarding: local setup, current state, priorities, known gaps, non-goals, key files, production env vars. |
+| [PROGRESS.md](./PROGRESS.md) | Launch readiness tracker: milestone status (D/I/O/V evidence scale), launch blockers, verification log. |
+| [REPMAIL_ENGINEERING_HANDOFF.md](./REPMAIL_ENGINEERING_HANDOFF.md) | Deep technical reference: complete schema, SNS design, queue worker sequence, AI governance, security rules, cleanup jobs, env var table. |
+| [AUDIT_TRAIL.md](./AUDIT_TRAIL.md) | Append-only audit log: all code reviews, security audits, and documentation sync sessions with findings and commit refs. |
+
 <br/>
 
 ---

@@ -1,4 +1,4 @@
-● RepMail Engineering Handoff Document
+﻿● RepMail Engineering Handoff Document
 
   Part 1 — Architecture + Infrastructure
 
@@ -1142,30 +1142,39 @@
   ---
   Section 13 — Remaining Priorities / Recommended Roadmap
 
-  Critical (blocks enterprise readiness)
+  Priority 1 — AI Quality (highest product value, immediate)
 
-  1. GET /api/health — Railway health check, Redis/Postgres/SMTP status. Zero-risk to implement.
-  2. GET /api/admin/queue/status — Queue depth visibility. Prevents silent worker death going undetected.
-  3. POST /api/admin/campaigns/:id/cancel — Force-cancel stuck campaigns. Replaces dangerous manual PATCH pattern.
-  4. ai_usage_logs cleanup job — Prevents unbounded table growth.
-  5. getAuditLogs targetId filter — Required for per-campaign audit trail.
+  1. AI validation layer — Server-side post-generation validation in server/ai.js: subject length, unclosed {{placeholders}}, bracket artifacts [Name], campaign-type rule violations. Currently only checks presence of subject + body.
+  2. Structured campaign intake — Replace free-text prompt with 4-field structured intake: recipient description, value proposition, objective, relevance signal. Files: server/routes.js AI endpoint, client campaign wizard.
+  3. Sender profile gate at campaign creation — Block template generation when no sender profile is configured; blank profiles silently emit {{sender_name}} / {{sender_title}} / {{sender_company}} literals in sent email sign-offs.
 
-  Important (strongly recommended before production launch)
+  Priority 2 — Scale Hardening (required before high-volume campaigns)
 
-  6. Delivery health endpoint — Bounce rate and complaint rate aggregates. SES reputation protection.
-  7. Worker heartbeat — Silent worker death detection.
-  8. openedEmails/clickedEmails surfaced in frontend — These columns now exist but are not displayed.
-  9. openRate and clickRate computed fields — Frontend should compute from openedEmails / sentEmails and clickedEmails / sentEmails.
-  10. Time-series AI cost trend — Daily bucketing for the dashboard.
+  4. getPreCampaignSuppressionCount N+1 — storage.js:1334-1340 runs one SELECT per contact email in a loop. Fix: single WHERE email IN (...) using Drizzle inArray. Must mirror in server/memoryStorage.js.
+  5. getContactById N+1 in send loop — Both worker.js and routes.js executeCampaign call getContactById per contact. Requires new getContactsByIds(ids[]) batch method (does not exist in storage.js yet — create and mirror).
+
+  Priority 3 — Deliverability + Security (inline path parity)
+
+  6. executeCampaign sender health checks — routes.js inline fallback (Redis-unavailable path) is missing owner.sendPaused mid-loop check and getUserSenderHealth auto-pause. Mirror worker.js:231-269 into executeCampaign.
+  7. Delivery health endpoint — GET /api/admin/delivery-health: platform-wide bounce + complaint rate aggregates for proactive SES reputation monitoring.
+
+  Priority 4 — Infrastructure / Operations
+
+  8. GET /api/admin/queue/status — Queue depth visibility using already-exported getCampaignQueue(). No new dependencies.
+  9. POST /api/admin/campaigns/:id/cancel — Force-cancel stuck RUNNING campaigns atomically. Replaces dangerous manual PATCH pattern.
+  10. ai_usage_logs cleanup job — Sixth cleanup job in server/index.js, weekly, AI_USAGE_LOG_RETENTION_DAYS env var (default 90). Table grows indefinitely without this.
+  11. Worker heartbeat — Worker writes repmail:worker:heartbeat to Redis every 30s; health endpoint reads it; reports "stalled" if key absent or older than 60s.
+  12. getAuditLogs targetId filter — Required for per-campaign audit trail queries via API.
+  13. Time-series AI cost trend — Daily bucketing in getDashboardStats for ROOT_ADMIN cost spike detection.
 
   Nice-to-Have
 
-  11. Dead-letter queue management API
-  12. Cross-user suppression admin tooling
-  13. Per-user daily AI cost breakdown (beyond top-10 aggregate)
-  14. ai_usage_logs abuse pattern detection (query by requestHash similarity)
-  15. Campaign-specific audit log endpoint (GET /api/campaigns/:id/audit)
-  16. Horizontal scaling prep: replace process-local cleanup guards with Redis SET NX locks
+  14. Dead-letter queue management API — GET /api/admin/queue/failed + POST /api/admin/queue/failed/:jobId/retry
+  15. Cross-user suppression admin tooling — Query and remove suppressions across users
+  16. Per-user daily AI cost breakdown (beyond top-10 aggregate)
+  17. ai_usage_logs abuse pattern detection (query by requestHash similarity)
+  18. Campaign-specific audit log endpoint (GET /api/campaigns/:id/audit)
+  19. Horizontal scaling prep: replace process-local cleanup guards with Redis SET NX locks
 
   ---
   Section 14 — Critical Implementation Rules
@@ -1214,8 +1223,6 @@
   ├─────────────────────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────────┤
   │ ai_usage_logs has no pruning job                                │ High       │ Deferred — will cause unbounded table growth                         │
   ├─────────────────────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────────┤
-  │ No /health endpoint                                             │ High       │ Deferred — Railway reports healthy if process is running             │
-  ├─────────────────────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────────┤
   │ No worker heartbeat                                             │ Medium     │ Deferred — silent worker death goes undetected                       │
   ├─────────────────────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────────┤
   │ Rate limiter 30s timeout proceeds without token                 │ Low        │ Accepted — better to proceed than stall a campaign indefinitely      │
@@ -1230,89 +1237,6 @@
   ├─────────────────────────────────────────────────────────────────┼────────────┼──────────────────────────────────────────────────────────────────────┤
   │ CORS allows localhost:8083 explicitly                           │ Low        │ Dev artifact; should be removed in production hardening pass         │
   └─────────────────────────────────────────────────────────────────┴────────────┴──────────────────────────────────────────────────────────────────────┘
-
-  ---
-  Section 16 — Complete Environment Variables
-
-  ┌───────────────────────────────┬────────────────┬───────────────────────────┬───────────────────────┬────────────────────────────────────────────────┐
-  │           Variable            │    Required    │          Purpose          │        Default        │                     Notes                      │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ DATABASE_URL                  │ Production     │ PostgreSQL connection     │ —                     │ Absent = dev mode (in-memory)                  │
-  │                               │                │ string                    │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ REDIS_URL                     │ Recommended    │ Redis connection for      │ —                     │ Absent = inline execution, no rate limiting    │
-  │                               │                │ BullMQ + rate limiter     │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SESSION_SECRET                │ YES            │ Express session signing   │ —                     │ Must be cryptographically random               │
-  │                               │                │ key                       │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_SMTP_HOST                 │ YES            │ AWS SES SMTP endpoint     │ —                     │ e.g., email-smtp.us-east-1.amazonaws.com       │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_SMTP_PORT                 │ YES            │ SMTP port                 │ 587                   │ 587 for STARTTLS                               │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_SMTP_USER                 │ YES            │ SES SMTP username (IAM    │ —                     │                                                │
-  │                               │                │ credentials)              │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_SMTP_PASS                 │ YES            │ SES SMTP password         │ —                     │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_FROM_EMAIL                │ YES            │ Sender email address      │ —                     │ Must be verified in SES                        │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_FROM_NAME                 │ Optional       │ Sender display name       │ RepMail               │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_CONFIGURATION_SET         │ Recommended    │ SES configuration set     │ —                     │ my-first-configuration-set. Required for       │
-  │                               │                │ name                      │                       │ Open/Click tracking                            │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SNS_TOPIC_ARN                 │ Recommended    │ Expected SNS TopicArn for │ —                     │ Absent = TopicArn validation disabled (startup │
-  │                               │                │  validation               │                       │  warning logged)                               │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_RATE_PER_SECOND           │ Optional       │ SES account sending rate  │ 14                    │ Must not exceed actual AWS account limit       │
-  │                               │                │ limit                     │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ SES_SEND_RATE_MS              │ Optional       │ Fallback per-email delay  │ 0                     │ Milliseconds between sends                     │
-  │                               │                │ when Redis absent         │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ OPENAI_API_KEY                │ YES (for AI)   │ OpenAI API key            │ —                     │ Required for template generation, preview,     │
-  │                               │                │                           │                       │ spam analysis                                  │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ STRIPE_SECRET_KEY             │ YES (for       │ Stripe secret key         │ —                     │                                                │
-  │                               │ payments)      │                           │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ STRIPE_WEBHOOK_SECRET         │ YES (for       │ Stripe webhook signing    │ —                     │                                                │
-  │                               │ payments)      │ secret                    │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ RAZORPAY_KEY_ID               │ YES (for       │ Razorpay key ID           │ —                     │                                                │
-  │                               │ payments)      │                           │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ RAZORPAY_KEY_SECRET           │ YES (for       │ Razorpay secret           │ —                     │                                                │
-  │                               │ payments)      │                           │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ APP_URL                       │ YES            │ Public URL of the         │ http://localhost:5000 │ Used in email links (unsubscribe,              │
-  │                               │                │ application               │                       │ keep-credits)                                  │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ RECOVERY_EMAIL                │ Recommended    │ Emergency recovery        │ —                     │ Absent = emergency recovery disabled           │
-  │                               │                │ account email             │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ PLATFORM_ALERT_EMAIL          │ Optional       │ Alert recipient for       │ —                     │                                                │
-  │                               │                │ emergency recovery        │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ AUDIT_LOG_RETENTION_DAYS      │ Optional       │ Audit log retention       │ 180                   │ Days                                           │
-  │                               │                │ window                    │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ CAMPAIGN_EMAIL_RETENTION_DAYS │ Optional       │ Campaign email record     │ 90                    │ Days                                           │
-  │                               │                │ retention                 │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ REPMAIL_PUBLIC                │ Optional       │ Gates full API access in  │ —                     │ Set true to allow all routes                   │
-  │                               │                │ production                │                       │                                                │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ NODE_ENV                      │ YES            │ Runtime environment       │ —                     │ production enables static file serving         │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ PORT                          │ Optional       │ HTTP listen port          │ 5000                  │ Set by Railway automatically                   │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ GOOGLE_CLIENT_ID              │ Optional       │ Google OAuth client ID    │ —                     │ Required for Google login                      │
-  ├───────────────────────────────┼────────────────┼───────────────────────────┼───────────────────────┼────────────────────────────────────────────────┤
-  │ GOOGLE_CLIENT_SECRET          │ Optional       │ Google OAuth client       │ —                     │                                                │
-  │                               │                │ secret                    │                       │                                                │
-  └───────────────────────────────┴────────────────┴───────────────────────────┴───────────────────────┴────────────────────────────────────────────────┘
 
   ---
   Section 17 — Important Files Map
@@ -1343,7 +1267,9 @@
   ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
   │ server/unsubscribe.js   │ generateUnsubscribeToken(), verifyUnsubscribeToken()                                                                       │
   ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ server/stripeWebhook.js │ Stripe webhook handler (raw body required)                                                                                 │
+  │ server/razorpayWebhook.js│ Razorpay HMAC-SHA256 webhook handler (raw body via express.raw(); registered before express.json() in index.js)           │
+  ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ server/gateways.js      │ Payment gateway abstraction — Razorpay only (Stripe fully removed as of commit f7f892e)                                    │
   ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
   │ shared/schema.js        │ All Drizzle table definitions, constants (CAMPAIGN_EMAIL_STATUS, AUDIT_ACTIONS, USER_ROLES, etc.), Zod schemas, credit     │
   │                         │ tier/plan pricing                                                                                                          │
@@ -1374,7 +1300,7 @@
   ├──────────────────────────────────────┼──────────────────────┼────────────────────────────────────────────┤
   │ POST /api/webhooks/ses               │ None (SNS signed)    │ SES bounce/complaint/open/click            │
   ├──────────────────────────────────────┼──────────────────────┼────────────────────────────────────────────┤
-  │ POST /api/webhooks/stripe            │ None (Stripe signed) │ Payment events                             │
+  │ POST /api/webhooks/razorpay          │ None (Razorpay HMAC) │ Razorpay payment events                    │
   ├──────────────────────────────────────┼──────────────────────┼────────────────────────────────────────────┤
   │ GET /api/unsubscribe                 │ None (signed token)  │ One-click unsubscribe                      │
   ├──────────────────────────────────────┼──────────────────────┼────────────────────────────────────────────┤
@@ -1487,36 +1413,34 @@
   - Secondary root access management
   - Five data cleanup jobs (sessions, audit logs, campaign emails, SNS events, inactivity tokens) with overlap protection
   - AI usage logging with 30-day filtered analytics for ROOT_ADMIN
-  - Payment processing (Stripe + Razorpay)
+  - Payment processing (Razorpay — INR only; Stripe fully removed as of commit f7f892e)
   - Startup campaign reconciliation (stale RUNNING campaigns recovered at boot)
   - Graceful shutdown (SIGTERM → worker drain)
 
   Operationally Hardened But Not Yet Visible
 
   - Rate limiter operates correctly but has no admin monitoring endpoint
-  - Open/click counters are tracked in DB but not displayed in UI
   - Cleanup jobs run successfully but have no admin visibility beyond Railway logs
   - Worker processes jobs but has no heartbeat or liveness signal
 
   Blocks Enterprise Readiness
 
-  1. No /health endpoint — Railway cannot health-check the application
-  2. No queue visibility — silent worker death goes undetected
-  3. No force-cancel admin tooling — stuck campaigns require manual PATCH operations
-  4. No delivery health dashboard — SES reputation monitoring is absent
-  5. ai_usage_logs unbounded growth — no cleanup job
-  6. Open/click rates not surfaced in frontend
+  1. No queue visibility — silent worker death goes undetected
+  2. No force-cancel admin tooling — stuck campaigns require manual PATCH operations
+  3. No delivery health dashboard — SES reputation monitoring is absent
+  4. ai_usage_logs unbounded growth — no cleanup job
 
   What the Next Engineer/AI Should Focus On First
 
   In this order:
 
-  1. GET /api/health — single endpoint, highest operational value, zero risk
-  2. POST /api/admin/campaigns/:id/cancel — eliminates the most dangerous manual workaround
-  3. GET /api/admin/queue/status — surfaces BullMQ depth using already-available getCampaignQueue()
-  4. ai_usage_logs cleanup job — prevents silent technical debt accumulation
-  5. Frontend: surface openedEmails, clickedEmails, computed openRate, clickRate in campaign detail view
-  6. getAuditLogs targetId filter + GET /api/campaigns/:id/audit endpoint
+  1. AI validation layer (GAP 4) — post-generation validation in server/ai.js: subject length, unclosed {{placeholders}}, bracket artifacts, campaign-type rule enforcement
+  2. getPreCampaignSuppressionCount N+1 fix (GAP 2) — storage.js:1334-1340, replace loop with inArray batch query
+  3. Structured campaign intake (GAP 5) — 4-field intake: recipient description, value prop, objective, relevance signal
+  4. executeCampaign sender health checks (GAP 1) — mirror worker.js:231-269 into routes.js inline fallback
+  5. ai_usage_logs cleanup job — sixth cleanup job, prevents unbounded table growth
+  6. GET /api/admin/queue/status — surfaces BullMQ depth, getCampaignQueue() already exported
+  7. POST /api/admin/campaigns/:id/cancel — eliminates the most dangerous manual workaround
 
   ---
   End of handoff document. All 5 parts complete.
@@ -1596,17 +1520,14 @@
   │ OPENAI_API_KEY                │ YES (AI      │ OpenAI API key          │ —                     │ Required for template gen, preview, spam analysis │
   │                               │ features)    │                         │                       │                                                   │
   ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
-  │ STRIPE_SECRET_KEY             │ YES          │ Stripe secret key       │ —                     │                                                   │
-  │                               │ (payments)   │                         │                       │                                                   │
-  ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
-  │ STRIPE_WEBHOOK_SECRET         │ YES          │ Stripe webhook endpoint │ —                     │ From Stripe Dashboard → Webhooks                  │
-  │                               │ (payments)   │  signing secret         │                       │                                                   │
-  ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
   │ RAZORPAY_KEY_ID               │ YES          │ Razorpay key ID         │ —                     │                                                   │
   │                               │ (payments)   │                         │                       │                                                   │
   ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
   │ RAZORPAY_KEY_SECRET           │ YES          │ Razorpay secret key     │ —                     │                                                   │
   │                               │ (payments)   │                         │                       │                                                   │
+  ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
+  │ RAZORPAY_WEBHOOK_SECRET       │ YES          │ Razorpay webhook HMAC   │ —                     │ HMAC-SHA256; separate from key secret             │
+  │                               │ (payments)   │ signing secret          │                       │                                                   │
   ├───────────────────────────────┼──────────────┼─────────────────────────┼───────────────────────┼───────────────────────────────────────────────────┤
   │ APP_URL                       │ YES          │ Public-facing           │ http://localhost:5000 │ Used in email links: unsubscribe URLs,            │
   │                               │              │ application URL         │                       │ keep-credits URLs, audit trail links              │
@@ -1823,12 +1744,6 @@
   credentials/configuration surface area that does not yet deliver value. Remove or implement.
 
   ---
-  No Global Pause Switch
-
-  There is no mechanism to pause all campaign sends globally (e.g., if SES reputation is at risk). An operator must manually PATCH each running campaign to
-  FAILED and drain the queue. A global pause flag (Redis key or env var) that the worker checks on each send iteration does not exist.
-
-  ---
   AWS Setup Summary (Reference)
 
   What Is Configured in Production
@@ -1910,97 +1825,35 @@
 
   Priority: High
 
-  1. Surface open and click tracking in the campaign detail view:
-    - Add openedEmails and clickedEmails to the campaign stats display
-    - Compute and display openRate = openedEmails / sentEmails (as percentage)
-    - Compute and display clickRate = clickedEmails / sentEmails (as percentage)
-    - These fields are already returned by GET /api/campaigns/:id — no backend changes needed
-    - The campaignEmails array already includes openedAt and clickedAt timestamps per record — these can be shown in the per-contact detail table
-  2. Admin delivery health view — once GET /api/admin/delivery-health is implemented, surface:
+  1. Admin delivery health view — once GET /api/admin/delivery-health is implemented, surface:
     - Platform-wide bounce rate (with red threshold indicator at 5%)
     - Platform-wide complaint rate (with red threshold indicator at 0.1%)
     - Suppression list total and growth trend
-  3. Queue status panel — once GET /api/admin/queue/status is implemented, add to admin dashboard:
+  2. Queue status panel — once GET /api/admin/queue/status is implemented, add to admin dashboard:
     - Active/waiting/delayed/failed job counts
     - Alert if failed > 0
 
   Priority: Medium
 
-  4. Campaign-level open/click charts — a simple bar chart (Recharts is already installed) showing open rate and click rate per campaign across the last N
+  3. Campaign-level open/click charts — a simple bar chart (Recharts is already installed) showing open rate and click rate per campaign across the last N
   campaigns. Data available from GET /api/campaigns.
-  5. Suppression list management — the existing suppression view is user-scoped. Once the admin suppression endpoints exist, add a ROOT_ADMIN view showing
+  4. Suppression list management — the existing suppression view is user-scoped. Once the admin suppression endpoints exist, add a ROOT_ADMIN view showing
   cross-user suppressions with search and delete.
-  6. AI cost trend chart — daily cost breakdown chart for the admin dashboard. Once the time-series query is implemented in getDashboardStats, render via
+  5. AI cost trend chart — daily cost breakdown chart for the admin dashboard. Once the time-series query is implemented in getDashboardStats, render via
   Recharts.
 
   Priority: Low
 
-  7. Force-cancel button on stuck campaigns — button visible to ROOT_ADMIN only on campaigns with status = 'RUNNING'. Calls POST
+  6. Force-cancel button on stuck campaigns — button visible to ROOT_ADMIN only on campaigns with status = 'RUNNING'. Calls POST
   /api/admin/campaigns/:id/cancel once implemented.
-  8. Audit log campaign filter — once targetId filter is added to getAuditLogs, add a per-campaign audit log tab in the campaign detail view.
+  7. Audit log campaign filter — once targetId filter is added to getAuditLogs, add a per-campaign audit log tab in the campaign detail view.
 
   ---
   Exact Next Implementation Steps
 
   These are ordered by operational value and implementation risk (lowest risk first).
 
-  Step 1: GET /api/health (1–2 hours)
-
-  File: server/routes.js — add before other routes in registerRoutes.
-
-  app.get("/api/health", async (req, res) => {
-    const checks = { postgres: "unknown", redis: "unknown", worker: "unknown" };
-
-    // Postgres check
-    try {
-      await db.execute(sql`SELECT 1`);
-      checks.postgres = "connected";
-    } catch { checks.postgres = "error"; }
-
-    // Redis check
-    const conn = getRedisConnection();
-    if (!conn) {
-      checks.redis = "not_configured";
-    } else {
-      try {
-        await conn.ping();
-        checks.redis = "connected";
-      } catch { checks.redis = "error"; }
-    }
-
-    // Worker heartbeat (implement after Step 3)
-    checks.worker = "not_monitored";
-
-    const allOk = checks.postgres === "connected";
-    res.status(allOk ? 200 : 503).json({
-      status: allOk ? "ok" : "degraded",
-      ...checks,
-      uptime: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  No schema changes. No storage changes. Zero migration required.
-
-  ---
-  Step 2: Surface Open/Click in Campaign Detail UI (2–3 hours)
-
-  No backend changes required. The data is already in the API response.
-
-  In the campaign detail component:
-  const openRate = campaign.sentEmails > 0
-    ? ((campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
-    : "0.0";
-  const clickRate = campaign.sentEmails > 0
-    ? ((campaign.clickedEmails / campaign.sentEmails) * 100).toFixed(1)
-    : "0.0";
-
-  Add stat cards for Opens (count + rate) and Clicks (count + rate) alongside the existing Sent/Failed/Bounced/Suppressed cards.
-
-  In the per-contact table, add columns for openedAt and clickedAt (show "—" if null, formatted timestamp if set).
-
-  ---
-  Step 3: ai_usage_logs Cleanup Job (1 hour)
+  Step 1: ai_usage_logs Cleanup Job (1 hour)
 
   File: server/index.js — add sixth cleanup job after the inactivity token expiry job:
 
@@ -2146,11 +1999,9 @@
   1. Verify end-to-end tracking: Send a test campaign to a real inbox you control. Open it. Click a link. Confirm Railway logs show [SNS] Open recorded and
   [SNS] Click recorded. Confirm DB values update in campaigns.opened_emails and campaign_emails.opened_at.
   2. Set SNS_TOPIC_ARN: Without this, any SNS message from any topic would be processed. This is a cross-account injection risk.
-  3. Implement /health: Railway's health check probing cannot work without it. Without a health endpoint, Railway has no way to detect application-level
-  failures and will serve traffic to a degraded instance.
-  4. Set SES_RATE_PER_SECOND to match your actual AWS SES account sending limit. Leaving it at 14 when your account has a higher limit wastes capacity.
+  3. Set SES_RATE_PER_SECOND to match your actual AWS SES account sending limit. Leaving it at 14 when your account has a higher limit wastes capacity.
   Setting it above your limit causes throttle errors.
-  5. Test the inactivity governance email flow in staging by temporarily reducing WARNING_DAYS or using INACTIVITY_THRESHOLDS overrides. The keep-credits
+  4. Test the inactivity governance email flow in staging by temporarily reducing WARNING_DAYS or using INACTIVITY_THRESHOLDS overrides. The keep-credits
   URL uses APP_URL — confirm the URL resolves correctly in production.
 
   Ongoing Operational Hygiene
@@ -2180,11 +2031,6 @@
   4. Review suppressions table growth rate — a rapid spike indicates a bad contact list upload
   5. Review campaign_emails for BOUNCED records — identify which campaigns caused the bounces
   6. Do not resume sending until the suppression list has absorbed all bounced/complained addresses and the problematic contact lists have been removed
-
-✻ Churned for 3m 26s
-
-※ recap: RepMail is a B2B email campaign platform being production-hardened. Priority 6 (open/click tracking) is complete and a full engineering handoff
-  document was generated. Next: implement `GET /api/health`.
 
 ---
 

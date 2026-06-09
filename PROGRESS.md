@@ -3,6 +3,11 @@
 **Last updated:** 2026-06-09
 **Current commit:** 47e0d49
 
+**Related documents:**
+- [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
+- [REPMAIL_ENGINEERING_HANDOFF.md](./REPMAIL_ENGINEERING_HANDOFF.md) — Deep technical reference (schema, security, queue, AI)
+- [AUDIT_TRAIL.md](./AUDIT_TRAIL.md) — Append-only audit log with all code review findings
+
 ---
 
 ## Evidence scale

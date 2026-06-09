@@ -64,15 +64,13 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ## Current Priorities (Week 1 — before next feature work)
 
-These are confirmed gaps from the AI & production audit. Do them before adding new features.
+These are confirmed gaps from the AI & production audit. Ordered by product impact.
 
-**1. GAP 1 — Inline executor missing sender health checks** *(LAUNCH BLOCKER)*
+**1. GAP 4 — No server-side AI generation validation** *(HIGHEST PRODUCT VALUE)*
 
-`routes.js executeCampaign` runs when Redis is unavailable (fallback path). It has global pause checks but is missing:
-- `owner.sendPaused` real-time check inside the send loop
-- `getUserSenderHealth` auto-pause (15% bounce / 0.5% complaint rate)
+`server/ai.js generateTemplate()` only checks `if (!parsed.subject || !parsed.body)`. No validation for subject length, unclosed `{{placeholders}}`, bracket artifacts `[Name]`, or campaign-type rule violations.
 
-Fix: mirror `worker.js:231–269` logic into `executeCampaign`. File: `server/routes.js`.
+Fix: add post-generation validation step in `server/ai.js` before returning the template.
 
 **2. GAP 2 — `getPreCampaignSuppressionCount` N+1 query** *(SCALE BLOCKER)*
 
@@ -80,9 +78,13 @@ Fix: mirror `worker.js:231–269` logic into `executeCampaign`. File: `server/ro
 
 Fix: replace with single `WHERE email IN (...)` using Drizzle's `inArray`. Mirror in `server/memoryStorage.js`.
 
-**3. GAP 4 — No server-side AI generation validation**
+**3. GAP 1 — Inline executor missing sender health checks** *(DELIVERABILITY PARITY)*
 
-`server/ai.js generateTemplate()` only checks `if (!parsed.subject || !parsed.body)`. No validation for subject length, unclosed `{{placeholders}}`, bracket artifacts `[Name]`, or campaign-type rule violations.
+`routes.js executeCampaign` runs when Redis is unavailable (fallback path). It has global pause checks but is missing:
+- `owner.sendPaused` real-time check inside the send loop
+- `getUserSenderHealth` auto-pause (15% bounce / 0.5% complaint rate)
+
+Fix: mirror `worker.js:231–269` logic into `executeCampaign`. File: `server/routes.js`.
 
 ---
 
@@ -165,6 +167,15 @@ npm run check      # TypeScript type check
 
 ---
 
+## Related Documents
+
+| Document | Purpose |
+|:---------|:--------|
+| [REPMAIL_ENGINEERING_HANDOFF.md](./REPMAIL_ENGINEERING_HANDOFF.md) | Deep technical reference — complete schema, SNS design, queue worker sequence, AI governance, security rules, cleanup jobs |
+| [PROGRESS.md](./PROGRESS.md) | Launch readiness tracker — milestone status (D/I/O/V evidence), launch blockers, verification log |
+| [AUDIT_TRAIL.md](./AUDIT_TRAIL.md) | Append-only audit log — all code reviews, security audits, documentation sync sessions with findings |
+| [README.md](./README.md) | Architecture overview, system design, engineering principles |
+
 ## Detailed Reference
 
 See `REPMAIL_ENGINEERING_HANDOFF.md` for:
@@ -175,4 +186,4 @@ See `REPMAIL_ENGINEERING_HANDOFF.md` for:
 - Cleanup job architecture and overlap prevention
 - AI quota governance and cost model
 - Security hardening decisions and fail-open/closed table
-- Observability gap list and proposed implementations
+- Known gaps and proposed implementations

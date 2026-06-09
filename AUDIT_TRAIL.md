@@ -3,6 +3,14 @@
 Append-only log of architectural audits, production verification sessions, and significant code reviews.
 Each entry is immutable once appended — do not edit past entries.
 
+## Related Documents
+
+| Document | Purpose |
+|:---------|:--------|
+| [HANDOFF.md](./HANDOFF.md) | Primary onboarding doc — current state, priorities, gaps, non-goals |
+| [PROGRESS.md](./PROGRESS.md) | Launch readiness tracker with milestone evidence |
+| [REPMAIL_ENGINEERING_HANDOFF.md](./REPMAIL_ENGINEERING_HANDOFF.md) | Deep technical reference for schema, security, queue, AI governance |
+
 ---
 
 ## Audit 001 — AI & Production Readiness Audit
