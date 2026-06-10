@@ -112,10 +112,10 @@ async function authMiddleware(req, res, next) {
   }
 
   // Block all actions until the user resets their admin-set password.
-  // Exempt: auth/me (frontend reads state), change-password (the reset form), logout.
+  // Exempt: auth/me (frontend reads state), reset-password (the reset form), logout.
   if (user.mustResetPassword) {
     const allowed = req.path === "/api/auth/me" ||
-                    req.path === "/api/auth/change-password" ||
+                    req.path === "/api/auth/reset-password" ||
                     req.path === "/api/auth/logout";
     if (!allowed) {
       return res.status(403).json({
