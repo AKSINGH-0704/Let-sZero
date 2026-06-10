@@ -14,6 +14,10 @@ import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/sche
 const app = express();
 const httpServer = createServer(app);
 
+// Trust Railway's load balancer so req.ip resolves to the real client IP from
+// X-Forwarded-For. Without this, all clients share the same rate-limit bucket.
+app.set("trust proxy", 1);
+
 // Razorpay webhook MUST be registered before express.json() — HMAC-SHA256
 // signature verification requires the raw request body as a Buffer.
 app.post("/api/webhooks/razorpay", express.raw({ type: "application/json" }), razorpayWebhookHandler);
