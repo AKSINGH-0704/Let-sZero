@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `47e0d49` (2026-06-09)  
+**Verified against:** commit `ecb1331` (2026-06-11)  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -40,19 +40,28 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current State (commit `47e0d49`)
+## Current State (commit `ecb1331`)
+
+**Financial integrity (commit `ecb1331` — FIN-1/FIN-2):**
+- `completePayment` race eliminated: `.returning({ id })` on the payment UPDATE gates credit allocation on whether THIS caller transitioned `PENDING → SUCCESS`. Concurrent webhook + /verify callers cannot both allocate credits.
+- `allocateCredits` race eliminated: balance check moved into the transaction as a conditional WHERE clause, matching the proven pattern of `deductCreditAtomic`. Concurrent allocations cannot overdraw the parent balance.
+
+**Authentication hardening (commit `a279203` — B-PL-2):**
+- `app.set("trust proxy", 1)` added to `server/index.js` before any middleware. loginLimiter (5 req/15 min) now keys on the real client IP from `X-Forwarded-For` rather than Railway's proxy IP.
 
 **Payments (commit `f7f892e`):**
-- Razorpay-only checkout: `POST /api/payments/razorpay/initiate` → frontend modal → `POST /api/payments/razorpay/verify` → webhook `POST /api/webhooks/razorpay`
-- Double-credit guard: `completePayment` returns early on `status === SUCCESS` + `WHERE status != 'SUCCESS'` in UPDATE
-- `server/razorpayWebhook.js` handles HMAC-SHA256 signature verification; registered before `express.json()` in `server/index.js`
+- Razorpay-only checkout: `POST /api/payments/initiate` → frontend modal → `POST /api/payments/razorpay/verify` → webhook `POST /api/webhooks/razorpay`
+- `server/razorpayWebhook.js`: HMAC-SHA256 signature verification, `order.paid` → credit fulfillment, `payment.failed` handling, dispute logging; registered before `express.json()` in `server/index.js`
 
-**Security hardening (commit `47e0d49`):**
-- `mustResetPassword` enforced server-side in `authMiddleware` (routes.js:115); exempt paths: `/api/auth/me`, `/api/auth/change-password`, `/api/auth/logout`
-- Global send pause checked pre-loop and every 50 contacts in both `worker.js` and `routes.js executeCampaign`
-- Invite accept checks inviter's plan member limit before creating user (routes.js:1780–1788)
-- Password minimum: 8 chars (routes.js:1761)
-- `sesTracking` field added to `/api/health` (routes.js:498)
+**Campaign execution parity (commit `826aa25` — GAP-1):**
+- `executeCampaign` (inline fallback path) now has full parity with `processCampaign` (BullMQ path): `sendPaused` pre-check, `senderHealth` auto-pause, `sendWithRetry` integration, PAUSED terminal-state guard
+- `sendWithRetry` exported from `worker.js` and imported by `routes.js`
+
+**Security hardening (commits `71c0241`, `47e0d49`):**
+- `mustResetPassword` enforced server-side in `authMiddleware` (routes.js:115); **correct** exempt paths: `/api/auth/me`, `/api/auth/reset-password`, `/api/auth/logout` (B-1 fix: was wrongly `change-password`)
+- Global send pause checked pre-loop in both `worker.js` and `routes.js executeCampaign`
+- Sender profile gate: `senderName + senderCompany` required before AI template generation (GAP-6)
+- Invite accept checks inviter's plan member limit before creating user
 
 **AI system (commit `f69b4ab`):**
 - 6 campaign type preambles: `b2b_outreach`, `real_estate`, `recruitment`, `partnership`, `follow_up`, `general`
@@ -62,37 +71,55 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current Priorities (Week 1 — before next feature work)
+## Current Priorities (next implementation sprint)
 
-These are confirmed gaps from the AI & production audit. Ordered by product impact.
+All gaps from the AI & production audit are resolved. The remaining items are from the final production-readiness audit (2026-06-10/11). Ordered by risk.
 
-**1. GAP 4 — No server-side AI generation validation** *(HIGHEST PRODUCT VALUE)*
+**1. I-2 — validateTemplate placeholder hard-block** *(REPUTATION RISK)*
 
-`server/ai.js generateTemplate()` only checks `if (!parsed.subject || !parsed.body)`. No validation for subject length, unclosed `{{placeholders}}`, bracket artifacts `[Name]`, or campaign-type rule violations.
+`validateTemplate()` only hard-blocks `EMPTY_SUBJECT`/`EMPTY_BODY`. An AI-generated template with an unreplaced `{{firstName}}` literal passes validation and is sent verbatim to SES.
 
-Fix: add post-generation validation step in `server/ai.js` before returning the template.
+Fix: add `PLACEHOLDER_IN_SUBJECT` and `PLACEHOLDER_IN_BODY` to the hard-block list. Any `{{...}}` pattern surviving into the final template is a hard rejection. File: `server/ai.js` or wherever `validateTemplate` lives.
 
-**2. GAP 2 — `getPreCampaignSuppressionCount` N+1 query** *(SCALE BLOCKER)*
+**2. I-5 — SNS_TOPIC_ARN startup enforcement** *(SECURITY)*
 
-`storage.js:1334–1340` runs one `SELECT` per contact email in a loop. Collapses at scale (10k contacts = 10k queries).
+If `SNS_TOPIC_ARN` is not set, the SNS injection check is skipped. Any valid SNS-signed message from any topic can inject bounce/complaint events.
 
-Fix: replace with single `WHERE email IN (...)` using Drizzle's `inArray`. Mirror in `server/memoryStorage.js`.
+Fix: emit a hard startup error (not just `console.warn`) if `SNS_TOPIC_ARN` is missing in production. File: `server/index.js`.
 
-**3. GAP 1 — Inline executor missing sender health checks** *(DELIVERABILITY PARITY)*
+**3. O-2 — Invite token TTL verification** *(SECURITY)*
 
-`routes.js executeCampaign` runs when Redis is unavailable (fallback path). It has global pause checks but is missing:
-- `owner.sendPaused` real-time check inside the send loop
-- `getUserSenderHealth` auto-pause (15% bounce / 0.5% complaint rate)
+Invite tokens may not have a TTL. Old or forgotten invite links could be valid indefinitely.
 
-Fix: mirror `worker.js:231–269` logic into `executeCampaign`. File: `server/routes.js`.
+Fix: verify `invites` table has `expiresAt` column and that the accept handler rejects expired tokens.
+
+**4. I-3 — Mid-loop sendPaused re-check** *(DELIVERABILITY)*
+
+Both send loops check `sendPaused` pre-loop only. A campaign that started before auto-pause triggers (via SNS bounce events mid-run) continues to completion.
+
+Fix: add a `sendPaused` re-check inside the loop every N contacts (similar to existing global-pause mid-loop check).
+
+**5. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
+
+`executeCampaign` (inline path) does not check if a `campaignEmailRecord` already has `status=SENT` before calling `sendWithRetry`. A crash-restart could re-send to already-sent contacts.
+
+Fix: inside the send loop, skip contacts whose existing `campaignEmails` record shows `status=SENT`.
 
 ---
 
-## Known Gaps (Week 2–3)
+## Resolved Gaps (for reference)
 
-- **GAP 3:** Per-contact `getContactById` N+1 in send loop (both `worker.js` and `routes.js`). Fix requires a `getContactsByIds(ids)` batch method — **does NOT exist in `storage.js` yet**.
-- **GAP 5:** Single free-text prompt only. No structured intake (recipient description, value prop, objective, relevance). Week 3 work.
-- **GAP 6:** Sender profile gate missing at campaign creation — blank profiles silently emit `{{sender_name}}` literals in generated emails. Week 3 work.
+| Gap | Resolution | Commit |
+|---|---|---|
+| GAP-1: executeCampaign parity | sendPaused + senderHealth + sendWithRetry + PAUSED guard | 826aa25 |
+| GAP-2: getPreCampaignSuppressionCount N+1 | inArray batch query | 217bebc |
+| GAP-3: getContactById N+1 in send loop | getContactsByIds batch method | e9f8554 |
+| GAP-5: Single free-text AI intake | 7-field structured intake | earlier session |
+| GAP-6: Sender profile gate | senderName + senderCompany required | 1b89a3f |
+| B-1: mustResetPassword exempt path | reset-password (not change-password) | 71c0241 |
+| B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |
+| FIN-1: completePayment double-credit | .returning() gates credit allocation | ecb1331 |
+| FIN-2: allocateCredits over-allocation | atomic balance WHERE clause | ecb1331 |
 
 ---
 

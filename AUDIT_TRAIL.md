@@ -120,3 +120,107 @@ The following are explicit non-goals and must not be implemented:
 
 ### Commit
 `[DOCS] Synchronize README, PROGRESS, HANDOFF, and AUDIT_TRAIL with current production state`
+
+---
+
+## Audit 004 — Final Production-Readiness Audit
+
+**Date:** 2026-06-10 / 2026-06-11
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full system — 18 areas: authentication, authorization, campaign execution, SES, SNS, suppression, auto-pause, AI generation, AI validation, credit accounting, Razorpay, recovery paths, startup recovery, Redis outage, audit logging, admin workflows, team hierarchy, user lifecycle
+**Commits at time of audit:** `71c0241` (B-1), `1b89a3f` (GAP-6), `e9f8554` (GAP-3), `217bebc` (GAP-2), `826aa25` (GAP-1) — all from the hardening session
+**Method:** Full code read of all server-side modules, route handlers, and storage implementations. Evidence-based classification.
+
+### Classification System
+
+| Label | Meaning |
+|---|---|
+| Blocking | Prevents private beta (PB) or public launch (PL) |
+| Important | Must fix before public launch; acceptable for private beta with monitoring |
+| Operational | Fix before or shortly after public launch; no user-facing financial impact |
+| Future Enhancement | Roadmap item; not launch-critical |
+
+### Findings
+
+| ID | Area | Finding | Classification | Status |
+|----|------|---------|---------------|--------|
+| B-PL-1 | Payments | No Razorpay server-side webhook — payment completion relied on frontend /verify only | **Blocking (PL)** → RESOLVED (webhook existed in razorpayWebhook.js; double-credit race fixed separately as FIN-1) |
+| B-PL-2 | Auth | loginLimiter existed but `trust proxy` not set — all clients shared one rate-limit bucket behind Railway | **Blocking (PL)** → RESOLVED (`app.set("trust proxy", 1)` in index.js, commit a279203) |
+| FIN-1 | Payments | `completePayment` unconditional credit allocation: concurrent webhook + /verify could both allocate credits | **Financial-critical** → RESOLVED (commit ecb1331) |
+| FIN-2 | Credits | `allocateCredits` balance check outside transaction: concurrent allocations could overdraw parent balance | **Financial-critical** → RESOLVED (commit ecb1331) |
+| I-1 | Auto-pause | Auto-pause thresholds (15%/0.5%) more lenient than AWS SES limits (10%/0.1%) | Important | Requires env var change in Railway |
+| I-2 | AI validation | `validateTemplate` only hard-blocks EMPTY_SUBJECT/EMPTY_BODY; unreplaced placeholders pass | Important | Not yet implemented |
+| I-3 | Campaign | No mid-loop sendPaused re-check — long campaigns continue if auto-paused mid-run | Important | Not yet implemented |
+| I-4 | Campaign | No isRetry guard in executeCampaign inline path — crash-restart could duplicate sends | Important | Not yet implemented |
+| I-5 | SNS | `SNS_TOPIC_ARN` not enforced if env var missing — any SNS topic can inject events | Important | Not yet implemented |
+| O-1 | Credits | `deductCreditAtomic` failure after send is logged but not alerted | Operational | Not yet implemented |
+| O-2 | Auth | Invite token TTL unverified — old invite links may not expire | Operational | Not yet verified |
+| O-3 | Recovery | `RECOVERY_EMAIL` silent failure if env var missing | Operational | Not yet implemented |
+| O-4 | Audit | Audit log retention period not documented or configurable | Operational | Env var exists (`AUDIT_LOG_RETENTION_DAYS`) |
+| O-5 | Credits | Deep-hierarchy credit reclaim gap on user deletion | Operational | By design; documented |
+| O-6 | SES | No SES configuration set startup validation | Operational | Not yet implemented |
+
+### Production Verification Items
+
+| Item | Required Before |
+|---|---|
+| sendWithRetry against live SES | Private beta |
+| Auto-pause with real SNS bounce/complaint data | Private beta |
+| Forced password reset flow end-to-end | Private beta |
+| Sender profile gate UI behavior | Optional |
+| Suppression-count verification on real datasets | Public launch |
+
+### Private Beta Readiness
+
+**READY** — subject to production verification checklist:
+1. Confirm `SNS_TOPIC_ARN` set and SNS subscription confirmed
+2. Confirm SES configuration set routes to SNS topic
+3. Send one test email, verify `campaignEmails` record shows SENT
+4. Send SES simulator bounce, verify suppression added and senderHealth increments
+5. Create admin-created user, verify mustResetPassword flow end-to-end
+6. Set `BOUNCE_RATE_PAUSE_THRESHOLD=0.08` and `COMPLAINT_RATE_PAUSE_THRESHOLD=0.001`
+
+### Public Launch Blockers Remaining
+
+- **I-2**: validateTemplate placeholder hard-block (next implementation priority)
+- **I-5**: SNS_TOPIC_ARN startup enforcement
+- **I-1**: Auto-pause threshold tightening (env var only — no code change)
+
+---
+
+## Audit 005 — Financial Integrity Concurrency Analysis
+
+**Date:** 2026-06-11
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** `completePayment`, `allocateCredits`, `checkAndIncrementAiQuota`, `deductCreditAtomic`, `useCredits`, `reclaimCredits`, `upgradePlanIfHigher`
+**Trigger:** B-PL-1 Razorpay webhook design review revealed potential double-credit race
+**Method:** Precise READ COMMITTED transaction timeline analysis; PostgreSQL row-locking semantics
+
+### Race Confirmation: `completePayment`
+
+**Mechanism:** Under READ COMMITTED isolation, the pre-transaction idempotency check (`if status === SUCCESS`) is a plain SELECT outside any transaction. Two concurrent callers (webhook + frontend /verify) can both read `status=PENDING` before either commits. Both enter the transaction. The first wins the row lock and sets `status=SUCCESS`. The second's payment UPDATE sees `status=SUCCESS` (0 rows updated), but the result was discarded — the subsequent `UPDATE users SET credits_received += N` executed unconditionally.
+
+**Impact:** User receives 2× credits for a single payment. Requires webhook and frontend /verify to race within milliseconds — exactly the normal happy-path Razorpay flow.
+
+**Fix (commit ecb1331):** Added `.returning({ id: payments.id })` to the payment UPDATE. Check `transitioned.length === 0` before credit allocation. If 0 rows, the concurrent caller won — return from transaction callback without executing credit increment or ledger insert.
+
+### Race Confirmation: `allocateCredits`
+
+**Mechanism:** Balance check (`fromUser.creditsRemaining < amount`) was a plain SELECT before `db.transaction()`. Two concurrent admin allocations from the same parent could both pass the check and both execute `credits_allocated += amount`, driving the parent's balance negative.
+
+**Impact:** Parent user's `creditsAllocated` exceeds `creditsReceived`, producing negative `creditsRemaining`. Practical trigger is low (requires concurrent admin actions) but not zero.
+
+**Fix (commit ecb1331):** Replaced unconditional `WHERE id=fromUserId` with conditional `WHERE id=fromUserId AND (credits_received - credits_allocated - credits_used) >= amount RETURNING id`. Throws inside the transaction if 0 rows returned, causing Drizzle to issue ROLLBACK before recipient increment or ledger inserts.
+
+### Safe Patterns (no fix needed)
+
+| Function | Why Safe |
+|---|---|
+| `deductCreditAtomic` | Balance check IS the WHERE clause — atomic with the write |
+| `checkAndIncrementAiQuota` | Minor quota leak (1 extra AI call max) — not financial |
+| `useCredits` | Dead code — no call sites in server directory |
+| `reclaimCredits` | Called only from deletion flow — not concurrent |
+| `upgradePlanIfHigher` | Plan upgrade is idempotent — concurrent calls set same value |
+
+### Commit
+`[FIN-1] Eliminate double-credit race in completePayment + allocateCredits` (ecb1331)

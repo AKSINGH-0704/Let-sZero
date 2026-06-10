@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
-**Last updated:** 2026-06-09
-**Current commit:** 47e0d49
+**Last updated:** 2026-06-11
+**Current commit:** ecb1331
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -130,9 +130,10 @@ Only **V** is treated as proven.
 | Credit transaction rows created | **I** | No test campaign |
 | Razorpay checkout (initiate → modal → verify) | **I** | Not tested in production |
 | Razorpay webhook (order.paid → completePayment) | **I** | Not tested in production |
-| completePayment idempotency (double-credit guard) | **D** | storage.js:1006,1018 — early-return on SUCCESS + WHERE clause |
+| completePayment race-free idempotency | **I** | ecb1331 — .returning() gates credit allocation on state transition; concurrent callers eliminated |
+| allocateCredits atomic balance check | **I** | ecb1331 — balance check is now the WHERE clause (same pattern as deductCreditAtomic) |
 
-**Milestone status: I** — 0 of 5 sub-items Verified
+**Milestone status: I** — 0 of 6 sub-items Verified
 
 ---
 
@@ -194,6 +195,38 @@ Only **V** is treated as proven.
 - GAP 4: No server-side AI generation validation beyond subject/body presence
 
 **Milestone status: D** — all items code-verified, none runtime-verified
+
+---
+
+---
+
+### 11 · Phase B Hardening (this session — commits 826aa25 → ecb1331)
+
+**Gaps resolved (all VERIFIED IN TESTS):**
+
+| Item | Commit | Status |
+|---|---|---|
+| GAP-1: executeCampaign parity (sendPaused, senderHealth, sendWithRetry, PAUSED guard) | 826aa25 | IMPL + VERIFIED (22/22) |
+| GAP-2: getPreCampaignSuppressionCount N+1 → inArray | 217bebc | IMPL + VERIFIED (5/5) |
+| GAP-3: Batch contact loading both send loops | e9f8554 | IMPL + VERIFIED (22/22) |
+| GAP-6: Sender profile gate (senderName + senderCompany required) | 1b89a3f | IMPL + VERIFIED (17/17) |
+| B-1: mustResetPassword exempt path mismatch (`change-password` → `reset-password`) | 71c0241 | IMPL + VERIFIED (17/17) |
+| B-PL-2: loginLimiter trust proxy fix (Railway proxy IP → real client IP) | a279203 | IMPL |
+| FIN-1: completePayment double-credit race eliminated | ecb1331 | IMPL |
+| FIN-2: allocateCredits over-allocation race eliminated | ecb1331 | IMPL |
+
+**Remaining important items (not yet implemented):**
+
+| ID | Item |
+|---|---|
+| I-1 | Auto-pause thresholds — set `BOUNCE_RATE_PAUSE_THRESHOLD=0.08`, `COMPLAINT_RATE_PAUSE_THRESHOLD=0.001` in Railway |
+| I-2 | validateTemplate placeholder hard-block |
+| I-3 | Mid-loop sendPaused re-check |
+| I-4 | Inline-path isRetry duplicate-send guard |
+| I-5 | SNS_TOPIC_ARN startup enforcement |
+| O-2 | Invite token TTL verification |
+
+**Milestone status: I** — items implemented but none yet runtime-Verified in production
 
 ---
 
