@@ -650,6 +650,11 @@ export const memoryStorage = {
     return store.contacts.get(id) || null;
   },
 
+  async getContactsByIds(ids) {
+    if (!ids || ids.length === 0) return [];
+    return ids.map(id => store.contacts.get(id)).filter(Boolean);
+  },
+
   // ==================== CAMPAIGN OPERATIONS ====================
   async createCampaign(campaignData) {
     const id = generateUUID();

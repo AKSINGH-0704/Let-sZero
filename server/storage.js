@@ -599,6 +599,11 @@ const dbStorage = {
     return contact || null;
   },
 
+  async getContactsByIds(ids) {
+    if (!ids || ids.length === 0) return [];
+    return await db.select().from(contacts).where(drizzleOps.inArray(contacts.id, ids));
+  },
+
   async createCampaign(campaignData) {
     const [campaign] = await db.insert(campaigns).values(campaignData).returning();
     await this.createAuditLog({

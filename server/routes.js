@@ -278,6 +278,12 @@ export async function executeCampaign(campaignId, userId) {
   const creditsBefore = await storage.getTotalCreditsAvailable(userId);
   console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
 
+  // Batch-load all contacts before the loop — 1 query instead of N per-contact lookups.
+  // Per-contact suppression checks remain inside the loop (a concurrent campaign can add
+  // suppressions mid-execution, so those must stay live).
+  const contactList = await storage.getContactsByIds(contactIds);
+  const contactMap = new Map(contactList.map(c => [c.id, c]));
+
   for (let i = 0; i < contactIds.length; i++) {
     // Re-check global pause every 50 contacts — allows admin to stop a live campaign
     // without a DB query on every single email. Skip i=0 (already checked pre-loop).
@@ -297,7 +303,7 @@ export async function executeCampaign(campaignId, userId) {
     }
 
     const contactId = contactIds[i];
-    const contact = await storage.getContactById(contactId);
+    const contact = contactMap.get(contactId) || null;
 
     // Create PENDING audit record before any send attempt
     const campaignEmailRecord = await storage.createCampaignEmail({

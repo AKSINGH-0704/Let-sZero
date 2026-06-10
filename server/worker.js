@@ -295,6 +295,12 @@ async function processCampaign(campaignId, userId, job) {
 
   console.log(`[WORKER] Campaign ${campaignId} — ${contactIds.length} contacts`);
 
+  // Batch-load all contacts before the loop — 1 query instead of N per-contact lookups.
+  // Per-contact suppression checks remain inside the loop (a concurrent campaign can add
+  // suppressions mid-execution, so those must stay live).
+  const contactList = await storage.getContactsByIds(contactIds);
+  const contactMap = new Map(contactList.map(c => [c.id, c]));
+
   for (let i = 0; i < contactIds.length; i++) {
     // Re-check global pause every 50 contacts — allows admin pause to take effect mid-campaign
     // without a DB query on every single contact. Skip i=0 (already checked pre-loop).
@@ -315,7 +321,7 @@ async function processCampaign(campaignId, userId, job) {
     }
 
     const contactId = contactIds[i];
-    const contact = await storage.getContactById(contactId);
+    const contact = contactMap.get(contactId) || null;
 
     // On retry (campaign already RUNNING), check if this contact was already processed.
     // Prevents duplicate sends when BullMQ retries a failed job.
