@@ -1060,7 +1060,8 @@ export const memoryStorage = {
   async completePayment(paymentId, transactionId) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
-    
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return payment;
+
     // Update payment status
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.transactionId = transactionId;

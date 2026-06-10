@@ -275,28 +275,36 @@ const dbStorage = {
       throw new Error("Can only allocate credits to direct children");
     }
     
+    // Fast-path pre-check: surface clear insufficient-credits errors without entering
+    // a transaction. Not atomic — the authoritative check is inside the transaction.
     if (fromUser.creditsRemaining < amount) {
       throw new Error("Insufficient credits available");
     }
-    
+
     // Record remaining balance (not the allocated pool) so the transaction log
     // shows the meaningful "available credits before/after" for each party.
     const fromRemainingBefore = fromUser.creditsRemaining;
     const toRemainingBefore   = toUser.creditsRemaining;
 
     await db.transaction(async (tx) => {
-      await tx.update(users)
-        .set({
-          creditsAllocated: sql`credits_allocated + ${amount}`,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, fromUserId));
+      // Atomic balance check: the WHERE clause enforces the constraint at write time.
+      // Two concurrent admin allocations from the same parent can both pass the
+      // pre-check above before either commits. The conditional WHERE prevents the
+      // second caller from decrementing the balance below zero — if the first
+      // allocation consumed the available credits, the second UPDATE returns 0 rows
+      // and throws, rolling back the entire transaction.
+      const [fromUpdated] = await tx.update(users)
+        .set({ creditsAllocated: sql`credits_allocated + ${amount}`, updatedAt: new Date() })
+        .where(and(
+          eq(users.id, fromUserId),
+          sql`(credits_received - credits_allocated - credits_used) >= ${amount}`
+        ))
+        .returning({ id: users.id });
+
+      if (!fromUpdated) throw new Error("Insufficient credits available");
 
       await tx.update(users)
-        .set({
-          creditsReceived: sql`credits_received + ${amount}`,
-          updatedAt: new Date()
-        })
+        .set({ creditsReceived: sql`credits_received + ${amount}`, updatedAt: new Date() })
         .where(eq(users.id, toUserId));
 
       await tx.insert(creditTransactions).values({
@@ -1006,21 +1014,27 @@ const dbStorage = {
   async completePayment(paymentId, transactionId) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
-    // Idempotency: if already completed, return immediately without re-crediting.
-    // Guards against both webhook + client-side verify firing for the same payment.
+    // Fast path: already completed — no writes needed.
     if (payment.status === PAYMENT_STATUS.SUCCESS) return payment;
 
     const user = await this.getUserById(payment.userId);
     const balanceBefore = user?.creditsRemaining ?? 0;
 
     await db.transaction(async (tx) => {
-      await tx.update(payments)
-        .set({
-          status: PAYMENT_STATUS.SUCCESS,
-          transactionId,
-          completedAt: new Date()
-        })
-        .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`));
+      // Atomic state transition. .returning() exposes whether the WHERE clause
+      // matched — i.e., whether THIS caller won the PENDING → SUCCESS race.
+      // Under READ COMMITTED, two concurrent callers can both pass the fast-path
+      // check above before either commits. The first to execute this UPDATE acquires
+      // the row lock and sets status=SUCCESS (1 row returned). The second caller's
+      // UPDATE re-evaluates the WHERE after the lock releases, sees status=SUCCESS,
+      // and returns 0 rows. Credit allocation is gated on this result, so only the
+      // winning caller allocates credits.
+      const transitioned = await tx.update(payments)
+        .set({ status: PAYMENT_STATUS.SUCCESS, transactionId, completedAt: new Date() })
+        .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`))
+        .returning({ id: payments.id });
+
+      if (transitioned.length === 0) return; // concurrent caller won; no credit mutation
 
       await tx.update(users)
         .set({
