@@ -1330,15 +1330,10 @@ const dbStorage = {
   async getPreCampaignSuppressionCount(emails) {
     if (!emails || emails.length === 0) return 0;
     const normalized = emails.map(e => e.toLowerCase().trim());
-    let count = 0;
-    for (const email of normalized) {
-      const [record] = await db.select({ id: suppressions.id })
-        .from(suppressions)
-        .where(eq(suppressions.email, email))
-        .limit(1);
-      if (record) count++;
-    }
-    return count;
+    const result = await db.select({ email: suppressions.email })
+      .from(suppressions)
+      .where(drizzleOps.inArray(suppressions.email, normalized));
+    return new Set(result.map(r => r.email)).size;
   },
 
   // ── SNS event deduplication ────────────────────────────────────────────────

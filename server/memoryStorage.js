@@ -1370,14 +1370,12 @@ export const memoryStorage = {
 
   async getPreCampaignSuppressionCount(emails) {
     if (!emails || emails.length === 0) return 0;
-    let count = 0;
-    for (const email of emails) {
-      const normalized = email.toLowerCase().trim();
-      for (const record of store.suppressions.values()) {
-        if (record.email === normalized) { count++; break; }
-      }
+    const normalizedSet = new Set(emails.map(e => e.toLowerCase().trim()));
+    const found = new Set();
+    for (const record of store.suppressions.values()) {
+      if (normalizedSet.has(record.email)) found.add(record.email);
     }
-    return count;
+    return found.size;
   },
 
   // ── SNS event deduplication ────────────────────────────────────────────────
