@@ -2070,6 +2070,15 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Prior interaction context is required for follow-up campaigns" });
       }
 
+      // Sender profile gate — name and company are required for credible AI output.
+      // Title is optional. Checked before quota increment so no refund is needed.
+      if (!req.user.senderName || !req.user.senderCompany) {
+        return res.status(400).json({
+          message: "Complete your sender profile before generating AI templates. Add your name and company in Profile settings.",
+          code: "SENDER_PROFILE_REQUIRED",
+        });
+      }
+
       const effectivePlan = await storage.getEffectivePlan(req.user.id);
       const quota = await storage.checkAndIncrementAiQuota(req.user.id);
       if (!quota.allowed) {

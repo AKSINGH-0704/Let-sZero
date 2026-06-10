@@ -223,6 +223,9 @@ export default function TemplateBuilder() {
     !!aiIntake.objectiveType &&
     (aiCampaignType !== "follow_up" || !!aiIntake.previousContext.trim());
 
+  // Name + company required for credible AI output. Title is optional.
+  const senderProfileBlocked = !user?.senderName || !user?.senderCompany;
+
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
     mutationFn: async () => {
@@ -349,13 +352,21 @@ export default function TemplateBuilder() {
         </p>
       </div>
 
-      {/* ── Incomplete sender profile warning ───────────────────────────────── */}
-      {!(user?.senderName && user?.senderTitle && user?.senderCompany) && (
+      {/* ── Sender profile warnings ──────────────────────────────────────────── */}
+      {senderProfileBlocked ? (
+        <Alert className="border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/20">
+          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500" />
+          <AlertDescription className="text-red-800 dark:text-red-300 text-sm">
+            AI generation is disabled until your <a href="/app/profile" className="underline font-medium">sender profile</a> is complete.
+            Add your name and company to enable template generation.
+          </AlertDescription>
+        </Alert>
+      ) : !user?.senderTitle && (
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
           <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
           <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
             Your <a href="/app/profile" className="underline font-medium">sender profile</a> is incomplete.
-            AI-generated templates will use placeholder sign-offs, and recipients will see "RepMail" instead of your name.
+            Adding your title will improve AI-generated template quality.
           </AlertDescription>
         </Alert>
       )}
@@ -583,7 +594,7 @@ export default function TemplateBuilder() {
                 )}
                 <Button
                   onClick={() => generateTemplateMutation.mutate()}
-                  disabled={!canGenerate || generateTemplateMutation.isPending || aiExhausted}
+                  disabled={!canGenerate || generateTemplateMutation.isPending || aiExhausted || senderProfileBlocked}
                   className="gap-2"
                   data-testid="button-ai-generate"
                 >
