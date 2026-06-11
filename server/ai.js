@@ -646,16 +646,32 @@ export function validateTemplate(subject, body, { campaignType = 'general', inta
     return { subject: s, body: b, hardBlocked: true, warnings: [{ code: 'EMPTY_BODY', message: 'Generated body is empty — template cannot be used.', severity: 'error' }] };
   }
 
-  // ── Step 3: Unknown placeholder detection (warn only, no repair) ─────────────
+  // ── Step 3: Unknown placeholder detection — hard block ───────────────────────
+  // Valid placeholders ({{name}}, {{company}}, {{sender_name}}, etc.) are in
+  // VALID_PLACEHOLDERS and get substituted at send time. Anything else is an
+  // AI-hallucinated tag (e.g. {{firstName}}, {{title}}) that would appear
+  // verbatim in the recipient's inbox and trigger spam filters.
   const unknownInSubject = findUnknownPlaceholders(s);
   const unknownInBody    = findUnknownPlaceholders(b);
-  const allUnknown = [...new Set([...unknownInSubject, ...unknownInBody])];
-  if (allUnknown.length > 0) {
-    warnings.push({
-      code:     'UNKNOWN_PLACEHOLDER',
-      message:  `Unknown placeholder(s) found: ${allUnknown.join(', ')}. These will appear as literal text in sent emails. Regenerate or edit manually.`,
-      severity: 'warn',
-    });
+
+  if (unknownInSubject.length > 0 || unknownInBody.length > 0) {
+    const blocked = [];
+    if (unknownInSubject.length > 0) {
+      blocked.push({
+        code:     'PLACEHOLDER_IN_SUBJECT',
+        message:  `Unrecognised placeholder(s) in subject: ${unknownInSubject.join(', ')}. Not in the known merge-tag set — would appear as literal text. Regenerate.`,
+        severity: 'error',
+      });
+    }
+    if (unknownInBody.length > 0) {
+      blocked.push({
+        code:     'PLACEHOLDER_IN_BODY',
+        message:  `Unrecognised placeholder(s) in body: ${unknownInBody.join(', ')}. Not in the known merge-tag set — would appear as literal text. Regenerate.`,
+        severity: 'error',
+      });
+    }
+    logValidationTelemetry({ userId, campaignType, model, warnings: blocked, repaired });
+    return { subject: s, body: b, hardBlocked: true, warnings: blocked };
   }
 
   // ── Step 4: Subject checks ───────────────────────────────────────────────────
