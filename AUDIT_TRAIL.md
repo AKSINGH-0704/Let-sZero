@@ -273,6 +273,37 @@ Valid placeholders (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) remain i
 
 ---
 
+## Audit 009 — I-3 Mid-Loop sendPaused Re-Check
+
+**Date:** 2026-06-11
+**Scope:** `processCampaign` (worker.js) and `executeCampaign` (routes.js) send loops
+**Commit:** `8eabc8a`
+
+### Finding
+
+Both send loops captured the `owner` user record before the loop and never refreshed it. The pre-loop auto-pause check calls `storage.updateUser(userId, { sendPaused: true })` and returns — but if this fires on a *concurrent* campaign start while the current campaign is mid-loop, the running campaign's stale `owner` snapshot never reflects the updated flag.
+
+The existing mid-loop check (`i % 50 === 0`) only covered the global platform pause (`platform_settings.send_pause_enabled`). Per-user `sendPaused` had no mid-loop re-check.
+
+Worst-case: auto-pause fires at contact index 1 of a 1000-contact campaign → 999 additional sends before the campaign completes.
+
+### Fix
+
+Added a `storage.getUserById(userId)` call inside the existing `i % 50 === 0` block, immediately after the global pause check, in both executors. If `freshOwner.sendPaused` is true, the campaign transitions to `PAUSED` (matching the global pause mid-loop behavior) with `reason=sender_paused_mid_loop` and stops.
+
+Worst-case after fix: 49 additional sends.
+
+`getUserById` is a single indexed primary-key lookup (~1ms). At one call per 50 contacts it adds negligible overhead.
+
+### Method confirmation
+
+Both `getUserById` and `getUser` exist in `storage.js` and `memoryStorage.js`. `getUser` is a direct alias for `getUserById` in both implementations. The existing pre-loop pause logic uses `getUserById` — the fix uses the same method.
+
+### Status
+`IMPL` `VERIFIED IN TESTS` — not yet `VERIFIED IN PRODUCTION`
+
+---
+
 ## Audit 008 — SNS Production Pipeline Verification
 
 **Date:** 2026-06-11

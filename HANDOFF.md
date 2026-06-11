@@ -87,17 +87,15 @@ Fail-open `&&`-shortcircuit replaced with two explicit guards: `if (!expectedTop
 
 SNS topic `repmail_events` confirmed existing. `SNS_TOPIC_ARN` added to Railway. HTTPS subscription `https://www.letszero.in/api/webhooks/ses` created and auto-confirmed. Railway logs: `[SNS] Subscription confirmed — HTTP 200`. SES → SNS → RepMail pipeline connected and live. SES Configuration Set event destination remains to be verified via first T-2 bounce event.
 
-**1. O-2 — Invite token TTL verification** *(SECURITY)*
+**~~0. O-2 — Invite token TTL verification~~** *(VERIFIED SAFE — 2026-06-11)*
 
-Invite tokens may not have a TTL. Old or forgotten invite links could be valid indefinitely.
+`expiresAt NOT NULL` in schema. 7-day TTL written on every create and resend. Expiry enforced independently on both `/api/invites/validate` and `/api/invites/accept`. Single-use via `acceptedAt`. No code changes required.
 
-Fix: verify `invites` table has `expiresAt` column and that the accept handler rejects expired tokens.
+**1. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
 
-**2. I-3 — Mid-loop sendPaused re-check** *(DELIVERABILITY)*
+**~~2. I-3 — Mid-loop sendPaused re-check~~** *(RESOLVED — commit 8eabc8a)*
 
-Both send loops check `sendPaused` pre-loop only. A campaign that started before auto-pause triggers (via SNS bounce events mid-run) continues to completion.
-
-Fix: add a `sendPaused` re-check inside the loop every N contacts (similar to existing global-pause mid-loop check).
+Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read `users.send_paused` from the DB at every 50th contact boundary, immediately after the existing global-pause re-check. If found true, campaign transitions to `PAUSED` with `reason=sender_paused_mid_loop`. Worst-case sends after a pause event reduced from N−1 to 49.
 
 **3. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
 
@@ -117,6 +115,7 @@ Fix: inside the send loop, skip contacts whose existing `campaignEmails` record 
 | GAP-5: Single free-text AI intake | 7-field structured intake | earlier session |
 | GAP-6: Sender profile gate | senderName + senderCompany required | 1b89a3f |
 | I-2: Placeholder hard-block | PLACEHOLDER_IN_SUBJECT + PLACEHOLDER_IN_BODY | 306b391 |
+| I-3: Mid-loop sendPaused re-check | getUserById every 50 contacts; PAUSED + audit log | 8eabc8a |
 | I-5: SNS fail-closed enforcement | Explicit two-guard pattern; startup error | f434b21 |
 | B-1: mustResetPassword exempt path | reset-password (not change-password) | 71c0241 |
 | B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |
