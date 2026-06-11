@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `ecb1331` (2026-06-11)  
+**Verified against:** commit `306b391` (2026-06-11)  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -75,13 +75,11 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 All gaps from the AI & production audit are resolved. The remaining items are from the final production-readiness audit (2026-06-10/11). Ordered by risk.
 
-**1. I-2 — validateTemplate placeholder hard-block** *(REPUTATION RISK)*
+**~~1. I-2 — validateTemplate placeholder hard-block~~** *(RESOLVED — commit 306b391)*
 
-`validateTemplate()` only hard-blocks `EMPTY_SUBJECT`/`EMPTY_BODY`. An AI-generated template with an unreplaced `{{firstName}}` literal passes validation and is sent verbatim to SES.
+`PLACEHOLDER_IN_SUBJECT` and `PLACEHOLDER_IN_BODY` are now hard blocks. Unknown `{{...}}` tags halt generation and trigger quota refund. Valid merge tags (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) pass through for send-time substitution. 9/9 verification cases pass.
 
-Fix: add `PLACEHOLDER_IN_SUBJECT` and `PLACEHOLDER_IN_BODY` to the hard-block list. Any `{{...}}` pattern surviving into the final template is a hard rejection. File: `server/ai.js` or wherever `validateTemplate` lives.
-
-**2. I-5 — SNS_TOPIC_ARN startup enforcement** *(SECURITY)*
+**1. I-5 — SNS_TOPIC_ARN startup enforcement** *(SECURITY)*
 
 If `SNS_TOPIC_ARN` is not set, the SNS injection check is skipped. Any valid SNS-signed message from any topic can inject bounce/complaint events.
 
@@ -116,6 +114,7 @@ Fix: inside the send loop, skip contacts whose existing `campaignEmails` record 
 | GAP-3: getContactById N+1 in send loop | getContactsByIds batch method | e9f8554 |
 | GAP-5: Single free-text AI intake | 7-field structured intake | earlier session |
 | GAP-6: Sender profile gate | senderName + senderCompany required | 1b89a3f |
+| I-2: Placeholder hard-block | PLACEHOLDER_IN_SUBJECT + PLACEHOLDER_IN_BODY | 306b391 |
 | B-1: mustResetPassword exempt path | reset-password (not change-password) | 71c0241 |
 | B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |
 | FIN-1: completePayment double-credit | .returning() gates credit allocation | ecb1331 |

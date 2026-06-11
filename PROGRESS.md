@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-11
-**Current commit:** ecb1331
+**Current commit:** 306b391
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -220,7 +220,7 @@ Only **V** is treated as proven.
 | ID | Item |
 |---|---|
 | I-1 | Auto-pause thresholds — set `BOUNCE_RATE_PAUSE_THRESHOLD=0.08`, `COMPLAINT_RATE_PAUSE_THRESHOLD=0.001` in Railway |
-| I-2 | validateTemplate placeholder hard-block |
+| I-2 | validateTemplate placeholder hard-block — **IMPL + VERIFIED IN TESTS** (306b391, 9/9) |
 | I-3 | Mid-loop sendPaused re-check |
 | I-4 | Inline-path isRetry duplicate-send guard |
 | I-5 | SNS_TOPIC_ARN startup enforcement |

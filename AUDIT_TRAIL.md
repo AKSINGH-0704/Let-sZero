@@ -224,3 +224,49 @@ The following are explicit non-goals and must not be implemented:
 
 ### Commit
 `[FIN-1] Eliminate double-credit race in completePayment + allocateCredits` (ecb1331)
+
+---
+
+## Audit 006 — I-2 validateTemplate Placeholder Hard-Block
+
+**Date:** 2026-06-11
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** `validateTemplate` in `server/ai.js` — Step 3 unknown placeholder handling
+**Trigger:** Final production-readiness audit (Audit 004) classified UNKNOWN_PLACEHOLDER as Important; risk is verbatim delivery of AI-hallucinated tags to recipient inboxes
+
+### Finding
+
+Step 3 of `validateTemplate` already detected any `{{...}}` pattern not in `VALID_PLACEHOLDERS` via `findUnknownPlaceholders()`. Detection was correct. Severity was `warn` — template was returned to the user with a warning, not blocked. Tags such as `{{firstName}}`, `{{jobTitle}}`, `{{orgName}}` would be sent verbatim.
+
+### Fix
+
+Elevated to hard block. The new path:
+- If `unknownInSubject.length > 0`: push `PLACEHOLDER_IN_SUBJECT` (severity: error), return `hardBlocked: true`
+- If `unknownInBody.length > 0`: push `PLACEHOLDER_IN_BODY` (severity: error), return `hardBlocked: true`
+- Both codes emitted when unknowns appear in both locations
+- `logValidationTelemetry` fires before return (same as EMPTY_SUBJECT / EMPTY_BODY)
+- Route handler at routes.js:2116 sees `hardBlocked: true` → refunds AI quota → returns 422
+
+Valid placeholders (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) remain in `VALID_PLACEHOLDERS` and pass through for send-time substitution.
+
+### Verification
+
+9/9 cases passed:
+
+| Case | Expected | Result |
+|---|---|---|
+| `{{firstName}}` in subject | `PLACEHOLDER_IN_SUBJECT` hard block | PASS |
+| `{{jobTitle}}` in body | `PLACEHOLDER_IN_BODY` hard block | PASS |
+| Unknowns in both | Both codes, hard block | PASS |
+| Empty subject | `EMPTY_SUBJECT` hard block (regression) | PASS |
+| Empty body | `EMPTY_BODY` hard block (regression) | PASS |
+| `{{name}}` in subject | Not blocked | PASS |
+| All valid placeholders | Not blocked | PASS |
+| `{{sender_name}}` sign-off | Not blocked | PASS |
+| Valid `{{name}}` + invalid `{{firstName}}` in body | `PLACEHOLDER_IN_BODY` hard block | PASS |
+
+### Status
+`IMPL` `VERIFIED IN TESTS` — not yet `VERIFIED IN PRODUCTION`
+
+### Commit
+`[I-2] validateTemplate: elevate unknown placeholders to hard block` (306b391)
