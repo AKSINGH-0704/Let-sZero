@@ -302,7 +302,8 @@ async function processCampaign(campaignId, userId, job) {
   const contactMap = new Map(contactList.map(c => [c.id, c]));
 
   for (let i = 0; i < contactIds.length; i++) {
-    // Re-check global pause every 50 contacts — allows admin pause to take effect mid-campaign
+    // Re-check global pause and per-user sendPaused every 50 contacts — allows admin pause
+    // or auto-pause (fired by a concurrent campaign start) to take effect mid-campaign
     // without a DB query on every single contact. Skip i=0 (already checked pre-loop).
     if (i > 0 && i % 50 === 0) {
       if (await isGlobalSendPaused()) {
@@ -315,6 +316,21 @@ async function processCampaign(campaignId, userId, job) {
           details: { reason: "global_send_pause_active", pausedAtContact: i },
         });
         console.warn(`[WORKER] Campaign ${campaignId} paused at contact ${i} — global send pause activated`);
+        globalPausedMidLoop = true;
+        break;
+      }
+      // Re-check per-user sendPaused — auto-pause may have fired from a concurrent campaign start
+      const freshOwner = await storage.getUserById(userId);
+      if (freshOwner?.sendPaused) {
+        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.createAuditLog({
+          userId,
+          action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+          targetType: "campaign",
+          targetId: campaignId,
+          details: { reason: "sender_paused_mid_loop", pausedAtContact: i },
+        });
+        console.warn(`[WORKER] Campaign ${campaignId} paused at contact ${i} — sender paused mid-loop`);
         globalPausedMidLoop = true;
         break;
       }
