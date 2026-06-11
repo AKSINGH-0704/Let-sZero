@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-11
-**Current commit:** 306b391
+**Current commit:** f434b21
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -223,7 +223,7 @@ Only **V** is treated as proven.
 | I-2 | validateTemplate placeholder hard-block — **IMPL + VERIFIED IN TESTS** (306b391, 9/9) |
 | I-3 | Mid-loop sendPaused re-check |
 | I-4 | Inline-path isRetry duplicate-send guard |
-| I-5 | SNS_TOPIC_ARN startup enforcement |
+| I-5 | SNS_TOPIC_ARN startup enforcement — **IMPL + VERIFIED IN TESTS** (f434b21, 6/6) |
 | O-2 | Invite token TTL verification |
 
 **Milestone status: I** — items implemented but none yet runtime-Verified in production

@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `306b391` (2026-06-11)  
+**Verified against:** commit `f434b21` (2026-06-11)  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -40,7 +40,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current State (commit `ecb1331`)
+## Current State (commit `f434b21`)
 
 **Financial integrity (commit `ecb1331` — FIN-1/FIN-2):**
 - `completePayment` race eliminated: `.returning({ id })` on the payment UPDATE gates credit allocation on whether THIS caller transitioned `PENDING → SUCCESS`. Concurrent webhook + /verify callers cannot both allocate credits.
@@ -79,25 +79,23 @@ All gaps from the AI & production audit are resolved. The remaining items are fr
 
 `PLACEHOLDER_IN_SUBJECT` and `PLACEHOLDER_IN_BODY` are now hard blocks. Unknown `{{...}}` tags halt generation and trigger quota refund. Valid merge tags (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) pass through for send-time substitution. 9/9 verification cases pass.
 
-**1. I-5 — SNS_TOPIC_ARN startup enforcement** *(SECURITY)*
+**~~2. I-5 — SNS_TOPIC_ARN startup enforcement~~** *(RESOLVED — commit f434b21)*
 
-If `SNS_TOPIC_ARN` is not set, the SNS injection check is skipped. Any valid SNS-signed message from any topic can inject bounce/complaint events.
+Fail-open `&&`-shortcircuit replaced with two explicit guards: `if (!expectedTopicArn) → 503` (fail-closed) then `if (TopicArn !== expectedTopicArn) → 403`. Startup check elevated from `console.warn` to `console.error`. 6/6 verification cases pass.
 
-Fix: emit a hard startup error (not just `console.warn`) if `SNS_TOPIC_ARN` is missing in production. File: `server/index.js`.
-
-**3. O-2 — Invite token TTL verification** *(SECURITY)*
+**1. O-2 — Invite token TTL verification** *(SECURITY)*
 
 Invite tokens may not have a TTL. Old or forgotten invite links could be valid indefinitely.
 
 Fix: verify `invites` table has `expiresAt` column and that the accept handler rejects expired tokens.
 
-**4. I-3 — Mid-loop sendPaused re-check** *(DELIVERABILITY)*
+**2. I-3 — Mid-loop sendPaused re-check** *(DELIVERABILITY)*
 
 Both send loops check `sendPaused` pre-loop only. A campaign that started before auto-pause triggers (via SNS bounce events mid-run) continues to completion.
 
 Fix: add a `sendPaused` re-check inside the loop every N contacts (similar to existing global-pause mid-loop check).
 
-**5. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
+**3. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
 
 `executeCampaign` (inline path) does not check if a `campaignEmailRecord` already has `status=SENT` before calling `sendWithRetry`. A crash-restart could re-send to already-sent contacts.
 
@@ -115,6 +113,7 @@ Fix: inside the send loop, skip contacts whose existing `campaignEmails` record 
 | GAP-5: Single free-text AI intake | 7-field structured intake | earlier session |
 | GAP-6: Sender profile gate | senderName + senderCompany required | 1b89a3f |
 | I-2: Placeholder hard-block | PLACEHOLDER_IN_SUBJECT + PLACEHOLDER_IN_BODY | 306b391 |
+| I-5: SNS fail-closed enforcement | Explicit two-guard pattern; startup error | f434b21 |
 | B-1: mustResetPassword exempt path | reset-password (not change-password) | 71c0241 |
 | B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |
 | FIN-1: completePayment double-credit | .returning() gates credit allocation | ecb1331 |

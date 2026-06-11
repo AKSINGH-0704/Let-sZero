@@ -270,3 +270,53 @@ Valid placeholders (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) remain i
 
 ### Commit
 `[I-2] validateTemplate: elevate unknown placeholders to hard block` (306b391)
+
+---
+
+## Audit 007 — I-5 SNS_TOPIC_ARN Fail-Closed Enforcement
+
+**Date:** 2026-06-11
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** `POST /api/webhooks/ses` TopicArn enforcement in `server/routes.js` and startup check in `server/index.js`
+**Trigger:** Final production-readiness audit (Audit 004) classified SNS_TOPIC_ARN enforcement as Important
+
+### Finding
+
+The TopicArn check at routes.js:722 used a compound condition:
+```js
+if (expectedTopicArn && envelope.TopicArn && envelope.TopicArn !== expectedTopicArn)
+```
+When `SNS_TOPIC_ARN` is unset, `expectedTopicArn` is `undefined` — the `&&` short-circuits to `false` and the check does not execute. Every SNS-signed message from any topic on any AWS account is accepted (fail-open).
+
+Attack surface: an attacker with their own AWS account creates an SNS topic, subscribes it to the RepMail webhook endpoint, and publishes `Notification` messages claiming permanent bounces for arbitrary email addresses. `verifySnsMessage` passes (the message is legitimately signed by the attacker's topic). The TopicArn guard is absent. Arbitrary emails are suppressed.
+
+The startup check at index.js:582 emitted `console.warn` — visible but not error-level. The message described the state as "TopicArn validation disabled" without indicating that the endpoint was accepting all traffic.
+
+### Fix
+
+**routes.js:** Split compound condition into two explicit guards:
+1. `if (!expectedTopicArn)` → 503 + `console.error` (fail-closed)
+2. `if (TopicArn !== expectedTopicArn)` → 403 + `console.warn` (unchanged)
+
+**index.js:** `console.warn` → `console.error`. Message updated to state "SNS webhook will reject all messages" to reflect the new fail-closed behavior.
+
+**SNS retry behavior:** SNS retries non-2xx responses for up to 23 days. A transient misconfiguration window does not permanently lose bounce/complaint events.
+
+### Verification
+
+6/6 cases passed (logic extracted from routes.js, tested independently):
+
+| Case | Expected | Result |
+|---|---|---|
+| ARN unset + attacker topic | 503 fail-closed | PASS |
+| ARN unset + correct-looking ARN | 503 still fail-closed | PASS |
+| ARN set + wrong topic | 403 | PASS |
+| ARN set + correct topic | 200 (check passes) | PASS |
+| ARN set + missing envelope TopicArn | 403 | PASS |
+| Old fail-open path no longer reachable | status ≠ 200 | PASS |
+
+### Status
+`IMPL` `VERIFIED IN TESTS` — not yet `VERIFIED IN PRODUCTION`
+
+### Commit
+`[I-5] SNS_TOPIC_ARN: fail-closed when env var unset` (f434b21)
