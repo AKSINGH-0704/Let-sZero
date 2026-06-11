@@ -91,17 +91,13 @@ SNS topic `repmail_events` confirmed existing. `SNS_TOPIC_ARN` added to Railway.
 
 `expiresAt NOT NULL` in schema. 7-day TTL written on every create and resend. Expiry enforced independently on both `/api/invites/validate` and `/api/invites/accept`. Single-use via `acceptedAt`. No code changes required.
 
-**1. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
-
-**~~2. I-3 — Mid-loop sendPaused re-check~~** *(RESOLVED — commit 8eabc8a)*
+**~~1. I-3 — Mid-loop sendPaused re-check~~** *(RESOLVED — commit 8eabc8a)*
 
 Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read `users.send_paused` from the DB at every 50th contact boundary, immediately after the existing global-pause re-check. If found true, campaign transitions to `PAUSED` with `reason=sender_paused_mid_loop`. Worst-case sends after a pause event reduced from N−1 to 49.
 
-**3. I-4 — Inline-path isRetry duplicate-send guard** *(CORRECTNESS)*
+**~~2. I-4 — Inline-path isRetry duplicate-send guard~~** *(RESOLVED — commit bf17c19)*
 
-`executeCampaign` (inline path) does not check if a `campaignEmailRecord` already has `status=SENT` before calling `sendWithRetry`. A crash-restart could re-send to already-sent contacts.
-
-Fix: inside the send loop, skip contacts whose existing `campaignEmails` record shows `status=SENT`.
+`executeCampaign` now has full retry parity with `processCampaign`: `hasAnySentEmails` + `isRetry` computed once before the loop; `canStartCampaign` skipped on retry; per-contact `getCampaignEmailByContact` guard skips SENT, SUPPRESSED, BOUNCED, COMPLAINED, and permanently-FAILED contacts. Direct port of proven worker.js logic — no new storage methods.
 
 ---
 
@@ -116,6 +112,7 @@ Fix: inside the send loop, skip contacts whose existing `campaignEmails` record 
 | GAP-6: Sender profile gate | senderName + senderCompany required | 1b89a3f |
 | I-2: Placeholder hard-block | PLACEHOLDER_IN_SUBJECT + PLACEHOLDER_IN_BODY | 306b391 |
 | I-3: Mid-loop sendPaused re-check | getUserById every 50 contacts; PAUSED + audit log | 8eabc8a |
+| I-4: Inline executor retry guard | hasAnySentEmails + isRetry + per-contact skip; credit check skip on retry | bf17c19 |
 | I-5: SNS fail-closed enforcement | Explicit two-guard pattern; startup error | f434b21 |
 | B-1: mustResetPassword exempt path | reset-password (not change-password) | 71c0241 |
 | B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |

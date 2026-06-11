@@ -273,6 +273,38 @@ Valid placeholders (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) remain i
 
 ---
 
+## Audit 010 — I-4 Inline Executor Retry Idempotency
+
+**Date:** 2026-06-11
+**Scope:** `executeCampaign` in `server/routes.js`
+**Commit:** `bf17c19`
+
+### Finding
+
+`executeCampaign` (the inline fallback path used when Redis/BullMQ is unavailable) lacked the retry idempotency guard present in `processCampaign` (worker.js). Specifically:
+
+- No `hasAnySentEmails` + `isRetry` detection before the loop
+- `canStartCampaign` (credit check) ran unconditionally — would block a resume of a partially-sent campaign whose credits were already partially consumed
+- No per-contact `getCampaignEmailByContact` check — on a re-run of the same campaign, contacts already marked `SENT` would be sent to again
+
+The crash-restart scenario requires: Redis down → server crash → server restarts → someone re-triggers the same campaign. Practical risk is low but the gap created execution-path asymmetry between the two executors.
+
+### Fix
+
+Direct port of the proven `processCampaign` retry pattern into `executeCampaign`:
+
+1. `hasAnySentEmails(campaignId)` called once before the loop
+2. `isRetry` derived from campaign status + sent-email existence (same logic as worker.js:165–166)
+3. `canStartCampaign` wrapped with `if (!isRetry)` — credit check skipped on resume
+4. Per-contact `getCampaignEmailByContact` guard inside `if (isRetry && contact)` — skips SENT, SUPPRESSED, BOUNCED, COMPLAINED, permanently-FAILED; falls through on PENDING and transient FAILED
+
+No new storage methods. Zero new per-contact queries on normal (non-retry) runs.
+
+### Status
+`IMPL` `VERIFIED IN TESTS` — not yet `VERIFIED IN PRODUCTION`
+
+---
+
 ## Audit 009 — I-3 Mid-Loop sendPaused Re-Check
 
 **Date:** 2026-06-11

@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-11
-**Current commit:** 8eabc8a
+**Current commit:** bf17c19
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -222,7 +222,7 @@ Only **V** is treated as proven.
 | ~~I-1~~ | Auto-pause thresholds — **DONE** (Railway env vars set: 0.08 / 0.001 — 2026-06-11) |
 | I-2 | validateTemplate placeholder hard-block — **IMPL + VERIFIED IN TESTS** (306b391, 9/9) |
 | ~~I-3~~ | Mid-loop sendPaused re-check — **IMPL + VERIFIED IN TESTS** (8eabc8a) |
-| I-4 | Inline-path isRetry duplicate-send guard |
+| ~~I-4~~ | Inline-path isRetry duplicate-send guard — **IMPL + VERIFIED IN TESTS** (bf17c19) |
 | I-5 | SNS_TOPIC_ARN startup enforcement — **IMPL + VERIFIED IN TESTS** (f434b21, 6/6) |
 | O-2 | Invite token TTL verification |
 
