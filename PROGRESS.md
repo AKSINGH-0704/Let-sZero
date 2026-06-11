@@ -249,17 +249,25 @@ Only **V** is treated as proven.
 
 ## Launch readiness assessment
 
-**Status: NOT READY**
+**Status: NO REMAINING KNOWN ENGINEERING GAPS — PRODUCTION VERIFICATION PENDING**
 
-9 of 9 major milestones are at **I** or below. No deliverability path has been Verified.
-Infrastructure is Verified only for Redis connectivity and worker liveness.
+All identified code gaps have been closed (I-1 through I-5, FIN-1, FIN-2, B-PL-2, O-2 verified safe).
+The delivery pipeline is implemented but not yet proven end-to-end in production.
 
-**Minimum to reach launch-ready:**
-- Infrastructure milestone → V (Blocks 1A–1D)
-- Campaign Execution milestone → V (Block 2C)
-- Deliverability milestone → V (Blocks 3A–3H)
-- Compliance milestone → V (unsubscribe verified)
-- Inbox Placement → V (Block 4)
+**Primary gate: T-1 through T-5 production verification checklist.**
+Once those pass, a final audit of deliverability, payment flow, sender health, suppression, unsubscribe, and campaign execution paths will be conducted before declaring private-beta readiness.
+
+**Evidence scale reminder:**
+- **I** = Implemented — code exists, compiles, logic reviewed
+- **T** = Verified in Tests — unit/integration test evidence
+- **V** = Verified in Production — observed in live Railway deployment
+
+**Minimum to reach private-beta ready:**
+- T-1: SES send verified → campaign_emails.ses_message_id not null, email received
+- T-2: SNS bounce verified → suppression row created, bounced_emails incremented
+- T-3: SNS complaint verified → suppression row created, complained_emails incremented
+- T-4: Unsubscribe verified → suppression row created, success page rendered
+- T-5: APP_URL verified → unsubscribe link uses production hostname
 
 ---
 
@@ -269,7 +277,7 @@ Infrastructure is Verified only for Redis connectivity and worker liveness.
 
 | # | Test | Status | Prerequisite |
 |---|---|---|---|
-| T-1 | SES send — email physically sent, `ses_message_id` stored, campaign `COMPLETED` | **In progress** | Credits ≥ 1, verified SES identity |
+| T-1 | SES send — email physically sent, `ses_message_id` stored, campaign `COMPLETED` | Pending | Credits ≥ 1, verified SES identity |
 | T-2 | SNS bounce — `bounce@simulator.amazonses.com` creates suppression, `bounced_emails` incremented | Pending | T-1, SNS subscription confirmed |
 | T-3 | SNS complaint — `complaint@simulator.amazonses.com` creates suppression, `complained_emails` incremented | Pending | T-1, SNS subscription confirmed |
 | T-4 | Unsubscribe — click link from real email, suppression row created, success page rendered | Pending | T-1 (real email received) |
