@@ -219,7 +219,7 @@ Only **V** is treated as proven.
 
 | ID | Item |
 |---|---|
-| I-1 | Auto-pause thresholds — set `BOUNCE_RATE_PAUSE_THRESHOLD=0.08`, `COMPLAINT_RATE_PAUSE_THRESHOLD=0.001` in Railway |
+| ~~I-1~~ | Auto-pause thresholds — **DONE** (Railway env vars set: 0.08 / 0.001 — 2026-06-11) |
 | I-2 | validateTemplate placeholder hard-block — **IMPL + VERIFIED IN TESTS** (306b391, 9/9) |
 | I-3 | Mid-loop sendPaused re-check |
 | I-4 | Inline-path isRetry duplicate-send guard |
@@ -260,6 +260,23 @@ Infrastructure is Verified only for Redis connectivity and worker liveness.
 - Deliverability milestone → V (Blocks 3A–3H)
 - Compliance milestone → V (unsubscribe verified)
 - Inbox Placement → V (Block 4)
+
+---
+
+## Production verification checklist
+
+8-item checklist. Execute in order. Record evidence as each test passes.
+
+| # | Test | Status | Prerequisite |
+|---|---|---|---|
+| T-1 | SES send — email physically sent, `ses_message_id` stored, campaign `COMPLETED` | Pending | Credits ≥ 1, verified SES identity |
+| T-2 | SNS bounce — `bounce@simulator.amazonses.com` creates suppression, `bounced_emails` incremented | Pending | T-1, SNS subscription confirmed |
+| T-3 | SNS complaint — `complaint@simulator.amazonses.com` creates suppression, `complained_emails` incremented | Pending | T-1, SNS subscription confirmed |
+| T-4 | Unsubscribe — click link from real email, suppression row created, success page rendered | Pending | T-1 (real email received) |
+| T-5 | APP_URL — unsubscribe link uses production hostname, not `localhost:5000` | Pending | T-1 (real email received) |
+| T-6 | Auto-pause — injected bounce history triggers `send_paused=true` on next campaign attempt | Pending | T-1 or any completed campaign |
+| T-7 | Razorpay payment — test checkout creates exactly 1 credit_transaction, `is_trial_user` flips false | Pending | Razorpay test mode configured |
+| T-8 | Forced password reset — new user blocked until reset, `must_reset_password` clears after | Pending | Admin access |
 
 ---
 

@@ -173,8 +173,8 @@ Architectural decisions made deliberately. Do not implement without team discuss
 | `RECOVERY_EMAIL` | Yes | Emergency recovery contact |
 | `SES_RATE_PER_SECOND` | No | Default `14` — must match SES account limit |
 | `SES_SEND_RATE_MS` | No | Fallback sleep when Redis is unavailable |
-| `BOUNCE_RATE_PAUSE_THRESHOLD` | No | Default `0.15` |
-| `COMPLAINT_RATE_PAUSE_THRESHOLD` | No | Default `0.005` |
+| `BOUNCE_RATE_PAUSE_THRESHOLD` | No | Default `0.15` — **set to `0.08` in Railway (2026-06-11)** |
+| `COMPLAINT_RATE_PAUSE_THRESHOLD` | No | Default `0.005` — **set to `0.001` in Railway (2026-06-11)** |
 | `AUDIT_LOG_RETENTION_DAYS` | No | Default `180` |
 | `CAMPAIGN_EMAIL_RETENTION_DAYS` | No | Default `90` |
 
