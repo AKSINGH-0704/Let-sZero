@@ -580,7 +580,7 @@ async function diagnoseSMTPPath() {
   const worker = startWorker();
 
   if (!process.env.SNS_TOPIC_ARN) {
-    console.warn("[STARTUP] SNS_TOPIC_ARN not set — TopicArn validation disabled. Set this env var to prevent cross-topic SNS injection.");
+    console.error("[STARTUP] SNS_TOPIC_ARN not set — SNS webhook will reject all messages until this is configured. Set this env var to enable bounce/complaint processing.");
   }
 
   // SMTP path diagnostic — temporary, runs once at startup.

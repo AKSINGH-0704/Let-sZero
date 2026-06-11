@@ -720,8 +720,14 @@ export async function registerRoutes(httpServer, app) {
     }
 
     // Reject messages from unexpected topics — prevents cross-account SNS injection.
+    // Fail-closed: if SNS_TOPIC_ARN is unset, reject all messages rather than
+    // accepting them — an unconfigured ARN is not "trust everything", it is "broken".
     const expectedTopicArn = process.env.SNS_TOPIC_ARN;
-    if (expectedTopicArn && envelope.TopicArn && envelope.TopicArn !== expectedTopicArn) {
+    if (!expectedTopicArn) {
+      console.error("[SNS] SNS_TOPIC_ARN not configured — rejecting to prevent cross-topic injection");
+      return res.status(503).send("Not configured");
+    }
+    if (envelope.TopicArn !== expectedTopicArn) {
       console.warn("[SNS] Rejected message from unexpected TopicArn:", envelope.TopicArn);
       return res.status(403).send("Forbidden");
     }
