@@ -33,7 +33,7 @@ Only **V** is treated as proven.
 | Redis durability (persistence config) | **V** | RDB: `save 60 1` (snapshot every 60s after ≥1 write). AOF: disabled. Eviction: `noeviction`. Max memory: unlimited. Up to 60s data loss on crash between snapshots; PENDING watchdog closes this gap. |
 | Environment variables (all launch-critical) | **V** | Block 1B: SES vars present. DNS: VERIFIED. TCP port 2587: VERIFIED. SMTP AUTH: VERIFIED. `/api/health` → `smtp: "verified"`. |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
-| SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
+| SES Configuration Set exists and matches env var | **I** | `SES_CONFIGURATION_SET` env var present in Railway; AWS event destination not yet verified — confirmed by T-2 (first bounce event received) |
 | SNS subscription confirmed | **V** | `repmail_events` topic; HTTPS sub to `https://www.letszero.in/api/webhooks/ses`; `[SNS] Subscription confirmed — HTTP 200` in Railway logs (2026-06-11) |
 
 **Milestone status: I/V mixed** — 2 of 6 sub-items Verified

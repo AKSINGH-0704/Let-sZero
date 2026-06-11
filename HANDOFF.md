@@ -83,6 +83,10 @@ All gaps from the AI & production audit are resolved. The remaining items are fr
 
 Fail-open `&&`-shortcircuit replaced with two explicit guards: `if (!expectedTopicArn) → 503` (fail-closed) then `if (TopicArn !== expectedTopicArn) → 403`. Startup check elevated from `console.warn` to `console.error`. 6/6 verification cases pass.
 
+**~~SNS production configuration~~** *(VERIFIED IN PRODUCTION — 2026-06-11)*
+
+SNS topic `repmail_events` confirmed existing. `SNS_TOPIC_ARN` added to Railway. HTTPS subscription `https://www.letszero.in/api/webhooks/ses` created and auto-confirmed. Railway logs: `[SNS] Subscription confirmed — HTTP 200`. SES → SNS → RepMail pipeline connected and live. SES Configuration Set event destination remains to be verified via first T-2 bounce event.
+
 **1. O-2 — Invite token TTL verification** *(SECURITY)*
 
 Invite tokens may not have a TTL. Old or forgotten invite links could be valid indefinitely.

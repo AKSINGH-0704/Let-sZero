@@ -273,6 +273,34 @@ Valid placeholders (`{{name}}`, `{{company}}`, `{{sender_name}}`, etc.) remain i
 
 ---
 
+## Audit 008 — SNS Production Pipeline Verification
+
+**Date:** 2026-06-11
+**Scope:** End-to-end SES → SNS → RepMail event pipeline
+**Type:** Production verification (not code review)
+
+### Evidence collected
+
+| Item | Status | Evidence |
+|---|---|---|
+| SNS topic exists | VERIFIED | `repmail_events` topic found in AWS Console (same region as SES) |
+| `SNS_TOPIC_ARN` configured | VERIFIED | Added to Railway; deploy successful |
+| HTTPS subscription created | VERIFIED | `https://www.letszero.in/api/webhooks/ses` subscribed to `repmail_events` |
+| Subscription auto-confirmed | VERIFIED | Railway logs: `POST /api/webhooks/ses 200` + `[SNS] Subscription confirmed — HTTP 200` |
+| Signature verification passed | VERIFIED | Auto-confirm succeeded → `verifySnsMessage` and TopicArn guard both passed |
+| I-5 fail-closed guard working | VERIFIED | Subscription confirmation was accepted, confirming `SNS_TOPIC_ARN` is set and matched |
+
+### What this proves
+
+The full handshake from AWS SNS to the application succeeded. The I-5 two-guard pattern (`!expectedTopicArn → 503`, `TopicArn !== expected → 403`) is live in production and correctly accepted the legitimate subscription confirmation from the configured topic.
+
+### What remains unverified
+
+- SES Configuration Set event destination: not yet confirmed in AWS Console. Will be verified by T-2 (first bounce event). If T-2 produces no SNS event, the event destination is misconfigured.
+- Actual Bounce/Complaint/Open/Click event processing: verified by T-2 and T-3.
+
+---
+
 ## Audit 007 — I-5 SNS_TOPIC_ARN Fail-Closed Enforcement
 
 **Date:** 2026-06-11
