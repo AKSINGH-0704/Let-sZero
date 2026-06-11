@@ -169,17 +169,30 @@ export async function executeCampaign(campaignId, userId) {
     return;
   }
 
-  const canStart = await storage.canStartCampaign(userId, campaign.totalEmails);
-  if (!canStart.allowed) {
-    await storage.updateCampaign(campaignId, { status: "FAILED" });
-    await storage.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
-      targetType: "campaign",
-      targetId: campaignId,
-      details: canStart
-    });
-    throw new Error(canStart.reason);
+  // Detect retry scenario — mirrors processCampaign in worker.js.
+  // Status-based detection is unreliable if startup recovery has already written FAILED;
+  // sent-email existence is the authoritative signal.
+  // PAUSED is included: a mid-loop pause may have sent some emails already —
+  // treating it as a retry ensures those contacts are skipped and not re-sent.
+  const hasAnySentEmails = await storage.hasAnySentEmails(campaignId);
+  const isRetry = campaign.status === "RUNNING" ||
+    ((campaign.status === "PAUSED" || campaign.status === "FAILED") && hasAnySentEmails);
+
+  // Credit check skipped on retry — credits were partially consumed in the previous attempt.
+  // Per-contact deductCreditAtomic handles enforcement atomically during the loop.
+  if (!isRetry) {
+    const canStart = await storage.canStartCampaign(userId, campaign.totalEmails);
+    if (!canStart.allowed) {
+      await storage.updateCampaign(campaignId, { status: "FAILED" });
+      await storage.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
+        targetType: "campaign",
+        targetId: campaignId,
+        details: canStart
+      });
+      throw new Error(canStart.reason);
+    }
   }
 
   await storage.updateCampaign(campaignId, { status: "RUNNING", startedAt: new Date() });
@@ -319,6 +332,37 @@ export async function executeCampaign(campaignId, userId) {
 
     const contactId = contactIds[i];
     const contact = contactMap.get(contactId) || null;
+
+    // On retry, check if this contact was already processed — prevents duplicate sends
+    // on crash-restart. Mirrors the identical block in processCampaign (worker.js).
+    if (isRetry && contact) {
+      const existing = await storage.getCampaignEmailByContact(campaignId, contactId);
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.SENT) {
+        sentCount++;
+        continue;
+      }
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED) {
+        skippedCount++;
+        continue;
+      }
+      // BOUNCED and COMPLAINED are set by the SNS handler after a confirmed delivery.
+      // They must never be re-sent to, even on retry — the address is permanently unsafe.
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.BOUNCED) {
+        skippedCount++;
+        continue;
+      }
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.COMPLAINED) {
+        skippedCount++;
+        continue;
+      }
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.FAILED) {
+        const isPermanent = existing.failureReason && [
+          "hard_bounce", "invalid_recipient", "complaint", "suppressed",
+        ].includes(existing.failureReason);
+        if (isPermanent) { failedCount++; continue; }
+      }
+      // PENDING or transient FAILED: fall through and re-process
+    }
 
     // Create PENDING audit record before any send attempt
     const campaignEmailRecord = await storage.createCampaignEmail({
