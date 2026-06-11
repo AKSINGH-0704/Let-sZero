@@ -34,7 +34,7 @@ Only **V** is treated as proven.
 | Environment variables (all launch-critical) | **V** | Block 1B: SES vars present. DNS: VERIFIED. TCP port 2587: VERIFIED. SMTP AUTH: VERIFIED. `/api/health` → `smtp: "verified"`. |
 | Schema completeness (hardening columns) | **I** | `drizzle-kit push` used; column presence not queried |
 | SES Configuration Set exists and matches env var | **I** | Env var referenced in email.js; AWS not checked |
-| SNS subscription confirmed | **I** | Auto-confirm code exists; subscription status not checked |
+| SNS subscription confirmed | **V** | `repmail_events` topic; HTTPS sub to `https://www.letszero.in/api/webhooks/ses`; `[SNS] Subscription confirmed — HTTP 200` in Railway logs (2026-06-11) |
 
 **Milestone status: I/V mixed** — 2 of 6 sub-items Verified
 
@@ -269,7 +269,7 @@ Infrastructure is Verified only for Redis connectivity and worker liveness.
 
 | # | Test | Status | Prerequisite |
 |---|---|---|---|
-| T-1 | SES send — email physically sent, `ses_message_id` stored, campaign `COMPLETED` | Pending | Credits ≥ 1, verified SES identity |
+| T-1 | SES send — email physically sent, `ses_message_id` stored, campaign `COMPLETED` | **In progress** | Credits ≥ 1, verified SES identity |
 | T-2 | SNS bounce — `bounce@simulator.amazonses.com` creates suppression, `bounced_emails` incremented | Pending | T-1, SNS subscription confirmed |
 | T-3 | SNS complaint — `complaint@simulator.amazonses.com` creates suppression, `complained_emails` incremented | Pending | T-1, SNS subscription confirmed |
 | T-4 | Unsubscribe — click link from real email, suppression row created, success page rendered | Pending | T-1 (real email received) |
@@ -291,3 +291,4 @@ Evidence is appended here as each item moves to V.
 | 2026-06-07 | Health endpoint | `/api/health` → `status: "ok"` | PASS |
 | 2026-06-07 | Redis durability | `save 60 1` / `appendonly no` / `maxmemory-policy noeviction` / `maxmemory 0` | PASS |
 | 2026-06-07 | SMTP configuration | DNS OK, TCP port 2587 open, SMTP AUTH accepted, `/api/health` → `smtp: "verified"` | PASS |
+| 2026-06-11 | SNS subscription confirmed | SNS topic `repmail_events` exists; `SNS_TOPIC_ARN` set in Railway; HTTPS subscription to `https://www.letszero.in/api/webhooks/ses` created; Railway logs: `POST /api/webhooks/ses 200` + `[SNS] Subscription confirmed — HTTP 200` | PASS |
