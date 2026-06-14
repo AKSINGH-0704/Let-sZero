@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
-**Last updated:** 2026-06-11
-**Current commit:** bf17c19
+**Last updated:** 2026-06-14
+**Current commit:** 278a9a7
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -300,3 +300,20 @@ Evidence is appended here as each item moves to V.
 | 2026-06-07 | Redis durability | `save 60 1` / `appendonly no` / `maxmemory-policy noeviction` / `maxmemory 0` | PASS |
 | 2026-06-07 | SMTP configuration | DNS OK, TCP port 2587 open, SMTP AUTH accepted, `/api/health` → `smtp: "verified"` | PASS |
 | 2026-06-11 | SNS subscription confirmed | SNS topic `repmail_events` exists; `SNS_TOPIC_ARN` set in Railway; HTTPS subscription to `https://www.letszero.in/api/webhooks/ses` created; Railway logs: `POST /api/webhooks/ses 200` + `[SNS] Subscription confirmed — HTTP 200` | PASS |
+
+---
+
+## 12 · Free Plan Architecture (BLOCKED — pending T-1)
+
+Product decision: trial credits (5, one-time) are replaced by Free Plan (500 credits/month, renewable).
+Architecture review in progress. Implementation blocked until T-1 through T-5 production verification completes.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Architecture review complete | **D** | See Audit 011 in AUDIT_TRAIL.md |
+| plan-field bug claim investigated | **D** | REJECTED — `upgradePlanIfHigher` called on both webhook and verify paths (see Audit 011) |
+| Schema change decision | **D** | Architecture under review — see Audit 011 |
+| Migration plan | **D** | Pending architecture finalization |
+| Implementation | **blocked** | Blocked on T-1 production verification |
+
+**Milestone status: D** — architecture under review, no code written

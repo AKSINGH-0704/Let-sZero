@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `f434b21` (2026-06-11)  
+**Verified against:** commit `278a9a7` (2026-06-14)  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -73,6 +73,8 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ## Current Priorities (next implementation sprint)
 
+**Highest priority: production verification (T-1 through T-8). Free Plan architecture is BLOCKED on T-1 completing.**
+
 All gaps from the AI & production audit are resolved. The remaining items are from the final production-readiness audit (2026-06-10/11). Ordered by risk.
 
 **~~1. I-2 — validateTemplate placeholder hard-block~~** *(RESOLVED — commit 306b391)*
@@ -118,6 +120,16 @@ Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read
 | B-PL-2: loginLimiter proxy bypass | trust proxy = 1 | a279203 |
 | FIN-1: completePayment double-credit | .returning() gates credit allocation | ecb1331 |
 | FIN-2: allocateCredits over-allocation | atomic balance WHERE clause | ecb1331 |
+
+---
+
+## Pending Architecture Decisions
+
+Decisions under active design review. Do not implement until architecture is finalized.
+
+| Decision | Status | Notes |
+|:---------|:-------|:------|
+| Free Plan (monthly credit refresh) | ARCHITECTURE REVIEW IN PROGRESS | Trial credits → 500 credits/month. Blocked on T-1 production verification completing first. See Audit 011 in AUDIT_TRAIL.md. |
 
 ---
 

@@ -411,3 +411,117 @@ The startup check at index.js:582 emitted `console.warn` — visible but not err
 
 ### Commit
 `[I-5] SNS_TOPIC_ARN: fail-closed when env var unset` (f434b21)
+
+---
+
+## Audit 011 — Free Plan Architecture Review & Challenge
+
+**Date:** 2026-06-14
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Product strategy change (trial credits → Free Plan 500 credits/month); full architecture validation and challenge of proposed design
+**Trigger:** Product decision to replace one-time 5-credit trial with a renewable 500-credit/month Free Plan
+**Method:** Full code trace of `completePayment`, `upgradePlanIfHigher`, `razorpayWebhook.js`, `fulfillPayment.js`, `storage.js deductCreditAtomic`, and all cron infrastructure in `index.js`. Proposal challenged against correctness, simplicity, and operational risk criteria.
+
+### Bug Claim Rejection: plan-field not updated after payment
+
+**The proposed architecture review (pre-audit) claimed that `completePayment` does not update the `plan` field and that this is a production bug.**
+
+**This claim is FALSE.** Code trace evidence:
+
+| File | Line | Evidence |
+|---|---|---|
+| `server/routes.js` | ~17 | `import { upgradePlanIfHigher } from "./fulfillPayment.js"` |
+| `server/routes.js` | ~2382 | `const user = await upgradePlanIfHigher(payment.userId, payment.planName)` called immediately after `storage.completePayment()` on the `/api/payments/razorpay/verify` route |
+| `server/razorpayWebhook.js` | 70 | `await upgradePlanIfHigher(repPayment.userId, repPayment.planName)` called immediately after `storage.completePayment()` on the webhook path |
+| `server/fulfillPayment.js` | 19–28 | `upgradePlanIfHigher` upgrades `plan` field and cascades to children and grandchildren if new plan rank > current plan rank |
+
+Both the frontend-verify path and the webhook path call `upgradePlanIfHigher` after `completePayment`. The plan field IS updated. No bug exists. The previous architectural review introduced a false finding.
+
+**Impact:** No code change required for the plan field.
+
+### Architecture Proposal — Challenged and Revised
+
+#### Claim challenged: separate free credit pool is required
+
+**Original claim:** The cumulative ledger model (`creditsReceived - creditsAllocated - creditsUsed`) cannot support monthly expiry, therefore a separate pool with new columns (`free_credits_granted`, `free_credits_used`, `free_credits_reset_at`) is required.
+
+**Challenge:** This claim is architecturally correct. The paid credit counters are monotonically non-decreasing by design (required for FIN-1/FIN-2 atomicity guarantees). Adding 500 to `creditsReceived` monthly and subtracting unused credits at month-end would require decrementing `creditsReceived` — which breaks the ledger invariant that all three allocation functions depend on. The separate pool conclusion stands.
+
+**However, the naming and complexity were challenged:**
+
+The proposed `free_credits_granted` column is redundant for a fixed-amount free plan. 500 is a constant (or config-driven). Storing it per-user adds a mutation surface and creates a class of bugs where users have `free_credits_granted = 0` due to missed backfill. Simpler: derive grant amount from `plan` at refresh time rather than storing it per-user.
+
+**Revised schema: two columns instead of three:**
+- `free_credits_used` INTEGER NOT NULL DEFAULT 0
+- `free_credits_reset_at` TIMESTAMP NULL
+
+Grant amount is derived from `FREE_PLAN_MONTHLY_CREDITS` constant (or env var). No per-user grant storage needed. The refresh operation sets `free_credits_used = 0` and `free_credits_reset_at = NOW()`.
+
+#### Claim challenged: daily sweep cron is necessary
+
+**Original claim:** A daily sweep is required for inactive users whose balance would be stale.
+
+**Challenge:** For a free plan, an inactive user's "stale balance" has zero operational impact. If a user hasn't logged in since January and returns in March, the lazy refresh fires on their first request. They receive 500 credits for March — the correct current-period amount. A daily sweep adds a background job, a `running` flag guard, a new log line, and a failure mode (job crashes silently) for zero user-visible benefit.
+
+**Decision: daily sweep is rejected.** Lazy refresh only. The lazy check is sufficient because:
+1. Free credits only matter when a user takes an action (login, send, AI generation).
+2. If the user takes no action, the balance is irrelevant.
+3. Admins viewing user lists see the stored value — a staleness note in the UI is sufficient.
+
+If admin-facing balance accuracy becomes a requirement, add the sweep then. Do not add it preemptively.
+
+#### Claim challenged: free credits should be consumed first
+
+**Original claim:** Free credits should be consumed before paid credits ("they expire, so consume them first").
+
+**Challenge accepted.** This is the correct deduction order from a user-value perspective and consistent with industry practice (e.g., trial credits deplete before purchased credits in most SaaS billing systems). However it adds a branch to the hot path of `deductCreditAtomic`. Implementation must be careful: a user with both free and paid credits who runs a campaign partially exhausting their free balance mid-campaign needs consistent behavior. The free pool must be checked per-email, not pre-campaign. The existing two-transaction pattern in `deductCreditAtomic` already handles this correctly — free pool check is the first transaction, paid pool is the fallback.
+
+#### Concurrency analysis — revised
+
+The lazy refresh race (two concurrent requests both see expired `free_credits_reset_at`) is handled by a WHERE clause guard:
+
+```sql
+UPDATE users SET free_credits_used = 0, free_credits_reset_at = NOW()
+WHERE id = $userId
+  AND DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01') AT TIME ZONE 'UTC')
+    < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')
+```
+
+Under PostgreSQL READ COMMITTED: two concurrent callers both see expired reset_at. Both issue the UPDATE. One wins the row lock and sets `free_credits_reset_at = NOW()`. The second caller re-evaluates the WHERE after the lock releases, sees this month's timestamp, and matches 0 rows — becoming a no-op. The credit deduction in the second transaction of `deductCreditAtomic` then sees the refreshed pool and proceeds normally. Idempotent by construction.
+
+No application-level locks, no Redis coordination, no flag needed.
+
+#### Multi-instance analysis
+
+If Railway ever runs multiple Node.js instances (currently single instance), the WHERE clause guard provides correctness without additional coordination. Each instance independently issues the UPDATE; at most one wins per user per month. This is the same guarantee provided by the existing FIN-2 `allocateCredits` pattern.
+
+#### Month-boundary timezone analysis
+
+All date math must be `AT TIME ZONE 'UTC'`. PostgreSQL `timestamp` columns store UTC. `DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')` is safe. `DATE_TRUNC('month', NOW())` is session-timezone-dependent and must not be used. This must be enforced by code review.
+
+### Final Architecture Decision
+
+| Decision | Chosen approach | Rejected alternative |
+|---|---|---|
+| Pool model | Separate free credit pool (2 new columns) | Reusing `creditsReceived` (breaks monotonic invariant) |
+| Schema | `free_credits_used` + `free_credits_reset_at` | `free_credits_granted` per-user (redundant) |
+| Refresh mechanism | Lazy inline in `deductCreditAtomic` + `canStartCampaign` | Daily sweep cron (unnecessary complexity) |
+| Deduction order | Free credits first, paid credits second | Paid first (wastes user's paid credits when free expire) |
+| Concurrency | WHERE-clause guard on reset timestamp | Application locks or Redis coordination |
+| Grant amount source | Constant/env var derived from plan | Per-user stored column |
+| Sweep cron | Rejected | Would add background job for zero operational benefit at current scale |
+
+### Implementation Sequencing
+
+**BLOCKED** on T-1 through T-5 production verification completing first.
+
+After T-1 through T-5:
+1. Add `free_credits_used` and `free_credits_reset_at` to schema (additive, safe)
+2. Backfill existing free-plan users
+3. Update `deductCreditAtomic` with lazy refresh + free pool deduction
+4. Update `canStartCampaign` to include free pool in total
+5. Update `completePayment` / `upgradePlanIfHigher` to zero free pool on plan upgrade
+6. Soft-deprecate `isTrialUser`, `trialCredits`, `trialCreditsUsed` (keep columns, stop using)
+
+### Status
+`D` — Architecture reviewed, challenged, and finalized in design. No code written. Blocked on production verification milestone.
