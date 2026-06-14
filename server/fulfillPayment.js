@@ -17,7 +17,9 @@ export async function upgradePlanIfHigher(userId, planName) {
   const currentPlan = user.plan || "free";
 
   if ((PLAN_RANK[newPlan] ?? 0) > (PLAN_RANK[currentPlan] ?? 0)) {
-    await storage.updateUser(userId, { plan: newPlan });
+    // Zero free pool when leaving free plan — free credits don't carry over to paid.
+    const clearFreePool = currentPlan === "free" ? { freeCreditsUsed: 0, freeCreditsResetAt: null } : {};
+    await storage.updateUser(userId, { plan: newPlan, ...clearFreePool });
     const children = await storage.getChildUsers(userId);
     for (const child of children) {
       await storage.updateUser(child.id, { plan: newPlan });

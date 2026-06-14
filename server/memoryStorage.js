@@ -13,7 +13,7 @@ import bcrypt from "bcryptjs";
 import {
   USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
-  INACTIVITY_THRESHOLDS
+  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS
 } from "../shared/schema.js";
 
 function generateToken() {
@@ -79,7 +79,13 @@ export const memoryStorage = {
       creditsUsed: 0,
       trialCredits: 5,
       trialCreditsUsed: 0,
-      isTrialUser: userData.isTrialUser !== false,
+      freeCreditsUsed: 0,
+      freeCreditsResetAt: null,
+      // When FREE_PLAN_ENABLED, new users enter as free plan users — not legacy trial users.
+      // Respect explicit isTrialUser=false from callers (e.g. initializeRootAdmin).
+      isTrialUser: "isTrialUser" in userData
+        ? Boolean(userData.isTrialUser)
+        : process.env.FREE_PLAN_ENABLED !== "true",
       mustResetPassword: userData.mustResetPassword !== false,
       isActive: true,
       plan: userData.plan || "free",
@@ -189,6 +195,8 @@ export const memoryStorage = {
     if (updates.creditsReceived !== undefined) user.creditsReceived = updates.creditsReceived;
     if (updates.creditsAllocated !== undefined) user.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) user.creditsUsed = updates.creditsUsed;
+    if (updates.freeCreditsUsed !== undefined) user.freeCreditsUsed = updates.freeCreditsUsed;
+    if (updates.freeCreditsResetAt !== undefined) user.freeCreditsResetAt = updates.freeCreditsResetAt;
     if (updates.plan) user.plan = updates.plan;
     if (updates.sendPaused !== undefined) user.sendPaused = updates.sendPaused;
     if (updates.sendPausedReason !== undefined) user.sendPausedReason = updates.sendPausedReason;
@@ -243,9 +251,12 @@ export const memoryStorage = {
   sanitizeUser(user) {
     if (!user) return null;
     const { passwordHash, ...sanitized } = user;
-    sanitized.creditsRemaining = (sanitized.creditsReceived || 0) - 
-                                  (sanitized.creditsAllocated || 0) - 
+    sanitized.creditsRemaining = (sanitized.creditsReceived || 0) -
+                                  (sanitized.creditsAllocated || 0) -
                                   (sanitized.creditsUsed || 0);
+    const monthlyGrant = MONTHLY_CREDITS[sanitized.plan] ?? 0;
+    sanitized.freeCreditsRemaining = Math.max(0, monthlyGrant - (sanitized.freeCreditsUsed || 0));
+    sanitized.monthlyFreeCredits = monthlyGrant;
     return sanitized;
   },
 
@@ -447,13 +458,43 @@ export const memoryStorage = {
     const user = store.users.get(userId);
     if (!user) throw new Error("User not found");
 
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
+    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+
     // Compute balances at moment of write (single-threaded, no TOCTOU in memory)
     const paidRemaining = Math.max(0, (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0));
-    const trialRemaining = user.isTrialUser
+
+    // Lazy refresh: reset free pool if we've crossed a month boundary
+    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+      const resetAt = user.freeCreditsResetAt;
+      const isStale = !resetAt || (
+        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
+        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
+      );
+      if (isStale) {
+        user.freeCreditsUsed = 0;
+        user.freeCreditsResetAt = new Date();
+      }
+    }
+
+    const freeRemaining = (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0)
+      ? Math.max(0, monthlyGrant - (user.freeCreditsUsed || 0))
+      : 0;
+    const trialRemaining = (!freePlanEnabled && user.isTrialUser)
       ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
       : 0;
 
-    if (paidRemaining >= 1) {
+    if (freePlanEnabled && !user.isTrialUser && freeRemaining >= 1) {
+      const balanceBefore = user.freeCreditsUsed || 0;
+      user.freeCreditsUsed = balanceBefore + 1;
+      user.updatedAt = new Date();
+      const txId = generateUUID();
+      store.creditTransactions.set(txId, {
+        id: txId, userId, type: "free_usage", amount: -1,
+        balanceBefore, balanceAfter: balanceBefore + 1,
+        campaignId, description, createdAt: new Date()
+      });
+    } else if (paidRemaining >= 1) {
       const balanceBefore = user.creditsUsed;
       user.creditsUsed += 1;
       user.updatedAt = new Date();
@@ -500,23 +541,51 @@ export const memoryStorage = {
 
   async canStartCampaign(userId, emailCount) {
     const user = await this.getUserById(userId);
-    if (!user) return { allowed: false, reason: "User not found" };
+    if (!user) return { allowed: false, reason: "User not found", blockReason: "user_not_found" };
 
-    const trialRemaining = user.isTrialUser
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
+    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+    const paidRemaining = user.creditsRemaining || 0;
+
+    let freeRemaining = 0;
+    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+      // Treat stale pool as reset for availability check (same as getTotalCreditsAvailable)
+      const resetAt = user.freeCreditsResetAt;
+      const isStale = !resetAt || (
+        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
+        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
+      );
+      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
+    }
+
+    const trialRemaining = (!freePlanEnabled && user.isTrialUser)
       ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
       : 0;
-    const totalAvailable = (user.creditsRemaining || 0) + trialRemaining;
+
+    const totalAvailable = paidRemaining + freeRemaining + trialRemaining;
 
     if (totalAvailable < emailCount) {
+      let blockReason;
+      if (freePlanEnabled && !user.isTrialUser && freeRemaining === 0 && paidRemaining === 0) {
+        blockReason = monthlyGrant > 0 ? "free_exhausted" : "paid_exhausted";
+      } else if (paidRemaining === 0 && freeRemaining === 0) {
+        blockReason = "both_exhausted";
+      } else {
+        blockReason = "insufficient";
+      }
       return {
         allowed: false,
         reason: `Insufficient credits. Need ${emailCount}, have ${totalAvailable}`,
+        blockReason,
         creditsNeeded: emailCount,
-        creditsAvailable: totalAvailable
+        creditsAvailable: totalAvailable,
+        freeRemaining,
+        paidRemaining,
       };
     }
 
-    return { allowed: true, creditsAvailable: totalAvailable };
+    return { allowed: true, creditsAvailable: totalAvailable, freeRemaining, paidRemaining };
   },
 
   async getCreditTransactions(userId, limit = 50) {
@@ -1223,20 +1292,43 @@ export const memoryStorage = {
 
   async getTotalCreditsAvailable(userId) {
     const user = await this.getUserById(userId);
-    if (!user) return { paid: 0, trial: 0, total: 0 };
+    if (!user) return { paid: 0, free: 0, trial: 0, total: 0, isTrialUser: false, isFreePlan: false };
 
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
+    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
     const paidRemaining = Math.max(0,
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
-    const trialRemaining = user.isTrialUser
+
+    let freeRemaining = 0;
+    let isFreePlan = false;
+    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+      isFreePlan = true;
+      const resetAt = user.freeCreditsResetAt;
+      const isStale = !resetAt || (
+        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
+        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
+      );
+      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
+    }
+
+    const trialRemaining = (!freePlanEnabled && user.isTrialUser)
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
+    const now = new Date();
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
     return {
       paid: paidRemaining,
+      free: freeRemaining,
       trial: trialRemaining,
-      total: paidRemaining + trialRemaining,
-      isTrialUser: user.isTrialUser
+      total: paidRemaining + freeRemaining + trialRemaining,
+      isTrialUser: user.isTrialUser,
+      isFreePlan,
+      freeResetDate: isFreePlan ? nextMonth.toISOString() : null,
+      monthlyFreeCredits: isFreePlan ? monthlyGrant : 0,
     };
   },
 

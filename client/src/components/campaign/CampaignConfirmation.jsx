@@ -61,6 +61,10 @@ export default function CampaignConfirmation() {
     user?.creditsUsed || 0
   );
   const hasEnoughCredits = creditsAvailable >= creditsRequired;
+  const isFreePlanExhausted = creditsInfo?.isFreePlan && (creditsInfo?.free ?? 0) === 0;
+  const daysUntilReset = creditsInfo?.freeResetDate
+    ? Math.max(1, Math.ceil((new Date(creditsInfo.freeResetDate) - new Date()) / (1000 * 60 * 60 * 24)))
+    : 0;
   const estimatedTime = Math.ceil(creditsRequired / 100);
 
   // Preview uses real contact data — no synthetic fallbacks.
@@ -318,13 +322,31 @@ export default function CampaignConfirmation() {
                 <Alert variant="destructive" className="mt-4">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    You need {formatNumber(creditsRequired - creditsAvailable)} more credits to send this campaign.
-                    <a
-                      href="/app/payments"
-                      className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
-                    >
-                      Buy more credits <ArrowRight className="w-3 h-3" />
-                    </a>
+                    {isFreePlanExhausted ? (
+                      <>
+                        Your {formatNumber(creditsInfo.monthlyFreeCredits)} free credits for this month are used up.
+                        <span className="flex items-center gap-1 mt-1 text-sm">
+                          <Calendar className="w-3 h-3" />
+                          Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}
+                        </span>
+                        <a
+                          href="/app/payments"
+                          className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
+                        >
+                          Purchase credits to send now <ArrowRight className="w-3 h-3" />
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        You need {formatNumber(creditsRequired - creditsAvailable)} more credits to send this campaign.
+                        <a
+                          href="/app/payments"
+                          className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
+                        >
+                          Buy more credits <ArrowRight className="w-3 h-3" />
+                        </a>
+                      </>
+                    )}
                   </AlertDescription>
                 </Alert>
               )}

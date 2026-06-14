@@ -316,9 +316,13 @@ export default function Dashboard() {
             </div>
             <div className="flex flex-wrap items-center gap-4 sm:gap-6">
               <div>
-                <p className="text-slate-200 text-sm mb-1">Used This Month</p>
+                <p className="text-slate-200 text-sm mb-1">
+                  {creditsInfo?.isFreePlan ? "Free Used" : "Used (Lifetime)"}
+                </p>
                 <p className="text-lg sm:text-xl font-medium text-white">
-                  {statsLoading ? '...' : formatNumber(user?.creditsUsed || 0)}
+                  {statsLoading ? '...' : creditsInfo?.isFreePlan
+                    ? `${formatNumber(user?.freeCreditsUsed || 0)} / ${formatNumber(creditsInfo?.monthlyFreeCredits || 500)}`
+                    : formatNumber(user?.creditsUsed || 0)}
                 </p>
               </div>
               <div className="hidden sm:block h-8 w-px bg-white/20"></div>
@@ -408,7 +412,7 @@ export default function Dashboard() {
                     { icon: Send, label: 'Used', value: user.creditsUsed || 0, color: 'orange', desc: 'Consumed by campaigns' },
                     { icon: Zap, label: 'Available', value: creditsRemaining, color: 'emerald', desc: 'Ready to use', highlight: true },
                   ].map((item, idx) => (
-                    <motion.div 
+                    <motion.div
                       key={item.label}
                       className={`p-4 rounded-lg ${item.highlight ? 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200 dark:border-emerald-800' : 'bg-muted/50'}`}
                       initial={{ opacity: 0, y: 10 }}
@@ -426,6 +430,31 @@ export default function Dashboard() {
                     </motion.div>
                   ))}
                 </div>
+                {creditsInfo?.isFreePlan && (
+                  <div className="mt-4 p-4 rounded-lg bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-cyan-600" />
+                        <span className="text-sm font-medium text-cyan-700 dark:text-cyan-400">Free Credits This Month</span>
+                      </div>
+                      <span className="text-sm font-bold text-cyan-700 dark:text-cyan-400">
+                        {formatNumber(creditsInfo.free ?? 0)} / {formatNumber(creditsInfo.monthlyFreeCredits || 500)}
+                      </span>
+                    </div>
+                    <div className="w-full bg-cyan-200 dark:bg-cyan-900 rounded-full h-2 mb-2">
+                      <div
+                        className="bg-cyan-500 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, ((creditsInfo.monthlyFreeCredits || 500) - (creditsInfo.free ?? 0)) / (creditsInfo.monthlyFreeCredits || 500) * 100)}%` }}
+                      />
+                    </div>
+                    {creditsInfo.freeResetDate && (
+                      <div className="flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-500">
+                        <Calendar className="w-3 h-3" />
+                        Resets {new Date(creditsInfo.freeResetDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
 

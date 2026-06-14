@@ -303,17 +303,34 @@ Evidence is appended here as each item moves to V.
 
 ---
 
-## 12 · Free Plan Architecture (BLOCKED — pending T-1)
+## 12 · Free Plan (IMPLEMENTED — pending production verification)
 
-Product decision: trial credits (5, one-time) are replaced by Free Plan (500 credits/month, renewable).
-Architecture review in progress. Implementation blocked until T-1 through T-5 production verification completes.
+Product decision: trial credits (5, one-time) replaced by Free Plan (500 credits/month, renewable).
 
 | Sub-item | Status | Evidence |
 |---|---|---|
-| Architecture review complete | **D** | See Audit 011 in AUDIT_TRAIL.md |
-| plan-field bug claim investigated | **D** | REJECTED — `upgradePlanIfHigher` called on both webhook and verify paths (see Audit 011) |
-| Schema change decision | **D** | Architecture under review — see Audit 011 |
-| Migration plan | **D** | Pending architecture finalization |
-| Implementation | **blocked** | Blocked on T-1 production verification |
+| Architecture review complete | **I** | Audit 011 — full challenge, two-column model, lazy refresh, no cron |
+| Schema additions | **I** | `free_credits_used`, `free_credits_reset_at` columns; `MONTHLY_CREDITS` map; new `AUDIT_ACTIONS` |
+| `deductCreditAtomic` (free → paid → trial) | **I** | storage.js:409 — lazy refresh + WHERE clause deduction |
+| `canStartCampaign` with `blockReason` | **I** | storage.js:550 — `"free_exhausted"` \| `"paid_exhausted"` \| `"both_exhausted"` \| `"insufficient"` |
+| `getTotalCreditsAvailable` new shape | **I** | storage.js — `{ paid, free, trial, total, isFreePlan, freeResetDate, monthlyFreeCredits }` |
+| `upgradePlanIfHigher` free pool zero-out | **I** | fulfillPayment.js — zeroes pool when upgrading from 'free' to paid |
+| `updateUser` free pool fields | **I** | storage.js — Bug 1 fix: `freeCreditsUsed` and `freeCreditsResetAt` in allowlist |
+| New user `isTrialUser` derivation | **I** | storage.js / memoryStorage.js — Bug 2 fix: env-derived, not DB default |
+| `acceptLimiter` on invite accept | **I** | routes.js — 10/15min per IP |
+| Pricing plans filter (trial removed) | **I** | routes.js — `plan.id !== "trial"` filter |
+| CampaignConfirmation free-exhausted UX | **I** | CampaignConfirmation.jsx — reset date + purchase CTA |
+| Dashboard free credit breakdown | **I** | Dashboard.jsx — progress bar, X/500, reset date |
+| memoryStorage.js interface mirror | **I** | All four methods updated to match storage.js |
+| Implementation verification audit | **I** | Audit 012 — 2 bugs found and fixed; all 10 sections reviewed |
 
-**Milestone status: D** — architecture under review, no code written
+**Deployment sequence (BLOCKED on T-1 through T-5 first):**
+1. `npm run db:push` — adds 2 columns (additive, safe)
+2. Deploy code
+3. Set `FREE_PLAN_ENABLED=true` in Railway
+4. Run backfill: `UPDATE users SET is_trial_user = false WHERE plan = 'free' AND is_active = true;`
+5. Verify: send campaign as free user, check `credit_transactions` for `type='free_usage'`
+
+**Rollback:** Set `FREE_PLAN_ENABLED=false` + `UPDATE users SET is_trial_user = true WHERE plan = 'free' AND is_active = true;`
+
+**Milestone status: I** — fully implemented, 2 bugs caught and fixed in verification, NOT yet runtime-verified

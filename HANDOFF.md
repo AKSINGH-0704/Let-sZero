@@ -123,13 +123,40 @@ Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read
 
 ---
 
-## Pending Architecture Decisions
+## Free Plan — Implemented, Pending Production Verification
 
-Decisions under active design review. Do not implement until architecture is finalized.
+| Item | Status |
+|:-----|:-------|
+| Architecture | Finalized — Audit 011 |
+| Implementation | Complete — Audit 012 (2 bugs found and fixed during verification) |
+| `db:push` | NOT YET RUN |
+| Feature flag | `FREE_PLAN_ENABLED` — NOT YET SET in Railway |
+| Backfill | NOT YET RUN |
+| Production verification | Blocked on T-1 through T-5 first |
 
-| Decision | Status | Notes |
-|:---------|:-------|:------|
-| Free Plan (monthly credit refresh) | ARCHITECTURE REVIEW IN PROGRESS | Trial credits → 500 credits/month. Blocked on T-1 production verification completing first. See Audit 011 in AUDIT_TRAIL.md. |
+**Deployment sequence (do not skip steps or reverse order):**
+1. Complete T-1 through T-5 production verification
+2. `npm run db:push` — adds `free_credits_used`, `free_credits_reset_at` columns (additive, safe)
+3. Deploy current branch
+4. Set `FREE_PLAN_ENABLED=true` in Railway env vars
+5. Run backfill SQL: `UPDATE users SET is_trial_user = false WHERE plan = 'free' AND is_active = true;`
+6. Verify: send one campaign as free plan user, confirm `credit_transactions` row with `type='free_usage'`
+
+**Rollback (instant, no redeploy):**
+- Set `FREE_PLAN_ENABLED=false`
+- `UPDATE users SET is_trial_user = true WHERE plan = 'free' AND is_active = true;`
+
+**Key architecture facts:**
+- Two new columns only: `free_credits_used` (INTEGER DEFAULT 0) + `free_credits_reset_at` (TIMESTAMP NULL)
+- Monthly grant derived at runtime from `MONTHLY_CREDITS[plan]` — not stored per-user
+- Lazy refresh: fires on first credit-touching request after month boundary (WHERE clause guard, idempotent)
+- Deduction order: free first, paid fallback, legacy trial last
+- `isTrialUser=false` → free plan path; `isTrialUser=true` → legacy trial (5 credits)
+- New users get `isTrialUser` derived from env, not DB default
+
+**Bug fixes applied during verification (Audit 012):**
+- `updateUser` now passes `freeCreditsUsed` and `freeCreditsResetAt` (Bug 1 — critical, silent drop)
+- `createUser` now derives `isTrialUser` from `FREE_PLAN_ENABLED` env var (Bug 2 — new users on wrong path)
 
 ---
 

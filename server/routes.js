@@ -61,6 +61,15 @@ const inviteLimiter = rateLimit({
   message: { message: "Too many invites sent. Please wait before sending more." },
 });
 
+// 10 invite acceptances per IP per 15 minutes — prevents brute-force token enumeration
+const acceptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts. Please wait before trying again." },
+});
+
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
                 req.cookies?.token ||
@@ -289,7 +298,7 @@ export async function executeCampaign(campaignId, userId) {
   let outOfCredits = false;
 
   const creditsBefore = await storage.getTotalCreditsAvailable(userId);
-  console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
+  console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_free=${creditsBefore.free ?? 0} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
 
   // Batch-load all contacts before the loop — 1 query instead of N per-contact lookups.
   // Per-contact suppression checks remain inside the loop (a concurrent campaign can add
@@ -640,7 +649,6 @@ export async function registerRoutes(httpServer, app) {
               email,
               role: "USER",
               plan: "free",
-              isTrialUser: true,
               creditsReceived: 0,
               mustResetPassword: false,
             });
@@ -1869,7 +1877,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // POST /api/invites/accept — public, create account and accept invite
-  app.post("/api/invites/accept", async (req, res) => {
+  app.post("/api/invites/accept", acceptLimiter, async (req, res) => {
     try {
       const { token, username, password } = req.body;
 
@@ -2201,7 +2209,9 @@ export async function registerRoutes(httpServer, app) {
   app.get("/api/pricing/plans", async (req, res) => {
     try {
       const exchangeRate = DEFAULT_EXCHANGE_RATE;
-      const plans = Object.values(PRICING_PLANS).map(plan => getPlanWithPrices(plan, exchangeRate));
+      const plans = Object.values(PRICING_PLANS)
+        .filter(plan => plan.id !== "trial")
+        .map(plan => getPlanWithPrices(plan, exchangeRate));
       res.json({
         plans,
         exchangeRate,

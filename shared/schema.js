@@ -34,6 +34,9 @@ export const SUPPRESSION_SOURCE = {
 
 export const AUDIT_ACTIONS = {
   USER_LOGIN: "USER_LOGIN",
+  FREE_CREDITS_GRANTED: "FREE_CREDITS_GRANTED",
+  FREE_CREDITS_USED: "FREE_CREDITS_USED",
+  FREE_LIMIT_REACHED: "FREE_LIMIT_REACHED",
   USER_LOGOUT: "USER_LOGOUT",
   USER_CREATED: "USER_CREATED",
   USER_UPDATED: "USER_UPDATED",
@@ -105,6 +108,15 @@ export const users = pgTable("users", {
   trialCredits: integer("trial_credits").notNull().default(5),
   trialCreditsUsed: integer("trial_credits_used").notNull().default(0),
   isTrialUser: boolean("is_trial_user").notNull().default(true),
+
+  // ── Free Plan monthly credits ─────────────────────────────────────────────
+  // Tracks usage within the current calendar month (UTC). Reset to 0 lazily
+  // on the first credit-touching request after a month boundary.
+  // freeCreditsResetAt = NULL means "never refreshed" — triggers first grant on
+  // next action. Grant amount is MONTHLY_CREDITS[plan] from schema.js constants,
+  // not stored per-user, so changing the constant takes effect on next refresh.
+  freeCreditsUsed: integer("free_credits_used").notNull().default(0),
+  freeCreditsResetAt: timestamp("free_credits_reset_at"),
   mustResetPassword: boolean("must_reset_password").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -497,7 +509,18 @@ export const TEAM_PRICING = {
   maxUsers: 15,
 };
 
-export const FREE_TRIAL_CREDITS    = 500;
+// Monthly credit grant per plan. Grant amount is derived from this map at runtime —
+// not stored per-user — so changing a value here takes effect on the next monthly refresh.
+// Plans with 0 never trigger the lazy refresh and show no free credit meter in the UI.
+export const MONTHLY_CREDITS = {
+  free:       500,
+  starter:    0,
+  growth:     0,
+  scale:      0,
+  enterprise: 0,
+};
+
+export const FREE_TRIAL_CREDITS    = MONTHLY_CREDITS.free; // backward-compat alias — do not remove
 export const CREDIT_VALIDITY_MONTHS = 6;
 export const MIN_CREDIT_PURCHASE   = 3000;
 
@@ -587,7 +610,7 @@ export const MAX_TEAM_MEMBERS = {
 };
 
 export const PLAN_LIMITS = {
-  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, canExportAudit: false, label: "Free Trial"  },
+  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, canExportAudit: false, label: "Free Plan"   },
   starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        maxTeamMembers: 1,        canSchedule: true,  canExportAudit: false, label: "Starter"     },
   growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       maxTeamMembers: 5,        canSchedule: true,  canExportAudit: false, label: "Growth"      },
   scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       maxTeamMembers: 10,       canSchedule: true,  canExportAudit: true,  label: "Scale"       },

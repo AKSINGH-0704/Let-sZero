@@ -17,7 +17,7 @@ import bcrypt from "bcryptjs";
 import {
   USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
-  INACTIVITY_THRESHOLDS
+  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS
 } from "../shared/schema.js";
 
 // Static imports - tree-shaking will handle unused code in prod
@@ -65,6 +65,12 @@ function buildMonthlyChart(campaignsList) {
 const dbStorage = {
   async createUser(userData) {
     const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
+    // When FREE_PLAN_ENABLED, new users are free plan users, not legacy trial users.
+    // Callers that pass isTrialUser=false explicitly (e.g. initializeRootAdmin) are respected.
+    // Callers that don't pass it (invite accept, etc.) get env-derived default.
+    const isTrialUser = "isTrialUser" in userData
+      ? Boolean(userData.isTrialUser)
+      : process.env.FREE_PLAN_ENABLED !== "true";
     const [user] = await db.insert(users).values({
       username: userData.username,
       email: userData.email,
@@ -74,6 +80,7 @@ const dbStorage = {
       creditsReceived: userData.creditsReceived || 0,
       creditsAllocated: 0,
       creditsUsed: 0,
+      isTrialUser,
       mustResetPassword: userData.mustResetPassword !== false,
       isActive: true,
       plan: userData.plan || "free"
@@ -148,6 +155,8 @@ const dbStorage = {
     if (updates.creditsReceived !== undefined) allowedUpdates.creditsReceived = updates.creditsReceived;
     if (updates.creditsAllocated !== undefined) allowedUpdates.creditsAllocated = updates.creditsAllocated;
     if (updates.creditsUsed !== undefined) allowedUpdates.creditsUsed = updates.creditsUsed;
+    if (updates.freeCreditsUsed !== undefined) allowedUpdates.freeCreditsUsed = updates.freeCreditsUsed;
+    if ("freeCreditsResetAt" in updates) allowedUpdates.freeCreditsResetAt = updates.freeCreditsResetAt; // allow null
     if (updates.plan) allowedUpdates.plan = updates.plan;
     if (updates.sendPaused !== undefined) allowedUpdates.sendPaused = updates.sendPaused;
     if (updates.sendPausedReason !== undefined) allowedUpdates.sendPausedReason = updates.sendPausedReason;
@@ -208,9 +217,12 @@ const dbStorage = {
   sanitizeUser(user) {
     if (!user) return null;
     const { passwordHash, ...sanitized } = user;
-    sanitized.creditsRemaining = (sanitized.creditsReceived || 0) - 
-                                  (sanitized.creditsAllocated || 0) - 
+    sanitized.creditsRemaining = (sanitized.creditsReceived || 0) -
+                                  (sanitized.creditsAllocated || 0) -
                                   (sanitized.creditsUsed || 0);
+    const monthlyGrant = MONTHLY_CREDITS[sanitized.plan] ?? 0;
+    sanitized.freeCreditsRemaining = Math.max(0, monthlyGrant - (sanitized.freeCreditsUsed || 0));
+    sanitized.monthlyFreeCredits = monthlyGrant;
     return sanitized;
   },
 
@@ -404,32 +416,100 @@ const dbStorage = {
   },
 
   async deductCreditAtomic(userId, campaignId, description = "Email sent") {
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
     let credited = false;
+    let creditSource = null; // "free" | "paid" | "trial"
 
-    // Paid credits — WHERE clause enforces balance check atomically with the write.
-    // If the row is not returned, credits were exhausted at write time (no TOCTOU gap).
-    await db.transaction(async (tx) => {
-      const [updated] = await tx.update(users)
-        .set({ creditsUsed: sql`credits_used + 1`, updatedAt: new Date() })
-        .where(and(
-          eq(users.id, userId),
-          sql`(credits_received - credits_allocated - credits_used) >= 1`
-        ))
-        .returning({ creditsUsed: users.creditsUsed });
+    // ── Free Plan path (FREE_PLAN_ENABLED=true, is_trial_user=false) ──────────
+    // Step A: lazy monthly refresh (idempotent WHERE-clause guard).
+    // Step B: deduct from free pool (balance WHERE clause — same pattern as FIN-2).
+    // Both steps run in a single transaction so a send and a refresh are atomic.
+    if (freePlanEnabled) {
+      await db.transaction(async (tx) => {
+        const user = await tx.select({
+          id: users.id, plan: users.plan,
+          isTrialUser: users.isTrialUser,
+          freeCreditsUsed: users.freeCreditsUsed,
+          freeCreditsResetAt: users.freeCreditsResetAt,
+        }).from(users).where(eq(users.id, userId)).then(r => r[0]);
 
-      if (updated) {
-        credited = true;
-        await tx.insert(creditTransactions).values({
-          userId, type: "usage", amount: -1,
-          balanceBefore: updated.creditsUsed - 1,
-          balanceAfter: updated.creditsUsed,
-          campaignId, description,
-        });
-      }
-    });
+        if (!user || user.isTrialUser) return; // fall through to legacy trial path
 
+        const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+        if (monthlyGrant === 0) return; // paid PAYG plan — no free credits
+
+        // Step A: refresh if stale (this month in UTC)
+        const refreshed = await tx.update(users)
+          .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
+          .where(and(
+            eq(users.id, userId),
+            sql`DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01'::timestamp) AT TIME ZONE 'UTC')
+                < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')`
+          ))
+          .returning({ id: users.id });
+
+        if (refreshed.length > 0) {
+          await tx.insert(creditTransactions).values({
+            userId, type: "free_monthly_grant", amount: monthlyGrant,
+            balanceBefore: 0, balanceAfter: monthlyGrant,
+            description: `Free Plan monthly grant (${monthlyGrant} credits)`,
+          });
+          await tx.insert(auditLogs).values({
+            userId, action: AUDIT_ACTIONS.FREE_CREDITS_GRANTED,
+            details: { credits: monthlyGrant, plan: user.plan },
+          });
+        }
+
+        // Step B: deduct one free credit (balance check in WHERE clause — atomic, no TOCTOU)
+        const usedAfterRefresh = refreshed.length > 0 ? 0 : (user.freeCreditsUsed || 0);
+        const [deducted] = await tx.update(users)
+          .set({ freeCreditsUsed: sql`free_credits_used + 1`, updatedAt: new Date() })
+          .where(and(
+            eq(users.id, userId),
+            sql`(${monthlyGrant} - free_credits_used) >= 1`
+          ))
+          .returning({ freeCreditsUsed: users.freeCreditsUsed });
+
+        if (deducted) {
+          credited = true;
+          creditSource = "free";
+          await tx.insert(creditTransactions).values({
+            userId, type: "free_usage", amount: -1,
+            balanceBefore: deducted.freeCreditsUsed - 1,
+            balanceAfter: deducted.freeCreditsUsed,
+            campaignId, description,
+          });
+        }
+      });
+    }
+
+    // ── Paid credits (FIN-2 proven pattern — unchanged) ───────────────────────
     if (!credited) {
-      // Paid credits exhausted — try trial credits
+      await db.transaction(async (tx) => {
+        const [updated] = await tx.update(users)
+          .set({ creditsUsed: sql`credits_used + 1`, updatedAt: new Date() })
+          .where(and(
+            eq(users.id, userId),
+            sql`(credits_received - credits_allocated - credits_used) >= 1`
+          ))
+          .returning({ creditsUsed: users.creditsUsed });
+
+        if (updated) {
+          credited = true;
+          creditSource = "paid";
+          await tx.insert(creditTransactions).values({
+            userId, type: "usage", amount: -1,
+            balanceBefore: updated.creditsUsed - 1,
+            balanceAfter: updated.creditsUsed,
+            campaignId, description,
+          });
+        }
+      });
+    }
+
+    // ── Legacy trial credits (backward compat — only when FREE_PLAN_ENABLED=false
+    //    or is_trial_user=true after partial backfill) ─────────────────────────
+    if (!credited) {
       await db.transaction(async (tx) => {
         const [updated] = await tx.update(users)
           .set({ trialCreditsUsed: sql`trial_credits_used + 1`, updatedAt: new Date() })
@@ -442,6 +522,7 @@ const dbStorage = {
 
         if (updated) {
           credited = true;
+          creditSource = "trial";
           await tx.insert(creditTransactions).values({
             userId, type: "trial_usage", amount: -1,
             balanceBefore: updated.trialCreditsUsed - 1,
@@ -457,7 +538,7 @@ const dbStorage = {
     await this.createAuditLog({
       userId, action: AUDIT_ACTIONS.CREDITS_USED,
       targetType: "campaign", targetId: campaignId,
-      details: { creditsUsed: 1 },
+      details: { creditsUsed: 1, source: creditSource },
     });
 
     return true;
@@ -477,23 +558,60 @@ const dbStorage = {
 
   async canStartCampaign(userId, emailCount) {
     const user = await this.getUserById(userId);
-    if (!user) return { allowed: false, reason: "User not found" };
+    if (!user) return { allowed: false, reason: "User not found", blockReason: "user_not_found" };
 
-    const trialRemaining = user.isTrialUser
-      ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
-      : 0;
-    const totalAvailable = (user.creditsRemaining || 0) + trialRemaining;
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
+    const paidRemaining = user.creditsRemaining || 0;
+
+    // Free plan: lazy refresh before computing free balance (standalone transaction).
+    // Race safety: the WHERE clause guard ensures at most one refresh per month per user.
+    let freeRemaining = 0;
+    if (freePlanEnabled && !user.isTrialUser) {
+      const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+      if (monthlyGrant > 0) {
+        const [refreshed] = await db.update(users)
+          .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
+          .where(and(
+            eq(users.id, userId),
+            sql`DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01'::timestamp) AT TIME ZONE 'UTC')
+                < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')`
+          ))
+          .returning({ id: users.id });
+
+        const usedAfterRefresh = refreshed ? 0 : (user.freeCreditsUsed || 0);
+        freeRemaining = Math.max(0, monthlyGrant - usedAfterRefresh);
+      }
+    } else if (!freePlanEnabled && user.isTrialUser) {
+      // Legacy trial path
+      freeRemaining = Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0));
+    }
+
+    const totalAvailable = paidRemaining + freeRemaining;
 
     if (totalAvailable < emailCount) {
+      // Distinguish block reason so the frontend can show the right message and CTA
+      let blockReason;
+      if (freePlanEnabled && !user.isTrialUser && freeRemaining === 0 && paidRemaining === 0) {
+        const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+        blockReason = monthlyGrant > 0 ? "free_exhausted" : "paid_exhausted";
+      } else if (paidRemaining === 0 && freeRemaining === 0) {
+        blockReason = "both_exhausted";
+      } else {
+        blockReason = "insufficient";
+      }
+
       return {
         allowed: false,
         reason: `Insufficient credits. Need ${emailCount}, have ${totalAvailable}`,
+        blockReason,
         creditsNeeded: emailCount,
-        creditsAvailable: totalAvailable
+        creditsAvailable: totalAvailable,
+        freeRemaining,
+        paidRemaining,
       };
     }
 
-    return { allowed: true, creditsAvailable: totalAvailable };
+    return { allowed: true, creditsAvailable: totalAvailable, freeRemaining, paidRemaining };
   },
 
   async getCreditTransactions(userId, limit = 50) {
@@ -1182,20 +1300,48 @@ const dbStorage = {
 
   async getTotalCreditsAvailable(userId) {
     const user = await this.getUserById(userId);
-    if (!user) return { paid: 0, trial: 0, total: 0 };
+    if (!user) return { paid: 0, free: 0, trial: 0, total: 0, isTrialUser: false, isFreePlan: false };
 
+    const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
     const paidRemaining = Math.max(0,
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
-    const trialRemaining = user.isTrialUser
+
+    let freeRemaining = 0;
+    let isFreePlan = false;
+    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+
+    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+      isFreePlan = true;
+      // Lazy refresh: if the current period has expired, treat used as 0 for display purposes.
+      // The actual DB reset happens in deductCreditAtomic on the next send.
+      const resetAt = user.freeCreditsResetAt;
+      const isStale = !resetAt || (
+        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
+        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
+      );
+      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
+    }
+
+    // Legacy trial credits (backward compat until backfill completes)
+    const trialRemaining = (!freePlanEnabled && user.isTrialUser)
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
+    // Compute next reset date: first UTC instant of next calendar month
+    const now = new Date();
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
     return {
       paid: paidRemaining,
-      trial: trialRemaining,
-      total: paidRemaining + trialRemaining,
-      isTrialUser: user.isTrialUser
+      free: freeRemaining,
+      trial: trialRemaining,           // kept for backward compat; 0 after backfill
+      total: paidRemaining + freeRemaining + trialRemaining,
+      isTrialUser: user.isTrialUser,   // kept for backward compat
+      isFreePlan,
+      freeResetDate: isFreePlan ? nextMonth.toISOString() : null,
+      monthlyFreeCredits: isFreePlan ? monthlyGrant : 0,
     };
   },
 
