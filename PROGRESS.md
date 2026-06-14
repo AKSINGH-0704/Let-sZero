@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-14
-**Current commit:** 278a9a7
+**Current commit:** a6b0f65
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -255,7 +255,11 @@ All identified code gaps have been closed (I-1 through I-5, FIN-1, FIN-2, B-PL-2
 The delivery pipeline is implemented but not yet proven end-to-end in production.
 
 **Primary gate: T-1 through T-5 production verification checklist.**
-Once those pass, a final audit of deliverability, payment flow, sender health, suppression, unsubscribe, and campaign execution paths will be conducted before declaring private-beta readiness.
+Once those pass, execute the Free Plan deployment runbook (HANDOFF.md). Then T-6, T-7, T-8.
+
+**No further feature or architecture work until T-1 through T-5 are complete.**
+
+**IMMEDIATE CHECK:** Commit `a6b0f65` adds Drizzle schema references to `free_credits_used` and `free_credits_reset_at`. If Railway auto-deployed this commit and `db:push` has not been run, all user queries are failing. Check Railway logs before anything else.
 
 **Evidence scale reminder:**
 - **I** = Implemented — code exists, compiles, logic reviewed

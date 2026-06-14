@@ -71,9 +71,17 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current Priorities (next implementation sprint)
+## Current Priorities
 
-**Highest priority: production verification (T-1 through T-8). Free Plan architecture is BLOCKED on T-1 completing.**
+**No further feature or architecture work.** Only production verification and the Free Plan deployment sequence below.
+
+**Order:**
+1. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
+2. Execute Free Plan deployment runbook (see section below)
+3. Post-deploy Free Plan validation (Step 7 of runbook)
+4. T-6, T-7, T-8 can follow
+
+**IMMEDIATE CHECK:** Commit `a6b0f65` references DB columns `free_credits_used` and `free_credits_reset_at` in Drizzle schema. If Railway auto-deployed this commit and `db:push` has not been run, every user query is failing. Check Railway logs before anything else.
 
 All gaps from the AI & production audit are resolved. The remaining items are from the final production-readiness audit (2026-06-10/11). Ordered by risk.
 
@@ -157,6 +165,164 @@ Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read
 **Bug fixes applied during verification (Audit 012):**
 - `updateUser` now passes `freeCreditsUsed` and `freeCreditsResetAt` (Bug 1 — critical, silent drop)
 - `createUser` now derives `isTrialUser` from `FREE_PLAN_ENABLED` env var (Bug 2 — new users on wrong path)
+
+---
+
+## Free Plan Deployment Runbook
+
+Execute in this exact order. Do not proceed to the next step if the current step's verification fails.
+
+### STEP 0 — IMMEDIATE: Check if `a6b0f65` is already deployed
+
+Commit `a6b0f65` references `free_credits_used` and `free_credits_reset_at` in the Drizzle schema. If Railway auto-deployed it and `db:push` has not been run, all user queries are failing.
+
+**Check Railway logs for:** `ERROR: column "free_credits_used" does not exist`
+
+If present → run Step 2 (`db:push`) immediately before anything else.
+
+---
+
+### STEP 1 — Pause Railway auto-deploy
+
+Railway dashboard → service → Settings → Source → disable auto-deploy.
+
+Prevents a future git push from deploying mid-sequence.
+
+---
+
+### STEP 2 — `db:push`
+
+Adds two columns to production `users` table. Zero downtime (catalog-only, no row rewrite).
+
+```bash
+# Option A: local with production DATABASE_URL
+DATABASE_URL="postgres://..." npm run db:push
+
+# Option B: Railway CLI
+railway run npm run db:push
+```
+
+**Verify:**
+```sql
+SELECT column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_name = 'users'
+  AND column_name IN ('free_credits_used', 'free_credits_reset_at');
+```
+Expected: 2 rows. `free_credits_used`: NOT NULL, default 0. `free_credits_reset_at`: nullable, no default.
+
+---
+
+### STEP 3 — Deploy code (Railway redeploy)
+
+If `a6b0f65` not yet live: Railway dashboard → Deploy → Redeploy, or re-enable auto-deploy.
+
+**Wait for deploy.** Confirm:
+```bash
+curl https://www.letszero.in/api/health
+# Expected: {"status":"ok","smtp":"verified","worker":"running",...}
+```
+
+Downtime: ~30–60 seconds (Railway process restart).
+
+---
+
+### STEP 4 — Set `FREE_PLAN_ENABLED=true`
+
+Railway dashboard → Variables → add `FREE_PLAN_ENABLED = true`.
+
+Railway auto-redeploys on env var changes. Wait for redeploy, re-confirm health endpoint.
+
+Downtime: ~30–60 seconds.
+
+At this point: new users get `isTrialUser=false`. Existing users still have `isTrialUser=true` — no behavior change for them until Step 6.
+
+---
+
+### STEP 5 — Pre-backfill audit
+
+```sql
+-- Record baseline before backfill
+SELECT plan, is_trial_user, COUNT(*)
+FROM users WHERE is_active = true
+GROUP BY plan, is_trial_user ORDER BY plan;
+
+-- Confirm column defaults
+SELECT COUNT(*) AS total,
+  SUM(CASE WHEN free_credits_used = 0 THEN 1 ELSE 0 END) AS at_zero,
+  SUM(CASE WHEN free_credits_reset_at IS NULL THEN 1 ELSE 0 END) AS null_reset
+FROM users WHERE plan = 'free' AND is_active = true;
+-- Both at_zero and null_reset should equal total
+```
+
+Save the count of `plan='free', is_trial_user=true` — this is the rollback verification number.
+
+---
+
+### STEP 6 — Backfill
+
+```sql
+UPDATE users
+SET is_trial_user = false
+WHERE plan = 'free' AND is_active = true;
+```
+
+**Verify immediately:**
+```sql
+-- Should match the count from Step 5
+SELECT COUNT(*) AS converted FROM users
+WHERE plan = 'free' AND is_active = true AND is_trial_user = false;
+
+-- Must be 0
+SELECT COUNT(*) AS remaining FROM users
+WHERE plan = 'free' AND is_active = true AND is_trial_user = true;
+```
+
+---
+
+### STEP 7 — Post-deploy verification
+
+```
+[ ] GET /api/health → status:"ok"
+[ ] GET /api/credits/info (free user) → isFreePlan:true, free:500, total:500, freeResetDate set
+[ ] GET /api/pricing/plans → "trial" plan NOT in response
+[ ] Dashboard: free credit section visible (X/500, progress bar, reset date)
+[ ] Send 1-contact campaign as free user → COMPLETED
+[ ] SELECT type, amount FROM credit_transactions WHERE user_id='<id>' ORDER BY created_at DESC LIMIT 5
+      → type='free_monthly_grant' and type='free_usage' both present
+[ ] SELECT free_credits_used, free_credits_reset_at FROM users WHERE id='<id>'
+      → free_credits_used=1, free_credits_reset_at IS NOT NULL
+[ ] Paid user: GET /api/credits/info → isFreePlan:false, free:0
+[ ] Paid user campaign → credit_transactions type='usage' (not 'free_usage')
+```
+
+---
+
+### ROLLBACK
+
+**Before Step 6 (backfill not run):**
+```bash
+# Railway dashboard: set FREE_PLAN_ENABLED=false (triggers redeploy)
+# No SQL needed — columns exist but are never written with flag off
+```
+
+**After Step 6 (backfill ran):**
+```sql
+-- Immediate
+UPDATE users SET is_trial_user = true
+WHERE plan = 'free' AND is_active = true;
+```
+```bash
+# Railway: set FREE_PLAN_ENABLED=false
+```
+```sql
+-- Verify
+SELECT COUNT(*) FROM users
+WHERE plan = 'free' AND is_active = true AND is_trial_user = true;
+-- Must match the Step 5 baseline count
+```
+
+Full revert restores 100% of prior behavior. No code rollback needed. Columns remain harmlessly in DB.
 
 ---
 
