@@ -395,7 +395,15 @@ async function processCampaign(campaignId, userId, job) {
         await storage.updateCampaignEmail(campaignEmailRecord.id, {
           status: CAMPAIGN_EMAIL_STATUS.SUPPRESSED,
         });
-        console.log(`[WORKER] [${campaignId}] contact ${i + 1} ${globallySuppressed ? "globally " : ""}suppressed — skipping ${contact.email}`);
+        const suppDetail = await storage.getSuppressionRecord(suppressed ? userId : null, contact.email);
+        console.log(
+          `[WORKER] [${campaignId}] contact ${i + 1} suppressed` +
+          ` scope=${suppressed ? "user" : "global"}` +
+          ` email=${contact.email}` +
+          ` source=${suppDetail?.source ?? "unknown"}` +
+          ` reason=${suppDetail?.reason ?? "none"}` +
+          ` suppressedAt=${suppDetail?.createdAt?.toISOString() ?? "unknown"}`
+        );
       } else {
         attemptedSend = true;
         // Acquire a shared SES send token before every actual send attempt

@@ -1476,6 +1476,36 @@ export const memoryStorage = {
     return found.size;
   },
 
+  async getSuppressionRecord(userId, email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    let fallback = null;
+    for (const record of store.suppressions.values()) {
+      if (record.email !== normalizedEmail) continue;
+      if (record.userId === userId) return { source: record.source, reason: record.reason, createdAt: record.createdAt };
+      if (!fallback) fallback = { source: record.source, reason: record.reason, createdAt: record.createdAt };
+    }
+    return fallback;
+  },
+
+  async getSuppressionDetailsForEmails(campaignUserId, emails) {
+    if (!emails || emails.length === 0) return new Map();
+    const normalizedSet = new Set(emails.map(e => e.toLowerCase().trim()));
+    const byEmail = new Map();
+    for (const record of store.suppressions.values()) {
+      if (!normalizedSet.has(record.email)) continue;
+      const existing = byEmail.get(record.email);
+      if (!existing || record.userId === campaignUserId) {
+        byEmail.set(record.email, {
+          source:       record.source,
+          reason:       record.reason,
+          suppressedAt: record.createdAt,
+          scope:        record.userId === campaignUserId ? "user" : "global",
+        });
+      }
+    }
+    return byEmail;
+  },
+
   // ── SNS event deduplication ────────────────────────────────────────────────
 
   async getSnsEvent(messageId) {

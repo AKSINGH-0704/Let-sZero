@@ -397,7 +397,15 @@ export async function executeCampaign(campaignId, userId) {
         await storage.updateCampaignEmail(campaignEmailRecord.id, {
           status: CAMPAIGN_EMAIL_STATUS.SUPPRESSED,
         });
-        console.log(`[CAMPAIGN ${campaignId}] contact ${i + 1} ${globallySuppressed ? "globally " : ""}suppressed — skipping ${contact.email}`);
+        const suppDetail = await storage.getSuppressionRecord(suppressed ? userId : null, contact.email);
+        console.log(
+          `[CAMPAIGN ${campaignId}] contact ${i + 1} suppressed` +
+          ` scope=${suppressed ? "user" : "global"}` +
+          ` email=${contact.email}` +
+          ` source=${suppDetail?.source ?? "unknown"}` +
+          ` reason=${suppDetail?.reason ?? "none"}` +
+          ` suppressedAt=${suppDetail?.createdAt?.toISOString() ?? "unknown"}`
+        );
       } else {
         attemptedSend = true;
         // Acquire a shared SES send token before every actual send attempt
@@ -1628,7 +1636,22 @@ export async function registerRoutes(httpServer, app) {
       }
       // Include up to 50 most-recent per-email records for the ProgressTracker
       const campaignEmails = await storage.getCampaignEmailsByCampaign(campaign.id, 50);
-      res.json({ ...campaign, campaignEmails });
+
+      // Enrich SUPPRESSED records with suppression source/reason/timestamp for the UI
+      const suppressedEmails = campaignEmails
+        .filter(ce => ce.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED && ce.recipientEmail)
+        .map(ce => ce.recipientEmail);
+      let suppressionMap = new Map();
+      if (suppressedEmails.length > 0) {
+        suppressionMap = await storage.getSuppressionDetailsForEmails(campaign.userId, suppressedEmails);
+      }
+      const enrichedEmails = campaignEmails.map(ce =>
+        ce.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED
+          ? { ...ce, suppressionDetail: suppressionMap.get(ce.recipientEmail) ?? null }
+          : ce
+      );
+
+      res.json({ ...campaign, campaignEmails: enrichedEmails });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

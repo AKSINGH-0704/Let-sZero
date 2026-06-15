@@ -441,6 +441,7 @@ export default function History() {
                         <TableRow>
                           <TableHead className="text-xs">Email</TableHead>
                           <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Suppression</TableHead>
                           <TableHead className="text-xs">Opened At</TableHead>
                           <TableHead className="text-xs">Clicked At</TableHead>
                         </TableRow>
@@ -450,6 +451,39 @@ export default function History() {
                           <TableRow key={r.id}>
                             <TableCell className="text-xs font-mono truncate max-w-[160px]">{r.recipientEmail}</TableCell>
                             <TableCell className="text-xs">{r.status}</TableCell>
+                            <TableCell className="text-xs">
+                              {r.status === "SUPPRESSED" ? (
+                                r.suppressionDetail ? (
+                                  <div className="flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-1">
+                                      <Badge variant="outline" className="text-[10px] h-4 px-1 capitalize shrink-0">
+                                        {r.suppressionDetail.source}
+                                      </Badge>
+                                      {r.suppressionDetail.scope === "global" && (
+                                        <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0 text-muted-foreground">
+                                          global
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <span
+                                      className="text-muted-foreground truncate max-w-[160px]"
+                                      title={r.suppressionDetail.reason || undefined}
+                                    >
+                                      {r.suppressionDetail.reason || "—"}
+                                    </span>
+                                    {r.suppressionDetail.suppressedAt && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {formatDate(r.suppressionDetail.suppressedAt)}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">Unknown suppression source</span>
+                                )
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {r.openedAt ? formatDate(r.openedAt) : "—"}
                             </TableCell>

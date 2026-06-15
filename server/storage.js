@@ -1501,6 +1501,59 @@ const dbStorage = {
     return new Set(result.map(r => r.email)).size;
   },
 
+  // Returns the suppression record for a specific email, preferring the per-user record.
+  // Pass userId=null to skip the per-user check and search globally only.
+  async getSuppressionRecord(userId, email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    if (userId) {
+      const [record] = await db.select({
+        source:    suppressions.source,
+        reason:    suppressions.reason,
+        createdAt: suppressions.createdAt,
+      })
+        .from(suppressions)
+        .where(and(eq(suppressions.userId, userId), eq(suppressions.email, normalizedEmail)));
+      if (record) return record;
+    }
+    const [record] = await db.select({
+      source:    suppressions.source,
+      reason:    suppressions.reason,
+      createdAt: suppressions.createdAt,
+    })
+      .from(suppressions)
+      .where(eq(suppressions.email, normalizedEmail))
+      .limit(1);
+    return record || null;
+  },
+
+  // Batch-fetch suppression details for a list of emails. Returns Map<email, detail>.
+  // Prefers the record owned by campaignUserId; falls back to any matching record.
+  async getSuppressionDetailsForEmails(campaignUserId, emails) {
+    if (!emails || emails.length === 0) return new Map();
+    const normalized = emails.map(e => e.toLowerCase().trim());
+    const records = await db.select({
+      email:     suppressions.email,
+      userId:    suppressions.userId,
+      source:    suppressions.source,
+      reason:    suppressions.reason,
+      createdAt: suppressions.createdAt,
+    })
+      .from(suppressions)
+      .where(drizzleOps.inArray(suppressions.email, normalized));
+    const byEmail = new Map();
+    for (const r of records) {
+      if (!byEmail.has(r.email) || r.userId === campaignUserId) {
+        byEmail.set(r.email, {
+          source:       r.source,
+          reason:       r.reason,
+          suppressedAt: r.createdAt,
+          scope:        r.userId === campaignUserId ? "user" : "global",
+        });
+      }
+    }
+    return byEmail;
+  },
+
   // ── SNS event deduplication ────────────────────────────────────────────────
 
   async getSnsEvent(messageId) {
