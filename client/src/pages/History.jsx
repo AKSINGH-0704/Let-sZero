@@ -45,6 +45,7 @@ import {
   MousePointerClick,
   TrendingUp,
   AlertTriangle,
+  Info,
   FileText,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
@@ -359,12 +360,29 @@ export default function History() {
                 </div>
               </div>
 
-              {/* Early-stop warning — shown when campaign completed but not all contacts were reached */}
-              {viewCampaign.status === "COMPLETED" && viewCampaign.sentEmails < viewCampaign.totalEmails && (
+              {/* Credit exhaustion — some contacts were never reached (loop broke before processing them) */}
+              {viewCampaign.status === "COMPLETED" &&
+                (viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0) > 0 && (
                 <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800">
                   <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
                   <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                    Campaign stopped early — account ran out of credits. {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email. Top up credits to reach the remaining contacts.
+                    Campaign stopped early — account ran out of credits.{" "}
+                    {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email.{" "}
+                    Top up credits to reach the remaining{" "}
+                    {formatNumber((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0))} contacts.
+                  </p>
+                </div>
+              )}
+
+              {/* Suppression skips — all contacts processed, some skipped (expected, healthy behaviour) */}
+              {viewCampaign.status === "COMPLETED" &&
+                (viewCampaign.skippedEmails ?? 0) > 0 &&
+                (viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0) === 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800 dark:text-blue-300">
+                    {formatNumber(viewCampaign.skippedEmails)} contact{viewCampaign.skippedEmails === 1 ? " was" : "s were"} skipped — already in your suppression list.{" "}
+                    {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email.
                   </p>
                 </div>
               )}

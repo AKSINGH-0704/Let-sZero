@@ -131,7 +131,7 @@ export async function generatePreviews(subject, body, contacts, tone = "professi
   };
   const campaignContextNote = previewCampaignContext[campaignType] || previewCampaignContext.general;
 
-  const systemPrompt = `You are an expert email marketing copywriter with 15 years of experience writing high-converting outreach emails across industries. Your task is to personalize email templates for individual contacts.
+  const systemPrompt = `You are personalizing one-to-one sales emails for individual recipients. Your task is to make each email feel personally written for that specific person — not templated, not mass marketing, not automated. Each email should read like a real professional wrote it directly to one person.
 
 CAMPAIGN TYPE CONTEXT — apply to every personalization:
 ${campaignContextNote}
@@ -446,7 +446,7 @@ These will be replaced at send time with the sender's real details.`;
     general:      "{{category}} — recipient's category. Use only if it makes the message more natural and specific.",
   };
 
-  const systemPrompt = `You are an expert email copywriter who writes high-converting outreach emails that sound like they came from a real human, not a marketing platform.
+  const systemPrompt = `You are helping a sales professional write a personal, one-to-one email to a specific individual. This email must feel as if it was written by hand for one person and sent from one person's real inbox — not automated, not a marketing campaign, not a template blast. The measure of success is whether the recipient replies, not whether they click. Write as one human reaching out to another.
 
 CAMPAIGN CONTEXT:
 ${campaignPreamble}
@@ -466,10 +466,10 @@ RULES:
 - When describing the recipient's likely situation based on their role or company stage, frame it as your observation ("In working with teams at this stage..." or "Teams scaling past 20 reps often...") rather than asserting universal facts ("Most companies do X" or "All teams at your size..."). You have no data to support universal claims about recipient populations.
 - Use {{name}} in the greeting — but rephrase the sentence if it sounds forced
 - Only use {{company}} when the campaign context says it is appropriate AND it sounds natural in that specific sentence
-- Subject line: under 50 characters, aim for under 40. Personalize with {{name}} or {{company}} when it reads naturally. Write what a real person would type as a message subject — not a campaign header. Avoid generic patterns: "Quick question", "Following up", "Introduction", "[Sender] + [Recipient]"
+- Subject line: under 50 characters, aim for under 40. Personalize with {{name}} or {{company}} when it reads naturally. Write what a real person would type as a message subject — not a campaign header. Avoid generic patterns: "Quick question", "Following up", "Introduction". Also avoid event and announcement language in subjects: "Exclusive", "Grand Opening", "Announcing", "Introducing", "Special Invitation", "Launch"
 - No ALL CAPS anywhere in subject or body
 - No exclamation marks unless the tone specifically calls for one
-- Avoid all spam trigger words: free, winner, urgent, guaranteed, click here, limited time, act now
+- Avoid all spam and promotional vocabulary: free, winner, urgent, guaranteed, "click here", "limited time", "act now", exclusive, luxury, premium, bonus, "limited offer", "special offer", VIP, complimentary, sale, deal, "don't miss", "reserve your spot", "grand opening", announcing, launch, introducing, invitation
 - Plain conversational language — no corporate jargon, no hype, no pressure
 - Body: 3–4 short paragraphs maximum (under 180 words total)
 - Exactly one CTA at the end. Frame it as a low-commitment permission question, not a request or demonstration offer. "Worth a quick conversation?" outperforms "Would you like to schedule a call?". "Open to a brief chat?" outperforms "I'd love to show you a demo." The reader should feel like saying yes costs them nothing.
@@ -553,7 +553,14 @@ const PROHIBITED_SUBJECT_STARTERS = [
   /^quick question\b/i,
   /^following up\b/i,
   /^introduction\b/i,
+  /^exclusive\b/i,
+  /^grand\b/i,
+  /^announcing\b/i,
+  /^introducing\b/i,
+  /^special\b/i,
 ];
+
+const PROMOTIONAL_SUBJECT_RE = /\b(exclusive|luxury|premium|bonus|grand opening|limited offer|special offer|reserve your spot|invitation|launch event|grand launch)\b/i;
 
 const FABRICATED_RELATIONSHIP_PATTERNS = [
   /\bas we discussed\b/i,
@@ -687,9 +694,17 @@ export function validateTemplate(subject, body, { campaignType = 'general', inta
 
   for (const pattern of PROHIBITED_SUBJECT_STARTERS) {
     if (pattern.test(s)) {
-      warnings.push({ code: 'SUBJECT_PROHIBITED_PATTERN', message: 'Subject matches a generic prohibited pattern ("Quick question", "Following up", or "Introduction"). Replace with something specific.', severity: 'warn' });
+      warnings.push({ code: 'SUBJECT_PROHIBITED_PATTERN', message: 'Subject matches a generic or promotional prohibited pattern. Use specific, personal language instead.', severity: 'warn' });
       break;
     }
+  }
+
+  if (PROMOTIONAL_SUBJECT_RE.test(s)) {
+    warnings.push({
+      code:     'SUBJECT_PROMOTIONAL_LANGUAGE',
+      message:  'Subject contains promotional vocabulary that triggers Gmail Promotions/Spam classification. Replace with specific, personal language.',
+      severity: 'warn',
+    });
   }
 
   // ── Step 5: Body length checks ───────────────────────────────────────────────

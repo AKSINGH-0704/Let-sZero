@@ -141,11 +141,8 @@ function buildUnsubscribeFooter(userId, email) {
   const base = process.env.APP_URL || "http://localhost:5000";
   const url = `${base}/api/unsubscribe?uid=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}&token=${token}`;
   return {
-    html: `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">
-You received this email as part of an outreach campaign.
-<br>To stop receiving emails from this sender, <a href="${url}" style="color:#6b7280;">unsubscribe here</a>.
-</div>`,
-    text: `\n\n---\nYou received this email as part of an outreach campaign.\nTo unsubscribe: ${url}`,
+    html: `<p style="margin-top:32px;font-size:12px;color:#6b7280;">If you'd prefer not to hear from me, <a href="${url}" style="color:#6b7280;">unsubscribe</a>.</p>`,
+    text: `\n\nIf you'd prefer not to hear from me, unsubscribe: ${url}`,
   };
 }
 
