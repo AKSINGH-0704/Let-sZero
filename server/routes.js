@@ -887,7 +887,8 @@ export async function registerRoutes(httpServer, app) {
         }
         for (const r of bounce.bouncedRecipients || []) {
           if (!r.emailAddress) continue;
-          await storage.addSuppression(userId, r.emailAddress, "bounce");
+          const bounceReason = r.diagnosticCode || r.status || null;
+          await storage.addSuppression(userId, r.emailAddress, "bounce", bounceReason);
           await storage.updateCampaignEmail(campaignEmailId, {
             status: CAMPAIGN_EMAIL_STATUS.BOUNCED,
           });
@@ -897,7 +898,8 @@ export async function registerRoutes(httpServer, app) {
       } else if (eventType === "Complaint") {
         for (const r of complaint.complainedRecipients || []) {
           if (!r.emailAddress) continue;
-          await storage.addSuppression(userId, r.emailAddress, "complaint");
+          const complaintReason = complaint.complaintFeedbackType || null;
+          await storage.addSuppression(userId, r.emailAddress, "complaint", complaintReason);
           await storage.updateCampaignEmail(campaignEmailId, {
             status: CAMPAIGN_EMAIL_STATUS.COMPLAINED,
           });
@@ -1371,6 +1373,38 @@ export async function registerRoutes(httpServer, app) {
     try {
       const transactions = await storage.getCreditTransactions(req.user.id);
       res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/suppressions", authMiddleware, async (req, res) => {
+    try {
+      const list = await storage.getSuppressions(req.user.id);
+      res.json(list);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/suppressions", authMiddleware, async (req, res) => {
+    try {
+      const { email, reason } = req.body;
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ message: "email is required" });
+      }
+      const normalized = email.toLowerCase().trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+        return res.status(400).json({ message: "Invalid email address" });
+      }
+      await storage.addSuppression(req.user.id, normalized, "manual", reason?.trim() || null);
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: "MANUAL_SUPPRESSION_ADDED",
+        targetType: "suppression",
+        details: { email: normalized, reason: reason?.trim() || null },
+      });
+      res.status(201).json({ message: "Email suppressed" });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

@@ -26,6 +26,7 @@ import {
   FileText,
   Settings,
   CreditCard,
+  ShieldOff,
   Menu,
   X
 } from "lucide-react";
@@ -42,6 +43,7 @@ export default function Navbar() {
     { href: "/app/campaigns/new", label: "New Campaign", icon: Send },
     { href: "/app/history", label: "History", icon: History },
     { href: "/app/templates", label: "Templates", icon: FileText },
+    { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
     { href: "/app/payments", label: "Payments", icon: CreditCard },
   ];
 

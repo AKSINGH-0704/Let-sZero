@@ -23,6 +23,7 @@ import Contact from "@/pages/Contact";
 import NotFound from "@/pages/not-found";
 import WaitlistLanding from "@/pages/WaitlistLanding";
 import AcceptInvite from "@/pages/AcceptInvite";
+import Suppressions from "@/pages/Suppressions";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -111,6 +112,12 @@ function AppRoutes() {
       <Route path="/app/history">
         <ProtectedRoute>
           <History />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/suppressions">
+        <ProtectedRoute>
+          <Suppressions />
         </ProtectedRoute>
       </Route>
 

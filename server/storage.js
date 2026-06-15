@@ -1454,10 +1454,10 @@ const dbStorage = {
 
   // ── Suppressions ───────────────────────────────────────────────────────────
 
-  async addSuppression(userId, email, source) {
+  async addSuppression(userId, email, source, reason = null) {
     const normalizedEmail = email.toLowerCase().trim();
     await db.insert(suppressions)
-      .values({ userId, email: normalizedEmail, source })
+      .values({ userId, email: normalizedEmail, source, reason })
       .onConflictDoNothing();
     console.log(`[SUPPRESSION] userId=${userId} email=${normalizedEmail} source=${source}`);
   },

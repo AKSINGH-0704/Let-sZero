@@ -1435,14 +1435,14 @@ export const memoryStorage = {
 
   // ── Suppressions ───────────────────────────────────────────────────────────
 
-  async addSuppression(userId, email, source) {
+  async addSuppression(userId, email, source, reason = null) {
     const normalizedEmail = email.toLowerCase().trim();
     // idempotent — one suppression per (userId, email) regardless of source
     for (const record of store.suppressions.values()) {
       if (record.userId === userId && record.email === normalizedEmail) return;
     }
     const id = generateUUID();
-    store.suppressions.set(id, { id, userId, email: normalizedEmail, source, createdAt: new Date() });
+    store.suppressions.set(id, { id, userId, email: normalizedEmail, source, reason, createdAt: new Date() });
     console.log(`[SUPPRESSION] userId=${userId} email=${normalizedEmail} source=${source}`);
   },
 

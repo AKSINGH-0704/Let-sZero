@@ -30,6 +30,7 @@ export const SUPPRESSION_SOURCE = {
   UNSUBSCRIBE: "unsubscribe",
   BOUNCE: "bounce",
   COMPLAINT: "complaint",
+  MANUAL: "manual",
 };
 
 export const AUDIT_ACTIONS = {
@@ -279,7 +280,8 @@ export const suppressions = pgTable("suppressions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
-  source: text("source").notNull(), // "unsubscribe" | "bounce" | "complaint"
+  source: text("source").notNull(), // "unsubscribe" | "bounce" | "complaint" | "manual"
+  reason: text("reason"),           // diagnostic code for bounce, feedback type for complaint, admin note for manual
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   // idempotent upsert — same user+email pair is always one suppression regardless of source
