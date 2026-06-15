@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `278a9a7` (2026-06-14)  
+**Verified against:** commit `379006a` (2026-06-16)  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -40,7 +40,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current State (commit `f434b21`)
+## Current State (commits through `379006a`)
 
 **Financial integrity (commit `ecb1331` — FIN-1/FIN-2):**
 - `completePayment` race eliminated: `.returning({ id })` on the payment UPDATE gates credit allocation on whether THIS caller transitioned `PENDING → SUCCESS`. Concurrent webhook + /verify callers cannot both allocate credits.
@@ -69,19 +69,41 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - Sender identity block in generation prompt; `real_estate` suppresses company/title from sign-off
 - Model tiering: enterprise/scale/growth → `gpt-4o`; others → `gpt-4o-mini`
 
+**Suppression visibility (commits `a6c25bf`, `379006a`):**
+- `Suppressions.jsx`: full page at `/app/suppressions` — searchable/filterable table with source badge (BOUNCE/COMPLAINT/UNSUBSCRIBE/MANUAL), reason text, timestamp
+- `GET /api/campaigns/:id`: SUPPRESSED `campaign_emails` records now enriched with `suppressionDetail: { source, reason, suppressedAt, scope }` via `getSuppressionDetailsForEmails()` batch lookup
+- Campaign detail modal: Suppression column in Recipients table — source badge + reason + suppressedAt. Falls back to "Unknown suppression source" if no record found.
+- Worker and inline `executeCampaign`: detailed suppression logging (scope, source, reason, suppressedAt) via `getSuppressionRecord()`
+- New storage functions in both `dbStorage` and `memoryStorage` — no schema changes
+
+**Deliverability hardening (commit `f2b4cfa`):**
+- History.jsx false credit warning fixed: `sentEmails < totalEmails` replaced with `totalEmails - sentEmails - failedEmails - skippedEmails > 0` (true credit exhaustion detection). Separate blue banner for suppression-only skips.
+- Unsubscribe footer: removed "outreach campaign" bulk-mail framing; first-person personal text only
+- AI prompts: reframed from "marketing copywriter" to "personal one-to-one communication"
+- Prohibited vocabulary expanded (exclusive, luxury, premium, bonus, grand opening, invitation, etc.)
+- Subject validator: `PROMOTIONAL_SUBJECT_RE` pattern + 5 new `PROHIBITED_SUBJECT_STARTERS`
+
+**Deliverability — DNS fix (2026-06-16, manual DNS action):**
+- Duplicate `_dmarc.letszero.in` TXT record removed. Was: two records → RFC 7489 permerror → DMARC failed
+- Now: one record `v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;`
+- DKIM enabled and Verified in AWS SES console. Signs with `d=letszero.in` → DMARC alignment passes
+- **Post-fix verification pending:** send one test email to Gmail → check "Show original" for `dmarc=pass`
+
 ---
 
 ## Current Priorities
 
-**No further feature or architecture work.** Only production verification and the Free Plan deployment sequence below.
+**No further feature or architecture work.** Only production verification, deliverability confirmation, and the Free Plan deployment sequence below.
 
 **Order:**
-1. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
-2. Execute Free Plan deployment runbook (see section below)
-3. Post-deploy Free Plan validation (Step 7 of runbook)
-4. T-6, T-7, T-8 can follow
+1. Confirm Railway deployed commits `a6c25bf` + `f2b4cfa` + `379006a` (push to origin enables this)
+2. Send one test email to Gmail — confirm `dmarc=pass` in "Show original" Authentication-Results header
+3. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
+4. Execute Free Plan deployment runbook (see section below)
+5. Post-deploy Free Plan validation (Step 7 of runbook)
+6. T-6, T-7, T-8 can follow
 
-**IMMEDIATE CHECK:** Commit `a6b0f65` references DB columns `free_credits_used` and `free_credits_reset_at` in Drizzle schema. If Railway auto-deployed this commit and `db:push` has not been run, every user query is failing. Check Railway logs before anything else.
+**~~IMMEDIATE CHECK:~~** *(RESOLVED)* Commit `a6b0f65` `free_credits_used`/`free_credits_reset_at` column error was encountered in production (`[INACTIVITY JOB] Fatal error: column "free_credits_used" does not exist`) and resolved via `npm run db:push -- --force`. Columns exist in production DB.
 
 All gaps from the AI & production audit are resolved. The remaining items are from the final production-readiness audit (2026-06-10/11). Ordered by risk.
 

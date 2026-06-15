@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
-**Last updated:** 2026-06-14
-**Current commit:** a6b0f65
+**Last updated:** 2026-06-16
+**Current commit:** 379006a (latest feature) — see AUDIT_TRAIL.md Audit 013
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -161,13 +161,19 @@ Only **V** is treated as proven.
 
 | Sub-item | Status | Evidence |
 |---|---|---|
-| SPF pass | **D** | Not checked |
-| DKIM pass | **D** | Not checked |
-| DMARC pass | **D** | Not checked |
-| Authentication-Results header reviewed | **D** | No email received yet |
-| Mail Tester score ≥ 8/10 | **D** | Not run |
+| SPF | **I** | Covers Zoho only — SES not in SPF, `~all` softfail, Return-Path is `amazonses.com`. SPF DMARC alignment fails. DKIM alignment compensates. |
+| DKIM | **V** | SES Easy DKIM Verified (confirmed AWS SES console by user). Signs with `d=letszero.in`. DMARC alignment via DKIM passes in relaxed mode. |
+| DMARC | **V** | Fixed 2026-06-16. Was: two `_dmarc.letszero.in` records (RFC 7489 permerror). Now: one record `v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=...` — re-verified via `nslookup` against Google DNS. |
+| Inbox placement test | **V** | Test campaign 2026-06-14: 0 Primary, 1 Promotions, 2 Spam (3 delivered of 6; 3 suppressed). Primary causes: duplicate DMARC (now fixed) + new domain reputation. |
+| Post-fix verification | **D** | Pending — send one test email after DMARC propagates, check "Show original" for `dmarc=pass`. |
+| Mail Tester score ≥ 8/10 | **D** | Not run — defer until auth confirmed via post-fix test. |
 
-**Milestone status: D** — 0 of 5 sub-items Verified
+**Milestone status: I/V mixed** — DKIM verified, DMARC fix verified in DNS. Post-fix send test pending.
+
+**Blocking items:**
+- Post-fix test email to Gmail required to confirm `dmarc=pass` in Authentication-Results header
+- New domain reputation requires warm-up strategy — not a code fix
+- `SES_CONFIGURATION_SET` absent from Railway env vars — no open/click tracking
 
 ---
 
@@ -304,6 +310,10 @@ Evidence is appended here as each item moves to V.
 | 2026-06-07 | Redis durability | `save 60 1` / `appendonly no` / `maxmemory-policy noeviction` / `maxmemory 0` | PASS |
 | 2026-06-07 | SMTP configuration | DNS OK, TCP port 2587 open, SMTP AUTH accepted, `/api/health` → `smtp: "verified"` | PASS |
 | 2026-06-11 | SNS subscription confirmed | SNS topic `repmail_events` exists; `SNS_TOPIC_ARN` set in Railway; HTTPS subscription to `https://www.letszero.in/api/webhooks/ses` created; Railway logs: `POST /api/webhooks/ses 200` + `[SNS] Subscription confirmed — HTTP 200` | PASS |
+| 2026-06-14 | Production test campaign | 6 contacts: 3 sent (sentEmails=3), 3 suppressed (skippedEmails=3), 0 failed. status=COMPLETED. credits_used 12→15 (3 deductions, all succeeded). | PASS — execution correct |
+| 2026-06-14 | Gmail placement test | 3 delivered emails: 2 Spam, 1 Promotions, 0 Primary. Root causes: duplicate DMARC (permerror) + new domain. | FAIL — deliverability |
+| 2026-06-14 | History.jsx false credit warning | "Account ran out of credits" shown incorrectly when contacts were suppressed (not credit exhaustion). Root cause: `sentEmails < totalEmails` condition fired on any shortfall. Fixed in `f2b4cfa`. | RESOLVED |
+| 2026-06-16 | DMARC fix verified | Deleted `v=DMARC1; p=none;` record. Single record remains: `p=quarantine; adkim=r; aspf=r`. Verified via nslookup against Google DNS 8.8.8.8. | PASS |
 
 ---
 

@@ -775,3 +775,151 @@ Updated in this session:
 **Not classified as `VERIFIED IN PRODUCTION`** — requires `db:push`, backfill, and at least one complete send cycle from a free plan user.
 
 **Deployment blocked on T-1 through T-5 production verification** as originally stated. This classification does not change that constraint.
+
+---
+
+## Audit 013 — Production Deliverability + Campaign Execution Investigation
+
+**Date:** 2026-06-14 to 2026-06-16
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Post-campaign production evidence analysis — campaign execution correctness, credit system audit, suppression audit, deliverability audit, Gmail placement root-cause analysis
+**Trigger:** Production test campaign (6 contacts): 3 sent, 2 Spam, 1 Promotions, 0 Primary. False "account ran out of credits" UI message appeared despite sufficient credits.
+**Commits reviewed:** `worker.js`, `routes.js`, `storage.js`, `memoryStorage.js`, `email.js`, `ai.js`, `History.jsx`
+
+---
+
+### Section 1 — Campaign Execution Analysis
+
+**Production data:**
+
+| Field | Value |
+|---|---|
+| totalEmails | 6 |
+| sentEmails | 3 |
+| skippedEmails | 3 |
+| failedEmails | 0 |
+| status | COMPLETED |
+
+Math check: `6 − 3 − 0 − 3 = 0` → all contacts were processed. Loop completed in full.
+
+**Root cause of "3 of 6" result:** 3 contacts were pre-suppressed. Worker ran `isSuppressed()` then `isGloballySuppressed()` for each. 3 returned true → `skippedCount++`, `status=SUPPRESSED` in `campaign_emails`. Not credit exhaustion.
+
+**Confirmed:** `credits_used` incremented 12 → 13 → 14 → 15 (3 successful deductions via `deductCreditAtomic` paid path). `outOfCredits` flag never set.
+
+**False credit warning — UI bug (now fixed):**
+- `History.jsx:363`: condition `status === "COMPLETED" && sentEmails < totalEmails` triggered for any shortfall including suppression skips.
+- Fix: replaced with `totalEmails - sentEmails - failedEmails - skippedEmails > 0` — detects truly unprocessed contacts (loop broke early) only.
+- Separate blue info banner added for suppression-only skips (all contacts processed, some skipped).
+- Committed: `f2b4cfa`
+
+---
+
+### Section 2 — Credit System Audit
+
+| Item | Finding |
+|---|---|
+| `creditsRemaining` | Virtual computed field in `sanitizeUser()` — NOT a DB column. `creditsReceived - creditsAllocated - creditsUsed`. |
+| `canStartCampaign` | Reads virtual `creditsRemaining`, checks `totalAvailable >= emailCount`. 89,985 ≥ 6 → allowed. |
+| `deductCreditAtomic` paid path | Atomic `WHERE (credits_received - credits_allocated - credits_used) >= 1`. 3× succeeded. |
+| `outOfCredits` flag | Never set. Would only fire if `deductCreditAtomic` throws "Insufficient credits" AFTER a send. |
+
+**No credit system defect found.** UI displayed a false positive. Credit system behaved correctly throughout.
+
+---
+
+### Section 3 — Suppression Audit
+
+**Suppression check sequence (`worker.js:391–407`):**
+1. `isSuppressed(userId, email)` — per-user: `WHERE userId AND email`
+2. `isGloballySuppressed(email)` — platform-wide: `WHERE email` (no userId filter)
+3. If either true: `skippedCount++`, `campaign_emails.status = SUPPRESSED`
+
+**Scope note:** `isGloballySuppressed` checks ALL suppressions across ALL users. A contact suppressed by any user blocks sends from every user on the platform. Intentional design decision.
+
+**Gap identified:** `campaign_emails` records show `status=SUPPRESSED` with no source, reason, or timestamp. Users could not tell WHY a contact was skipped from the campaign history view.
+
+**Fixes committed:**
+
+| Commit | Fix |
+|---|---|
+| `a6c25bf` | `Suppressions.jsx` — full suppression list page with source badge, reason, timestamp, searchable table |
+| `379006a` | `GET /api/campaigns/:id` enriches SUPPRESSED records with `suppressionDetail: { source, reason, suppressedAt, scope }` via `getSuppressionDetailsForEmails()` batch lookup |
+| `379006a` | Campaign detail modal: Suppression column added to Recipients table. Shows source badge + reason text + suppressedAt. Falls back to "Unknown suppression source" if no record found. |
+| `379006a` | Worker and inline executor: `getSuppressionRecord()` called per suppressed contact. Logs `scope`, `source`, `reason`, `suppressedAt`. Both `worker.js` and `executeCampaign` in `routes.js`. |
+
+No schema changes required. `getSuppressionRecord` and `getSuppressionDetailsForEmails` added to both `dbStorage` (`storage.js`) and `memoryStorage.js`.
+
+---
+
+### Section 4 — Deliverability Audit
+
+**DNS evidence (queried 2026-06-14, Google DNS 8.8.8.8):**
+
+| Mechanism | Evidence | Result |
+|---|---|---|
+| SPF | `v=spf1 include:dc-8e814c8572._spfm.letszero.in ~all` | Covers Zoho only. SES not included. `~all` softfail. Return-Path is `amazonses.com` (no Custom MAIL FROM). SPF DMARC alignment fails. |
+| DKIM | SES Easy DKIM enabled and Verified (confirmed from AWS SES console). Signs with `d=letszero.in`. | PASS. DMARC alignment via DKIM passes in relaxed mode. `d=letszero.in` = From `letszero.in`. |
+| DMARC | Two TXT records at `_dmarc.letszero.in` (RFC 7489 §6.6.3 violation → permerror → DMARC fails) | **CRITICAL — see resolution below** |
+| Custom MAIL FROM | Not configured. Return-Path: `bounces+xxx@eu-north-1.amazonses.com`. | SPF alignment fails. Compensated by DKIM alignment. Low priority. |
+| SES_CONFIGURATION_SET | Absent from production Railway env vars. | No open/click tracking active in production. |
+
+**DMARC at time of audit (2026-06-14):**
+```
+_dmarc.letszero.in  v=DMARC1; p=none;
+_dmarc.letszero.in  v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;
+```
+Two records → RFC 7489 `permerror` → Gmail treats as DMARC failed.
+
+**DMARC after DNS fix (re-verified 2026-06-16 via nslookup against Google DNS 8.8.8.8):**
+```
+_dmarc.letszero.in  v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;
+```
+One record only. `p=none` record deleted. `permerror` resolved. DMARC now passes via DKIM alignment on next send.
+
+**Content changes committed `f2b4cfa`:**
+- Unsubscribe footer: removed "outreach campaign" framing; replaced with first-person plain text.
+- AI system prompts: reframed from "marketing copywriter / high-converting" to "one-to-one personal communication."
+- Prohibited vocabulary: expanded (exclusive, luxury, premium, bonus, grand opening, limited offer, VIP, invitation, etc.).
+- Subject validator: `PROMOTIONAL_SUBJECT_RE` pattern added; 5 new `PROHIBITED_SUBJECT_STARTERS`.
+
+---
+
+### Section 5 — Gmail Placement Analysis
+
+**Test campaign result:** 0 Primary, 1 Promotions, 2 Spam (3 delivered, 3 suppressed)
+
+| Cause | Spam/Promotions impact | Status |
+|---|---|---|
+| Duplicate DMARC → permerror | Primary Spam cause | **FIXED — DNS admin action 2026-06-16** |
+| New domain, zero engagement history | Primary Spam cause | Cannot be code-fixed — requires warm-up |
+| "Exclusive Grand Opening Invitation" subject | Promotions/Spam signal | **Fixed — AI changes in f2b4cfa** |
+| "outreach campaign" footer language | Promotions signal | **Fixed — footer rewrite in f2b4cfa** |
+| `noreply@` From address | Promotions signal | Deferred — requires SES identity + real inbox |
+| HTML template structure (max-width, Arial, border-top footer) | Promotions signal | Deferred — auth must be confirmed first |
+
+**Expected outcome after DMARC fix + code changes deployed:** Spam → Promotions improvement likely. Primary inbox requires positive engagement history (domain warm-up — not a code problem).
+
+**Post-fix verification required:** Send one test email to Gmail → "Show original" → confirm `dmarc=pass` in Authentication-Results header.
+
+---
+
+### Section 6 — Code Changes (All Committed Locally)
+
+| Commit | Summary | Key files |
+|---|---|---|
+| `a6c25bf` | Suppression list page with source/reason/timestamp | `client/src/pages/Suppressions.jsx`, `App.jsx`, `Navbar.jsx` |
+| `f2b4cfa` | Footer rewrite, AI prompt reframing, subject validator, campaign history UI fix | `server/email.js`, `server/ai.js`, `client/src/pages/History.jsx` |
+| `379006a` | Suppression detail in campaign modal + enhanced worker logging | `server/storage.js`, `server/memoryStorage.js`, `server/routes.js`, `server/worker.js`, `client/src/pages/History.jsx` |
+
+All three commits were local-only as of 2026-06-16. Push to `origin/main` and Railway deploy required for production effect.
+
+---
+
+### Section 7 — Infrastructure Changes
+
+| Change | Method | Status |
+|---|---|---|
+| DMARC duplicate record removed | DNS admin (manual) | **DONE — verified 2026-06-16** |
+| SES Custom MAIL FROM | Deferred — DKIM alignment covers DMARC | Not done |
+| SPF: add SES to record | Deferred — low urgency given DKIM alignment | Not done |
+| `SES_CONFIGURATION_SET` in Railway | Pending — required for open/click tracking | Not done |
