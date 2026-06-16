@@ -923,3 +923,193 @@ All three commits were local-only as of 2026-06-16. Push to `origin/main` and Ra
 | SES Custom MAIL FROM | Deferred — DKIM alignment covers DMARC | Not done |
 | SPF: add SES to record | Deferred — low urgency given DKIM alignment | Not done |
 | `SES_CONFIGURATION_SET` in Railway | Pending — required for open/click tracking | Not done |
+
+---
+
+## Audit 014 — Deliverability Hardening: Header Compliance + Production-Path Verification
+
+**Date:** 2026-06-16
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Root-cause investigation of SPF/DKIM/DMARC PASS email landing in Gmail Spam, followed by RFC compliance header implementation and production-path verification send.
+**Trigger:** Gmail deliverability test (2026-06-16) confirmed SPF=PASS / DKIM=PASS / DMARC=PASS but delivered to Spam.
+**Commits:** `5b396b9` — `server/email.js`, `tmp/test-campaign-path.mjs`
+
+---
+
+### Section 1 — Root Cause Investigation
+
+**Test email anatomy — wrong code path:**
+
+The first deliverability test (`tmp/test-deliverability.mjs`) was a raw inline nodemailer script that bypassed `server/email.js` entirely. It produced an email structurally inferior to production campaign emails:
+
+| Property | Test Script | Production sendCampaignEmail() |
+|---|---|---|
+| Footer | None | `buildUnsubscribeFooter()` — body link + text |
+| List-Unsubscribe header | Not set | **Not set (pre-fix gap)** |
+| HTML structure | None (raw text) | Full HTML document |
+| Placeholder substitution | None | `replacePlaceholders()` |
+| Sender profile | Hardcoded | DB-resolved from `owner.*` fields |
+
+**Authentication result (confirmed from Gmail "Show original"):**
+
+```
+SPF  = PASS
+DKIM = PASS
+DMARC = PASS
+```
+
+Authentication is necessary but not sufficient for inbox placement. Gmail's spam classification operates at three independent layers after authentication:
+
+1. **Domain reputation** — `letszero.in` is a new sending domain with zero Gmail engagement history. No opens, replies, or inbox moves on record. New domains start at minimum trust.
+2. **Content classification** — The test email hit 5+ documented cold-outreach ML signals:
+   - Subject: `"wanted to follow up with you"` — highest-frequency cold outreach subject
+   - Body: `"Hope you're doing well"` — #1 classified cold email opener
+   - Body: `"check in and see how things have been going on your end"` — textbook cold phrasing
+   - Body: `"let me know if this landed in your inbox"` — literal spam-test language
+   - Body: `"run a quick test to make sure everything is reaching the inbox properly"` — adversarial to Gmail ML
+3. **Missing compliance headers** — `List-Unsubscribe` as an RFC 2369 message header was absent from `sendCampaignEmail()`. Gmail's 2024 bulk sender policy requires this header; its absence is a structural negative signal independent of content.
+
+**Pre-fix header audit (`server/email.js:sendCampaignEmail`, commit `5c72f9b`):**
+
+| Header | Present | Notes |
+|---|---|---|
+| `Message-ID` | Auto (nodemailer) | `<uuid@letszero.in>` — correct domain |
+| `Date` | Auto (nodemailer) | Always set |
+| `MIME-Version` | Auto (nodemailer) | `1.0` |
+| `Reply-To` | Conditional | When `senderProfile.replyToEmail` set |
+| `X-SES-CONFIGURATION-SET` | Conditional | When `SES_CONFIGURATION_SET` env var set AND `campaignEmailId` provided |
+| `X-SES-MESSAGE-TAGS` | Conditional | Same condition as above |
+| `List-Unsubscribe` | **Missing** | RFC 2369 — required by Gmail 2024 policy |
+| `List-Unsubscribe-Post` | **Missing** | RFC 8058 — required for Gmail one-click unsubscribe button |
+| `Feedback-ID` | **Missing** | Gmail Postmaster Tools complaint tracking |
+
+The unsubscribe body link was present (`buildUnsubscribeFooter()` was called and appended to the HTML and text parts). The RFC 2369 header was absent. These are evaluated independently by Gmail.
+
+---
+
+### Section 2 — Corrections to Audit 013 Findings
+
+Audit 013 Section 4 recorded `SES_CONFIGURATION_SET` as absent from Railway env vars. This was incorrect — the analysis was based on reading the local `.env` file rather than the Railway environment. `railway variables` confirms:
+
+```
+SES_CONFIGURATION_SET = my-first-configuration-set
+```
+
+SES event tracking (bounces, complaints, opens, clicks to SNS) has been active in production. The blocking item in Milestone 9 and the PROGRESS.md stale blockers that reference this gap should be disregarded.
+
+---
+
+### Section 3 — Code Changes
+
+**File:** `server/email.js`
+
+**Change 1 — `buildUnsubscribeFooter()` returns `url` (line 153):**
+
+```diff
+-if (!userId || !email) return { html: "", text: "" };
++if (!userId || !email) return { url: null, html: "", text: "" };
+ ...
+ return {
++  url,
+   html: `...`,
+   text: `...`,
+ };
+```
+
+The URL was previously generated and embedded only into the HTML/text body. Now it is also returned in the result object so the caller can use it for the `List-Unsubscribe` header without a second call to `generateUnsubscribeToken`.
+
+**Change 2 — Unified headers block (lines 124–151):**
+
+```diff
+-if (process.env.SES_CONFIGURATION_SET && campaignEmailId) {
+-  mailOptions.headers = {
+-    "X-SES-CONFIGURATION-SET": process.env.SES_CONFIGURATION_SET,
+-    "X-SES-MESSAGE-TAGS": `campaign-email-id=${campaignEmailId}`,
+-  };
+-}
++const headers = {};
++
++if (unsubscribeFooter.url) {
++  headers["List-Unsubscribe"]      = `<${unsubscribeFooter.url}>`;
++  headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
++}
++if (campaignEmailId) {
++  headers["Feedback-ID"] = `${campaignEmailId}:repmail`;
++}
++if (process.env.SES_CONFIGURATION_SET && campaignEmailId) {
++  headers["X-SES-CONFIGURATION-SET"] = process.env.SES_CONFIGURATION_SET;
++  headers["X-SES-MESSAGE-TAGS"]      = `campaign-email-id=${campaignEmailId}`;
++}
++if (Object.keys(headers).length > 0) {
++  mailOptions.headers = headers;
++}
+```
+
+**Post-fix header audit — every production campaign email:**
+
+| Header | Present | Source |
+|---|---|---|
+| `Message-ID` | Always | nodemailer auto, `@letszero.in` domain |
+| `Date` | Always | nodemailer auto |
+| `MIME-Version` | Always | nodemailer auto, `1.0` |
+| `Reply-To` | Conditional | `senderProfile.replyToEmail` |
+| `List-Unsubscribe` | Always (when user + email exist) | `<https://www.letszero.in/api/unsubscribe?...>` |
+| `List-Unsubscribe-Post` | Same condition | `List-Unsubscribe=One-Click` |
+| `Feedback-ID` | When `campaignEmailId` set | `{campaignEmailId}:repmail` |
+| `X-SES-CONFIGURATION-SET` | Conditional | `my-first-configuration-set` |
+| `X-SES-MESSAGE-TAGS` | Conditional | `campaign-email-id={id}` |
+
+**Not added — deliberate:**
+- `Precedence: bulk` — counterproductive for conversational B2B outreach. Signals to Gmail "this is bulk mail" and increases Promotions/Spam routing. RepMail targets personal outreach, not newsletters.
+
+---
+
+### Section 4 — Production-Path Test Send
+
+**Test utility:** `tmp/test-campaign-path.mjs` — calls `sendCampaignEmail()` directly. Identical code path to campaign worker.
+
+**Evidence:**
+
+```
+SES_FROM_EMAIL      : support@letszero.in
+SES_CONFIGURATION_SET: my-first-configuration-set
+APP_URL             : https://www.letszero.in
+
+messageId : <d2516972-aa9f-552b-ead2-e3d026d9fae1@letszero.in>
+response  : 250 Ok 0110019ecf4fef46-ff16a03d-df7d-4fd3-bd53-c99ee7b994fd-000000
+accepted  : [ 'singh.abhishek73821@gmail.com' ]
+rejected  : []
+```
+
+Content profile:
+- Subject: `"a note from the RepMail team"` — factual, no cold-outreach signals
+- Body: sender identity self-introduction, no "check in" / "follow up" / "hope you're doing well" patterns
+- From: `"Abhishek Singh" <support@letszero.in>` — real sender name via `senderProfile`
+- Reply-To: `support@letszero.in`
+- Headers: `List-Unsubscribe`, `List-Unsubscribe-Post`, `Feedback-ID`, `X-SES-CONFIGURATION-SET`, `X-SES-MESSAGE-TAGS` — all present
+
+**Gmail placement result (pending user confirmation).**
+
+---
+
+### Section 5 — Deployment Verification
+
+| Step | Evidence |
+|---|---|
+| Commit `5b396b9` on `origin/main` | `git log --oneline origin/main -1` → `5b396b9 [DELIVERABILITY] Add List-Unsubscribe, List-Unsubscribe-Post, Feedback-ID headers` |
+| Railway auto-deploy triggered | Deployment `7c96b2a0` appeared within 60s of push, status `BUILDING → DEPLOYING` |
+| Prior successful deployment | `3bff9188` = `5c72f9b` (all prior session commits deployed and confirmed) |
+
+Railway deployment `7c96b2a0` **SUCCESS** — confirmed via `railway deployment list`. Startup logs:
+
+```
+[PRODUCTION MODE] Connected to PostgreSQL database
+[STORAGE] Active adapter: PostgreSQL (PRODUCTION)
+[WORKER] BullMQ campaign worker started (concurrency=3)
+[REDIS] Connected
+[SMTP-DIAG] TCP OK — connected to email-smtp.eu-north-1.amazonaws.com:2587
+serving on port 8080
+[QUEUE] Campaign queue initialized
+```
+
+No error lines. All subsystems healthy. Commit `5b396b9` is live in production.

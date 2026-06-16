@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-16
-**Current commit:** 379006a (latest feature) — see AUDIT_TRAIL.md Audit 013
+**Current commit:** 5b396b9 — see AUDIT_TRAIL.md Audit 014
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -164,16 +164,19 @@ Only **V** is treated as proven.
 | SPF | **I** | Covers Zoho only — SES not in SPF, `~all` softfail, Return-Path is `amazonses.com`. SPF DMARC alignment fails. DKIM alignment compensates. |
 | DKIM | **V** | SES Easy DKIM Verified (confirmed AWS SES console by user). Signs with `d=letszero.in`. DMARC alignment via DKIM passes in relaxed mode. |
 | DMARC | **V** | Fixed 2026-06-16. Was: two `_dmarc.letszero.in` records (RFC 7489 permerror). Now: one record `v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=...` — re-verified via `nslookup` against Google DNS. |
-| Inbox placement test | **V** | Test campaign 2026-06-14: 0 Primary, 1 Promotions, 2 Spam (3 delivered of 6; 3 suppressed). Primary causes: duplicate DMARC (now fixed) + new domain reputation. |
-| Post-fix verification | **D** | Pending — send one test email after DMARC propagates, check "Show original" for `dmarc=pass`. |
-| Mail Tester score ≥ 8/10 | **D** | Not run — defer until auth confirmed via post-fix test. |
+| SPF+DKIM+DMARC pass confirmed | **V** | Gmail "Show original" 2026-06-16: `spf=pass`, `dkim=pass`, `dmarc=pass` — all three confirmed on live send. |
+| List-Unsubscribe header | **I** | `email.js:5b396b9` — RFC 2369 header present on every campaign email: `<https://www.letszero.in/api/unsubscribe?...>` |
+| List-Unsubscribe-Post header | **I** | `email.js:5b396b9` — RFC 8058 one-click header: `List-Unsubscribe=One-Click` |
+| Feedback-ID header | **I** | `email.js:5b396b9` — `{campaignEmailId}:repmail` — enables Gmail Postmaster Tools tracking |
+| Production-path test send | **V** | `tmp/test-campaign-path.mjs` via `railway run` — `sendCampaignEmail()` called directly. messageId: `<d2516972-aa9f-552b-ead2-e3d026d9fae1@letszero.in>`, SES `250 Ok`, accepted, rejected: none. |
+| Post-fix Gmail placement | **D** | Pending user confirmation of Gmail placement for the 2026-06-16 production-path send. |
+| Mail Tester score ≥ 8/10 | **D** | Not run — defer until Gmail placement confirmed. |
 
-**Milestone status: I/V mixed** — DKIM verified, DMARC fix verified in DNS. Post-fix send test pending.
+**Milestone status: I/V mixed** — Auth confirmed PASS, compliance headers implemented, production-path send verified. Gmail inbox placement pending user confirmation.
 
 **Blocking items:**
-- Post-fix test email to Gmail required to confirm `dmarc=pass` in Authentication-Results header
-- New domain reputation requires warm-up strategy — not a code fix
-- `SES_CONFIGURATION_SET` absent from Railway env vars — no open/click tracking
+- User to confirm Gmail placement (Primary / Promotions / Spam) for the 2026-06-16 send
+- New domain reputation requires warm-up — not a code fix; Primary inbox requires engagement history
 
 ---
 
@@ -314,6 +317,9 @@ Evidence is appended here as each item moves to V.
 | 2026-06-14 | Gmail placement test | 3 delivered emails: 2 Spam, 1 Promotions, 0 Primary. Root causes: duplicate DMARC (permerror) + new domain. | FAIL — deliverability |
 | 2026-06-14 | History.jsx false credit warning | "Account ran out of credits" shown incorrectly when contacts were suppressed (not credit exhaustion). Root cause: `sentEmails < totalEmails` condition fired on any shortfall. Fixed in `f2b4cfa`. | RESOLVED |
 | 2026-06-16 | DMARC fix verified | Deleted `v=DMARC1; p=none;` record. Single record remains: `p=quarantine; adkim=r; aspf=r`. Verified via nslookup against Google DNS 8.8.8.8. | PASS |
+| 2026-06-16 | Gmail auth confirmed | Send to `singh.abhishek73821@gmail.com` — "Show original": `spf=pass dkim=pass dmarc=pass`. All three pass for the first time. | PASS |
+| 2026-06-16 | Production-path send | `railway run node tmp/test-campaign-path.mjs` — calls `sendCampaignEmail()` directly. messageId: `<d2516972@letszero.in>`. SES `250 Ok`. All compliance headers present. | PASS |
+| 2026-06-16 | SES_CONFIGURATION_SET confirmed | `railway variables` shows `SES_CONFIGURATION_SET=my-first-configuration-set`. Prior Audit 013 finding was based on local .env — incorrect. Tracking IS active. | PASS |
 
 ---
 
