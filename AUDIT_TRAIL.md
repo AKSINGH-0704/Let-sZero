@@ -1113,3 +1113,155 @@ serving on port 8080
 ```
 
 No error lines. All subsystems healthy. Commit `5b396b9` is live in production.
+
+---
+
+## Audit 015 — AI Quality Overhaul: Prompt Redesign + Validation Hardening + Metrics UX
+
+**Date:** 2026-06-16
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full redesign of AI email generation prompts in `server/ai.js`, new validation hard-blocks in `validateTemplate`, and campaign metrics UX fix in `client/src/pages/History.jsx`
+**Trigger:** Production-generated emails exhibited: prompt leakage ("Rephrase to a more direct question..."), sign-off phrase garbage ("Best regards, repmail, complimentary lance, letszero"), generic clichéd openers ("I hope this message finds you well"), marketing subject lines ("Streamlining Your Sales Outreach"), and 100% Delivery Rate displayed when contacts were suppressed.
+
+---
+
+### Section 1 — Root Causes
+
+#### Finding 1: SIGN-OFF FORMAT lines in CAMPAIGN_TYPE_PREAMBLES
+
+All 6 campaign type preambles (`b2b_outreach`, `real_estate`, `recruitment`, `partnership`, `follow_up`, `general`) contained explicit `SIGN-OFF FORMAT:` lines instructing the model to include full name/title/company as a structured closing. When combined with `senderIdentityBlock` which said "Sign off with their full name, title, and company on separate lines," the model generated a greeting phrase ("Best regards,") as a transition before the `{{sender_name}}` placeholder block. The platform then substitutes the sender profile data, producing "Best regards,\nrepmail\ncomplimentary lance\nletszero" when the test user had garbage data in their profile fields.
+
+**Fix:** Removed all `SIGN-OFF FORMAT:` lines. Replaced each with: `The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`
+
+#### Finding 2: senderIdentityBlock instructed sign-off phrase generation
+
+The `senderIdentityBlock` contained "Sign off with their full name, title, and company on separate lines" — a direct instruction to include a sign-off transition before the placeholders.
+
+**Fix:** Rewritten to "The email body ends with `{{sender_name}}` / `{{sender_title}}` / `{{sender_company}}` as the sign-off — no greeting phrase (Best regards, Kind regards, Thanks, Sincerely, Cheers, etc.) before the placeholder block."
+
+#### Finding 3: System prompt lacked explicit cliché prohibitions
+
+The prior system prompt prohibited spam vocabulary (free, exclusive, VIP, etc.) but contained no prohibition on:
+- Cold-email opener clichés ("I hope this message finds you well", "I'm reaching out to", "touching base")
+- Sign-off phrase generation ("Best regards", "Sincerely", "Thanks")
+- Subject line marketing patterns ("Streamlining Your X", "Maximizing Your X")
+- Output meta-commentary ("Rephrase to...", "Note:", "Insert here")
+
+**Fix:** Added five named rule blocks to the system prompt: SUBJECT LINE RULES, PROHIBITED OPENING PHRASES, PROHIBITED SIGN-OFF PHRASES, BODY RULES, OUTPUT RULES.
+
+#### Finding 4: No leaked instruction detection in validateTemplate
+
+The model at temperature 0.8 could output instruction-like text in its response. The existing validation checked for bracket artifacts, unknown placeholders, sign-off presence, and fabricated relationship phrases — but not for leaked prompt instructions appearing verbatim in the email body.
+
+**Fix:** `LEAKED_INSTRUCTION_RE` added as module-level constant. Step 10 hard-blocks generation if the subject or body contains patterns like "Rephrase to", "Note:", "Insert here", "Customize this", "[Personalize]", etc.
+
+#### Finding 5: No sign-off phrase detection in validateTemplate
+
+Even with the prompt hardening, the model might still generate a greeting phrase before `{{sender_name}}` under some temperature configurations. No safety net existed.
+
+**Fix:** `SIGNOFF_PHRASE_RE` added. Step 11 hard-blocks if a sign-off phrase is detected without `{{sender_name}}` (model omitted the placeholder entirely). Step 11 also warns if both are present (double sign-off scenario).
+
+#### Finding 6: No filler opener detection in validateTemplate
+
+**Fix:** `FILLER_OPENER_RE` added. Step 12 warns if the body opens with a banned cliché opener.
+
+#### Finding 7: Campaign list "Delivery Rate" column showed 100% despite suppressions
+
+The `Delivery Rate` column was computed as `deliveredEmails / sentEmails` — the fraction of sent emails confirmed delivered by SNS. For a campaign with `totalEmails=6, sentEmails=3, skippedEmails=3`, this showed `100%` delivery rate with no indication that 3 contacts were suppressed. The list-level view had no "Skipped" column (only the detail modal did).
+
+**Fix:** Replaced the "Delivered" column with a "Skipped" column in the campaign list table. Renamed "Delivery Rate" to "Reach" and changed the denominator to `sentEmails / totalEmails` — showing what fraction of the intended list was actually reached. Color logic: emerald at 100% (all contacts reached), amber at < 100% (some skipped/failed). Skipped cell shows amber value when `skippedEmails > 0`, dash otherwise.
+
+---
+
+### Section 2 — Changes
+
+#### server/ai.js
+
+| Area | Change |
+|---|---|
+| `CAMPAIGN_TYPE_PREAMBLES` (all 6 types) | Removed `SIGN-OFF FORMAT:` lines; replaced with no-greeting-phrase ending note |
+| `senderIdentityBlock` — personal branch | "end with `{{sender_name}}` on its own line — no greeting phrase" |
+| `senderIdentityBlock` — non-personal branch | "ends with `{{sender_name}}` / `{{sender_title}}` / `{{sender_company}}` — no greeting phrase before the placeholder block" |
+| `generateTemplate` system prompt | Added: SUBJECT LINE RULES (3-7 words, lowercase preferred); PROHIBITED OPENING PHRASES (13 banned patterns); PROHIBITED SIGN-OFF PHRASES (10 banned phrases); BODY RULES (120 word limit, 3 paragraphs max); OUTPUT RULES (anti-leakage, JSON-only) |
+| `max_tokens` | 1200 → 900 (shorter outputs, reduces token cost, forces concision) |
+| `LEAKED_INSTRUCTION_RE` | New module-level constant — detects "Rephrase to", "Note:", "Insert here", etc. |
+| `SIGNOFF_PHRASE_RE` | New module-level constant — detects standalone sign-off phrases |
+| `FILLER_OPENER_RE` | New module-level constant — detects cold-email opener clichés |
+| `validateTemplate` Step 10 | Leaked instruction hard-block |
+| `validateTemplate` Step 11 | Sign-off phrase detection: hard-block (no placeholder) or warn (double sign-off) |
+| `validateTemplate` Step 12 | Filler opener warning |
+| Telemetry step | Renumbered to Step 13 |
+
+#### client/src/pages/History.jsx
+
+| Area | Change |
+|---|---|
+| Table column "Delivered" | Replaced with "Skipped" — shows `skippedEmails ?? 0` in amber, dash when zero |
+| Table column "Delivery Rate" | Renamed to "Reach" — computed as `sentEmails / totalEmails * 100`; emerald at 100%, amber below |
+| `deliveryRate` variable | Removed; replaced with `reachRate` |
+
+---
+
+### Section 3 — Before/After Output Examples
+
+**Before (from production):**
+
+Subject: `Streamlining Your Sales Outreach`
+
+Body excerpt:
+> I hope this message finds you well. I am reaching out because I believe RepMail could be a great asset for your sales outreach efforts... [150-word body with marketing language] ...
+>
+> Rephrase to a more direct question for better engagement.
+>
+> Best regards,
+> repmail
+> complimentary lance
+> letszero
+
+**After (expected from new prompts):**
+
+Subject: `sales process at {{company}}`
+
+Body:
+> Hi {{name}},
+>
+> Saw that {{company}} is scaling its outbound. Teams adding reps without fixing the underlying outreach process usually hit a wall around 30% response drop-off within 90 days.
+>
+> We built RepMail specifically for that inflection point — sequences that read like direct messages, not campaigns.
+>
+> Worth a quick call this week?
+>
+> {{sender_name}}
+> {{sender_title}}, {{sender_company}}
+
+---
+
+### Section 4 — Validation Pipeline (Post-Audit)
+
+| Step | Code | Severity | Trigger |
+|---|---|---|---|
+| 1 | BRACKET_ARTIFACT | warn + repair | `[Your Name]`, `[Company]`, etc. |
+| 2 | EMPTY_SUBJECT / EMPTY_BODY | hard block | Post-repair empty content |
+| 3 | PLACEHOLDER_IN_SUBJECT / BODY | hard block | Unknown `{{...}}` tags |
+| 4 | SUBJECT_TOO_LONG / LENGTH_WARNING | warn | > 50 or > 40 chars |
+| 4 | RE_PREFIX_SUBJECT | warn | Cold email starts with "Re:" |
+| 4 | SUBJECT_PROHIBITED_PATTERN | warn | "Quick question", "Following up", etc. |
+| 4 | SUBJECT_PROMOTIONAL_LANGUAGE | warn | Luxury, exclusive, grand opening, etc. |
+| 5 | BODY_TOO_LONG / SHORT | warn | > 180 or < 30 words |
+| 6 | NO_CTA_QUESTION / MULTIPLE_CTA | warn | Zero or multiple `?` in closing |
+| 7 | NO_SIGNOFF_DETECTED | warn | No `{{sender_name}}` and no short-line pattern |
+| 8 | REAL_ESTATE_COMPANY_PLACEHOLDER | warn | `{{company}}` in real estate email |
+| 9 | FABRICATED_RELATIONSHIP | warn | "as we discussed", "last time we spoke", etc. |
+| **10** | **LEAKED_INSTRUCTION** | **hard block** | "Rephrase to", "Note:", "Insert here", etc. |
+| **11** | **SIGNOFF_PHRASE_WITHOUT_PLACEHOLDER** | **hard block** | Sign-off phrase with no `{{sender_name}}` |
+| **11** | **SIGNOFF_PHRASE_WITH_PLACEHOLDER** | **warn** | Sign-off phrase before `{{sender_name}}` |
+| **12** | **FILLER_OPENER** | **warn** | Body opens with banned cliché |
+| 13 | *(Telemetry)* | — | All warnings + repairs logged as structured JSON |
+
+Steps 10–12 are new in this audit.
+
+---
+
+### Section 5 — Status
+
+`IMPL` — code changes complete. Not yet deployed.

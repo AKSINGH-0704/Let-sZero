@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-16
-**Current commit:** 5b396b9 — see AUDIT_TRAIL.md Audit 014
+**Current commit:** (pending push after AI quality overhaul) — see AUDIT_TRAIL.md Audit 015
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -354,3 +354,25 @@ Product decision: trial credits (5, one-time) replaced by Free Plan (500 credits
 **Rollback:** Set `FREE_PLAN_ENABLED=false` + `UPDATE users SET is_trial_user = true WHERE plan = 'free' AND is_active = true;`
 
 **Milestone status: I** — fully implemented, 2 bugs caught and fixed in verification, NOT yet runtime-verified
+
+---
+
+### 13 · AI Quality (commit pending)
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| CAMPAIGN_TYPE_PREAMBLES — SIGN-OFF FORMAT removed | **I** | `ai.js` — all 6 types rewritten; no greeting phrase before placeholder block |
+| senderIdentityBlock — no sign-off phrase instruction | **I** | `ai.js` — both personal and non-personal branches updated |
+| System prompt — PROHIBITED OPENING PHRASES | **I** | `ai.js` — 13 banned patterns (hope this finds you well, reaching out, touching base, etc.) |
+| System prompt — PROHIBITED SIGN-OFF PHRASES | **I** | `ai.js` — 10 banned phrases (Best regards, Thanks, Sincerely, Cheers, etc.) |
+| System prompt — SUBJECT LINE RULES | **I** | `ai.js` — 3-7 words, lowercase preferred, no marketing headline patterns |
+| System prompt — BODY RULES | **I** | `ai.js` — 120 word limit (down from 180), 3 paragraphs max |
+| System prompt — OUTPUT RULES | **I** | `ai.js` — anti-leakage, JSON-only output |
+| max_tokens reduced | **I** | `ai.js` — 1200 → 900 |
+| LEAKED_INSTRUCTION_RE + Step 10 hard block | **I** | `ai.js` — detects "Rephrase to", "Note:", "Insert here", etc. |
+| SIGNOFF_PHRASE_RE + Step 11 hard block / warn | **I** | `ai.js` — detects sign-off phrases before/without sender placeholder |
+| FILLER_OPENER_RE + Step 12 warn | **I** | `ai.js` — detects banned cold-email opener clichés |
+| History.jsx — "Skipped" column in campaign list | **I** | `History.jsx` — replaces "Delivered" column; amber when skipped > 0 |
+| History.jsx — "Reach" metric replaces "Delivery Rate" | **I** | `History.jsx` — `sentEmails / totalEmails` (not `deliveredEmails / sentEmails`) |
+
+**Milestone status: I** — implemented, not yet deployed or runtime-verified

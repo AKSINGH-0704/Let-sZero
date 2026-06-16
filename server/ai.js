@@ -347,25 +347,25 @@ const CAMPAIGN_TYPE_PREAMBLES = {
 STRUCTURE: (1) Opening that acknowledges their role or company → (2) specific, concrete value proposition → (3) single question CTA.
 VOCABULARY: Use business-results language — team, growth, process, pipeline, efficiency, partnership, results.
 PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} to reference their organization naturally (e.g., "at {{company}}", "your team at {{company}}"). Use {{category}} to reference their industry vertical if it sharpens the pitch.
-SIGN-OFF FORMAT: Full name, title, company on separate lines.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 
   real_estate: `This is a personal real estate inquiry — NOT a corporate pitch, NOT a B2B email.
 STRUCTURE: (1) Brief personal intro referencing the property or market → (2) specific context (property type, location, interest) → (3) clear next step (viewing, call, more info).
 VOCABULARY: Use real estate language — property, home, listing, neighbourhood, market, viewing, location, price range, bedrooms, sq ft. NEVER use: your organization, your team, business needs, ROI, solution, corporate, enterprise.
 PLACEHOLDERS: Use {{name}} in the greeting. DO NOT use {{company}} anywhere — this is person-to-person contact, not a company pitch. Use {{category}} only if it refers to property type (e.g., residential, commercial, investment).
-SIGN-OFF FORMAT: First name only, or first and last name. No title or company in the sign-off.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 
   recruitment: `This is a recruitment outreach email about a job opportunity.
 STRUCTURE: (1) Brief context on the opportunity or role → (2) why this specific person is a strong fit → (3) single soft CTA (open to a quick call?).
 VOCABULARY: Use talent/career language — opportunity, role, background, experience, fit, team, position, compensation, growth path. Reference their skills or career stage if known.
 PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} to name the hiring organization (e.g., "a role at {{company}}"). Use {{category}} to reference their job function or seniority level.
-SIGN-OFF FORMAT: Full name, title (e.g., Recruiter, Talent Partner, Head of People), company.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 
   partnership: `This is a partnership proposal or collaboration outreach email.
 STRUCTURE: (1) Brief intro establishing who the sender is and their credibility → (2) specific partnership idea and mutual benefit → (3) question to open dialogue.
 VOCABULARY: Use partnership language — collaboration, mutual benefit, audience, opportunity, joint, aligned, synergy, co-create.
 PLACEHOLDERS: Use {{name}} and {{company}} naturally throughout. Use {{category}} to frame the partner's business type if relevant.
-SIGN-OFF FORMAT: Full name, title, company.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 
   follow_up: `This is a follow-up to a previous conversation or prior interaction.
 STRUCTURE: (1) Brief, honest reference to the prior contact → (2) reason for following up now → (3) single clear next step or question.
@@ -373,12 +373,12 @@ VOCABULARY: Use follow-up language — following up, last time we spoke, wanted 
 HONESTY RULE: Only reference specific prior conversation details if they are explicitly provided in the campaign goal below. If no prior context is provided, keep the opening minimal and honest — "I reached out recently and wanted to follow up" is correct. Do NOT invent details about meetings, discussions, or commitments that were not described. A vague but honest reference is better than a specific fabrication.
 SUBJECT RULE: Do not start the subject line with "Re:" — this falsely implies a prior email thread to the recipient's email client and is deceptive. Reference the prior interaction in the subject honestly instead.
 PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it was part of the prior conversation context. Use {{category}} sparingly.
-SIGN-OFF FORMAT: Full name, title if relevant.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 
   general: `This is a general outreach email.
 STRUCTURE: (1) Brief intro → (2) clear purpose and relevance to recipient → (3) single CTA.
 PLACEHOLDERS: Use {{name}} in the greeting. Use {{company}} only if it sounds completely natural in context. Use {{category}} only if it adds specificity.
-SIGN-OFF FORMAT: Full name.`,
+The email body ends with the CTA question. The sender placeholder block follows on the next line — no "Best regards", "Thanks", or similar phrase before it.`,
 };
 
 export async function generateTemplate(intake, tone = "professional", opts = {}) {
@@ -421,19 +421,18 @@ export async function generateTemplate(intake, tone = "professional", opts = {})
     ? isPersonalCampaign
       ? `SENDER IDENTITY:
 - Name: ${senderCtx.name || "not provided"}
-Write FROM this person's perspective. Sign off with their name only — do NOT include title or company (this is a personal inquiry, not a corporate pitch).`
+Write FROM this person's perspective. The email must end with {{sender_name}} on its own line — no greeting phrase (Best regards, Thanks, Cheers, etc.) before it. This is a personal inquiry, not a corporate pitch.`
       : `SENDER IDENTITY (the person writing this email):
 - Name: ${senderCtx.name || "not provided"}
 - Title: ${senderCtx.title || "not provided"}
 - Company: ${senderCtx.company || "not provided"}
-Write FROM this person's perspective. Sign off with their full name, title, and company on separate lines.`
+Write FROM this person's perspective. The email body ends with {{sender_name}} / {{sender_title}} / {{sender_company}} as the sign-off — no greeting phrase (Best regards, Kind regards, Thanks, Sincerely, Cheers, etc.) before the placeholder block. The CTA question is the last sentence of the body; the placeholder block is the only thing after it.`
     : isPersonalCampaign
       ? `SENDER IDENTITY: Not configured. End the email with {{sender_name}} only — do NOT add {{sender_title}} or {{sender_company}} (personal inquiry, not a corporate pitch).`
-      : `SENDER IDENTITY: Not configured. End the email with:
+      : `SENDER IDENTITY: Not configured. End the email body with:
 {{sender_name}}
-{{sender_title}}
-{{sender_company}}
-These will be replaced at send time with the sender's real details.`;
+{{sender_title}}, {{sender_company}}
+No greeting phrase (Best regards, Thanks, etc.) before these lines. The CTA question comes first, then these placeholders on separate lines.`;
 
   const campaignPreamble = CAMPAIGN_TYPE_PREAMBLES[campaignType] || CAMPAIGN_TYPE_PREAMBLES.general;
 
@@ -446,7 +445,7 @@ These will be replaced at send time with the sender's real details.`;
     general:      "{{category}} — recipient's category. Use only if it makes the message more natural and specific.",
   };
 
-  const systemPrompt = `You are helping a sales professional write a personal, one-to-one email to a specific individual. This email must feel as if it was written by hand for one person and sent from one person's real inbox — not automated, not a marketing campaign, not a template blast. The measure of success is whether the recipient replies, not whether they click. Write as one human reaching out to another.
+  const systemPrompt = `You are helping a sales professional write a short, direct, one-to-one email to a specific individual. The email must read as if one human typed it to one person — not automated, not templated, not a campaign. The only success metric is whether the recipient replies.
 
 CAMPAIGN CONTEXT:
 ${campaignPreamble}
@@ -459,22 +458,55 @@ AVAILABLE RECIPIENT PLACEHOLDERS (use naturally — never mechanically):
 - {{email}} — recipient's email address (rarely needed)
 - ${categoryGuide[campaignType] || categoryGuide.general}
 
-RULES:
+SUBJECT LINE RULES:
+- 3–7 words maximum. Lowercase preferred (capitalize only proper nouns and {{name}}/{{company}} placeholders).
+- Write what a human types in their email client, not a campaign header. Specific beats generic.
+- Good examples: "outreach at {{company}}", "question about your process", "{{company}} + us", "scaling your SDR team"
+- Banned subject patterns: "Streamlining Your X", "Maximizing Your X", "Boost Your X", "Introduction — X", any verb-noun marketing headline
+- Also banned (already covered by earlier rules): Quick question, Following up, Exclusive, Grand opening, Announcing, Introducing, Special
+
+PROHIBITED OPENING PHRASES — the first sentence must not use any of these:
+- "I hope this message finds you well" / "I hope this finds you well" / "Hope you're doing well"
+- "I am reaching out" / "I'm reaching out to" / "reaching out because"
+- "I wanted to reach out" / "I was hoping to connect"
+- "I'm writing to inform you" / "I'm writing to introduce"
+- "I'd like to introduce myself" / "Allow me to introduce" / "My name is X and I"
+- "touching base" / "circling back" / "just checking in"
+- Any opener that contains no information for the recipient
+
+PROHIBITED SIGN-OFF PHRASES — never write these before or instead of the sender placeholder block:
+- "Best regards" / "Kind regards" / "Warm regards" / "Regards"
+- "Thanks" / "Thank you" / "Many thanks" (as a standalone closing line)
+- "Sincerely" / "Yours truly" / "Cheers" / "Best"
+- "Looking forward to hearing from you"
+- "Please let me know if you have any questions"
+- "Feel free to reach out" / "Don't hesitate to contact me"
+The CTA question is the last sentence of the body. The sender placeholder block is the only thing that follows — nothing else.
+
+BODY RULES:
+- Maximum 3 short paragraphs, under 120 words total. Every sentence must earn its place.
 - Write from the perspective of a real individual, not a company or platform
-- The email must explain WHY this recipient is relevant to receive this message — not just acknowledge who they are. Avoid superficial personalization such as "I noticed you work at {{company}}." Instead, connect the outreach to a business problem, industry context, company context, or role context that makes the message relevant. Personalization should be grounded in information actually available in the prompt.
-- Do not imply knowledge of the recipient's priorities, projects, conversations, initiatives, or business challenges unless they are explicitly provided in the campaign context.
-- When describing the recipient's likely situation based on their role or company stage, frame it as your observation ("In working with teams at this stage..." or "Teams scaling past 20 reps often...") rather than asserting universal facts ("Most companies do X" or "All teams at your size..."). You have no data to support universal claims about recipient populations.
-- Use {{name}} in the greeting — but rephrase the sentence if it sounds forced
-- Only use {{company}} when the campaign context says it is appropriate AND it sounds natural in that specific sentence
-- Subject line: under 50 characters, aim for under 40. Personalize with {{name}} or {{company}} when it reads naturally. Write what a real person would type as a message subject — not a campaign header. Avoid generic patterns: "Quick question", "Following up", "Introduction". Also avoid event and announcement language in subjects: "Exclusive", "Grand Opening", "Announcing", "Introducing", "Special Invitation", "Launch"
-- No ALL CAPS anywhere in subject or body
-- No exclamation marks unless the tone specifically calls for one
-- Avoid all spam and promotional vocabulary: free, winner, urgent, guaranteed, "click here", "limited time", "act now", exclusive, luxury, premium, bonus, "limited offer", "special offer", VIP, complimentary, sale, deal, "don't miss", "reserve your spot", "grand opening", announcing, launch, introducing, invitation
+- Explain WHY this recipient is relevant — connect the outreach to their role, company stage, or industry context. Avoid superficial personalization like "I noticed you work at {{company}}."
+- Do not imply knowledge of conversations, projects, or priorities unless explicitly provided
+- When describing the recipient's situation, frame it as observation ("Teams scaling past 20 reps often...") not assertion ("Most companies at your size...")
+- Use {{name}} in the greeting — but rephrase if it sounds forced
+- Only use {{company}} when the campaign context says it is appropriate AND it sounds natural
+- No ALL CAPS anywhere
+- No exclamation marks unless the tone specifically requires one
+- Avoid all spam vocabulary: free, winner, urgent, guaranteed, "click here", "limited time", "act now", exclusive, luxury, premium, bonus, "limited offer", "special offer", VIP, complimentary, sale, deal, "don't miss", "reserve your spot", announcing, launch, invitation
 - Plain conversational language — no corporate jargon, no hype, no pressure
-- Body: 3–4 short paragraphs maximum (under 180 words total)
-- Exactly one CTA at the end. Frame it as a low-commitment permission question, not a request or demonstration offer. "Worth a quick conversation?" outperforms "Would you like to schedule a call?". "Open to a brief chat?" outperforms "I'd love to show you a demo." The reader should feel like saying yes costs them nothing.
-- NEVER write [Your Name], [Title], [Company] or any text in square brackets — use {{sender_name}} etc. instead
-- Output ONLY valid JSON, no markdown, no explanation`;
+
+CTA RULES:
+- Exactly one low-commitment question at the end of the body
+- "Worth a quick conversation?" beats "Would you like to schedule a call?"
+- "Open to a brief chat?" beats "I'd love to show you a demo."
+- One question. The reader should feel like saying yes costs them nothing.
+
+OUTPUT RULES:
+- Output ONLY the email content — subject and body. No meta-commentary, instructions, notes, alternatives, or explanations inside the output.
+- Never write text like "Rephrase to", "Note:", "Insert here", "Customize this", "Alternative:", "[Personalize]", or any directive
+- NEVER write [Your Name], [Title], [Company] or any text in square brackets
+- Output ONLY valid JSON: {"subject": "...", "body": "..."}`;
 
   const userPrompt = `Write a complete email template for this campaign:
 
@@ -510,7 +542,7 @@ Return JSON:
         { role: "user", content: userPrompt }
       ],
       temperature: 0.8,
-      max_tokens: 1200
+      max_tokens: 900
     });
     const latencyMs = Date.now() - t0;
 
@@ -576,6 +608,15 @@ const FABRICATED_RELATIONSHIP_PATTERNS = [
   /\b(investors?|people|contacts?|colleagues?) i know\b/i,
   /\bour (previous |prior |last )?(conversation|chat|discussion|meeting|call)\b/i,
 ];
+
+// Detects leaked AI instructions in generated output
+const LEAKED_INSTRUCTION_RE = /\b(rephrase\s+to\b|note:\s|insert\s+here\b|customize\s+this\b|alternative:\s|\[customize\]|\[insert\]|\[add\s|\[your\s|step\s+\d+:|option\s+[a-z]:|e\.g\.,\s+")/i;
+
+// Detects standalone sign-off phrases that precede (or replace) the sender placeholder
+const SIGNOFF_PHRASE_RE = /^(best\s+regards|kind\s+regards|warm\s+regards|regards,|thanks,|thank\s+you,|sincerely,|cheers,|best,|yours\s+truly|yours\s+sincerely|looking\s+forward|feel\s+free\s+to\s+reach|don'?t\s+hesitate)\b/im;
+
+// Detects generic cold-email opener clichés in the first 60 characters of body
+const FILLER_OPENER_RE = /^(i\s+hope\s+this|hope\s+you'?re|i\s+am\s+reaching\s+out|i'?m\s+reaching\s+out\s+to|i\s+wanted\s+to\s+reach\s+out|i\s+was\s+hoping\s+to\s+connect|i'?m\s+writing\s+to|allow\s+me\s+to\s+introduce|my\s+name\s+is\s+\S+\s+and\s+i|just\s+wanted\s+to\s+touch\s+base|just\s+checking\s+in|circling\s+back|touching\s+base)/i;
 
 // Fresh instance per call — avoids g-flag lastIndex state across calls
 function bracketArtifactRe() {
@@ -747,7 +788,53 @@ export function validateTemplate(subject, body, { campaignType = 'general', inta
     }
   }
 
-  // ── Step 10: Telemetry ───────────────────────────────────────────────────────
+  // ── Step 10: Leaked instruction detection — hard block ────────────────────────
+  // Catches cases where the model outputs its own prompt (temperature artefact or
+  // prompt-injection). Any instruction-like phrase in the subject or body means
+  // the output cannot be used as an email.
+  if (LEAKED_INSTRUCTION_RE.test(s) || LEAKED_INSTRUCTION_RE.test(b)) {
+    const blocked = [{
+      code:     'LEAKED_INSTRUCTION',
+      message:  'Generated output contains an AI instruction phrase (e.g. "Rephrase to", "Note:", "Insert here"). The model leaked its prompt. Regenerate.',
+      severity: 'error',
+    }];
+    logValidationTelemetry({ userId, campaignType, model, warnings: blocked, repaired });
+    return { subject: s, body: b, hardBlocked: true, warnings: blocked };
+  }
+
+  // ── Step 11: Sign-off phrase detection — hard block ──────────────────────────
+  // The body should end with the sender placeholder block only.
+  // A standalone sign-off phrase (Best regards, Thanks, Sincerely, etc.) before
+  // the placeholder creates "Best regards,\nrepmail\nComplimentary Lance\nletszero"
+  // output that is both unprofessional and a spam signal.
+  if (!b.includes('{{sender_name}}') && SIGNOFF_PHRASE_RE.test(b)) {
+    const blocked = [{
+      code:     'SIGNOFF_PHRASE_WITHOUT_PLACEHOLDER',
+      message:  'Body ends with a sign-off phrase (Best regards, Thanks, etc.) but no {{sender_name}} placeholder. The platform appends sender identity — remove the greeting phrase and end with the sender placeholder block instead.',
+      severity: 'error',
+    }];
+    logValidationTelemetry({ userId, campaignType, model, warnings: blocked, repaired });
+    return { subject: s, body: b, hardBlocked: true, warnings: blocked };
+  }
+  if (b.includes('{{sender_name}}') && SIGNOFF_PHRASE_RE.test(b)) {
+    warnings.push({
+      code:     'SIGNOFF_PHRASE_WITH_PLACEHOLDER',
+      message:  'Body contains a sign-off phrase (Best regards, Thanks, etc.) before {{sender_name}}. Remove the phrase — the sender placeholder block is the sign-off. Leaving it creates double sign-off.',
+      severity: 'warn',
+    });
+  }
+
+  // ── Step 12: Filler opener detection — warning ───────────────────────────────
+  const bodyTrimmed = b.trimStart();
+  if (FILLER_OPENER_RE.test(bodyTrimmed)) {
+    warnings.push({
+      code:     'FILLER_OPENER',
+      message:  'Body opens with a generic cold-email cliché ("I hope this finds you well", "I\'m reaching out", "Just touching base", etc.). Replace with a specific, information-carrying first sentence.',
+      severity: 'warn',
+    });
+  }
+
+  // ── Step 13: Telemetry ───────────────────────────────────────────────────────
   if (warnings.length > 0 || repaired) {
     logValidationTelemetry({ userId, campaignType, model, warnings, repaired });
   }

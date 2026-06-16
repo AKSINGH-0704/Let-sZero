@@ -188,8 +188,8 @@ export default function History() {
                       <TableHead>Campaign Name</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Sent</TableHead>
-                      <TableHead className="text-right">Delivered</TableHead>
-                      <TableHead className="text-right">Delivery Rate</TableHead>
+                      <TableHead className="text-right">Skipped</TableHead>
+                      <TableHead className="text-right">Reach</TableHead>
                       <TableHead className="text-right">Open Rate</TableHead>
                       <TableHead className="text-right">Click Rate</TableHead>
                       <TableHead>Date</TableHead>
@@ -201,8 +201,8 @@ export default function History() {
                     {filteredCampaigns.map((campaign) => {
                       const config = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.PENDING;
                       const StatusIcon = config.icon;
-                      const deliveryRate = campaign.sentEmails > 0
-                        ? ((campaign.deliveredEmails / campaign.sentEmails) * 100).toFixed(1)
+                      const reachRate = (campaign.totalEmails ?? 0) > 0
+                        ? ((campaign.sentEmails / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
                         : null;
                       const openRate = campaign.sentEmails > 0
                         ? ((campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
@@ -231,14 +231,20 @@ export default function History() {
                           <TableCell className="text-right text-green-600 font-medium">
                             {formatNumber(campaign.sentEmails)}
                           </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {formatNumber(campaign.deliveredEmails ?? 0)}
+                          <TableCell className="text-right font-medium text-amber-600 dark:text-amber-400">
+                            {(campaign.skippedEmails ?? 0) > 0
+                              ? formatNumber(campaign.skippedEmails ?? 0)
+                              : <span className="text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell className="text-right">
-                            {deliveryRate !== null ? (
-                              <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-1">
+                            {reachRate !== null ? (
+                              <span className={`font-medium flex items-center justify-end gap-1 ${
+                                parseFloat(reachRate) === 100
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-amber-600 dark:text-amber-400"
+                              }`}>
                                 <Send className="h-3 w-3" />
-                                {deliveryRate}%
+                                {reachRate}%
                               </span>
                             ) : (
                               <span className="text-muted-foreground">—</span>
