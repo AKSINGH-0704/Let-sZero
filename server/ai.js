@@ -421,18 +421,21 @@ export async function generateTemplate(intake, tone = "professional", opts = {})
     ? isPersonalCampaign
       ? `SENDER IDENTITY:
 - Name: ${senderCtx.name || "not provided"}
-Write FROM this person's perspective. The email must end with {{sender_name}} on its own line — no greeting phrase (Best regards, Thanks, Cheers, etc.) before it. This is a personal inquiry, not a corporate pitch.`
+Write FROM this person's perspective. The email must end with the literal placeholder text {{sender_name}} on its own line — no greeting phrase (Best regards, Thanks, Cheers, etc.) before it. CRITICAL: output the placeholder tag exactly as written: {{sender_name}} — do NOT substitute the actual name value. The platform replaces placeholders at send time. This is a personal inquiry, not a corporate pitch.`
       : `SENDER IDENTITY (the person writing this email):
 - Name: ${senderCtx.name || "not provided"}
 - Title: ${senderCtx.title || "not provided"}
 - Company: ${senderCtx.company || "not provided"}
-Write FROM this person's perspective. The email body ends with {{sender_name}} / {{sender_title}} / {{sender_company}} as the sign-off — no greeting phrase (Best regards, Kind regards, Thanks, Sincerely, Cheers, etc.) before the placeholder block. The CTA question is the last sentence of the body; the placeholder block is the only thing after it.`
+Write FROM this person's perspective. The email body must end with the following three lines, each on its own line, exactly as written:
+{{sender_name}}
+{{sender_title}}, {{sender_company}}
+CRITICAL: output those placeholder tags verbatim — do NOT substitute the name, title, or company values from the sender context above. The platform replaces {{sender_name}}, {{sender_title}}, {{sender_company}} at send time. No greeting phrase (Best regards, Thanks, etc.) before these lines. The CTA question is the last sentence of the body; these three placeholder lines are the only thing after it.`
     : isPersonalCampaign
-      ? `SENDER IDENTITY: Not configured. End the email with {{sender_name}} only — do NOT add {{sender_title}} or {{sender_company}} (personal inquiry, not a corporate pitch).`
+      ? `SENDER IDENTITY: Not configured. End the email with the placeholder {{sender_name}} on its own line — do NOT add {{sender_title}} or {{sender_company}} (personal inquiry, not a corporate pitch).`
       : `SENDER IDENTITY: Not configured. End the email body with:
 {{sender_name}}
 {{sender_title}}, {{sender_company}}
-No greeting phrase (Best regards, Thanks, etc.) before these lines. The CTA question comes first, then these placeholders on separate lines.`;
+No greeting phrase (Best regards, Thanks, etc.) before these lines. The CTA question comes first, then these two placeholder lines.`;
 
   const campaignPreamble = CAMPAIGN_TYPE_PREAMBLES[campaignType] || CAMPAIGN_TYPE_PREAMBLES.general;
 
@@ -506,6 +509,7 @@ OUTPUT RULES:
 - Output ONLY the email content — subject and body. No meta-commentary, instructions, notes, alternatives, or explanations inside the output.
 - Never write text like "Rephrase to", "Note:", "Insert here", "Customize this", "Alternative:", "[Personalize]", or any directive
 - NEVER write [Your Name], [Title], [Company] or any text in square brackets
+- CRITICAL PLACEHOLDER RULE: ALL {{...}} placeholders MUST appear verbatim in your output exactly as written. DO NOT substitute {{sender_name}}, {{sender_title}}, {{sender_company}}, {{name}}, or {{company}} with their actual values. The platform replaces placeholders at send time — your job is to write the template with the {{placeholder}} tags intact.
 - Output ONLY valid JSON: {"subject": "...", "body": "..."}`;
 
   const userPrompt = `Write a complete email template for this campaign:
@@ -617,6 +621,57 @@ const SIGNOFF_PHRASE_RE = /^(best\s+regards|kind\s+regards|warm\s+regards|regard
 
 // Detects generic cold-email opener clichés in the first 60 characters of body
 const FILLER_OPENER_RE = /^(i\s+hope\s+this|hope\s+you'?re|i\s+am\s+reaching\s+out|i'?m\s+reaching\s+out\s+to|i\s+wanted\s+to\s+reach\s+out|i\s+was\s+hoping\s+to\s+connect|i'?m\s+writing\s+to|allow\s+me\s+to\s+introduce|my\s+name\s+is\s+\S+\s+and\s+i|just\s+wanted\s+to\s+touch\s+base|just\s+checking\s+in|circling\s+back|touching\s+base)/i;
+
+// Marketing buzzwords that make cold outreach sound like a press release
+const MARKETING_BUZZWORD_RE = /\b(game[- ]changer|revolutionize|cutting[- ]edge|best[- ]in[- ]class|world[- ]class|paradigm\s+shift|synergy|synergize|leverage\s+our|seamless\s+integrat|best[- ]of[- ]breed|end[- ]to[- ]end\s+solution|robust\s+platform|next[- ]level\s+solution|truly\s+transformative|unparalleled\s+(results|value|service|experience)|innovative\s+solution)\b/i;
+
+// Weak deferential CTAs — low-confidence asks that telegraph "you can easily say no"
+const WEAK_CTA_RE = /\b(i\s+would\s+love\s+to\s+connect|i'?d\s+love\s+to\s+connect|i'?d\s+be\s+happy\s+to|feel\s+free\s+to\s+schedule|would\s+you\s+be\s+interested\s+in\s+hearing\s+more\s+about|just\s+let\s+me\s+know\s+if\s+you'?re\s+interested|please\s+feel\s+free|don'?t\s+hesitate\s+to\s+reach)\b/i;
+
+// Filler phrases anywhere in the body (not just as openers)
+const BODY_FILLER_RE = /\b(hope\s+you'?re\s+doing\s+well|hope\s+this\s+finds\s+you\s+well|hope\s+all\s+is\s+well|trust\s+this\s+email\s+finds\s+you|hope\s+this\s+message\s+finds\s+you)\b/i;
+
+// Sender name patterns that indicate a platform/product rather than a real person
+const PLATFORM_NAME_RE = /^(repmail|hubspot|salesforce|mailchimp|marketo|outreach|salesloft|apollo|instantly|clay|lemlist|admin|administrator|bot|system|crm|platform|noreply|no-reply|no\s+reply|sales\s+team|marketing\s+team|support\s+team|info|contact)\s*$/i;
+
+// Suspicious job title values (placeholders, test data, non-titles)
+const SUSPICIOUS_TITLE_RE = /^(n\/a|na|none|test|user|admin|administrator|null|undefined|tbd|[-_])\s*$/i;
+
+// Validates the sender identity context before AI generation.
+// Returns an array of warnings (same shape as validateTemplate warnings).
+export function validateSenderProfile(senderCtx) {
+  const warnings = [];
+  const name    = (senderCtx.name    || "").trim();
+  const title   = (senderCtx.title   || "").trim();
+  const company = (senderCtx.company || "").trim();
+
+  if (!name) {
+    warnings.push({ code: 'SENDER_NAME_MISSING',   message: 'Sender name is required. Recipients see this as the From display name.', severity: 'error' });
+  } else {
+    if (PLATFORM_NAME_RE.test(name)) {
+      warnings.push({ code: 'SENDER_NAME_IS_PLATFORM', message: `Sender name "${name}" looks like a product or platform name, not a person. Cold outreach from a brand name has significantly lower reply rates. Use your real full name.`, severity: 'warn' });
+    }
+    if (/@/.test(name)) {
+      warnings.push({ code: 'SENDER_NAME_IS_EMAIL', message: 'Sender name contains "@" — an email address was entered in the name field. Enter your full name (e.g., "Jane Smith") instead.', severity: 'warn' });
+    }
+    if (name.split(/\s+/).filter(Boolean).length === 1 && name.length < 4) {
+      warnings.push({ code: 'SENDER_NAME_TOO_SHORT', message: `Sender name "${name}" is a single short word. Use your full name (first and last) — single-word short names reduce deliverability trust.`, severity: 'warn' });
+    }
+    if (name.length > 3 && name === name.toUpperCase() && /[A-Z]/.test(name)) {
+      warnings.push({ code: 'SENDER_NAME_ALL_CAPS', message: 'Sender name is all uppercase. Use title case (e.g., "John Smith") — all-caps names trigger spam filters.', severity: 'warn' });
+    }
+  }
+
+  if (title && SUSPICIOUS_TITLE_RE.test(title)) {
+    warnings.push({ code: 'SENDER_TITLE_SUSPICIOUS', message: `Job title "${title}" doesn't look like a real role. Use a specific title (e.g., "Account Executive", "Founder", "Head of Sales").`, severity: 'warn' });
+  }
+
+  if (!company) {
+    warnings.push({ code: 'SENDER_COMPANY_MISSING', message: 'Company name is required. It appears in the email signature and provides context recipients use to evaluate credibility.', severity: 'error' });
+  }
+
+  return warnings;
+}
 
 // Fresh instance per call — avoids g-flag lastIndex state across calls
 function bracketArtifactRe() {
@@ -834,7 +889,35 @@ export function validateTemplate(subject, body, { campaignType = 'general', inta
     });
   }
 
-  // ── Step 13: Telemetry ───────────────────────────────────────────────────────
+  // ── Step 13: Marketing buzzword check — warning ──────────────────────────────
+  if (MARKETING_BUZZWORD_RE.test(b)) {
+    warnings.push({
+      code:     'MARKETING_BUZZWORDS',
+      message:  'Body contains marketing-speak (game-changer, cutting-edge, best-in-class, etc.). Cold outreach with press-release language gets lower reply rates. Rewrite in plain, specific language.',
+      severity: 'warn',
+    });
+  }
+
+  // ── Step 14: Weak CTA check — warning ────────────────────────────────────────
+  if (WEAK_CTA_RE.test(b)) {
+    warnings.push({
+      code:     'WEAK_CTA',
+      message:  'CTA phrasing is weak or overly deferential ("I would love to", "feel free to schedule", etc.). Replace with a direct, low-friction question: "Worth a quick call?" or "Open to a 15-min chat?"',
+      severity: 'warn',
+    });
+  }
+
+  // ── Step 15: Body filler phrases — warning ────────────────────────────────────
+  // Unlike FILLER_OPENER_RE which only checks the start, this finds clichés anywhere in the body.
+  if (BODY_FILLER_RE.test(b)) {
+    warnings.push({
+      code:     'BODY_FILLER_PHRASE',
+      message:  'Body contains a filler phrase ("hope you\'re doing well", "hope this finds you well", etc.) somewhere in the text. Every sentence should carry information — remove or replace.',
+      severity: 'warn',
+    });
+  }
+
+  // ── Step 16: Telemetry ───────────────────────────────────────────────────────
   if (warnings.length > 0 || repaired) {
     logValidationTelemetry({ userId, campaignType, model, warnings, repaired });
   }

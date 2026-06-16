@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-16
-**Current commit:** (pending push after AI quality overhaul) — see AUDIT_TRAIL.md Audit 015
+**Current commit:** (pending push — Audit 015 + Audit 016) — see AUDIT_TRAIL.md
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -376,3 +376,27 @@ Product decision: trial credits (5, one-time) replaced by Free Plan (500 credits
 | History.jsx — "Reach" metric replaces "Delivery Rate" | **I** | `History.jsx` — `sentEmails / totalEmails` (not `deliveredEmails / sentEmails`) |
 
 **Milestone status: I** — implemented, not yet deployed or runtime-verified
+
+---
+
+### 14 · Click Tracking + Sender Validation (commit pending)
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Click tracking end-to-end audit | **I** | Code verified — `linkify.js` → SES → SNS → `updateCampaignEmailClicked` → `incrementCampaignClicked`. Correct and idempotent. |
+| Unsubscribe click exclusion | **I** | SNS Click handler now skips `clickedEmails` increment when `notification.click.link` contains `/api/unsubscribe` |
+| validateSenderProfile — SENDER_NAME_IS_PLATFORM | **I** | Detects platform/product names used as sender identity |
+| validateSenderProfile — SENDER_NAME_IS_EMAIL | **I** | Detects email address in name field |
+| validateSenderProfile — SENDER_NAME_ALL_CAPS | **I** | All-uppercase name detection |
+| validateSenderProfile — SENDER_TITLE_SUSPICIOUS | **I** | "n/a", "test", "admin" etc. in title |
+| validateSenderProfile wired to profile save | **I** | `PUT /api/profile` returns `senderWarnings` |
+| validateSenderProfile wired to template generation | **I** | `POST /api/templates/generate` returns `senderWarnings` |
+| Profile.jsx shows senderWarnings after save | **I** | Inline alert display with severity styling |
+| validateTemplate Step 13 — MARKETING_BUZZWORDS | **I** | "synergy", "game-changer", "cutting-edge", etc. |
+| validateTemplate Step 14 — WEAK_CTA | **I** | "I would love to connect", "feel free to schedule", etc. |
+| validateTemplate Step 15 — BODY_FILLER_PHRASE | **I** | "hope you're doing well" anywhere in body |
+| senderIdentityBlock — placeholder preservation | **I** | CRITICAL rule added; sign-off now shows multi-line format |
+| OUTPUT RULES — CRITICAL PLACEHOLDER RULE | **I** | Model instructed not to substitute literal values for `{{...}}` tags |
+| 10-sample live quality audit | **V** | Ran `tmp/test-sample-generation.mjs` via railway run — 10/10 generated, 0 hard blocks, confirmed: no sign-off phrases, no opener clichés, 56-87 words each |
+
+**Milestone status: I/V mixed** — live sampling verified quality improvements; code changes not yet deployed

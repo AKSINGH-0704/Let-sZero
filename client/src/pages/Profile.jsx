@@ -54,8 +54,9 @@ export default function Profile() {
     senderPhone:   user?.senderPhone   || "",
     replyToEmail:  user?.replyToEmail  || "",
   });
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveError,   setSaveError]   = useState("");
+  const [saveSuccess,    setSaveSuccess]    = useState(false);
+  const [saveError,      setSaveError]      = useState("");
+  const [senderWarnings, setSenderWarnings] = useState([]);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (fields) => {
@@ -66,11 +67,12 @@ export default function Profile() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setSaveSuccess(true);
       setSaveError("");
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setSenderWarnings(data?.senderWarnings ?? []);
+      setTimeout(() => setSaveSuccess(false), 4000);
     },
     onError: (err) => {
       setSaveError(err.message || "Failed to save profile");
@@ -217,10 +219,16 @@ export default function Profile() {
 
             <div className="flex items-center justify-between pt-2">
               <div className="flex items-center gap-2 min-h-[28px]">
-                {saveSuccess && (
+                {saveSuccess && senderWarnings.length === 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-green-600">
                     <CheckCircle className="h-4 w-4" />
                     Saved successfully
+                  </div>
+                )}
+                {saveSuccess && senderWarnings.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="h-4 w-4" />
+                    Saved with warnings
                   </div>
                 )}
                 {saveError && (
@@ -242,6 +250,26 @@ export default function Profile() {
                 )}
               </Button>
             </div>
+
+            {senderWarnings.length > 0 && (
+              <div className="space-y-2 pt-1">
+                {senderWarnings.map((w) => (
+                  <Alert
+                    key={w.code}
+                    className={
+                      w.severity === "error"
+                        ? "border-destructive/50 bg-destructive/5"
+                        : "border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20"
+                    }
+                  >
+                    <AlertCircle className={`h-4 w-4 ${w.severity === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-500"}`} />
+                    <AlertDescription className={`text-sm ${w.severity === "error" ? "text-destructive" : "text-amber-800 dark:text-amber-300"}`}>
+                      {w.message}
+                    </AlertDescription>
+                  </Alert>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

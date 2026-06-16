@@ -2,7 +2,7 @@ import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
-import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, getAiHealthStatus, peekSpamCache } from "./ai.js";
+import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
@@ -922,10 +922,18 @@ export async function registerRoutes(httpServer, app) {
         }
       } else if (eventType === "Click") {
         const link = notification.click?.link;
-        const { wasFirst } = await storage.updateCampaignEmailClicked(campaignEmailId);
-        if (wasFirst && campaignId) {
-          await storage.incrementCampaignClicked(campaignId);
-          console.log(`[SNS] Click recorded — link=${link} campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
+        // Unsubscribe footer links are rewritten by SES click tracking just like any other
+        // link. Counting unsubscribe clicks as engagement clicks would inflate campaign
+        // click rates and conflate opt-out signals with genuine interest. Exclude them.
+        const isUnsubscribeClick = typeof link === "string" && link.includes("/api/unsubscribe");
+        if (isUnsubscribeClick) {
+          console.log(`[SNS] Unsubscribe click excluded from metrics — link=${link} campaignEmailId=${campaignEmailId}`);
+        } else {
+          const { wasFirst } = await storage.updateCampaignEmailClicked(campaignEmailId);
+          if (wasFirst && campaignId) {
+            await storage.incrementCampaignClicked(campaignId);
+            console.log(`[SNS] Click recorded — link=${link} campaignEmailId=${campaignEmailId} campaignId=${campaignId}`);
+          }
         }
       } else if (eventType === "Delivery") {
         // Idempotent: UPDATE … WHERE deliveredAt IS NULL guarantees each recipient
@@ -1043,7 +1051,12 @@ export async function registerRoutes(httpServer, app) {
       });
 
       const updatedUser = await storage.getUserById(req.user.id);
-      res.json({ message: "Profile updated", user: updatedUser });
+      const senderWarnings = validateSenderProfile({
+        name:    senderName    !== undefined ? (senderName.trim()    || null) : updatedUser.senderName,
+        title:   senderTitle   !== undefined ? (senderTitle.trim()   || null) : updatedUser.senderTitle,
+        company: senderCompany !== undefined ? (senderCompany.trim() || null) : updatedUser.senderCompany,
+      });
+      res.json({ message: "Profile updated", user: updatedUser, senderWarnings });
     } catch (error) {
       console.error("[PROFILE] update error:", error.message);
       res.status(500).json({ message: error.message });
@@ -2251,10 +2264,13 @@ export async function registerRoutes(httpServer, app) {
         });
       }
 
+      const senderWarnings = validateSenderProfile(senderContext);
+
       res.json({
-        subject:  validation.subject,
-        body:     validation.body,
-        warnings: validation.warnings,
+        subject:        validation.subject,
+        body:           validation.body,
+        warnings:       validation.warnings,
+        senderWarnings,
       });
     } catch (error) {
       storage.refundAiQuota(req.user.id).catch(e => console.error("[AI] Quota refund failed:", e.message));
