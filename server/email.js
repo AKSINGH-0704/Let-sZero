@@ -122,13 +122,30 @@ ${unsubscribeFooter.html}
     mailOptions.replyTo = senderProfile.replyToEmail;
   }
 
-  // Attach SES configuration set and message tag so SNS receives Open/Click events
-  // tagged with the campaign_emails.id UUID — only when the env var is configured.
+  const headers = {};
+
+  // RFC 2369 List-Unsubscribe — required by Gmail 2024 bulk sender policy.
+  // RFC 8058 List-Unsubscribe-Post — enables Gmail's native one-click unsubscribe button.
+  // Reuses the URL already computed by buildUnsubscribeFooter — no second token generation.
+  if (unsubscribeFooter.url) {
+    headers["List-Unsubscribe"]      = `<${unsubscribeFooter.url}>`;
+    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+  }
+
+  // Feedback-ID: ties complaint feedback to a specific send for Gmail Postmaster Tools.
+  if (campaignEmailId) {
+    headers["Feedback-ID"] = `${campaignEmailId}:repmail`;
+  }
+
+  // SES configuration set and per-message tag so SNS receives Open/Click events
+  // keyed on the campaign_emails.id UUID — only when the env var is configured.
   if (process.env.SES_CONFIGURATION_SET && campaignEmailId) {
-    mailOptions.headers = {
-      "X-SES-CONFIGURATION-SET": process.env.SES_CONFIGURATION_SET,
-      "X-SES-MESSAGE-TAGS": `campaign-email-id=${campaignEmailId}`,
-    };
+    headers["X-SES-CONFIGURATION-SET"] = process.env.SES_CONFIGURATION_SET;
+    headers["X-SES-MESSAGE-TAGS"]      = `campaign-email-id=${campaignEmailId}`;
+  }
+
+  if (Object.keys(headers).length > 0) {
+    mailOptions.headers = headers;
   }
 
   const info = await transport.sendMail(mailOptions);
@@ -136,11 +153,12 @@ ${unsubscribeFooter.html}
 }
 
 function buildUnsubscribeFooter(userId, email) {
-  if (!userId || !email) return { html: "", text: "" };
+  if (!userId || !email) return { url: null, html: "", text: "" };
   const token = generateUnsubscribeToken(userId, email);
   const base = process.env.APP_URL || "http://localhost:5000";
   const url = `${base}/api/unsubscribe?uid=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}&token=${token}`;
   return {
+    url,
     html: `<p style="margin-top:32px;font-size:12px;color:#6b7280;">If you'd prefer not to hear from me, <a href="${url}" style="color:#6b7280;">unsubscribe</a>.</p>`,
     text: `\n\nIf you'd prefer not to hear from me, unsubscribe: ${url}`,
   };
