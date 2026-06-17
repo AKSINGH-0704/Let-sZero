@@ -427,3 +427,22 @@ Fixes all 4 ProgressTracker.jsx bugs and 2 History.jsx issues confirmed in Audit
 | 20-sample AI retest | **V** | Audit 018 — 0 hard blocks, 0 sign-off leaks, 0 instruction leaks, 20/20 placeholder preservation |
 
 **Milestone status: I** — all changes committed (cd04db8), deploying to Railway (deployment ab4a7a84)
+
+---
+
+### 16 · Pre-Launch Hardening (2026-06-17)
+
+Implements startup schema integrity check, migration scripts, and pre-deployment parity validator. Verifies health endpoint, operational recovery, and deliverability are production-grade.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Startup schema integrity check (`server/schemaCheck.js`) | **I** | Queries `information_schema` on boot — 14 tables, 47 columns, 6 indexes; `process.exit(1)` on critical mismatch |
+| Wired to `server/index.js` before `registerRoutes` | **I** | Line 525: `await runSchemaCheck()` |
+| `npm run db:generate` script | **I** | `package.json` scripts: `drizzle-kit generate` |
+| `npm run db:migrate` script | **I** | `package.json` scripts: `drizzle-kit migrate` |
+| Pre-deployment parity check (`scripts/check-schema-parity.mjs`) | **I** | Standalone validator — `railway run node scripts/check-schema-parity.mjs` before deploy |
+| Health endpoint audit | **V** | Already production-grade — live evidence: `postgres: connected, redis: connected, worker: running, smtp: verified` |
+| Operational recovery audit | **V** | Startup reconciliation (index.js 535-574), PENDING watchdog (762-797), IORedis reconnect, per-contact suppression — all confirmed |
+| Deliverability audit | **V** | List-Unsubscribe + List-Unsubscribe-Post (email.js 131-132), Feedback-ID (137), SNS bounce/complaint suppression (routes.js 890-916), DMARC pass live |
+
+**Milestone status: I/V** — hardening complete. Migration baseline generation (`npm run db:generate` run once) is the remaining manual step before migration-first workflow is fully active.

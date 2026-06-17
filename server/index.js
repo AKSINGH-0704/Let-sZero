@@ -9,6 +9,7 @@ import { sendTransactionalEmail } from "./email.js";
 import { createServer } from "http";
 import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
+import { runSchemaCheck } from "./schemaCheck.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 const app = express();
@@ -521,6 +522,7 @@ async function diagnoseSMTPPath() {
     return res.redirect('/early-access');
   });
 
+  await runSchemaCheck();
   await registerRoutes(httpServer, app);
 
   // Startup campaign reconciliation.

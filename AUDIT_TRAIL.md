@@ -1559,3 +1559,124 @@ verbatim at the end of the body. No literal name/title/company substitution obse
 ### Status
 
 `V` — 20-sample live audit complete. All critical fixes verified. Minor warning categories are known and acceptable.
+
+---
+
+## Audit 019 — Pre-Launch Hardening: Schema Integrity + Deliverability
+
+**Date:** 2026-06-17
+**Conducted by:** Claude Sonnet 4.6
+**Scope:** Final pre-launch hardening audit (Directive C). Six areas: startup schema check, health endpoint, migration strategy, operational recovery, deliverability, documentation.
+**Commit at time of audit:** `cd04db8`
+
+### Area 1 — Startup Schema Integrity Check
+
+**Finding:** No startup check existed. A schema mismatch (e.g. `free_credits_used` column missing) caused a runtime crash in production (2026-06-16) that was only caught by worker log errors, not a controlled startup failure.
+
+**Implementation:** `server/schemaCheck.js` — new module called from `server/index.js` at boot, before `registerRoutes`.
+- Queries `information_schema.tables` for 14 required tables
+- Queries `information_schema.columns` for 47 required columns (29 critical, 18 non-critical)
+- Queries `pg_indexes` for 6 required indexes (3 critical, 3 non-critical)
+- Critical failures → `process.exit(1)` so Railway restarts + alerts
+- Non-critical failures → `console.warn` only (degraded functionality, not fatal)
+- Dev mode (`pool === null`) → skip silently
+
+**Call site:** `server/index.js` line 525: `await runSchemaCheck();` — runs inside IIFE, before `registerRoutes`.
+
+**Status:** I — implemented. Evidence: module written, import added, call wired.
+
+---
+
+### Area 2 — Health Endpoint
+
+**Finding:** Already comprehensive (confirmed live in prior audit session). `/api/health` performs:
+- `pool.query("SELECT 1")` with 3s timeout → `postgres: "connected"` or `"degraded"`
+- Redis PING with 3s timeout → `redis: "connected"` or `"degraded"`
+- Worker heartbeat: reads `repmail:worker:heartbeat` Redis key — "running" if age <70s, "stalled" if older
+- SMTP cached check → `smtp: "verified"` or `"error"`
+- `getPlatformSetting("send_pause_enabled")` → `sendPaused`
+- `getAiHealthStatus().status` → `ai`
+- `SES_CONFIGURATION_SET` env var → `sesTracking`
+
+**Live evidence (verified against production 2026-06-17):**
+```
+status: ok, uptime: 4082, postgres: connected, redis: connected,
+worker: running, smtp: verified, sendPaused: False, sesTracking: configured
+```
+
+**Status:** PASS — no changes needed.
+
+---
+
+### Area 3 — Migration Strategy
+
+**Finding:** `drizzle-kit push` used exclusively. No `migrations/` directory exists. `drizzle.config.js` has `out: "./migrations"` configured. The `free_credits_used` production incident (column missing until manual `db:push --force`) is a direct consequence of having no migration gate.
+
+**Implementation:**
+- Added `db:generate` script to `package.json` → `drizzle-kit generate`
+- Added `db:migrate` script to `package.json` → `drizzle-kit migrate`
+- Created `scripts/check-schema-parity.mjs` — standalone pre-deployment validator that connects to `DATABASE_URL`, runs the same table/column/index checks as `schemaCheck.js`, exits 0 on pass and 1 on any critical failure
+
+**Deployment workflow (documented):**
+1. Make schema changes in `shared/schema.js`
+2. `npm run db:generate` → creates SQL migration file in `migrations/`
+3. Review the generated SQL
+4. `railway run node scripts/check-schema-parity.mjs` → verify current prod DB against spec
+5. Deploy build to Railway
+6. Railway runs the server → `runSchemaCheck()` verifies columns exist before serving requests
+
+**Note:** Initial `migrations/` baseline still needs `npm run db:generate` to be run once against the current schema. Until then, `db:push` remains the mechanism for dev and prod schema sync. The scripts are in place; the migration baseline is a one-time bootstrapping step.
+
+**Status:** I — scripts and parity check implemented.
+
+---
+
+### Area 4 — Operational Recovery
+
+All four recovery mechanisms verified in code (no changes required):
+
+| Mechanism | Location | Evidence |
+|---|---|---|
+| Stale RUNNING campaigns on boot | `server/index.js` lines 535-574 | Checks BullMQ active state; sets FAILED if not active and no completedAt |
+| PENDING watchdog | `server/index.js` lines 762-797 | Every 2min; re-enqueues campaigns stuck >10min in PENDING |
+| IORedis auto-reconnect | `server/queue.js` | Error event handler + IORedis internal exponential reconnect |
+| Suppression re-check after restart | `server/worker.js` | Per-contact `isSuppressed()` call in loop — state is DB-driven, restart-safe |
+
+**Status:** PASS — all mechanisms confirmed present and correct.
+
+---
+
+### Area 5 — Deliverability
+
+All four deliverability mechanisms verified in code (no changes required):
+
+| Mechanism | Location | Evidence |
+|---|---|---|
+| List-Unsubscribe (RFC 2369) | `server/email.js` line 131 | `headers["List-Unsubscribe"] = <url>` on every campaign email |
+| List-Unsubscribe-Post (RFC 8058) | `server/email.js` line 132 | `"List-Unsubscribe=One-Click"` enables Gmail native button |
+| Feedback-ID header | `server/email.js` line 137 | `${campaignEmailId}:repmail` — ties complaints to specific send |
+| SES Configuration Set | `server/email.js` line 143 | `X-SES-CONFIGURATION-SET` header → SNS Open/Click events |
+| SNS Permanent Bounce suppression | `server/routes.js` line 890-905 | Per-recipient suppress + `incrementCampaignBounced` |
+| SNS Complaint suppression | `server/routes.js` line 906-916 | Per-recipient suppress + `incrementCampaignComplained` |
+| DMARC/DKIM/SPF | Verified live 2026-06-16 | `spf=pass dkim=pass dmarc=pass` confirmed in Gmail header |
+
+**Status:** PASS — all mechanisms confirmed present. Live DMARC verification complete.
+
+---
+
+### Hardening Summary
+
+| Area | Result | Action Taken |
+|---|---|---|
+| Startup schema check | Implemented | `server/schemaCheck.js` + wired to boot |
+| Health endpoint | Already production-grade | No changes |
+| Migration strategy | Scripts added | `db:generate`, `db:migrate`, `check-schema-parity.mjs` |
+| Operational recovery | All 4 mechanisms confirmed | No changes |
+| Deliverability | All 6 mechanisms confirmed + live DMARC verified | No changes |
+| Documentation | Updated | AUDIT_TRAIL.md, PROGRESS.md, HANDOFF.md |
+
+**Post-hardening scores:**
+- Schema integrity guard: 9/10 (scripts in place; migration baseline generation is a pending manual step)
+- Health endpoint: 10/10
+- Operational recovery: 9/10
+- Deliverability: 9/10 (all headers and handlers confirmed; awaiting first live SNS bounce event in production to close T-2)

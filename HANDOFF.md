@@ -132,7 +132,8 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`)*
 4. ~~AI quality overhaul~~ *(DONE — commits `01acd99`, `a03a0f3`)*
 5. ~~Campaign UX fixes~~ *(DONE — commit `cd04db8`, Railway deployment `ab4a7a84` building)*
-6. Confirm Railway deployment `ab4a7a84` succeeds and UI shows "Skipped" correctly for suppression campaigns
+6. ~~Startup schema integrity check + migration scripts~~ *(DONE — `server/schemaCheck.js`, `scripts/check-schema-parity.mjs`, `db:generate`/`db:migrate` added — see Audit 019)*
+7. Confirm Railway deployment succeeds and UI shows "Skipped" correctly for suppression campaigns
 7. Confirm Gmail placement for the 2026-06-16 production-path send (Primary / Promotions / Spam)
 8. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
 9. Execute Free Plan deployment runbook (see section below)
@@ -448,9 +449,23 @@ Architectural decisions made deliberately. Do not implement without team discuss
 npm run dev        # Development with HMR + in-memory storage
 npm run build      # Production build: Vite → dist/public/ + esbuild → dist/index.cjs
 npm run start      # Production server
-npm run db:push    # Push Drizzle schema to PostgreSQL (Railway Postgres URL required)
+npm run db:push    # Push Drizzle schema to PostgreSQL — dev/emergency use only
+npm run db:generate  # Generate SQL migration files from schema changes (creates migrations/)
+npm run db:migrate   # Apply pending migration files to the target database
 npm run check      # TypeScript type check
+
+# Pre-deployment parity check (run before every Railway deploy):
+railway run node scripts/check-schema-parity.mjs
 ```
+
+**Deployment workflow (migration-first):**
+1. Edit `shared/schema.js`
+2. `npm run db:generate` → SQL file created in `migrations/`
+3. Review the generated SQL
+4. `railway run node scripts/check-schema-parity.mjs` → verify prod DB matches spec
+5. Deploy to Railway — `runSchemaCheck()` verifies columns on boot, exits 1 if mismatch
+
+**Note:** `migrations/` directory does not yet exist. Run `npm run db:generate` once to bootstrap the migration baseline from the current schema before using `db:migrate`.
 
 ---
 
