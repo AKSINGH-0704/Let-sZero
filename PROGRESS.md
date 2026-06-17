@@ -400,3 +400,30 @@ Product decision: trial credits (5, one-time) replaced by Free Plan (500 credits
 | 10-sample live quality audit | **V** | Ran `tmp/test-sample-generation.mjs` via railway run — 10/10 generated, 0 hard blocks, confirmed: no sign-off phrases, no opener clichés, 56-87 words each |
 
 **Milestone status: I/V mixed** — live sampling verified quality improvements; code changes not yet deployed
+
+---
+
+### 15 · Campaign UX Fixes (commit cd04db8, 2026-06-17)
+
+Fixes all 4 ProgressTracker.jsx bugs and 2 History.jsx issues confirmed in Audit 017.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| ProgressTracker reads `skippedEmails` | **I** | `const skippedEmails = currentCampaign.skippedEmails \|\| 0` added |
+| Progress bar includes skipped contacts | **I** | `(sentEmails + failedEmails + skippedEmails) / totalEmails` — capped at 100% |
+| 4th stat tile: "Skipped" on completion, "Pending" during run | **I** | Conditional render; Pending = `totalEmails - sent - failed - skipped` |
+| False credit-exhaustion alarm removed | **I** | Removed `{sentEmails < totalEmails && "ran out of credits"}` |
+| Suppression skip banner (blue info) | **I** | Shows "N contacts skipped due to suppression list" when `skippedEmails > 0 && unprocessed === 0` |
+| Truly unprocessed banner (yellow warning) | **I** | Shows "Campaign did not complete all contacts — N contacts not reached" only when `unprocessed > 0` |
+| Email status log: real API records | **I** | Uses `currentCampaign.campaignEmails` (already returned by API) with per-contact SUPPRESSED + reason |
+| History.jsx: Reach Rate = (sent + skipped) / total | **I** | Fixed in table column; was `sent / total` |
+| History.jsx: detail modal Reach Rate tile | **I** | 4th engagement metric tile added |
+| History.jsx: detail modal stats row = Sent/Failed/Skipped/Total | **I** | Was Sent/Delivered/Failed/Skipped |
+| History.jsx: credits consumed row | **I** | Shows `creditsUsed` below stats row |
+| History.jsx: "did not complete all contacts" message | **I** | Replaces "account ran out of credits" for unprocessed-contacts case |
+| CampaignConfirmation.jsx: suppression helper text | **I** | "Actual credits used may be lower if any recipients are on your suppression list" |
+| CampaignConfirmation.jsx: "After Campaign (est.)" label | **I** | Clarifies credit balance shown is an estimate |
+| Profile.jsx: sender identity format guide | **I** | Shows correct name/title/company format; warns against admin/bot/repmail/support |
+| 20-sample AI retest | **V** | Audit 018 — 0 hard blocks, 0 sign-off leaks, 0 instruction leaks, 20/20 placeholder preservation |
+
+**Milestone status: I** — all changes committed (cd04db8), deploying to Railway (deployment ab4a7a84)

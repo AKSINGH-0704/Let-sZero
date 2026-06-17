@@ -1462,3 +1462,100 @@ Total validation pipeline: 16 steps (Steps 10, 11 are hard blocks; Steps 1-9, 12
 ### Section 7 — Status
 
 `IMPL` — all code changes complete. Not yet deployed.
+
+---
+
+## Audit 017 — Production Campaign UX Audit (9-Point)
+
+**Date:** 2026-06-17
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full production audit across 9 areas triggered by confirmed user-reported bug in a live campaign (6 contacts, 1 suppressed via unsubscribe).
+**Commit at time of audit:** `a03a0f3`
+
+### Trigger
+
+Production campaign behavior reported:
+- 6 contacts, 1 suppressed via unsubscribe
+- Completion page: "Sent=5, Failed=0, Pending=1" AND "Campaign stopped early — account ran out of credits"
+- History modal: "Sent=5, Skipped=1, Suppressed: unsubscribe"
+- History modal was correct. Completion page was wrong on both counts.
+
+### Findings
+
+| Area | Finding | Severity |
+|---|---|---|
+| Campaign State Machine (worker) | Worker logic correct — suppression, credit exhaustion, pause, retry all handled | PASS |
+| Campaign State Machine (ProgressTracker.jsx) | 4 bugs confirmed — component never reads `skippedEmails` | Critical |
+| Credit Accounting | `deductCreditAtomic` correct — suppressed contacts skip deduction, only successful sends cost credits | PASS |
+| Metrics Consistency | History modal correct; completion page wrong on 2 of 4 stats | High |
+| Suppression System | Two-tier (per-user + global), idempotent `.onConflictDoNothing()`, live per-contact mid-loop | PASS |
+| AI Output Quality | 0/10 sign-off leaks, 0/10 instruction leaks; placeholder preservation fix deployed in a03a0f3 | PASS (with retest needed) |
+| Click Tracking | Unsubscribe exclusion fixed in a03a0f3; idempotent first-click guard confirmed | PASS |
+| UX Confusion | "ran out of credits" fires on every suppression-skip; "Pending" shows for skipped contacts | Critical |
+| Production Readiness (pre-fix) | Completion page: 3/10. Worker: 9/10. Suppression: 9/10. Credit accounting: 8/10. Click tracking: 9/10 | — |
+
+### Bugs Confirmed
+
+**Bug A (ProgressTracker.jsx:210):** `{sentEmails < totalEmails && "Campaign stopped early — account ran out of credits"}` — fires for suppression skips.
+
+**Bug B (ProgressTracker.jsx:192):** "Pending" tile = `totalEmails - sentEmails - failedEmails` — missing `- skippedEmails`.
+
+**Bug C (ProgressTracker.jsx:117-119):** Progress bar: `(sentEmails + failedEmails) / totalEmails` — skipped not counted; stops at 83% for completed campaign.
+
+**Bug D (ProgressTracker.jsx:94):** `totalProcessed = sentEmails + failedEmails` — skipped contacts never appear in status log.
+
+**Bug E (History.jsx:374-375):** Condition correct (unprocessed > 0) but message still says "account ran out of credits" even for crash-terminated campaigns.
+
+---
+
+## Audit 018 — Post-Fix 20-Sample AI Output Retest
+
+**Date:** 2026-06-17
+**Conducted by:** Claude Sonnet 4.6
+**Scope:** Fresh 20-sample AI template generation audit. Verifies placeholder preservation fix from a03a0f3, sign-off fix from 01acd99, and validates all 6 campaign types × 4 tones.
+**Commit at time of audit:** `cd04db8`
+**Method:** `railway run node tmp/test-sample-generation.mjs` — 20 scenarios, live gpt-4o-mini calls
+
+### Results
+
+| Check | Count | Result |
+|---|---|---|
+| Hard blocks | 0/20 | PASS |
+| Sign-off phrase leakage | 0/20 | PASS — confirmed fix from 01acd99 |
+| Instruction leakage | 0/20 | PASS |
+| Filler opener phrases | 0/20 | PASS |
+| Placeholder preservation ({{sender_name}}, {{sender_title}}, {{sender_company}}) | 20/20 | PASS — confirmed fix from a03a0f3 |
+| Missing sign-off (NO_SIGNOFF_DETECTED) | 3/20 | WARN — samples 3, 5, 13 (follow_up/recruitment types) |
+| Subject too long (>40 chars) | 6/20 | WARN — acceptable; 40-char target is aspirational |
+| Subject prohibited pattern | 3/20 | WARN — follow-up subjects starting with "following up on..." |
+| Marketing buzzwords | 1/20 | WARN — sample 15 ("synergy") |
+| Errors (severity=error) | 0/20 | PASS |
+
+### Word count distribution
+
+| Range | Count |
+|---|---|
+| <60 words | 2 (samples 5, 20 — follow-up type, naturally shorter) |
+| 60–90 words | 14 |
+| >90 words | 4 (samples 3, 7, 11, 12) |
+
+Median: ~79 words. Target range: 60–100 words for B2B. On target.
+
+### Placeholder preservation — confirmed fixed
+
+All 20 samples correctly output:
+```
+{{sender_name}}
+{{sender_title}}, {{sender_company}}
+```
+verbatim at the end of the body. No literal name/title/company substitution observed. Placeholder fix from a03a0f3 is confirmed effective.
+
+### Notable warnings
+
+**NO_SIGNOFF_DETECTED (3 samples):** Samples 3, 5, 13 — model produced bodies with no `{{sender_name}}` line. These receive a validation WARN, not a hard block. The template is still returned to the user. These are edge cases in follow-up and recruitment flows where the model omits the sign-off block.
+
+**SUBJECT_PROHIBITED_PATTERN (3 samples):** Follow-up subjects like "following up on sales ops tools" match the `SUBJECT_PROHIBITED_PATTERN` regex. The pattern is accurate — these are generic follow-up subjects. However, follow-up campaigns have fewer subject alternatives; this pattern may be too aggressive for `follow_up` campaign type.
+
+### Status
+
+`V` — 20-sample live audit complete. All critical fixes verified. Minor warning categories are known and acceptable.

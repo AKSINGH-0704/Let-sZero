@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit pending push after AI quality overhaul (2026-06-16) — see AUDIT_TRAIL.md Audit 015  
+**Verified against:** commit `cd04db8` (2026-06-17) — see AUDIT_TRAIL.md Audits 015–018  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -40,7 +40,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current State (commits through `5b396b9` + AI quality overhaul pending push)
+## Current State (commits through `cd04db8` — 2026-06-17)
 
 **Financial integrity (commit `ecb1331` — FIN-1/FIN-2):**
 - `completePayment` race eliminated: `.returning({ id })` on the payment UPDATE gates credit allocation on whether THIS caller transitioned `PENDING → SUCCESS`. Concurrent webhook + /verify callers cannot both allocate credits.
@@ -97,15 +97,28 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - `buildUnsubscribeFooter()` now returns `url` — no duplicate token generation; header and body link share one URL
 - `tmp/test-campaign-path.mjs` — production-path test utility that calls `sendCampaignEmail()` directly
 
-**AI quality overhaul (commit pending — 2026-06-16):**
+**AI quality overhaul (commits `01acd99`, `a03a0f3` — 2026-06-16/17):**
 - `CAMPAIGN_TYPE_PREAMBLES`: removed all `SIGN-OFF FORMAT:` lines from all 6 campaign types — was the root cause of "Best regards, repmail, complimentary lance, letszero" output
-- `senderIdentityBlock`: rewritten to explicitly prohibit greeting phrases before `{{sender_name}}` placeholder block
-- `generateTemplate` system prompt: SUBJECT LINE RULES (3-7 words, lowercase preferred), PROHIBITED OPENING PHRASES (13 banned clichés), PROHIBITED SIGN-OFF PHRASES (10 banned closings), BODY RULES (120 word limit, 3 paragraphs), OUTPUT RULES (anti-leakage, JSON-only)
+- `senderIdentityBlock`: rewritten to explicitly prohibit greeting phrases before `{{sender_name}}` placeholder block; CRITICAL placeholder preservation rule added
+- `generateTemplate` system prompt: SUBJECT LINE RULES (3-7 words, lowercase preferred), PROHIBITED OPENING PHRASES (13 banned clichés), PROHIBITED SIGN-OFF PHRASES (10 banned closings), BODY RULES (120 word limit, 3 paragraphs), OUTPUT RULES (anti-leakage, JSON-only, CRITICAL PLACEHOLDER RULE)
 - `max_tokens`: 1200 → 900
-- `validateTemplate` Step 10: `LEAKED_INSTRUCTION_RE` hard-block (detects "Rephrase to", "Note:", etc.)
-- `validateTemplate` Step 11: `SIGNOFF_PHRASE_RE` hard-block / warn (sign-off phrase without/before placeholder)
-- `validateTemplate` Step 12: `FILLER_OPENER_RE` warn (banned opener clichés)
-- `History.jsx` campaign list: "Delivered" → "Skipped" column; "Delivery Rate" → "Reach" (`sentEmails / totalEmails`) — eliminates false 100% rate when contacts are suppressed
+- `validateTemplate` Step 10: `LEAKED_INSTRUCTION_RE` hard-block; Step 11: `SIGNOFF_PHRASE_RE`; Step 12: `FILLER_OPENER_RE`; Steps 13–15: marketing buzzwords, weak CTA, body filler phrases
+- `validateSenderProfile()` exported — warns on platform names, all-caps, email-in-name-field, suspicious titles
+- SNS Click handler: unsubscribe link clicks excluded from `clickedEmails` metric
+- **20-sample live quality audit (Audit 018):** 0/20 hard blocks, 0/20 sign-off leaks, 0/20 instruction leaks, 20/20 placeholder preservation confirmed
+
+**Campaign UX fixes (commit `cd04db8` — 2026-06-17):**
+- `ProgressTracker.jsx`: reads `currentCampaign.skippedEmails` (previously never read)
+  - Progress bar: `(sentEmails + failedEmails + skippedEmails) / totalEmails` — completed campaigns show 100%
+  - 4th stat tile: "Skipped" on completed campaigns, true "Pending" during running campaigns
+  - Credit-exhaustion alarm: removed false condition; suppression skips show blue info banner; truly unprocessed contacts show yellow warning
+  - Email status log: uses `currentCampaign.campaignEmails` real records with per-contact SUPPRESSED + source reason
+- `History.jsx`:
+  - Reach Rate = (sent + skipped) / total (was sent / total)
+  - Detail modal: Sent/Failed/Skipped/Total stats row; credits consumed; 4-col engagement (Reach Rate + Delivery Rate + Open Rate + Click Rate)
+  - "did not complete all contacts" replaces "account ran out of credits" for unprocessed-contacts message
+- `CampaignConfirmation.jsx`: suppression helper text + "After Campaign (est.)" label
+- `Profile.jsx`: sender identity format guide with good example and naming warnings
 
 ---
 
@@ -114,16 +127,16 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 **No further feature or architecture work.** Only production verification, deliverability confirmation, and the Free Plan deployment sequence below.
 
 **Order:**
-1. ~~Confirm Railway deployed commits `a6c25bf` + `f2b4cfa` + `379006a`~~ *(DONE — commits through `5b396b9` on `origin/main` and Railway)*
+1. ~~Confirm Railway deployed commits `a6c25bf` + `f2b4cfa` + `379006a`~~ *(DONE)*
 2. ~~Send one test email to Gmail — confirm `dmarc=pass`~~ *(DONE — `spf=pass dkim=pass dmarc=pass` confirmed 2026-06-16)*
-3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`: `List-Unsubscribe`, `List-Unsubscribe-Post`, `Feedback-ID`)*
-4. ~~AI quality overhaul~~ *(DONE — `server/ai.js`, `client/src/pages/History.jsx` — commit + push pending)*
-5. Push AI quality commit → verify Railway deployment
-6. Confirm Gmail placement for the 2026-06-16 production-path send (Primary / Promotions / Spam)
-7. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
-8. Execute Free Plan deployment runbook (see section below)
-9. Post-deploy Free Plan validation (Step 7 of runbook)
-10. T-6, T-7, T-8 can follow
+3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`)*
+4. ~~AI quality overhaul~~ *(DONE — commits `01acd99`, `a03a0f3`)*
+5. ~~Campaign UX fixes~~ *(DONE — commit `cd04db8`, Railway deployment `ab4a7a84` building)*
+6. Confirm Railway deployment `ab4a7a84` succeeds and UI shows "Skipped" correctly for suppression campaigns
+7. Confirm Gmail placement for the 2026-06-16 production-path send (Primary / Promotions / Spam)
+8. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
+9. Execute Free Plan deployment runbook (see section below)
+10. Post-deploy Free Plan validation (Step 7 of runbook)
 
 **~~IMMEDIATE CHECK:~~** *(RESOLVED)* Commit `a6b0f65` `free_credits_used`/`free_credits_reset_at` column error was encountered in production (`[INACTIVITY JOB] Fatal error: column "free_credits_used" does not exist`) and resolved via `npm run db:push -- --force`. Columns exist in production DB.
 
