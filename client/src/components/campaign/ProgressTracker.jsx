@@ -24,42 +24,50 @@ import {
   TrendingUp,
   MousePointerClick,
   AlertTriangle,
+  Ban,
+  Info,
 } from "lucide-react";
 import { formatNumber, cn } from "@/lib/utils";
 
 const STATUS_CONFIG = {
-  RUNNING: { 
-    icon: Activity, 
-    label: "Running", 
-    color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" 
+  RUNNING: {
+    icon: Activity,
+    label: "Running",
+    color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
   },
-  PAUSED: { 
-    icon: Pause, 
-    label: "Paused", 
-    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" 
+  PAUSED: {
+    icon: Pause,
+    label: "Paused",
+    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
   },
-  COMPLETED: { 
-    icon: CheckCircle, 
-    label: "Completed", 
-    color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" 
+  COMPLETED: {
+    icon: CheckCircle,
+    label: "Completed",
+    color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
   },
-  FAILED: { 
-    icon: XCircle, 
-    label: "Failed", 
-    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" 
+  FAILED: {
+    icon: XCircle,
+    label: "Failed",
+    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
   },
-  PENDING: { 
-    icon: Clock, 
-    label: "Pending", 
-    color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400" 
+  PENDING: {
+    icon: Clock,
+    label: "Pending",
+    color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
   }
+};
+
+const SUPPRESSION_SOURCE_LABEL = {
+  unsubscribe: "Unsubscribe",
+  bounce:      "Bounce",
+  complaint:   "Complaint",
+  manual:      "Manual",
 };
 
 export default function ProgressTracker() {
   const { contacts, campaignName, campaignId, campaignData, resetCampaign, columnMapping } = useCampaign();
   const [emailStatuses, setEmailStatuses] = useState([]);
 
-  // Track mount time so polling can start fast and slow down once campaign is underway.
   const mountedAt = useRef(Date.now());
 
   const { data: fetchedCampaign } = useQuery({
@@ -70,8 +78,6 @@ export default function ProgressTracker() {
       if (data?.status === "COMPLETED" || data?.status === "FAILED") {
         return false;
       }
-      // Fast polling for the first 30 seconds (catches fast campaigns immediately),
-      // then slow to 2 seconds to reduce server load on long-running campaigns.
       const elapsed = Date.now() - mountedAt.current;
       return elapsed < 30_000 ? 500 : 2000;
     },
@@ -81,50 +87,102 @@ export default function ProgressTracker() {
     status: "PENDING",
     sentEmails: 0,
     failedEmails: 0,
+    skippedEmails: 0,
     totalEmails: contacts.length,
     creditsUsed: 0,
     name: campaignName,
   };
 
-  useEffect(() => {
-    if (!contacts.length) return;
+  const totalEmails   = currentCampaign.totalEmails   || contacts.length;
+  const sentEmails    = currentCampaign.sentEmails    || 0;
+  const failedEmails  = currentCampaign.failedEmails  || 0;
+  const skippedEmails = currentCampaign.skippedEmails || 0;
 
-    const generateStatuses = () => {
-      const statuses = [];
-      const totalProcessed = (currentCampaign.sentEmails || 0) + (currentCampaign.failedEmails || 0);
-      
+  // Contacts with actual per-record status from the API (up to 50 most recent).
+  // Used to show SUPPRESSED rows with source/reason in the status log.
+  const campaignEmailRecords = currentCampaign.campaignEmails || [];
+
+  useEffect(() => {
+    if (!contacts.length && campaignEmailRecords.length === 0) return;
+
+    const statuses = [];
+
+    if (campaignEmailRecords.length > 0) {
+      // Use real per-record data from API — accurate status and suppression detail
+      for (const record of campaignEmailRecords) {
+        if (record.status === "SUPPRESSED") {
+          const source = record.suppressionDetail?.source;
+          statuses.push({
+            email:      record.recipientEmail || "—",
+            status:     "suppressed",
+            reason:     SUPPRESSION_SOURCE_LABEL[source] || source || "Suppressed",
+            timestamp:  record.sentAt || record.createdAt,
+          });
+        } else if (record.status === "SENT") {
+          statuses.push({
+            email:      record.recipientEmail || "—",
+            status:     "sent",
+            timestamp:  record.sentAt,
+          });
+        } else if (record.status === "FAILED") {
+          statuses.push({
+            email:      record.recipientEmail || "—",
+            status:     "failed",
+            reason:     record.failureReason || "Send failed",
+            timestamp:  record.createdAt,
+          });
+        }
+      }
+    } else {
+      // Fallback: synthetic log from contacts array (no real API records yet)
+      const totalProcessed = sentEmails + failedEmails + skippedEmails;
       for (let i = 0; i < Math.min(totalProcessed, contacts.length, 50); i++) {
         const contact = contacts[i];
         const email = contact?.[columnMapping?.email] || `contact${i + 1}@example.com`;
-        const isFailed = i < (currentCampaign.failedEmails || 0);
-        
+        const isFailed = i < failedEmails;
         statuses.push({
           email,
-          status: isFailed ? "failed" : "sent",
-          timestamp: new Date().toISOString()
+          status:    isFailed ? "failed" : "sent",
+          timestamp: new Date().toISOString(),
         });
       }
-      
-      return statuses.reverse();
-    };
+    }
 
-    setEmailStatuses(generateStatuses());
-  }, [currentCampaign.sentEmails, currentCampaign.failedEmails, contacts, columnMapping]);
+    setEmailStatuses(statuses.reverse());
+  }, [
+    currentCampaign.sentEmails,
+    currentCampaign.failedEmails,
+    currentCampaign.skippedEmails,
+    campaignEmailRecords,
+    contacts,
+    columnMapping,
+  ]);
 
-  const totalEmails = currentCampaign.totalEmails || contacts.length;
-  const sentEmails = currentCampaign.sentEmails || 0;
-  const failedEmails = currentCampaign.failedEmails || 0;
-  const progress = totalEmails > 0 
-    ? ((sentEmails + failedEmails) / totalEmails) * 100 
+  const progress = totalEmails > 0
+    ? Math.min(100, ((sentEmails + failedEmails + skippedEmails) / totalEmails) * 100)
     : 100;
 
   const statusConfig = STATUS_CONFIG[currentCampaign.status] || STATUS_CONFIG.COMPLETED;
   const StatusIcon = statusConfig.icon;
 
   const isComplete = currentCampaign.status === "COMPLETED";
-  const successRate = sentEmails + failedEmails > 0
-    ? ((sentEmails / (sentEmails + failedEmails)) * 100).toFixed(1)
+
+  // Delivery rate = sent / (sent + failed) — excludes suppressed from denominator
+  const deliveryDenominator = sentEmails + failedEmails;
+  const deliveryRate = deliveryDenominator > 0
+    ? ((sentEmails / deliveryDenominator) * 100).toFixed(1)
     : 100;
+
+  // Reach rate = (sent + skipped) / total — what fraction of the list was contacted or suppressed
+  const reachRate = totalEmails > 0
+    ? (((sentEmails + skippedEmails) / totalEmails) * 100).toFixed(1)
+    : 100;
+
+  // True pending = contacts not yet touched (running campaigns only)
+  const pendingEmails = Math.max(0, totalEmails - sentEmails - failedEmails - skippedEmails);
+
+  // Truly unprocessed = contacts the loop never reached (credit exhaustion / crash)
+  const unprocessed = isComplete ? pendingEmails : 0;
 
   const handleFinish = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
@@ -174,6 +232,7 @@ export default function ProgressTracker() {
             <Progress value={progress} className="h-3" />
           </div>
 
+          {/* Stats tiles — 4 columns: Total / Sent / Failed / Skipped-or-Pending */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div className="text-center p-4 rounded-md bg-muted/50">
               <p className="text-3xl font-bold">{formatNumber(totalEmails)}</p>
@@ -187,12 +246,17 @@ export default function ProgressTracker() {
               <p className="text-3xl font-bold text-red-600">{formatNumber(failedEmails)}</p>
               <p className="text-sm text-red-700 dark:text-red-400">Failed</p>
             </div>
-            <div className="text-center p-4 rounded-md bg-blue-50 dark:bg-blue-950/30">
-              <p className="text-3xl font-bold text-blue-600">
-                {formatNumber(totalEmails - sentEmails - failedEmails)}
-              </p>
-              <p className="text-sm text-blue-700 dark:text-blue-400">Pending</p>
-            </div>
+            {isComplete ? (
+              <div className="text-center p-4 rounded-md bg-amber-50 dark:bg-amber-950/30">
+                <p className="text-3xl font-bold text-amber-600">{formatNumber(skippedEmails)}</p>
+                <p className="text-sm text-amber-700 dark:text-amber-400">Skipped</p>
+              </div>
+            ) : (
+              <div className="text-center p-4 rounded-md bg-blue-50 dark:bg-blue-950/30">
+                <p className="text-3xl font-bold text-blue-600">{formatNumber(pendingEmails)}</p>
+                <p className="text-sm text-blue-700 dark:text-blue-400">Pending</p>
+              </div>
+            )}
           </div>
 
           {isComplete && (
@@ -202,19 +266,39 @@ export default function ProgressTracker() {
                 Campaign Completed Successfully!
               </p>
               <p className="text-sm text-green-700 dark:text-green-500">
-                {successRate}% success rate ({sentEmails} sent, {failedEmails} failed)
+                {deliveryRate}% delivery rate ({sentEmails} sent, {failedEmails} failed)
               </p>
-              <p className="text-sm text-green-700 dark:text-green-500 mt-1">
-                {formatNumber(currentCampaign.creditsUsed || totalEmails)} credits used
+              <p className="text-sm text-green-700 dark:text-green-500 mt-0.5">
+                Reach: {reachRate}% of list &middot; {formatNumber(currentCampaign.creditsUsed || sentEmails)} credits used
               </p>
-              {sentEmails < totalEmails && (
+
+              {/* Suppression skips — all contacts processed, some suppressed (healthy) */}
+              {skippedEmails > 0 && unprocessed === 0 && (
                 <div className="flex items-start gap-2 mt-3 pt-3 border-t border-green-200 dark:border-green-800 text-left">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                    Campaign stopped early — account ran out of credits. {formatNumber(sentEmails)} of {formatNumber(totalEmails)} contacts received this email. Top up credits to reach the remaining contacts.
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-800 dark:text-blue-300">
+                    {skippedEmails === 1
+                      ? "1 contact was skipped"
+                      : `${formatNumber(skippedEmails)} contacts were skipped`}{" "}
+                    due to your suppression list.{" "}
+                    {formatNumber(sentEmails)} of {formatNumber(totalEmails)} contacts received this email.
                   </p>
                 </div>
               )}
+
+              {/* Truly unprocessed — credit exhaustion or early termination */}
+              {unprocessed > 0 && (
+                <div className="flex items-start gap-2 mt-3 pt-3 border-t border-green-200 dark:border-green-800 text-left">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                    Campaign did not complete all contacts — {formatNumber(unprocessed)}{" "}
+                    {unprocessed === 1 ? "contact was" : "contacts were"} not reached.
+                    This may be due to insufficient credits or an early stop.
+                    Top up credits and retry to reach the remaining contacts.
+                  </p>
+                </div>
+              )}
+
               {sentEmails > 0 && (currentCampaign.openedEmails > 0 || currentCampaign.clickedEmails > 0) && (
                 <div className="flex items-center justify-center gap-4 mt-2 pt-2 border-t border-green-200 dark:border-green-800">
                   <span className="flex items-center gap-1 text-sm text-violet-700 dark:text-violet-400">
@@ -251,29 +335,40 @@ export default function ProgressTracker() {
             ) : (
               <div className="space-y-2">
                 {emailStatuses.map((status, i) => (
-                  <div 
-                    key={i} 
+                  <div
+                    key={i}
                     className="flex items-center justify-between py-2 px-3 rounded-md bg-muted/30"
                   >
                     <div className="flex items-center gap-3">
                       {status.status === "sent" ? (
                         <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : status.status === "suppressed" ? (
+                        <Ban className="h-4 w-4 text-amber-500" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-600" />
                       )}
                       <span className="text-sm font-mono truncate max-w-[140px] sm:max-w-[200px]">{status.email}</span>
                     </div>
-                    <Badge 
-                      variant="secondary" 
-                      className={cn(
-                        "text-xs",
-                        status.status === "sent" 
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                          : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "text-xs",
+                          status.status === "sent"
+                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                            : status.status === "suppressed"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                        )}
+                      >
+                        {status.status === "suppressed" ? "SUPPRESSED" : status.status}
+                      </Badge>
+                      {status.reason && status.status === "suppressed" && (
+                        <span className="text-xs text-muted-foreground hidden sm:inline">
+                          {status.reason}
+                        </span>
                       )}
-                    >
-                      {status.status}
-                    </Badge>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -306,12 +306,17 @@ export default function CampaignConfirmation() {
                   <span className="font-bold text-lg">{formatNumber(creditsAvailable)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Credits Required</span>
-                  <span className="font-bold text-lg text-primary">-{formatNumber(creditsRequired)}</span>
+                  <div>
+                    <span className="text-muted-foreground">Credits Required</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Actual credits used may be lower if any recipients are on your suppression list.
+                    </p>
+                  </div>
+                  <span className="font-bold text-lg text-primary shrink-0 ml-4">-{formatNumber(creditsRequired)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between items-center">
-                  <span className="font-medium">After Campaign</span>
+                  <span className="font-medium">After Campaign (est.)</span>
                   <span className={`font-bold text-lg ${hasEnoughCredits ? "text-green-600" : "text-red-600"}`}>
                     {formatNumber(creditsAvailable - creditsRequired)}
                   </span>

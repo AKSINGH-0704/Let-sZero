@@ -202,7 +202,7 @@ export default function History() {
                       const config = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.PENDING;
                       const StatusIcon = config.icon;
                       const reachRate = (campaign.totalEmails ?? 0) > 0
-                        ? ((campaign.sentEmails / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
+                        ? (((campaign.sentEmails + (campaign.skippedEmails ?? 0)) / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
                         : null;
                       const openRate = campaign.sentEmails > 0
                         ? ((campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
@@ -353,29 +353,38 @@ export default function History() {
                   <div className="text-xs text-muted-foreground mt-1">Sent</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold text-emerald-600">{formatNumber(viewCampaign.deliveredEmails ?? 0)}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Delivered</div>
-                </div>
-                <div className="rounded-lg border p-3">
                   <div className="text-2xl font-semibold text-red-600">{formatNumber(viewCampaign.failedEmails)}</div>
                   <div className="text-xs text-muted-foreground mt-1">Failed</div>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold">{formatNumber(viewCampaign.skippedEmails ?? 0)}</div>
+                  <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatNumber(viewCampaign.skippedEmails ?? 0)}</div>
                   <div className="text-xs text-muted-foreground mt-1">Skipped</div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-2xl font-semibold">{formatNumber(viewCampaign.totalEmails ?? 0)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Total</div>
                 </div>
               </div>
 
-              {/* Credit exhaustion — some contacts were never reached (loop broke before processing them) */}
+              {/* Credits consumed */}
+              {(viewCampaign.creditsUsed ?? 0) > 0 && (
+                <div className="flex items-center justify-between text-sm px-1">
+                  <span className="text-muted-foreground">Credits consumed</span>
+                  <span className="font-medium">{formatNumber(viewCampaign.creditsUsed)}</span>
+                </div>
+              )}
+
+              {/* Incomplete — contacts the loop never reached (credit exhaustion / crash) */}
               {viewCampaign.status === "COMPLETED" &&
                 (viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0) > 0 && (
                 <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800">
                   <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
                   <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                    Campaign stopped early — account ran out of credits.{" "}
-                    {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email.{" "}
-                    Top up credits to reach the remaining{" "}
-                    {formatNumber((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0))} contacts.
+                    Campaign did not complete all contacts —{" "}
+                    {formatNumber((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0))}{" "}
+                    {((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0)) === 1 ? "contact was" : "contacts were"} not reached.
+                    This may be due to insufficient credits or an early stop.
+                    Top up credits and retry to reach the remaining contacts.
                   </p>
                 </div>
               )}
@@ -395,10 +404,23 @@ export default function History() {
 
               {/* Engagement metrics — populated by SNS events after send */}
               {viewCampaign.sentEmails > 0 && (
-                <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="grid grid-cols-4 gap-3 text-center">
                   <div className="rounded-lg border p-3">
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                      <Send className="h-4 w-4 text-emerald-500" />
+                      <Send className="h-4 w-4 text-blue-500" />
+                      <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+                        {(viewCampaign.totalEmails ?? 0) > 0
+                          ? (((viewCampaign.sentEmails + (viewCampaign.skippedEmails ?? 0)) / (viewCampaign.totalEmails ?? 1)) * 100).toFixed(1)
+                          : "0.0"}%
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Reach Rate &middot; {formatNumber(viewCampaign.totalEmails ?? 0)} total
+                    </div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                      <CheckCircle className="h-4 w-4 text-emerald-500" />
                       <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
                         {((viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                       </div>

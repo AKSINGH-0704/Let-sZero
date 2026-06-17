@@ -156,12 +156,26 @@ export default function Profile() {
               </Alert>
             )}
 
+            {/* Identity format guide */}
+            <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1.5">
+              <p className="font-medium text-foreground text-sm">How your identity appears in emails</p>
+              <div className="font-mono space-y-0.5 text-xs">
+                <p>Abhishek Singh</p>
+                <p>Founder, RepMail</p>
+              </div>
+              <p className="pt-1">
+                Use your real personal name — not a product, team, or platform name.
+                Avoid: <span className="font-medium">admin, bot, repmail, support, sales team</span>.
+                Recipients see this in the From field and email signature.
+              </p>
+            </div>
+
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="senderName">Full Name <span className="text-destructive">*</span></Label>
                 <Input
                   id="senderName"
-                  placeholder="Jane Smith"
+                  placeholder="Abhishek Singh"
                   value={senderForm.senderName}
                   onChange={e => handleSenderChange("senderName", e.target.value)}
                 />
@@ -172,7 +186,7 @@ export default function Profile() {
                 <Label htmlFor="senderTitle">Job Title</Label>
                 <Input
                   id="senderTitle"
-                  placeholder="Account Executive"
+                  placeholder="Founder"
                   value={senderForm.senderTitle}
                   onChange={e => handleSenderChange("senderTitle", e.target.value)}
                 />
@@ -183,7 +197,7 @@ export default function Profile() {
                 <Label htmlFor="senderCompany">Company Name</Label>
                 <Input
                   id="senderCompany"
-                  placeholder="Acme Inc."
+                  placeholder="RepMail"
                   value={senderForm.senderCompany}
                   onChange={e => handleSenderChange("senderCompany", e.target.value)}
                 />

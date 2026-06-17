@@ -125,21 +125,145 @@ const scenarios = [
     campaignType: "general",
     tone: "casual",
   },
+
+  // ── Scenarios 11–20 ────────────────────────────────────────────────────────
+  {
+    label: "B2B outreach — AI analytics tool, Head of Data, professional",
+    intake: {
+      recipientDescription: "Head of Data at a 200-500 person e-commerce company running on Shopify",
+      valueProposition: "Real-time cohort analysis with no BI team required — connects directly to Shopify data in under 10 minutes",
+      objectiveType: "book a 20-minute product demo",
+      relevanceReason: "Mid-size e-commerce teams typically outgrow Shopify Analytics by $5M GMV but can't justify a full BI stack",
+    },
+    senderContext: { name: "Natalia Kwan", title: "Head of Sales", company: "Cohort AI" },
+    campaignType: "b2b_outreach",
+    tone: "professional",
+  },
+  {
+    label: "Recruitment — product designer, Series B startup, friendly",
+    intake: {
+      recipientDescription: "Senior product designer with 5+ years at a consumer app or fintech company",
+      valueProposition: "First design hire at a Series B fintech — full ownership of the product design system, direct CEO access",
+      objectiveType: "30-minute portfolio chat",
+      objectiveDetail: "Informal conversation, no case study required yet",
+      roleSummary: "Senior Product Designer, remote-friendly, $140-165k base, strong equity package",
+    },
+    senderContext: { name: "Rachel Torres", title: "Head of Talent", company: "PayRoute" },
+    campaignType: "recruitment",
+    tone: "friendly",
+  },
+  {
+    label: "Follow-up — second touch after conference meeting, professional",
+    intake: {
+      recipientDescription: "VP of Engineering at a logistics company, met briefly at AWS re:Invent",
+      valueProposition: "Infrastructure cost reduction tool — customers typically save 30-40% on compute within 90 days",
+      objectiveType: "follow up to brief in-person meeting",
+      previousContext: "Had a 5-minute conversation at the AWS booth, exchanged cards, they expressed interest in seeing the dashboard",
+    },
+    senderContext: { name: "Daniel Osei", title: "Enterprise Account Executive", company: "CloudBridge" },
+    campaignType: "follow_up",
+    tone: "professional",
+  },
+  {
+    label: "B2B outreach — legal tech / CLM tool, General Counsel, formal",
+    intake: {
+      recipientDescription: "General Counsel at a 500-2000 person technology company managing 200+ vendor contracts",
+      valueProposition: "Contract lifecycle management that cuts average contract turnaround from 14 days to 3 days — no change to existing approval workflows",
+      objectiveType: "30-minute workflow review call",
+      relevanceReason: "GDPR and CCPA renewal cycles are creating a bottleneck for GCs managing high contract volumes",
+    },
+    senderContext: { name: "Fiona Halvorsen", title: "Enterprise Sales Director", company: "ClauseIQ" },
+    campaignType: "b2b_outreach",
+    tone: "formal",
+  },
+  {
+    label: "Partnership — accounting software referral, casual",
+    intake: {
+      recipientDescription: "Founder or managing partner at a boutique accounting or CFO-as-a-service firm",
+      valueProposition: "Our accounts payable automation tool helps their SMB clients reduce manual invoice processing — referral arrangement available",
+      objectiveType: "explore referral or white-label partnership",
+      objectiveDetail: "20-min call to explore if there's a fit for their client base",
+    },
+    senderContext: { name: "Yusuf Adebayo", title: "Partnerships Lead", company: "FinFlow" },
+    campaignType: "partnership",
+    tone: "casual",
+  },
+  {
+    label: "Real estate — commercial property owner, professional",
+    intake: {
+      recipientDescription: "Owner of a 10,000+ sqft commercial warehouse in a logistics corridor currently sitting empty",
+      valueProposition: "A logistics company needs immediate short-term storage space — 6-month lease, full rent upfront",
+      objectiveType: "arrange a site visit",
+      objectiveDetail: "Flexible timing this week or next",
+    },
+    senderContext: { name: "Marcus Webb", title: "Commercial Property Consultant", company: "Meridian Realty" },
+    campaignType: "real_estate",
+    tone: "professional",
+  },
+  {
+    label: "Recruitment — senior data engineer, remote-first, professional",
+    intake: {
+      recipientDescription: "Senior data engineer with 4+ years working on data pipelines at a tech company, likely passively looking",
+      valueProposition: "Senior Data Engineer role building the data infrastructure from scratch at a Series A health-tech startup — Spark, Kafka, dbt stack",
+      objectiveType: "brief intro call",
+      objectiveDetail: "20 minutes — no commitment, just exploring",
+      roleSummary: "Senior Data Engineer, fully remote, Series A, health-tech, $150-175k, equity",
+    },
+    senderContext: { name: "Aisha Brennan", title: "Technical Recruiter", company: "PulseHealth" },
+    campaignType: "recruitment",
+    tone: "professional",
+  },
+  {
+    label: "B2B outreach — cybersecurity / endpoint protection, CISO, formal",
+    intake: {
+      recipientDescription: "CISO or VP of Security at a financial services firm with 1000+ employees",
+      valueProposition: "Zero-trust endpoint protection that deploys in under 48 hours with no agent install on end-user devices",
+      objectiveType: "15-minute security briefing call",
+      relevanceReason: "SEC cybersecurity disclosure rules effective December 2023 require faster incident detection and reporting",
+    },
+    senderContext: { name: "Christopher Lane", title: "VP of Sales", company: "Sentinel Zero" },
+    campaignType: "b2b_outreach",
+    tone: "formal",
+  },
+  {
+    label: "General outreach — SaaS founder selling to marketing teams, casual",
+    intake: {
+      recipientDescription: "Marketing director or VP of Marketing at a B2B SaaS company running performance campaigns",
+      valueProposition: "UTM parameter management and attribution reporting in one place — replaces four spreadsheets with a single source of truth",
+      objectiveType: "live walkthrough of the attribution dashboard",
+      objectiveDetail: "15-min screen share, I'll show the report for a campaign like theirs",
+    },
+    senderContext: { name: "Leila Nasser", title: "Co-founder", company: "TrackStack" },
+    campaignType: "general",
+    tone: "casual",
+  },
+  {
+    label: "Follow-up — no reply after 10 days, warm intro context, professional",
+    intake: {
+      recipientDescription: "CFO at a 50-person professional services firm",
+      valueProposition: "Accounts receivable automation — reduces average days sales outstanding by 12 days",
+      objectiveType: "follow up to previous outreach",
+      previousContext: "Sent intro email 10 days ago via a warm introduction from their VP of Operations — no reply yet",
+    },
+    senderContext: { name: "Priya Menon", title: "Account Executive", company: "InvoiceFlow" },
+    campaignType: "follow_up",
+    tone: "professional",
+  },
 ];
 
 const DIVIDER = "=".repeat(72);
 const SUBDIV  = "-".repeat(72);
 
 console.log(DIVIDER);
-console.log("RepMail — AI Template Quality Audit (new prompts, 2026-06-16)");
-console.log(`10 scenarios across all 6 campaign types and 4 tones`);
+console.log("RepMail — AI Template Quality Audit v2 (post-placeholder-fix, 2026-06-17)");
+console.log(`20 scenarios across all 6 campaign types and 4 tones`);
 console.log(DIVIDER);
 
 const results = [];
 
 for (let i = 0; i < scenarios.length; i++) {
   const s = scenarios[i];
-  console.log(`\n[${i + 1}/10] ${s.label}`);
+  console.log(`\n[${i + 1}/20] ${s.label}`);
   console.log(SUBDIV);
 
   try {
