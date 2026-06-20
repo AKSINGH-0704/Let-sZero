@@ -132,7 +132,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`)*
 4. ~~AI quality overhaul~~ *(DONE — commits `01acd99`, `a03a0f3`)*
 5. ~~Campaign UX fixes~~ *(DONE — commit `cd04db8`, Railway deployment `ab4a7a84` building)*
-6. ~~Startup schema integrity check + migration scripts~~ *(DONE — `server/schemaCheck.js`, `scripts/check-schema-parity.mjs`, `db:generate`/`db:migrate` added — see Audit 019)*
+6. ~~Startup schema integrity check + migration scripts~~ *(DONE — `server/schemaCheck.js`, `scripts/check-schema-parity.mjs`, `db:generate`/`db:migrate` added, `migrations/` baseline committed + pushed — see Audit 019)*
 7. Confirm Railway deployment succeeds and UI shows "Skipped" correctly for suppression campaigns
 7. Confirm Gmail placement for the 2026-06-16 production-path send (Primary / Promotions / Spam)
 8. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)

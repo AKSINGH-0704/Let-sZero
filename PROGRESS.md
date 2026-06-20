@@ -441,8 +441,9 @@ Implements startup schema integrity check, migration scripts, and pre-deployment
 | `npm run db:generate` script | **I** | `package.json` scripts: `drizzle-kit generate` |
 | `npm run db:migrate` script | **I** | `package.json` scripts: `drizzle-kit migrate` |
 | Pre-deployment parity check (`scripts/check-schema-parity.mjs`) | **I** | Standalone validator — `railway run node scripts/check-schema-parity.mjs` before deploy |
+| Baseline migration committed (`migrations/0000_mean_speedball.sql`) | **I** | `migrations/` staged and committed — migration-enforced workflow now active |
 | Health endpoint audit | **V** | Already production-grade — live evidence: `postgres: connected, redis: connected, worker: running, smtp: verified` |
 | Operational recovery audit | **V** | Startup reconciliation (index.js 535-574), PENDING watchdog (762-797), IORedis reconnect, per-contact suppression — all confirmed |
 | Deliverability audit | **V** | List-Unsubscribe + List-Unsubscribe-Post (email.js 131-132), Feedback-ID (137), SNS bounce/complaint suppression (routes.js 890-916), DMARC pass live |
 
-**Milestone status: I/V** — hardening complete. Migration baseline generation (`npm run db:generate` run once) is the remaining manual step before migration-first workflow is fully active.
+**Milestone status: COMPLETE** — hardening complete. Baseline migration committed. Migration-enforced workflow active. Pushed to origin/main at `5a604be` + migration commit.
