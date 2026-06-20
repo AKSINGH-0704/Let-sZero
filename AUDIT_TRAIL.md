@@ -2094,3 +2094,212 @@ No inconsistency. Profile form initialization (`useState` on line 50) is correct
 1. **Safety cap:** Replace `Infinity` AI quota for enterprise with a very high soft cap (5,000–10,000/day) while preserving the "Unlimited" customer-facing label. Eliminates theoretical runaway-cost risk.
 
 2. **Per-sub-user AI controls:** Allow parent admins to override per-sub-user AI daily limits below the plan default. Requires `aiDailyLimitOverride` column on users table + team management UI.
+
+---
+
+## Audit 024 — Phase 13: System-Wide Audit + Priority Fixes (2026-06-21)
+
+**Scope:** Full evidence-based audit of plan system, AI entitlement, sub-admin/team entitlement, credit system, payment system, purchase flow, security, and Google OAuth readiness. Followed by targeted implementation of all priority fixes identified.
+
+**Method:** Static code analysis of `shared/schema.js`, `server/storage.js`, `server/routes.js`, `server/fulfillPayment.js`, `server/razorpayWebhook.js`. No destructive operations. All changes were additive or targeted single-file edits.
+
+---
+
+### Investigation 1 — Trial Credit Farming (GAP-1) [CRITICAL]
+
+**Evidence:**
+
+`server/routes.js` lines 2321–2347 (pre-fix):
+```js
+if (plan.isTrial) {
+  const payment = await storage.createPayment({ ... });
+  await storage.addCredits(req.user.id, plan.credits, ...);  // unconditional
+  res.json({ ... });
+  return;
+}
+```
+
+`PRICING_PLANS.trial.credits = 500` (`shared/schema.js:552`). `PRICING_PLANS` is imported server-side. Trial plan is filtered from the UI response but the initiate route accepts any `planId` from the request body.
+
+**Exploit path:** Any authenticated user can call `POST /api/payments/initiate { planId: "trial" }` repeatedly. Each call adds 500 credits to `creditsReceived` (paid pool). No guard existed.
+
+**Root cause:** `addCredits()` is a simple `credits_received += N` — no state transition, no idempotency gate.
+
+**Fix implemented:**
+
+Added `claimTrialCredits(userId, credits)` to `server/storage.js`:
+```js
+async claimTrialCredits(userId, credits) {
+  const [claimed] = await db.update(users)
+    .set({ creditsReceived: sql`credits_received + ${credits}`, isTrialUser: false, updatedAt: new Date() })
+    .where(and(eq(users.id, userId), eq(users.isTrialUser, true)))
+    .returning({ id: users.id });
+  return !!claimed;
+},
+```
+
+Updated `server/routes.js` trial path to:
+```js
+const claimed = await storage.claimTrialCredits(req.user.id, plan.credits);
+if (!claimed) return res.status(409).json({ message: "Free trial credits have already been claimed." });
+```
+
+**Guarantee:** `isTrialUser` is the idempotency gate. The WHERE clause `AND is_trial_user = true` means only the first call succeeds. The UPDATE atomically flips `isTrialUser = false` and adds credits in a single statement — concurrent calls get 0 rows updated (PostgreSQL row-level locking ensures this). Second call returns 409.
+
+**Side effect (beneficial):** After claiming trial credits, `isTrialUser = false`. This means when `FREE_PLAN_ENABLED = true` is eventually set, these users will correctly receive monthly free credit refreshes rather than being stuck on the legacy trial path.
+
+| Before | After |
+|--------|-------|
+| Any auth user can claim 500 credits unlimited times | One-time atomic claim, 409 on repeat |
+| `isTrialUser` stays `true` after trial claim | `isTrialUser` set to `false` on first claim |
+
+---
+
+### Investigation 2 — Grandchild AI Quota Inheritance (GAP-6) [MEDIUM]
+
+**Evidence:**
+
+Pre-fix `getEffectivePlan` (`server/storage.js:1348`):
+```js
+async getEffectivePlan(userId) {
+  const user = await this.getUserById(userId);
+  if (!user) return "free";
+  if (user.plan && user.plan !== "free") return user.plan;
+  if (user.parentId) {
+    const parent = await this.getUserById(user.parentId);
+    if (parent?.plan) return parent.plan;   // ← only one level up
+  }
+  return "free";
+}
+```
+
+**Gap:** A USER (`plan="free"`) under a SUB_ADMIN (`plan="free"`) under a ROOT_ADMIN (`plan="enterprise"`) would get `AI_DAILY_LIMITS.free = 5` because the function only looked one level up and stopped at the "free" SUB_ADMIN without continuing to ROOT_ADMIN.
+
+**Fix implemented:**
+
+```js
+async getEffectivePlan(userId) {
+  const visited = new Set();
+  let currentId = userId;
+  while (currentId) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    const user = await this.getUserById(currentId);
+    if (!user) break;
+    if (user.plan && user.plan !== "free") return user.plan;
+    if (!user.parentId) break;
+    currentId = user.parentId;
+  }
+  return "free";
+},
+```
+
+**Consistency:** Matches the credit flow model (credits flow ROOT_ADMIN → SUB_ADMIN → USER). AI quota now follows the same cascade. A USER whose entire ancestor chain is enterprise now gets enterprise AI quota. Maximum 3 DB queries for the current 3-level hierarchy.
+
+---
+
+### Investigation 3 — PLAN_LIMITS vs MAX_TEAM_MEMBERS Inconsistency (GAP-7) [LOW]
+
+**Evidence:** `shared/schema.js` had two constants for team member limits with conflicting values:
+
+| Plan | `PLAN_LIMITS.maxTeamMembers` (stale) | `MAX_TEAM_MEMBERS` (authoritative) |
+|------|--------------------------------------|-------------------------------------|
+| starter | 1 | 3 |
+| growth | 5 | 10 |
+| scale | 10 | 25 |
+
+The comment on `MAX_TEAM_MEMBERS` said it was authoritative. `PLAN_LIMITS.maxTeamMembers` was never referenced in any server route or client page for enforcement or display.
+
+Additionally, `Profile.jsx` had a third local copy (`PROFILE_PLAN_LIMITS`) with the same stale values and a label mismatch ("Free Trial" vs "Free Plan").
+
+**Fix implemented:**
+1. Removed `maxTeamMembers` field from all `PLAN_LIMITS` entries in `shared/schema.js`. Added comment directing readers to `MAX_TEAM_MEMBERS`.
+2. Updated `PROFILE_PLAN_LIMITS` in `client/src/pages/Profile.jsx` to match `PLAN_LIMITS` values: removed stale `maxTeamMembers` field, corrected `free` label from "Free Trial" to "Free Plan".
+
+**Impact:** No enforcement logic changed. Server routes use `MAX_TEAM_MEMBERS` for invite enforcement; that is unchanged. Profile card displays `maxTemplates` and `maxActiveCampaigns` only — no behavior change.
+
+---
+
+### Investigation 4 — Free Plan Activation Readiness (Priority 2)
+
+**Current state:** `FREE_PLAN_ENABLED` is not set in Railway production. All new and existing users have `isTrialUser = true` and receive legacy 5-credit trial behavior.
+
+**What must be true before activating `FREE_PLAN_ENABLED=true`:**
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Monthly refresh logic | Ready | `deductCreditAtomic` and `canStartCampaign` both implement lazy UTC month refresh with WHERE-clause idempotency guard |
+| Free credit accounting | Ready | `free_credits_used` + `free_credits_reset_at` columns exist; `MONTHLY_CREDITS.free = 500` |
+| `createUser` default behavior | Ready | `isTrialUser = process.env.FREE_PLAN_ENABLED !== "true"` — new users created with `isTrialUser=false` when flag is set |
+| Existing users migration | **REQUIRED** | All current users have `isTrialUser=true`. The free monthly credit path is gated on `isTrialUser=false`. Must run: `UPDATE users SET is_trial_user = false WHERE plan = 'free' AND credits_received = 0;` (after GAP-1 fix ships, `isTrialUser=false` is also set by trial claim) |
+| Trial farming patch | **REQUIRED FIRST** | GAP-1 must be deployed before activating free plan to prevent abuse of the trial endpoint by new users |
+| Onboarding copy | Review needed | UI copy should reflect "500 free emails per month" not "5 trial emails" |
+
+**Go/No-Go Recommendation:** **NOT YET.** The GAP-1 patch is now deployed, which eliminates the farming risk. The remaining blocker is the existing-user migration (`is_trial_user = false` backfill). Run the backfill SQL in a Railway `railway run psql` session, then set `FREE_PLAN_ENABLED=true`. Suggest staging test first with a test user.
+
+---
+
+### Investigation 5 — Google OAuth Production Audit (Priority 3)
+
+**Current state in production:**
+
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT configured** in Railway (absent from LAUNCH_READINESS_REPORT.md environment table). The Passport strategy is conditionally registered: `if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) { passport.use(...) }`. Feature is compiled into the binary but fully dormant.
+
+**Code review findings:**
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `callbackURL` | Relative path only (`/api/auth/google/callback`) | Passport resolves against the incoming request host. When `APP_URL = https://www.letszero.in`, the callback is `https://www.letszero.in/api/auth/google/callback`. Must be registered as an Authorized Redirect URI in GCP Console. |
+| Email domain restriction | None | Any Google account (`email.split("@")[0]`) can register. Intentional for public SaaS. |
+| New user role | `USER` (non-admin) | Google OAuth users cannot self-elevate. ROOT_ADMIN must invite or manually promote. |
+| `mustResetPassword` | `false` | Correct — OAuth users authenticate via Google, not password. |
+| Missing password | Handled | `createUser` generates `crypto.randomBytes(32)` as a random password when none is provided. Passwordless accounts cannot be used for credential login but can use Google OAuth. |
+| `isTrialUser` default | Inherits env | When `FREE_PLAN_ENABLED=false` (current), Google OAuth users get `isTrialUser=true` (5 trial credits). When `FREE_PLAN_ENABLED=true`, they get `isTrialUser=false` and 500 monthly credits. |
+| Session cookie | HttpOnly, Secure, SameSite=lax, 24h | Standard; same as password login. |
+
+**What is required to activate Google OAuth:**
+
+1. **GCP Project & Credentials:** Create OAuth 2.0 Client ID in Google Cloud Console. Application type: Web application.
+2. **Authorized JavaScript Origins:** `https://www.letszero.in`
+3. **Authorized Redirect URIs:** `https://www.letszero.in/api/auth/google/callback`
+4. **OAuth Consent Screen:** Must be configured as **External** + **Production** (not "Testing"). In Testing mode, only listed test users (max 100) can log in. To allow any Google user, publish the consent screen. Publication requires Google app verification if requesting sensitive scopes — but Google Sign-In with only `profile` + `email` (non-sensitive scopes) can be used in **unverified** production mode with a warning banner for up to 100 daily users.
+5. **Domain verification:** Add `letszero.in` to Google Search Console and verify ownership before adding it to the OAuth consent screen authorized domains.
+6. **Railway environment variables:** Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+**Scalability:**
+
+Google OAuth (Google Sign-In) scales to **any number of users** — there is no per-user limit for public SaaS. No additional Google payments are required. The API is free for authentication. Google's quota is generous (millions of auth requests/day at no cost).
+
+**For > 100 unverified daily users:** Once daily unique OAuth users exceed 100, Google shows a warning screen ("This app hasn't been verified"). For a polished SaaS experience, submit the app for Google verification (1–3 week review process). Verification requirements: privacy policy URL, homepage URL, domain verification.
+
+**Recommended action:** Activate Google OAuth when the landing page and onboarding are finalized. Google Sign-In significantly reduces friction for new user acquisition. No code changes are needed — only GCP configuration and Railway env vars.
+
+---
+
+### Summary
+
+| # | Finding | Severity | Action | Status |
+|---|---------|---------|--------|--------|
+| 1 | Trial credit farming — unlimited 500-credit claims via API | **HIGH** | One-time atomic claim via `isTrialUser` gate | **FIXED** |
+| 2 | Grandchild AI quota — one-level-up inheritance misses grandparent plan | Medium | Walk full ancestor chain in `getEffectivePlan` | **FIXED** |
+| 3 | `PLAN_LIMITS.maxTeamMembers` conflicts with `MAX_TEAM_MEMBERS` | Low | Removed `maxTeamMembers` from `PLAN_LIMITS`; single source of truth | **FIXED** |
+| 4 | `PROFILE_PLAN_LIMITS` stale local copy in Profile.jsx | Low | Corrected values, removed stale field, fixed label | **FIXED** |
+| 5 | `FREE_PLAN_ENABLED` not set — existing users need backfill before activation | Medium | Go/No-Go recommendation documented; backfill SQL identified | Documented |
+| 6 | Google OAuth dormant — not configured in production | Info | Full activation checklist documented | Documented |
+| 7 | No automated refund on dispute.lost | Low | Documented — manual intervention required | Backlog |
+| 8 | Scheduled campaigns skip credit reservation at creation time | Medium | Documented — credits checked at execution time | Backlog |
+
+### Changes
+
+**server/storage.js:**
+- Added `claimTrialCredits(userId, credits)` — atomic one-time trial claim
+- Updated `getEffectivePlan()` — full ancestor chain traversal with cycle guard
+
+**server/routes.js:**
+- Trial path in `POST /api/payments/initiate` now uses `claimTrialCredits()` + 409 on repeat
+
+**shared/schema.js:**
+- Removed `maxTeamMembers` from `PLAN_LIMITS` entries; `MAX_TEAM_MEMBERS` is the single source of truth
+
+**client/src/pages/Profile.jsx:**
+- Corrected `PROFILE_PLAN_LIMITS` values; removed stale `maxTeamMembers` field; fixed label

@@ -542,3 +542,22 @@ Root-cause audit of AI entitlement system, credit/AI decoupling, dashboard curre
 2. Enhancement: Per-sub-user AI quota override controls in team management page
 
 **Milestone status: COMPLETE** — 0 production-blocking defects found. 1 cosmetic fix (icon). Documentation hardened.
+
+---
+
+### 21 · Phase 13 — System-Wide Audit + Priority Fixes (2026-06-21)
+
+Comprehensive evidence-based audit of plan system, AI entitlement, credit system, payment system, team model, and Google OAuth. Four code fixes implemented; two items documented for future action.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| **GAP-1: Trial credit farming (HIGH)** | **I** | `POST /api/payments/initiate { planId:"trial" }` had no idempotency guard. Added `claimTrialCredits()` in `storage.js`: atomic `UPDATE WHERE is_trial_user=true`, flips to `false` in same statement. 409 on repeat. |
+| **GAP-6: Grandchild AI quota (Medium)** | **I** | `getEffectivePlan()` only looked one level up. Rewrote to walk full ancestor chain with visited-set cycle guard. Grandchildren of enterprise root now get enterprise AI. |
+| **GAP-7: PLAN_LIMITS.maxTeamMembers removed (Low)** | **I** | Stale field with wrong values removed from `PLAN_LIMITS`; `MAX_TEAM_MEMBERS` is sole source of truth. |
+| **Profile.jsx PROFILE_PLAN_LIMITS corrected (Low)** | **I** | Removed stale `maxTeamMembers`, fixed free plan label from "Free Trial" → "Free Plan". |
+| **Free Plan activation readiness (Medium)** | **V** | Go/No-Go: NOT YET. Requires backfill SQL before `FREE_PLAN_ENABLED=true`. Checklist in HANDOFF.md. |
+| **Google OAuth Production Audit (Info)** | **V** | Feature implemented but dormant (no env vars set). Full GCP activation checklist documented in HANDOFF.md. No code changes required. |
+| **Audit 024 appended to AUDIT_TRAIL.md** | **I** | Full investigation log with all 8 findings. |
+| **HANDOFF.md Phase 13 Hardening section** | **I** | All activation checklists: Free Plan + Google OAuth. |
+
+**Milestone status: COMPLETE** — 1 HIGH security fix, 1 medium logic fix, 2 low cleanup fixes. All 4 changes committed and deployed.

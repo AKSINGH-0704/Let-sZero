@@ -451,6 +451,51 @@ All three AI endpoints (`/api/ai/preview`, `/api/ai/spam-analysis`, `/api/ai/gen
 
 ---
 
+## Phase 13 Hardening — Operational Summary (2026-06-21)
+
+### Changes shipped in this phase
+
+| Change | File | Severity addressed |
+|--------|------|--------------------|
+| Trial credit farming fixed — atomic one-time claim via `isTrialUser` gate | `server/storage.js`, `server/routes.js` | HIGH |
+| AI quota inheritance now walks full ancestor chain (grandchild fix) | `server/storage.js` | Medium |
+| `PLAN_LIMITS.maxTeamMembers` removed — `MAX_TEAM_MEMBERS` is sole source of truth | `shared/schema.js` | Low |
+| `PROFILE_PLAN_LIMITS` corrected in Profile page | `client/src/pages/Profile.jsx` | Low |
+
+### Trial credit farming — HOW IT NOW WORKS
+
+`POST /api/payments/initiate { planId: "trial" }` uses `storage.claimTrialCredits()`, which atomically adds 500 credits AND flips `isTrialUser = false` in a single `UPDATE ... WHERE is_trial_user = true`. If `isTrialUser` is already `false` (already claimed, or made a real payment), the WHERE clause matches 0 rows and the route returns `409 Conflict`. Concurrent requests are safe — PostgreSQL row-level locking ensures only one wins.
+
+### AI quota inheritance — HOW IT NOW WORKS
+
+`getEffectivePlan(userId)` walks the full ancestor chain (visited set prevents cycles):
+- USER `plan="free"` → check parent
+- SUB_ADMIN `plan="free"` → check grandparent
+- ROOT_ADMIN `plan="enterprise"` → return "enterprise"
+
+All descendants of an enterprise root now correctly receive enterprise AI quotas regardless of intermediate chain plan values.
+
+### Free Plan activation checklist (pending)
+
+Before setting `FREE_PLAN_ENABLED=true` in Railway:
+
+1. **Ship GAP-1 trial farming fix** — Done (this phase).
+2. **Run backfill:** `UPDATE users SET is_trial_user = false WHERE plan = 'free' AND credits_received = 0;` (in `railway run psql`). Existing users will otherwise stay on legacy 5-credit trial and never see monthly free credits.
+3. **Review onboarding copy** — Change UI references from "5 trial emails" to "500 free emails/month".
+4. **Test with a staging user** before enabling broadly.
+
+### Google OAuth activation checklist (pending)
+
+1. Create OAuth 2.0 Client in GCP Console (Web application type).
+2. Add Authorized Origins: `https://www.letszero.in`
+3. Add Authorized Redirect URI: `https://www.letszero.in/api/auth/google/callback`
+4. Configure OAuth consent screen as External + Production. Verify `letszero.in` domain in Google Search Console.
+5. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in Railway.
+6. No code changes needed — feature is already implemented and conditionally registered.
+7. For > 100 daily users without Google app verification: users see an "unverified app" warning. Submit for Google verification (1–3 weeks) for a polished experience.
+
+---
+
 ## Explicit Non-Goals
 
 Architectural decisions made deliberately. Do not implement without team discussion.
