@@ -405,6 +405,52 @@ Full revert restores 100% of prior behavior. No code rollback needed. Columns re
 
 ---
 
+## AI Entitlement & Plan Inheritance
+
+### Architecture overview
+
+RepMail has **two completely decoupled resource systems:**
+
+| System | Gating mechanism | Who controls it |
+|:-------|:----------------|:----------------|
+| Email sending | **Credits** (per-email deduction) | Parent admin allocates to sub-users |
+| AI generation | **Plan-based daily quota** | Inherited from account plan tier |
+
+These systems are intentionally separate. A sub-admin with 5 email credits and an unlimited-AI parent plan can draft unlimited AI templates but can only send 5 emails. This is the designed experience — AI is a creativity tool, credits are a consumption cost.
+
+### Daily AI quotas by plan (`shared/schema.js: AI_DAILY_LIMITS`)
+
+| Plan | AI generations/day |
+|:-----|:-------------------|
+| free | 5 |
+| trial | 5 |
+| starter | 20 |
+| growth | 50 |
+| scale | 150 |
+| enterprise | Unlimited (Infinity) |
+
+### Sub-user plan inheritance
+
+Sub-users inherit their **parent admin's plan** for AI quota purposes via `getEffectivePlan()` in `server/storage.js`. If a sub-user's own plan is `free` but their parent is `enterprise`, they receive unlimited AI generation — identical to the parent. This is correct and intentional.
+
+The `/api/auth/me` endpoint maps `Infinity → null` before sending to the client. The client checks `user?.aiDailyLimit == null` to display "Unlimited AI usage." The label is accurate — the backend IS enforcing unlimited.
+
+### Enforcement layers
+
+1. **`aiLimiter`** (`routes.js`) — Express rate limiter: 10 AI requests/user/minute (abuse protection)
+2. **`checkAndIncrementAiQuota()`** (`storage.js`) — 24-hour rolling counter in `users.aiGenerationsToday` / `users.aiGenerationsResetAt`
+3. **`refundAiQuota()`** — Decrements counter on OpenAI failure, so errors don't consume daily quota
+
+All three AI endpoints (`/api/ai/preview`, `/api/ai/spam-analysis`, `/api/ai/generate-template`) use all three layers. Spam analysis additionally serves from cache without quota increment on cache hits.
+
+### Known design considerations (backlog — do not implement without discussion)
+
+**Safety consideration:** Enterprise users receive `Infinity` as their AI limit. There is currently no daily cap on the absolute number of API calls for enterprise accounts — only the rate limiter (10/minute) applies. A future improvement would replace `Infinity` with a very high soft cap (e.g. 5,000–10,000 generations/day) while preserving the customer-facing "Unlimited" experience. This eliminates the theoretical runaway-cost risk without changing the user-visible behavior or plan tiers.
+
+**Per-sub-user AI quota controls (backlog):** Currently all sub-users under the same parent receive the full plan quota with no per-user override. A future enhancement would allow parent admins to assign lower AI limits to individual team members (e.g. cap a sub-user at 10/day even if the parent plan allows 50). This requires a new `aiDailyLimitOverride` column on the users table and a UI in the team management page.
+
+---
+
 ## Explicit Non-Goals
 
 Architectural decisions made deliberately. Do not implement without team discussion.

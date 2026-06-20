@@ -1967,3 +1967,130 @@ No NaN possible (credits always valid multiple of 1000 after validation). No neg
 
 - `client/src/pages/Landing.jsx` — nav mobile responsiveness
 - `client/src/pages/Payments.jsx` — Teams tab wording consistency (3 occurrences)
+
+---
+
+## Audit 023 — Phase 12 AI Entitlement & Credit Model Audit
+
+**Date:** 2026-06-20
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** AI entitlement model, credit/AI decoupling, sub-user plan inheritance, AI endpoint quota enforcement, dashboard currency display, sender identity consistency
+**Trigger:** Sub Admin account with 5 email credits displayed "Unlimited AI Usage" — investigation required to confirm whether this was a bug or intended behavior
+**Method:** Full code trace from UI label → API → entitlement logic → database fields → enforcement. No changes made during audit phase.
+**Commit:** (findings commit + fixes commit — see below)
+
+---
+
+### Investigation 1 — "Unlimited AI Usage" for Sub Admin with 5 credits
+
+**Root cause — fully traced, confirmed working as designed:**
+
+```
+getEffectivePlan(subAdminId)
+  user.plan === "free"  → check parentId
+  parent.plan = "enterprise"  → returns "enterprise"
+AI_DAILY_LIMITS["enterprise"] = Infinity
+/api/auth/me sends → aiDailyLimit: null   (Infinity → null, routes.js:1018-1032)
+Client: aiIsUnlimited = (user.aiDailyLimit == null) → true
+UI renders: "Unlimited AI usage"  (TemplateBuilder.jsx:587)
+```
+
+**Verdict:** Working as designed. Sub-users inherit parent's plan for AI quota. Email credits (5) and AI quota (unlimited) are completely decoupled systems. A sub-admin can draft unlimited AI templates and send only 5 emails. No display vs enforcement mismatch.
+
+---
+
+### Investigation 2 — AI Business Logic
+
+AI generation is **plan-based with plan inheritance, not credit-based.**
+
+| Plan | Daily AI limit |
+|------|---------------|
+| free | 5 |
+| trial | 5 |
+| starter | 20 |
+| growth | 50 |
+| scale | 150 |
+| enterprise | Unlimited |
+
+**Enforcement layers (all verified):**
+
+| Layer | Mechanism | Location |
+|-------|-----------|----------|
+| Rate limit | `aiLimiter` — 10 req/user/minute | `routes.js:45-52` |
+| Daily quota | `checkAndIncrementAiQuota()` — 24h rolling window in `users.aiGenerationsToday` + `users.aiGenerationsResetAt` | `storage.js:1348-1393` |
+| Quota refund | `refundAiQuota()` — decrements on OpenAI failure | all 3 AI endpoints |
+| Sender gate | `senderName + senderCompany` required before quota increment | `routes.js:2216-2219` |
+
+No credit consumption for AI. Systems are 100% decoupled.
+
+---
+
+### Investigation 3 — AI Endpoints Audit
+
+All three endpoints follow identical pattern:
+
+```
+authMiddleware → aiLimiter → checkAndIncrementAiQuota → OpenAI call
+                                                         ↓ on failure
+                                                     refundAiQuota
+```
+
+One intentional difference: `/api/ai/spam-analysis` returns cached result via `peekSpamCache` before quota increment — cache hits do not consume daily quota. Correct behavior.
+
+---
+
+### Investigation 4 — Dashboard Dollar Symbol
+
+Three `$` occurrences in `Dashboard.jsx`:
+
+| Line | Code | Context | Issue? |
+|------|------|---------|--------|
+| 314 | `<DollarSign className="w-6 h-6 text-white" />` | Credit Balance stat card icon | Yes — decorative icon from Lucide library, but `DollarSign` on an INR-only app is semantically incorrect. **Fixed.** |
+| 771 | `` `$${stats.aiStats.totalAiCostUsd.toFixed(4)}` `` | AI Usage section — RepMail's cost to OpenAI | Correct — ROOT_ADMIN only section (`{isRootAdmin && stats?.aiStats}`). OpenAI bills in USD. Internal operator cost, never shown to customers. |
+| 790 | `` `$${Number(item.totalCost).toFixed(4)}` `` | Cost by endpoint breakdown | Same ROOT_ADMIN-only internal cost section. Correct. |
+| 804 | `` `$${Number(spender.totalCost).toFixed(4)}` `` | Top AI spenders cost | Same ROOT_ADMIN-only internal cost section. Correct. |
+
+Lines 771/790/804 are intentionally USD — OpenAI charges in USD and this is an internal operator cost view, not customer-facing pricing.
+
+---
+
+### Investigation 5 — Sender Identity Consistency
+
+**Save → refresh → AI → send cycle verified consistent:**
+
+1. `PUT /api/profile` saves `senderName/senderTitle/senderCompany/senderPhone/replyToEmail` to DB
+2. `Profile.jsx` calls `queryClient.invalidateQueries(["/api/auth/me"])` on success (line 71)
+3. Updated user flows into AuthContext; next AI call reads fresh `req.user.senderName` from session
+4. Email send reads `owner.senderName` from DB directly (`routes.js:281-285`)
+
+No inconsistency. Profile form initialization (`useState` on line 50) is correct — `App.jsx` shows `<LoadingScreen />` while auth is loading (line 62-64), so Profile only mounts when `user` is fully populated.
+
+---
+
+### Summary
+
+| # | Finding | Severity | Action |
+|---|---------|---------|--------|
+| 1 | "Unlimited AI" for sub-admin | None — by design | Document only |
+| 2 | AI business logic | None — correctly enforced | Document only |
+| 3 | AI endpoint quota | None — all 3 endpoints correct | Document only |
+| 4 | Dashboard DollarSign icon | Low — cosmetic; semantically wrong on INR app | **Fixed** → `Coins` |
+| 5 | Dashboard USD AI cost (admin) | None — correct, internal admin view | No change |
+| 6 | Sender identity consistency | None — cycle is correct | Document only |
+
+---
+
+### Changes
+
+**Commit 1 — Findings documentation:**
+- `HANDOFF.md`: new "AI Entitlement & Plan Inheritance" section documenting the design intent, quota table, sub-user inheritance, enforcement layers, and backlog items
+
+**Commit 2 — UX fix:**
+- `client/src/pages/Dashboard.jsx` line 314: `DollarSign` → `Coins` (icon already imported)
+- `client/src/pages/Dashboard.jsx` line 28: `DollarSign` removed from Lucide import (unused after swap)
+
+### Architecture recommendations added to backlog
+
+1. **Safety cap:** Replace `Infinity` AI quota for enterprise with a very high soft cap (5,000–10,000/day) while preserving the "Unlimited" customer-facing label. Eliminates theoretical runaway-cost risk.
+
+2. **Per-sub-user AI controls:** Allow parent admins to override per-sub-user AI daily limits below the plan default. Requires `aiDailyLimitOverride` column on users table + team management UI.

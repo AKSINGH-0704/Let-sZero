@@ -519,3 +519,26 @@ Five-part audit: mobile responsiveness, accessibility, pricing calculator, team 
 ## RepMail — VERIFIED IN PRODUCTION (2026-06-20)
 
 All T-1 through T-5 production tests pass. System is production-ready.
+
+---
+
+### 20 · Phase 12 — AI Entitlement & Credit Model Audit + UX Hardening (2026-06-20)
+
+Root-cause audit of AI entitlement system, credit/AI decoupling, dashboard currency display, and sender identity consistency. No business logic changes. One UI fix and documentation hardening.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Root cause: "Unlimited AI" for sub-admin traced | **V** | `getEffectivePlan()` → parent plan inheritance → `Infinity` → `null` → client displays "Unlimited AI usage". Working as designed. |
+| AI quota enforcement (3 endpoints) verified | **V** | All 3 endpoints: `authMiddleware + aiLimiter + checkAndIncrementAiQuota + refundAiQuota`. Correct. |
+| AI/credit decoupling confirmed | **V** | `aiGenerationsToday` / `aiGenerationsResetAt` columns in DB; fully separate from `creditsUsed` / `creditsReceived`. |
+| Dashboard DollarSign icon (line 314) | **I** | Replaced `DollarSign` with `Coins` (already imported). Credit Balance card no longer shows USD-associated icon. |
+| Dashboard USD AI cost section (lines 771/790/804) | **V** | ROOT_ADMIN-only section showing OpenAI API cost in USD. Correct — OpenAI charges in USD; this is internal operator cost, not customer pricing. No change. |
+| Sender identity save→refresh→AI→send cycle | **V** | `PUT /api/profile` → `queryClient.invalidateQueries` → re-fetch → AI reads fresh session. Consistent. |
+| HANDOFF.md: AI Entitlement & Plan Inheritance section | **I** | New section documents quota table, sub-user inheritance, enforcement layers, and two backlog items |
+| AUDIT_TRAIL.md: Audit 023 appended | **I** | Full trace + findings table |
+
+**Backlog items documented (not implemented):**
+1. Safety: Replace `Infinity` with a very high soft cap (5,000–10,000/day) for enterprise — preserves "Unlimited" UX, eliminates runaway-cost risk
+2. Enhancement: Per-sub-user AI quota override controls in team management page
+
+**Milestone status: COMPLETE** — 0 production-blocking defects found. 1 cosmetic fix (icon). Documentation hardened.
