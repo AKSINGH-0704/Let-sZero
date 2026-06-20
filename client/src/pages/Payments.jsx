@@ -1634,7 +1634,7 @@ export default function Payments() {
                           <span className="text-base font-normal ml-1" style={{ color: "#7878A0" }}>/mo</span>
                         </div>
                         <div className="text-sm" style={{ color: "#A8A8C0" }}>
-                          {teamUsers} users × {currency === "INR" ? `₹${teamMonthly}` : `$${teamMonthlyUSD}`}/user/mo
+                          {teamUsers} members × {currency === "INR" ? `₹${teamMonthly}` : `$${teamMonthlyUSD}`}/member/month
                           {teamBilling === "annual" && <span style={{ color: "#7878A0" }}> · billed annually</span>}
                         </div>
                       </div>
@@ -1714,7 +1714,7 @@ export default function Payments() {
                               ? teamBilling === "annual" ? `₹${TEAM.annual}` : `₹${TEAM.monthly}`
                               : teamBilling === "annual" ? `$${(TEAM.annual / USD_RATE).toFixed(2)}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
                           </span>
-                          <span className="text-sm" style={{ color: "#7878A0" }}>/user/mo</span>
+                          <span className="text-sm" style={{ color: "#7878A0" }}>/member/month</span>
                           {teamBilling === "annual" && (
                             <span className="text-xs line-through" style={{ color: "#3A3A50" }}>
                               {currency === "INR" ? `₹${TEAM.monthly}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
@@ -1722,7 +1722,7 @@ export default function Payments() {
                           )}
                         </div>
                         <div className="text-xs mt-1" style={{ color: "#7878A0" }}>
-                          {teamUsers} seats = {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}/mo total
+                          {teamUsers} members = {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}/month total
                         </div>
                       </div>
                       <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />

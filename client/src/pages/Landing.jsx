@@ -290,26 +290,26 @@ export default function Landing() {
           </motion.div>
         </div>
         <div className="flex items-center space-x-3">
-          <Link href="/pricing">
-            <Button 
-              variant="ghost" 
+          <Link href="/pricing" className="hidden md:block">
+            <Button
+              variant="ghost"
               className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
             >
               Pricing
             </Button>
           </Link>
-          <Link href="/contact">
-            <Button 
-              variant="ghost" 
+          <Link href="/contact" className="hidden md:block">
+            <Button
+              variant="ghost"
               className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
             >
               Contact
             </Button>
           </Link>
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <motion.div className="hidden sm:block" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <Link href="/login">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="border-slate-500 bg-slate-800/50 text-white hover:bg-slate-700 hover:border-slate-400 backdrop-blur-sm transition-all"
               >
                 Sign In
@@ -325,9 +325,9 @@ export default function Landing() {
               </Button>
             </Link>
           </motion.div>
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <motion.div className="hidden md:block" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <Link href="/early-access">
-              <Button 
+              <Button
                 variant="outline"
                 className="border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-400 backdrop-blur-sm transition-all"
               >

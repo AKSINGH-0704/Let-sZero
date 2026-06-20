@@ -149,6 +149,12 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
    - FAQ updated: USD/Stripe references removed
    - Dead code removed (~160 lines)
    - Railway `3767187a` → SUCCESS
+9. ~~Phase 10 Final Hardening Audit~~ *(DONE — 2026-06-20 — see Audit 022)*
+   - Landing.jsx mobile nav: 5-button overflow on 320–768px fixed (hide low-priority buttons)
+   - Payments.jsx Teams tab: `/user/mo`/seats/users → `/member/month`/members (consistency with PublicPricing.jsx)
+   - Pricing calculator: all 9 edge cases verified correct — NO CHANGE
+   - Team purchase flow: end-to-end functional, welcome banner confirmed — NO CHANGE
+   - Production safety: no regressions from fc8341a, 5a604be, b154a04, cd04db8, a03a0f3, 01acd99
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

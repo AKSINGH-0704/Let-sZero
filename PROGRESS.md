@@ -491,6 +491,31 @@ Targeted audit and implementation of pricing page UX improvements. Scope: Public
 
 ---
 
+### 19 · Phase 10 Final Hardening Audit (2026-06-20)
+
+Five-part audit: mobile responsiveness, accessibility, pricing calculator, team purchase flow, production safety review.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Part A: Landing.jsx navbar overflow on 320–768px | **I** | 5 buttons → hide Pricing/Contact/RequestEarlyAccess on < md; hide Sign In on < sm |
+| Part A: History.jsx table mobile overflow | **I** | NO CHANGE — `overflow-x-auto` already present |
+| Part A: NewCampaign.jsx / StepIndicator mobile | **I** | NO CHANGE — labels `hidden sm:block`, fallback text shown on mobile |
+| Part A: PublicPricing.jsx estimator mobile | **I** | NO CHANGE — `p-4 sm:p-8 md:p-10`, single-column below md |
+| Part A: Payments.jsx plan cards mobile | **I** | NO CHANGE — `flex md:hidden flex-col` mobile layout present |
+| Part B: WCAG AA contrast (all interactive elements) | **I** | NO CHANGE REQUIRED — previous session fixed critical labels; remaining `#7878A0` is intentional secondary text |
+| Part C: Pricing calc edge cases (3000, 3001, 3999, 4000, 16789, 50000, 299999, 300000, 300001) | **I** | NO CHANGE REQUIRED — all correct by code analysis |
+| Part D: Payments.jsx Teams tab wording inconsistency (`/user/mo`, "seats", "users") | **I** | → `/member/month`, "members" (3 occurrences) |
+| Part D: Team purchase → Razorpay → credit top-up flow | **I** | NO CHANGE — functional end-to-end |
+| Part D: New member onboarding (AcceptInvite → Dashboard welcome banner) | **I** | NO CHANGE — banner confirmed in Dashboard.jsx with "New Campaign" CTA |
+| Part E: fc8341a (SNS tag-based lookup) regression | **I** | NO REGRESSION — tag lookup + fallback correct and defensive |
+| Part E: 5a604be (schema integrity check) regression | **I** | NO REGRESSION — startup check well-implemented, dev mode skips cleanly |
+| Part E: 01acd99/a03a0f3/cd04db8/b154a04 regressions | **I** | NO REGRESSIONS — no issues found in code review |
+| Build verification (post-fix) | **I** | `✓ built in 25.15s` — 5043 modules, exit 0 |
+
+**Milestone status: COMPLETE** — 2 defects fixed (Landing nav + Payments wording). 5 audit parts: 0 regressions, 0 new features, only targeted fixes.
+
+---
+
 ## RepMail — VERIFIED IN PRODUCTION (2026-06-20)
 
 All T-1 through T-5 production tests pass. System is production-ready.

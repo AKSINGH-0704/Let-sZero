@@ -1851,3 +1851,119 @@ No errors or warnings beyond pre-existing chunk-size advisory and Tailwind patte
 ### Deployment
 
 Railway `3767187a` → **SUCCESS** (auto-triggered by push to `origin/main`).
+
+---
+
+## Audit 022 — Phase 10 Final Hardening Audit
+
+**Date:** 2026-06-20
+**Conducted by:** Claude Sonnet 4.6
+**Scope:** Landing.jsx, PublicPricing.jsx, Payments.jsx, History.jsx, NewCampaign.jsx, StepIndicator.jsx, Dashboard.jsx, AcceptInvite.jsx, server/sns.js, server/routes.js (webhook handler), server/schemaCheck.js
+**Commit:** (pending)
+**Method:** Targeted file-by-file audit. Read before fix. Only verified defects were changed.
+
+---
+
+### Part A — Mobile Responsiveness (320px–768px)
+
+| File | Finding | Risk | Action |
+|---|---|---|---|
+| Landing.jsx (nav) | 5 buttons in flex with no responsive handling — overflows on 320–414px | Medium | FIXED — `hidden md:block` on Pricing/Contact/RequestEarlyAccess; `hidden sm:block` on Sign In |
+| Landing.jsx (CTA `p-16`) | Cramped content on 320px but button remains functional | Low | NO CHANGE — not a functional defect |
+| History.jsx | Campaign table (8–9 cols) wrapped in `overflow-x-auto` | — | NO CHANGE REQUIRED |
+| NewCampaign.jsx / StepIndicator | Labels `hidden sm:block`; fallback current-step text shown on mobile | — | NO CHANGE REQUIRED |
+| PublicPricing.jsx (estimator) | `p-4 sm:p-8 md:p-10`, `grid md:grid-cols-2`, tick marks `flex justify-between` (9px font, `justify-between` distributes evenly) | — | NO CHANGE REQUIRED |
+| Payments.jsx | Mobile plan layout: `flex md:hidden flex-col gap-4`, Growth plan first | — | NO CHANGE REQUIRED |
+| Payments.jsx (ProcessPayment) | Centered `max-w-md` card with `px-4` container — fits 320px | — | NO CHANGE REQUIRED |
+
+**Layout fix — Landing.jsx nav breakpoints:**
+- `< sm` (< 640px): Logo + "Get Started" only — 137px + 93px = 230px fits in 272px ✓
+- `sm–md` (640–767px): Logo + "Sign In" + "Get Started" — 319px fits in 592px ✓
+- `md+` (≥768px): All 5 buttons — 636px fits in 720px ✓
+
+---
+
+### Part B — Accessibility & Readability
+
+| Item | Status | Finding |
+|---|---|---|
+| "Enter exact amount" label | RESOLVED in Audit 021 | `#7878A0` → `#B8B8D0` (~7:1 contrast) |
+| "Total cost" label | RESOLVED in Audit 021 | `#7878A0` → `#B8B8D0` |
+| Slider ARIA labels | PASS | `aria-label`, `aria-valuemin/max/now/text` present |
+| Button touch targets | PASS | All buttons ≥ 40px height |
+| Remaining `#7878A0` usage | ACCEPTABLE | Intentional secondary/helper text (de-emphasis). Not interactive elements. |
+
+**NO CHANGE REQUIRED** beyond Audit 021 fixes.
+
+---
+
+### Part C — Pricing Calculator Validation
+
+All edge cases verified by static code analysis of `calcPurchase()` + `handleInputBlur()`.
+
+| Input | After blur | Tier | priceINR | bonusCredits | totalCredits | Result |
+|---|---|---|---|---|---|---|
+| 3000 | 3000 | 0.13 | ₹390 | 0 | 3000 | ✓ |
+| 3001 | 4000 (ceil) | 0.13 | ₹520 | 0 | 4000 | ✓ |
+| 3999 | 4000 (ceil) | 0.13 | ₹520 | 0 | 4000 | ✓ |
+| 4000 | 4000 | 0.13 | ₹520 | 0 | 4000 | ✓ |
+| 16789 | 17000 (ceil) | 0.12 | ₹2,040 | 1416 | 18416 | ✓ |
+| 50000 | 50000 | 0.11 | ₹5,500 | 4545 | 54545 | ✓ |
+| 299999 | 300000 (ceil) | — | — | — | Contact Sales | ✓ |
+| 300000 | 300000 | — | — | — | Contact Sales (isMaxCredits) | ✓ |
+| 300001 | 300000 (clamp) | — | — | — | Contact Sales | ✓ |
+
+No NaN possible (credits always valid multiple of 1000 after validation). No negative values possible (all operands positive). No overflow (JS can handle numbers up to 2^53).
+
+**NO CHANGE REQUIRED.**
+
+---
+
+### Part D — Team Purchase Flow
+
+| Step | Status | Finding |
+|---|---|---|
+| Plan selection → confirmation modal | PASS | `handlePurchase` → `setShowConfirmModal(true)` |
+| Confirmation modal → Razorpay | PASS | `initiateMutation.mutate` → POST /api/payments/initiate → `setLocation(redirectUrl)` |
+| Razorpay success → verify → credits | PASS | `verifyMutation` → POST /api/payments/razorpay/verify → toast + cache invalidation |
+| Payment dismiss/fail → mark failed | PASS | `modal.ondismiss` → `failMutation.mutate` → history entry |
+| Post-purchase: no team prompt | LOW | No "invite your team" guidance after purchase — UX gap, not defect |
+| Team invite discoverability | ACCEPTABLE | Users.jsx contains invite functionality; nav should include Users link |
+| AcceptInvite.jsx → Dashboard | PASS | `localStorage.setItem("repmail_new_user", ...)` → Dashboard welcome banner confirmed |
+| Welcome banner content | PASS | "Welcome to RepMail. Ready to send your first campaign?" + `<Link href="/app/campaigns/new">New Campaign</Link>` |
+| Payments.jsx Teams wording | INCONSISTENCY | `/user/mo`, "users", "seats" — PublicPricing.jsx was fixed in Audit 021, Payments.jsx was not |
+
+**FIXED:** Payments.jsx Teams tab wording:
+- Line 1637: `{teamUsers} users × .../user/mo` → `{teamUsers} members × .../member/month`
+- Line 1717: `/user/mo` → `/member/month`
+- Line 1725: `{teamUsers} seats = .../mo total` → `{teamUsers} members = .../month total`
+
+---
+
+### Part E — Production Safety Review
+
+| Commit | Description | Status | Finding |
+|---|---|---|---|
+| fc8341a | SNS webhook: tag-based lookup before ses_message_id fallback | PASS | Defensive 2-step lookup; warn+return on no-match; no crash path |
+| 5a604be | Startup schema integrity check | PASS | Tables/columns/indexes verified; `process.exit(1)` on critical missing; dev mode skips cleanly |
+| b154a04 | Pricing & landing UX audit | PASS | Verified in Audit 021; build exit 0 |
+| cd04db8 | Campaign completion page UX fixes | PASS | UI-only changes; no server logic touched |
+| a03a0f3 | Sender validation, click tracking fix, quality checks | PASS | Fixes only; no new code paths introduced |
+| 01acd99 | AI prompt redesign, validateTemplate hardening | PASS | Placeholder validation safer than before; no regression |
+
+**NO REGRESSIONS.** All 6 commits verified clean.
+
+---
+
+### Build Verification
+
+```
+✓ built in 25.15s (from project root — correct command)
+```
+
+5043 modules transformed. Exit code 0. No new errors. Pre-existing chunk-size advisory and Tailwind pattern warning unchanged.
+
+### Files Changed
+
+- `client/src/pages/Landing.jsx` — nav mobile responsiveness
+- `client/src/pages/Payments.jsx` — Teams tab wording consistency (3 occurrences)
