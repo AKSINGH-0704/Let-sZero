@@ -869,16 +869,15 @@ export async function registerRoutes(httpServer, app) {
 
     try {
       // ── Step 3: Execute all writes ────────────────────────────────────────
-      // For Open/Click/Delivery, prefer the UUID tag injected at send time for a
-      // direct PK lookup; fall back to SES Message-ID for legacy or untagged sends.
+      // All SES event types (Open, Click, Delivery, Bounce, Complaint) include
+      // the campaign-email-id tag in mail.tags — prefer it for a direct PK lookup.
+      // Fall back to ses_message_id only for legacy/untagged sends.
+      // NOTE: Nodemailer info.messageId (SMTP Message-ID header, angle-bracket format)
+      // ≠ SES internal mail.messageId in SNS payloads — tag lookup avoids this mismatch.
       let campaignEmail;
-      if (eventType === "Open" || eventType === "Click" || eventType === "Delivery") {
-        const taggedId = notification.mail?.tags?.["campaign-email-id"]?.[0];
-        if (taggedId) campaignEmail = await storage.getCampaignEmailById(taggedId);
-        if (!campaignEmail) campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
-      } else {
-        campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
-      }
+      const taggedId = notification.mail?.tags?.["campaign-email-id"]?.[0];
+      if (taggedId) campaignEmail = await storage.getCampaignEmailById(taggedId);
+      if (!campaignEmail) campaignEmail = await storage.getCampaignEmailBySesMessageId(sesMessageId);
 
       if (!campaignEmail) {
         console.warn(`[SNS] No campaign_email record for ses_message_id=${sesMessageId} eventType=${eventType}`);
