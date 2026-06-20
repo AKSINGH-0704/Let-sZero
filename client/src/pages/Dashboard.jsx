@@ -25,7 +25,6 @@ import {
   Activity,
   Mail,
   Users,
-  DollarSign,
   BarChart3,
   CreditCard,
   Wallet,
@@ -311,7 +310,7 @@ export default function Dashboard() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <DollarSign className="w-6 h-6 text-white" />
+                <Coins className="w-6 h-6 text-white" />
               </motion.div>
             </div>
             <div className="flex flex-wrap items-center gap-4 sm:gap-6">
