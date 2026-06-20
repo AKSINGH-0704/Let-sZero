@@ -149,7 +149,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
    - FAQ updated: USD/Stripe references removed
    - Dead code removed (~160 lines)
    - Railway `3767187a` → SUCCESS
-9. ~~Phase 10 Final Hardening Audit~~ *(DONE — 2026-06-20 — see Audit 022)*
+9. ~~Phase 10 Final Hardening Audit~~ *(DONE — 2026-06-20 — commit `e392e23` — see Audit 022)*
    - Landing.jsx mobile nav: 5-button overflow on 320–768px fixed (hide low-priority buttons)
    - Payments.jsx Teams tab: `/user/mo`/seats/users → `/member/month`/members (consistency with PublicPricing.jsx)
    - Pricing calculator: all 9 edge cases verified correct — NO CHANGE

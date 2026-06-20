@@ -1859,7 +1859,7 @@ Railway `3767187a` → **SUCCESS** (auto-triggered by push to `origin/main`).
 **Date:** 2026-06-20
 **Conducted by:** Claude Sonnet 4.6
 **Scope:** Landing.jsx, PublicPricing.jsx, Payments.jsx, History.jsx, NewCampaign.jsx, StepIndicator.jsx, Dashboard.jsx, AcceptInvite.jsx, server/sns.js, server/routes.js (webhook handler), server/schemaCheck.js
-**Commit:** (pending)
+**Commit:** `e392e23` (pushed to `origin/main` → Railway auto-deploy triggered)
 **Method:** Targeted file-by-file audit. Read before fix. Only verified defects were changed.
 
 ---
