@@ -468,6 +468,29 @@ End-to-end live verification of all five production tests. Defect discovered and
 
 ---
 
+### 18 · Pricing & Landing UX Audit (2026-06-20, commit b154a04)
+
+Targeted audit and implementation of pricing page UX improvements. Scope: PublicPricing.jsx, Pricing.jsx only.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Remove INR/USD toggle (India-first, no exchange-rate management) | **I** | `currency` promoted to const `"INR"`; sliding pill toggle removed from hero |
+| Slider: continuous 1,000-credit increments (was 9 fixed presets) | **I** | Slider now `min=3000 max=300000 step=1000`; tick marks retained as preset jump buttons |
+| Slider minimum 3,000 credits | **I** | Already enforced; confirmed unchanged |
+| Round-up on numeric entry | **I** | `handleInputBlur`: `Math.ceil(num / 1000) * 1000` (was: nearest-preset snap) |
+| Typography contrast: "Enter exact amount" label | **I** | `#7878A0` → `#B8B8D0` (~3:1 → ~7:1 on `#06060B`) |
+| Typography contrast: "Total cost" label | **I** | `#7878A0` → `#B8B8D0` |
+| Cost per email in live estimator | **I** | Added "Cost per email" chip: `₹{priceINR / credits}.toFixed(2)` |
+| Team card wording: `/member/month, billed annually` | **I** | `/user/mo` → `/member/month`; "billed annually" added to total line |
+| FAQ: remove USD payment method reference | **I** | Item 8 updated to "UPI, credit/debit cards, and net banking via Razorpay. All transactions are processed in INR." |
+| Dead code removal (`{false && ...}` teams section, ~160 lines) | **I** | Removed |
+| Pricing.jsx: remove dead `CurrencyToggle` component | **I** | Removed (was defined but never used) |
+| Railway deployment verified | **V** | Deployment `3767187a` → SUCCESS |
+
+**Milestone status: COMPLETE** — all 11 items implemented and deployed. Build verified (5043 modules, exit 0).
+
+---
+
 ## RepMail — VERIFIED IN PRODUCTION (2026-06-20)
 
 All T-1 through T-5 production tests pass. System is production-ready.

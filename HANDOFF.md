@@ -140,6 +140,15 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
    - T-3 (complaint + suppression): PASS
    - T-4 (unsubscribe + future skip): PASS
    - T-5 (APP_URL + links + hostname): PASS
+8. ~~Pricing & landing page UX audit~~ *(DONE — 2026-06-20 — commit `b154a04` — see Audit 021)*
+   - INR/USD toggle removed (India-first)
+   - Slider: 1,000-credit increments, round-up on numeric entry
+   - Label contrast fixed ("Enter exact amount", "Total cost")
+   - Cost-per-email live in estimator
+   - Team card: `/member/month, billed annually`
+   - FAQ updated: USD/Stripe references removed
+   - Dead code removed (~160 lines)
+   - Railway `3767187a` → SUCCESS
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

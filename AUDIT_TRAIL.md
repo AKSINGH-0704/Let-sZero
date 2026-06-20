@@ -1798,3 +1798,56 @@ Campaign `857e3de1` created with 2 contacts: `shekspeare855@gmail.com` (pre-exis
 **RepMail is VERIFIED IN PRODUCTION as of 2026-06-20.**
 
 Defect discovered and resolved during verification: `[FIX] SNS bounce/complaint lookup: use tag over SES message ID` — commit `fc8341a`, deployed Railway `03f7f84e`.
+
+---
+
+## Audit 021 — Pricing & Landing Page UX Audit
+
+**Date:** 2026-06-20
+**Conducted by:** Claude Sonnet 4.6
+**Scope:** `client/src/pages/PublicPricing.jsx`, `client/src/pages/Pricing.jsx`
+**Commit:** `b154a04` (deployed Railway `3767187a` → SUCCESS)
+**Method:** Read-only audit of both files, findings report, then targeted implementation
+
+---
+
+### Scope Constraint
+
+Do not scan the full repository. Do not read AI, campaign, or backend files. Review only pricing and landing-page related files.
+
+### Findings
+
+| # | Item | Status Before | Action |
+|---|------|--------------|--------|
+| 1 | INR/USD currency toggle present in PublicPricing hero | Missing (toggle present, should be removed) | Removed — `currency` promoted to const `"INR"` |
+| 2 | Slider uses 9 fixed presets (not 1K increments) | Missing | Slider now `min=3000 max=300000 step=1000` |
+| 3 | Slider minimum 3,000 | Done | Unchanged |
+| 4 | Input blur round-up to 1,000 boundary | Missing | `Math.ceil(n/1000)*1000` on blur |
+| 5 | "Enter exact amount" label: `#7878A0` (~3:1 contrast) | Partial | → `#B8B8D0` (~7:1) |
+| 6 | "Total cost" label: `#7878A0` (~3:1 contrast) | Partial | → `#B8B8D0` |
+| 7 | Cost-per-email shown in estimator | Missing | Added "Cost per email" chip: `₹{priceINR/credits}` |
+| 8 | Team card wording: `/user/mo`, no "billed annually" | Partial | → `/member/month · billed annually` |
+| 9 | FAQ item 8 referenced USD/Stripe payment methods | Risk | Updated to INR/Razorpay only |
+| 10 | Dead code: `{false && ...}` disabled teams section (~160 lines) | Cleanup | Removed |
+| 11 | Pricing.jsx: unused `CurrencyToggle` component | Cleanup | Removed |
+
+### Implementation Notes
+
+- `currency` const (not state) ensures all display logic takes the INR branch at zero runtime cost — no conditional branches removed, just always-true
+- Slider tick marks (3K, 5K, 10K … 300K) retained as clickable preset shortcuts; they call `setCredits(CREDIT_PRESETS[i])` directly
+- `calcPurchase(estimatorCredits)` works correctly for any multiple of 1,000 — tier boundaries (3K–9.99K, 10K–29.99K, 30K–99.99K, 100K–300K) are unchanged
+- Cost-per-email = `purchase.priceINR / estimatorCredits` (purchased credits, not total+bonus)
+- `teamBilling` state remains `"annual"` default; no toggle UI existed before or after (confirmed no `setTeamBilling` call in JSX)
+- AcceptInvite.jsx (team onboarding) audited — clean, no changes needed
+
+### Build Verification
+
+```
+✓ 5043 modules transformed. (exit code 0)
+```
+
+No errors or warnings beyond pre-existing chunk-size advisory and Tailwind pattern warning.
+
+### Deployment
+
+Railway `3767187a` → **SUCCESS** (auto-triggered by push to `origin/main`).
