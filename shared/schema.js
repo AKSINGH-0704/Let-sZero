@@ -611,12 +611,14 @@ export const MAX_TEAM_MEMBERS = {
   enterprise: Infinity,
 };
 
+// Team member limits are in MAX_TEAM_MEMBERS (authoritative). PLAN_LIMITS covers
+// per-user feature gates only; do not add maxTeamMembers here to avoid confusion.
 export const PLAN_LIMITS = {
-  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, canExportAudit: false, label: "Free Plan"   },
-  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        maxTeamMembers: 1,        canSchedule: true,  canExportAudit: false, label: "Starter"     },
-  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       maxTeamMembers: 5,        canSchedule: true,  canExportAudit: false, label: "Growth"      },
-  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       maxTeamMembers: 10,       canSchedule: true,  canExportAudit: true,  label: "Scale"       },
-  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, maxTeamMembers: Infinity, canSchedule: true,  canExportAudit: true,  label: "Enterprise"  },
+  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        canSchedule: false, canExportAudit: false, label: "Free Plan"   },
+  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        canSchedule: true,  canExportAudit: false, label: "Starter"     },
+  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       canSchedule: true,  canExportAudit: false, label: "Growth"      },
+  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       canSchedule: true,  canExportAudit: true,  label: "Scale"       },
+  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, canSchedule: true,  canExportAudit: true,  label: "Enterprise"  },
 };
 
 export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_EXCHANGE_RATE) {

@@ -556,6 +556,24 @@ const dbStorage = {
     });
   },
 
+  // Atomic one-time trial claim. isTrialUser acts as the idempotency gate —
+  // flipped to false in the same UPDATE so concurrent calls get 0 rows.
+  // Returns true if credits were granted, false if already claimed.
+  async claimTrialCredits(userId, credits) {
+    const [claimed] = await db.update(users)
+      .set({
+        creditsReceived: sql`credits_received + ${credits}`,
+        isTrialUser: false,
+        updatedAt: new Date()
+      })
+      .where(and(
+        eq(users.id, userId),
+        eq(users.isTrialUser, true)
+      ))
+      .returning({ id: users.id });
+    return !!claimed;
+  },
+
   async canStartCampaign(userId, emailCount) {
     const user = await this.getUserById(userId);
     if (!user) return { allowed: false, reason: "User not found", blockReason: "user_not_found" };
@@ -1346,12 +1364,18 @@ const dbStorage = {
   },
 
   async getEffectivePlan(userId) {
-    const user = await this.getUserById(userId);
-    if (!user) return "free";
-    if (user.plan && user.plan !== "free") return user.plan;
-    if (user.parentId) {
-      const parent = await this.getUserById(user.parentId);
-      if (parent?.plan) return parent.plan;
+    // Walk the full ancestor chain so a USER under a free-plan SUB_ADMIN still
+    // inherits the ROOT_ADMIN's enterprise quota (GAP-6 fix).
+    const visited = new Set();
+    let currentId = userId;
+    while (currentId) {
+      if (visited.has(currentId)) break; // cycle guard
+      visited.add(currentId);
+      const user = await this.getUserById(currentId);
+      if (!user) break;
+      if (user.plan && user.plan !== "free") return user.plan;
+      if (!user.parentId) break;
+      currentId = user.parentId;
     }
     return "free";
   },

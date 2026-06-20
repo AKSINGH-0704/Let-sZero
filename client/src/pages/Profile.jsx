@@ -26,12 +26,13 @@ import {
 } from "lucide-react";
 import { formatNumber, formatDate, getInitials, calculateCreditsRemaining } from "@/lib/utils";
 
+// Mirrors PLAN_LIMITS in shared/schema.js — keep in sync when plan features change.
 const PROFILE_PLAN_LIMITS = {
-  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        maxTeamMembers: 1,        canSchedule: false, label: "Free Trial"  },
-  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        maxTeamMembers: 1,        canSchedule: true,  label: "Starter"     },
-  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       maxTeamMembers: 5,        canSchedule: true,  label: "Growth"      },
-  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       maxTeamMembers: 10,       canSchedule: true,  label: "Scale"       },
-  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, maxTeamMembers: Infinity, canSchedule: true,  label: "Enterprise"  },
+  free:       { maxTemplates: 3,        maxActiveCampaigns: 1,        canSchedule: false, label: "Free Plan"   },
+  starter:    { maxTemplates: 10,       maxActiveCampaigns: 5,        canSchedule: true,  label: "Starter"     },
+  growth:     { maxTemplates: 25,       maxActiveCampaigns: 10,       canSchedule: true,  label: "Growth"      },
+  scale:      { maxTemplates: 100,      maxActiveCampaigns: 20,       canSchedule: true,  label: "Scale"       },
+  enterprise: { maxTemplates: Infinity, maxActiveCampaigns: Infinity, canSchedule: true,  label: "Enterprise"  },
 };
 
 const ROLE_CONFIG = {

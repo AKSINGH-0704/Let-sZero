@@ -2318,8 +2318,13 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Invalid plan selected" });
       }
 
-      // Handle Trial plan - grant credits immediately
+      // Handle Trial plan - one-time credit grant (atomic, cannot be repeated)
       if (plan.isTrial) {
+        const claimed = await storage.claimTrialCredits(req.user.id, plan.credits);
+        if (!claimed) {
+          return res.status(409).json({ message: "Free trial credits have already been claimed." });
+        }
+
         const payment = await storage.createPayment({
           userId: req.user.id,
           planName: plan.name,
@@ -2333,10 +2338,10 @@ export async function registerRoutes(httpServer, app) {
           status: "COMPLETED"
         });
 
-        // Add credits to user immediately
-        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
-          paymentId: payment.id,
-          planName: plan.name
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
+          details: { amount: plan.credits, paymentId: payment.id, planName: plan.name }
         });
 
         res.json({
