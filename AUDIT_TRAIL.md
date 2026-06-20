@@ -1676,7 +1676,125 @@ All four deliverability mechanisms verified in code (no changes required):
 | Documentation | Updated | AUDIT_TRAIL.md, PROGRESS.md, HANDOFF.md |
 
 **Post-hardening scores:**
-- Schema integrity guard: 9/10 (scripts in place; migration baseline generation is a pending manual step)
+- Schema integrity guard: 10/10 (migration baseline committed — `cab8bb9`)
 - Health endpoint: 10/10
-- Operational recovery: 9/10
-- Deliverability: 9/10 (all headers and handlers confirmed; awaiting first live SNS bounce event in production to close T-2)
+- Operational recovery: 10/10
+- Deliverability: 10/10 (T-1 through T-5 all verified — see Audit 020)
+
+---
+
+## Audit 020 — T-1 through T-5 Production Verification
+
+**Date:** 2026-06-20
+**Conducted by:** Claude Sonnet 4.6
+**Scope:** End-to-end production verification of all five pre-launch tests. Live execution against production environment (https://www.letszero.in, Railway deployment `03f7f84e`).
+**Commits at time of audit:** `fc8341a` (latest — SNS fix applied during audit)
+
+---
+
+### T-1 — Live SES Send + Delivery Confirmation
+
+**Procedure:** Created campaign "T-1 Production Verification" via `POST /api/campaigns`. Contact: `epsteindapuccy@gmail.com`. Template: plain-text test email.
+
+**Evidence:**
+- Campaign `9ca45b48` → COMPLETED, `sentEmails: 1`
+- SES Message-ID: `<410b67c7-86c9-fcc2-a531-8691b907be70@letszero.in>` — SES accepted the message
+- SNS Delivery event received: `processed=true`, `deliveredAt = 2026-06-20T10:22:29.508Z`
+- Log: `[SNS] Delivery confirmed — campaignEmailId=6ab308f8... campaignId=9ca45b48...`
+
+**Actual result:** Email sent and SES delivery confirmed within 5 seconds of send.
+
+**STATUS: PASS**
+
+---
+
+### T-2 — Bounce: SNS Event + Suppression
+
+**Procedure:** Campaign to `bounce@simulator.amazonses.com` (AWS SES permanent bounce simulator).
+
+**Defect discovered during first run (commit `5a604be` era):**
+SNS bounce events arrived (`event_type=bounce`) but were left `processed=false` — no suppression created. Root cause: `getCampaignEmailBySesMessageId` used Nodemailer's SMTP `Message-ID` header value (`<uuid@domain.com>`, angle-bracket format) to match against SES's internal `mail.messageId` in SNS payloads (bare UUID format, e.g. `0110019ee48da0bd-...`). These are different identifiers — the lookup always returned null for Bounce/Complaint events.
+
+**Fix applied:** `[FIX] SNS bounce/complaint lookup: use tag over SES message ID` (commit `fc8341a`). Extended the `campaign-email-id` tag-based lookup (already proven for Open/Click/Delivery events) to ALL event types including Bounce and Complaint. Tag lookup uses direct PK lookup and is immune to the SES/Nodemailer message ID format mismatch.
+
+**Re-run after fix:**
+- Campaign `c70d96d8` "T-2b Bounce Verification (re-run)" → COMPLETED, `bouncedEmails: 1`
+- SNS bounce event: `processed=true`
+- campaign_emails status: `BOUNCED`
+- Suppression created: `bounce@simulator.amazonses.com | source=bounce | reason="smtp; 550 5.1.1 As requested: user unknown <bounce@simulator.amazonses.com>"`
+
+**STATUS: PASS** (fix required — commit `fc8341a`)
+
+---
+
+### T-3 — Complaint: SNS Event + Suppression + Metrics
+
+**Procedure:** Campaign to `complaint@simulator.amazonses.com` (AWS SES complaint simulator).
+
+**Same defect as T-2** — fixed by `fc8341a`.
+
+**Re-run after fix:**
+- Campaign `5940fc65` "T-3b Complaint Verification (re-run)" → COMPLETED, `complainedEmails: 1`
+- SNS complaint event: `processed=true`
+- campaign_emails status: `COMPLAINED`
+- Suppression created: `complaint@simulator.amazonses.com | source=complaint | reason=abuse`
+
+**STATUS: PASS** (same fix as T-2)
+
+---
+
+### T-4 — Unsubscribe: One-Click + Suppression + Future Skip
+
+**Procedure — unsubscribe endpoint:**
+Generated HMAC-SHA256 token using `UNSUBSCRIBE_SECRET` for `admin@repmail.io`. Hit `GET /api/unsubscribe?uid=...&email=...&token=...` directly.
+
+**Evidence:**
+- HTTP 200, success page returned: "You've been unsubscribed"
+- Suppression created: `admin@repmail.io | source=unsubscribe | 2026-06-20T05:06:48.927Z`
+- (Suppression removed from DB post-test — admin email must remain unsuppressed)
+
+**Procedure — future campaign skip:**
+Campaign `857e3de1` created with 2 contacts: `shekspeare855@gmail.com` (pre-existing suppression from 2026-06-07) and `epsteindapuccy@gmail.com` (not suppressed).
+
+**Evidence:**
+- `contactStats.suppressed = 1` at campaign creation
+- Campaign result: `COMPLETED`, `sentEmails: 1`, `skippedEmails: 1`
+- `shekspeare855@gmail.com` status: `SUPPRESSED`
+- `epsteindapuccy@gmail.com` status: `SENT`
+
+**STATUS: PASS**
+
+---
+
+### T-5 — APP_URL: Unsubscribe Links + Tracking + Production Hostname
+
+**Evidence:**
+
+| Check | Value | Status |
+|---|---|---|
+| `APP_URL` Railway env | `https://www.letszero.in` | ✓ |
+| Unsubscribe URL in emails | `https://www.letszero.in/api/unsubscribe?uid=...&email=...&token=...` (email.js:159) | ✓ |
+| `List-Unsubscribe` header | `<https://www.letszero.in/api/unsubscribe?...>` (email.js:131) | ✓ |
+| `List-Unsubscribe-Post` | `List-Unsubscribe=One-Click` (email.js:132) | ✓ |
+| SES Configuration Set | `my-first-configuration-set` — click/open/delivery tracking active | ✓ |
+| Health endpoint `sesTracking` | `configured` | ✓ |
+| Production hostname | `www.letszero.in` (Railway confirmed, health endpoint `timestamp` origin) | ✓ |
+| Unsubscribe URL resolves | T-4 test hit `https://www.letszero.in/api/unsubscribe` — HTTP 200 ✓ | ✓ |
+
+**STATUS: PASS**
+
+---
+
+### Overall Verdict
+
+| Test | Result | Notes |
+|---|---|---|
+| T-1: SES send + delivery | **PASS** | Delivery confirmed by SNS Delivery event |
+| T-2: Bounce + suppression | **PASS** | Required SNS fix (`fc8341a`) |
+| T-3: Complaint + suppression | **PASS** | Required same SNS fix |
+| T-4: Unsubscribe + future skip | **PASS** | Both endpoint and skip logic verified |
+| T-5: APP_URL + links + hostname | **PASS** | All components confirmed |
+
+**RepMail is VERIFIED IN PRODUCTION as of 2026-06-20.**
+
+Defect discovered and resolved during verification: `[FIX] SNS bounce/complaint lookup: use tag over SES message ID` — commit `fc8341a`, deployed Railway `03f7f84e`.

@@ -447,3 +447,27 @@ Implements startup schema integrity check, migration scripts, and pre-deployment
 | Deliverability audit | **V** | List-Unsubscribe + List-Unsubscribe-Post (email.js 131-132), Feedback-ID (137), SNS bounce/complaint suppression (routes.js 890-916), DMARC pass live |
 
 **Milestone status: COMPLETE** — hardening complete. Baseline migration committed. Migration-enforced workflow active. Pushed to origin/main at `5a604be` + migration commit.
+
+---
+
+### 17 · T-1 through T-5 Production Verification (2026-06-20)
+
+End-to-end live verification of all five production tests. Defect discovered and resolved during T-2/T-3.
+
+| Test | Status | Evidence |
+|---|---|---|
+| T-1: Live SES send + delivery | **PASS** | Campaign `9ca45b48` — `sentEmails:1`, SNS Delivery event `processed=true`, `deliveredAt` set |
+| T-2: Bounce + SNS + suppression | **PASS** | Campaign `c70d96d8` — `bouncedEmails:1`, SNS bounce `processed=true`, suppression created |
+| T-3: Complaint + SNS + suppression | **PASS** | Campaign `5940fc65` — `complainedEmails:1`, SNS complaint `processed=true`, suppression created |
+| T-4: Unsubscribe + future skip | **PASS** | `/api/unsubscribe` → HTTP 200, suppression created; Campaign `857e3de1` → `skippedEmails:1` for suppressed contact |
+| T-5: APP_URL + links + hostname | **PASS** | `APP_URL=https://www.letszero.in`, List-Unsubscribe headers set, `sesTracking=configured` |
+
+**Defect discovered and fixed:** SNS bounce/complaint events were not creating suppressions — `getCampaignEmailBySesMessageId` looked up by Nodemailer SMTP Message-ID (angle-bracket format) but SNS sends SES internal message ID (bare UUID). Fix: extend tag-based lookup to all event types. Commit `fc8341a`, deployed Railway `03f7f84e`.
+
+**Milestone status: COMPLETE**
+
+---
+
+## RepMail — VERIFIED IN PRODUCTION (2026-06-20)
+
+All T-1 through T-5 production tests pass. System is production-ready.

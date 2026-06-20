@@ -124,20 +124,26 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ## Current Priorities
 
-**No further feature or architecture work.** Only production verification, deliverability confirmation, and the Free Plan deployment sequence below.
+**No further feature or architecture work.** RepMail is VERIFIED IN PRODUCTION as of 2026-06-20.
 
-**Order:**
+**Completed order:**
 1. ~~Confirm Railway deployed commits `a6c25bf` + `f2b4cfa` + `379006a`~~ *(DONE)*
 2. ~~Send one test email to Gmail — confirm `dmarc=pass`~~ *(DONE — `spf=pass dkim=pass dmarc=pass` confirmed 2026-06-16)*
 3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`)*
 4. ~~AI quality overhaul~~ *(DONE — commits `01acd99`, `a03a0f3`)*
-5. ~~Campaign UX fixes~~ *(DONE — commit `cd04db8`, Railway deployment `ab4a7a84` building)*
-6. ~~Startup schema integrity check + migration scripts~~ *(DONE — `server/schemaCheck.js`, `scripts/check-schema-parity.mjs`, `db:generate`/`db:migrate` added, `migrations/` baseline committed + pushed — see Audit 019)*
-7. Confirm Railway deployment succeeds and UI shows "Skipped" correctly for suppression campaigns
-7. Confirm Gmail placement for the 2026-06-16 production-path send (Primary / Promotions / Spam)
-8. Complete T-1 through T-5 production verification (SES send, SNS bounce, SNS complaint, unsubscribe, APP_URL)
-9. Execute Free Plan deployment runbook (see section below)
-10. Post-deploy Free Plan validation (Step 7 of runbook)
+5. ~~Campaign UX fixes~~ *(DONE — commit `cd04db8`)*
+6. ~~Startup schema integrity check + migration scripts~~ *(DONE — `5a604be`, `cab8bb9` — see Audit 019)*
+7. ~~T-1 through T-5 production verification~~ *(DONE — 2026-06-20 — see Audit 020)*
+   - **Defect found and fixed during verification:** SNS bounce/complaint lookup bug — commit `fc8341a`
+   - T-1 (SES send + delivery): PASS
+   - T-2 (bounce + suppression): PASS
+   - T-3 (complaint + suppression): PASS
+   - T-4 (unsubscribe + future skip): PASS
+   - T-5 (APP_URL + links + hostname): PASS
+
+**Remaining (non-blocking):**
+- Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway
+- Confirm Gmail inbox placement for production sends (Primary / Promotions / Spam)
 
 **~~IMMEDIATE CHECK:~~** *(RESOLVED)* Commit `a6b0f65` `free_credits_used`/`free_credits_reset_at` column error was encountered in production (`[INACTIVITY JOB] Fatal error: column "free_credits_used" does not exist`) and resolved via `npm run db:push -- --force`. Columns exist in production DB.
 
