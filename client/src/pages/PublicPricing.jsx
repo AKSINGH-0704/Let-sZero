@@ -307,7 +307,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "What payment methods are accepted?",
-    a: "For INR payments: UPI, credit cards, debit cards, and net banking. For USD payments: Visa, Mastercard, and American Express.",
+    a: "UPI, credit/debit cards, and net banking via Razorpay. All transactions are processed in INR.",
   },
 ];
 
@@ -420,8 +420,8 @@ function FeatureIcon({ value, special }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PublicPricing() {
-  const [currency, setCurrency] = useState("INR");
-  const [sliderIdx, setSliderIdx] = useState(3); // 15,000 default
+  const currency = "INR";
+  const [credits, setCredits] = useState(15000);
   const [inputVal, setInputVal] = useState("15000");
   const [teamBilling, setTeamBilling] = useState("annual");
   const [teamUsers, setTeamUsers] = useState(5);
@@ -438,43 +438,39 @@ export default function PublicPricing() {
     }
   }, []);
 
-  // Sync slider index → input
+  // Sync credits → input field when slider moves
   useEffect(() => {
-    setInputVal(String(CREDIT_PRESETS[sliderIdx]));
-  }, [sliderIdx]);
+    setInputVal(String(credits));
+  }, [credits]);
 
   const handleInputChange = useCallback((e) => {
     const raw = e.target.value.replace(/\D/g, "");
     setInputVal(raw);
     const num = parseInt(raw, 10);
     if (!isNaN(num) && num >= 3000 && num <= 300000) {
-      // Find nearest preset
-      const idx = CREDIT_PRESETS.reduce((best, p, i) =>
-        Math.abs(p - num) < Math.abs(CREDIT_PRESETS[best] - num) ? i : best, 0);
-      setSliderIdx(idx);
+      setCredits(Math.round(num / 1000) * 1000);
     }
   }, []);
 
   const handleInputBlur = useCallback(() => {
-    // Snap to closest valid preset
+    // Round up to next 1,000-credit boundary; clamp to [3000, 300000]
     const num = parseInt(inputVal, 10);
     if (isNaN(num) || num < 3000) {
-      setSliderIdx(0);
+      setCredits(3000);
       setInputVal("3000");
     } else if (num > 300000) {
-      setSliderIdx(8);
+      setCredits(300000);
       setInputVal("300000");
     } else {
-      const idx = CREDIT_PRESETS.reduce((best, p, i) =>
-        Math.abs(p - num) < Math.abs(CREDIT_PRESETS[best] - num) ? i : best, 0);
-      setSliderIdx(idx);
-      setInputVal(String(CREDIT_PRESETS[idx]));
+      const rounded = Math.ceil(num / 1000) * 1000;
+      setCredits(rounded);
+      setInputVal(String(rounded));
     }
   }, [inputVal]);
 
-  const estimatorCredits = CREDIT_PRESETS[sliderIdx];
+  const estimatorCredits = credits;
   const purchase = calcPurchase(estimatorCredits);
-  const isMaxCredits = sliderIdx === CREDIT_PRESETS.length - 1;
+  const isMaxCredits = credits >= 300000;
 
   const estimPrice = purchase
     ? (currency === "INR" ? purchase.priceINR : purchase.priceUSD)
@@ -829,43 +825,6 @@ export default function PublicPricing() {
             Buy credits, send emails. It's that simple.
           </motion.p>
 
-          {/* Currency toggle */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.4 }}
-            className="flex justify-center mb-10"
-          >
-            <div
-              className="relative inline-flex rounded-xl p-1"
-              style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
-              role="group"
-              aria-label="Currency selector"
-            >
-              {/* Sliding indicator */}
-              <motion.div
-                className="absolute inset-y-1 rounded-lg"
-                style={{ background: "#00E5C8", width: "calc(50% - 4px)" }}
-                animate={{ x: currency === "INR" ? "calc(100% + 8px)" : 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              />
-              {[
-                { id: "USD", label: "$ USD" },
-                { id: "INR", label: "₹ INR" },
-              ].map(({ id, label }) => (
-                <button
-                  key={id}
-                  onClick={() => setCurrency(id)}
-                  className="relative z-10 px-6 py-2 text-sm font-semibold rounded-lg transition-colors duration-200"
-                  style={{ color: currency === id ? "#06060B" : "#8888A0", minWidth: "80px" }}
-                  aria-pressed={currency === id}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-
           {/* Trust strip */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -960,7 +919,7 @@ export default function PublicPricing() {
                     <label
                       htmlFor="credit-input"
                       className="block text-xs mb-1.5"
-                      style={{ color: "#7878A0", letterSpacing: "0.1em", textTransform: "uppercase" }}
+                      style={{ color: "#B8B8D0", letterSpacing: "0.1em", textTransform: "uppercase" }}
                     >
                       Enter exact amount
                     </label>
@@ -987,14 +946,14 @@ export default function PublicPricing() {
                   </div>
                 </div>
 
-                {/* Custom styled slider */}
+                {/* Custom styled slider — 1,000-credit increments */}
                 <div className="relative py-4">
                   <Slider
-                    min={0}
-                    max={CREDIT_PRESETS.length - 1}
-                    step={1}
-                    value={[sliderIdx]}
-                    onValueChange={([v]) => setSliderIdx(v)}
+                    min={3000}
+                    max={300000}
+                    step={1000}
+                    value={[credits]}
+                    onValueChange={([v]) => setCredits(v)}
                     className="w-full"
                     style={{ "--slider-track": "#16162A", "--slider-range": "#00E5C8" }}
                     aria-label="Select credit amount"
@@ -1003,15 +962,15 @@ export default function PublicPricing() {
                     aria-valuenow={estimatorCredits}
                     aria-valuetext={`${fmtNum(estimatorCredits)} credits`}
                   />
-                  {/* Tick marks */}
+                  {/* Tick marks — jump to common presets */}
                   <div className="flex justify-between mt-3">
                     {["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"].map((label, i) => (
                       <button
                         key={label}
-                        onClick={() => setSliderIdx(i)}
+                        onClick={() => setCredits(CREDIT_PRESETS[i])}
                         className="text-xs transition-colors"
                         style={{
-                          color: sliderIdx === i ? "#00E5C8" : "#3A3A50",
+                          color: credits === CREDIT_PRESETS[i] ? "#00E5C8" : "#3A3A50",
                           fontFamily: "'JetBrains Mono', monospace",
                           fontSize: "9px",
                           letterSpacing: "0.05em",
@@ -1078,7 +1037,7 @@ export default function PublicPricing() {
                     >
                       <div
                         className="text-xs mb-2 uppercase tracking-widest"
-                        style={{ color: "#7878A0", letterSpacing: "0.2em" }}
+                        style={{ color: "#B8B8D0", letterSpacing: "0.2em" }}
                       >
                         Total cost
                       </div>
@@ -1143,6 +1102,19 @@ export default function PublicPricing() {
                             </motion.div>
                           )}
                         </AnimatePresence>
+
+                        <div
+                          className="rounded-lg px-3 py-2 text-sm"
+                          style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
+                        >
+                          <span style={{ color: "#7878A0", fontSize: "11px" }}>Cost per email</span>
+                          <div
+                            style={{ color: "#F0F0F5", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
+                            className="font-bold text-base"
+                          >
+                            ₹{purchase ? (purchase.priceINR / estimatorCredits).toFixed(2) : "—"}
+                          </div>
+                        </div>
                       </div>
 
                       <Link href="/login" className="block mt-6">
@@ -1467,15 +1439,15 @@ export default function PublicPricing() {
                               ? teamBilling === "annual" ? `₹${TEAM.annual}` : `₹${TEAM.monthly}`
                               : teamBilling === "annual" ? `$${(TEAM.annual / USD_RATE).toFixed(2)}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
                           </span>
-                          <span className="text-sm" style={{ color: "#7878A0" }}>/user/mo</span>
+                          <span className="text-sm" style={{ color: "#7878A0" }}>/member/month</span>
                           {teamBilling === "annual" && (
                             <span className="text-xs line-through" style={{ color: "#3A3A50" }}>
-                              {currency === "INR" ? `₹${TEAM.monthly}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
+                              ₹{TEAM.monthly}
                             </span>
                           )}
                         </div>
                         <div className="text-xs mt-1" style={{ color: "#7878A0" }}>
-                          {teamUsers} seats = {currency === "INR" ? `₹${animatedTeamTotal.toLocaleString("en-IN")}` : fmtUSD(teamTotalUSD)}/mo total
+                          {teamUsers} members = ₹{animatedTeamTotal.toLocaleString("en-IN")}/month · billed annually
                         </div>
                       </div>
                       <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
@@ -1857,170 +1829,6 @@ export default function PublicPricing() {
           </motion.div>
         </div>
       </section>
-
-      {/* ── Teams section moved into the Teams tab above ─────────────────── */}
-      {false && (
-      <section className="relative px-4 sm:px-6 py-24" style={{ background: "#06060B", zIndex: 2 }}>
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-80px" }}
-            variants={fadeUp}
-            className="text-center mb-12"
-          >
-            <div
-              className="inline-block w-10 h-px mb-4"
-              style={{ background: "#00E5C8" }}
-            />
-            <h2
-              className="text-3xl md:text-4xl font-bold mb-4"
-              style={{
-                fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif",
-                color: "#F0F0F5",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              Scale with Your Team
-            </h2>
-            <p className="text-base max-w-2xl mx-auto" style={{ color: "#A8A8C0", lineHeight: 1.7 }}>
-              Add team members and distribute credits across your organization.
-              You control who gets what — full visibility, zero surprises.
-            </p>
-          </motion.div>
-
-          {/* 3-step hierarchy flow */}
-          <motion.div
-            className="grid md:grid-cols-3 gap-4 mb-10"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-80px" }}
-            variants={staggerContainer}
-          >
-            {[
-              {
-                step: "01",
-                title: "You're the Admin",
-                desc: "Purchase credits and manage your entire account. You see everything — all team activity, all campaigns, all audit logs.",
-                color: "#00E5C8",
-                bg: "rgba(0,229,200,0.04)",
-                border: "rgba(0,229,200,0.12)",
-              },
-              {
-                step: "02",
-                title: "Create Team Managers",
-                desc: "Appoint managers who can create their own team members and distribute credits you allocate to them.",
-                color: "#60A5FA",
-                bg: "rgba(96,165,250,0.04)",
-                border: "rgba(96,165,250,0.12)",
-              },
-              {
-                step: "03",
-                title: "Team Members Send",
-                desc: "Each member gets their allocated credits and works independently — creating campaigns, uploading contacts, and sending emails.",
-                color: "#A78BFA",
-                bg: "rgba(139,92,246,0.04)",
-                border: "rgba(139,92,246,0.12)",
-              },
-            ].map(({ step, title, desc, color, bg, border }) => (
-              <motion.div
-                key={step}
-                variants={cardVariant}
-                className="rounded-xl p-5"
-                style={{ background: bg, border: `1px solid ${border}` }}
-              >
-                <div
-                  className="text-xs font-bold mb-3 font-mono"
-                  style={{ color, letterSpacing: "0.2em" }}
-                >
-                  STEP {step}
-                </div>
-                <div
-                  className="text-sm font-semibold mb-2"
-                  style={{ color: "#F0F0F5", fontFamily: "'Cabinet Grotesk', sans-serif" }}
-                >
-                  {title}
-                </div>
-                <p className="text-xs leading-relaxed" style={{ color: "#9898B8" }}>{desc}</p>
-              </motion.div>
-            ))}
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6 }}
-            className="rounded-2xl p-8 md:p-10"
-            style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
-          >
-            <div className="grid md:grid-cols-2 gap-10">
-              {/* Team membership info */}
-              <div>
-                <div className="p-6 rounded-2xl text-center" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                  <p className="text-gray-300 text-base leading-relaxed">
-                    Team members are included in your plan. Growth includes up to 5 members. Scale includes up to 10. Enterprise offers unlimited team members.
-                  </p>
-                  <p className="text-gray-500 text-sm mt-3">
-                    Need more?{" "}
-                    <a href="/login" className="text-cyan-400 hover:text-cyan-300 underline">
-                      Contact us for Enterprise
-                    </a>
-                  </p>
-                </div>
-              </div>
-
-              {/* Role comparison table */}
-              <div>
-                <div className="text-xs uppercase tracking-widest mb-5" style={{ color: "#7878A0" }}>
-                  Role capabilities
-                </div>
-                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1A1A2E" }}>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr style={{ background: "#08080F" }}>
-                        <th className="px-4 py-3 text-left font-semibold" style={{ color: "#7878A0" }}>Capability</th>
-                        <th className="px-3 py-3 text-center font-semibold" style={{ color: "#00E5C8" }}>Admin</th>
-                        <th className="px-3 py-3 text-center font-semibold" style={{ color: "#60A5FA" }}>Manager</th>
-                        <th className="px-3 py-3 text-center font-semibold" style={{ color: "#A78BFA" }}>Member</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        ["Purchase credits",  true,  false, false],
-                        ["Allocate credits",  true,  true,  false],
-                        ["Create team members", true, true, false],
-                        ["View all campaigns", true, "Own team", "Own only"],
-                        ["View audit logs",  true,  "Own team", "Own only"],
-                        ["Send campaigns",   true,  true,  true],
-                        ["Manage templates", true,  true,  true],
-                      ].map(([cap, a, m, u], i) => (
-                        <tr key={cap} style={{ background: i % 2 === 0 ? "#0C0C14" : "#0A0A12", borderTop: "1px solid rgba(26,26,46,0.5)" }}>
-                          <td className="px-4 py-2.5" style={{ color: "#B8B8D0" }}>{cap}</td>
-                          {[a, m, u].map((v, j) => (
-                            <td key={j} className="px-3 py-2.5 text-center">
-                              {v === true
-                                ? <Check className="w-3.5 h-3.5 mx-auto" style={{ color: "#34D399" }} />
-                                : v === false
-                                ? <X className="w-3.5 h-3.5 mx-auto" style={{ color: "#F87171" }} />
-                                : <span style={{ color: "#9898B8", fontSize: "10px" }}>{v}</span>
-                              }
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-xs mt-4" style={{ color: "#55556A" }}>
-                  Teams available on Growth plan and above.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-      )}
 
       {/* ── Feature Comparison Table ──────────────────────────────────────── */}
       <section className="relative px-4 py-24" style={{ background: "#0A0A12", zIndex: 2 }}>

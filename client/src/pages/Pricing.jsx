@@ -27,40 +27,6 @@ import {
 } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
 
-function CurrencyToggle({ currency, onChange }) {
-  return (
-    <div className="flex items-center justify-center gap-2" data-testid="currency-toggle">
-      <span className={cn(
-        "text-sm font-medium transition-colors",
-        currency === "USD" ? "text-foreground" : "text-muted-foreground"
-      )}>
-        USD
-      </span>
-      <button
-        onClick={() => onChange(currency === "USD" ? "INR" : "USD")}
-        className={cn(
-          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-          currency === "INR" ? "bg-primary" : "bg-muted"
-        )}
-        data-testid="button-currency-switch"
-      >
-        <span
-          className={cn(
-            "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-            currency === "INR" ? "translate-x-6" : "translate-x-1"
-          )}
-        />
-      </button>
-      <span className={cn(
-        "text-sm font-medium transition-colors",
-        currency === "INR" ? "text-foreground" : "text-muted-foreground"
-      )}>
-        INR
-      </span>
-    </div>
-  );
-}
-
 function PriceDisplay({ plan, currency, exchangeRate }) {
   const symbol = currency === "INR" ? "₹" : "$";
   const price = currency === "INR" ? plan.priceInr : plan.priceUsd;
