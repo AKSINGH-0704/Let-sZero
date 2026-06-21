@@ -609,7 +609,7 @@ New users and existing free-plan users now receive 500 emails/month. Enterprise 
 
 ---
 
-### 23 · Phase 14: Legal Pages + OAuth Readiness (2026-06-22)
+### 23 · Phase 14: Legal Pages + OAuth Readiness (2026-06-22) — commit `5cc5e9f`
 
 Create `/privacy` and `/terms` pages; add footer links across all public marketing pages; unblock Google OAuth consent screen verification.
 
@@ -627,5 +627,10 @@ Create `/privacy` and `/terms` pages; add footer links across all public marketi
 | `npm run build` | **I** | PASS — 0 errors, 5045 modules |
 | Audit 027 appended to AUDIT_TRAIL.md | **I** | Full implementation log with coverage tables |
 
-**Pending:** Railway deploy + live HTTP 200 verification for `/privacy`, `/terms`, `/contact`  
-**OAuth blocker status:** `/privacy` and `/terms` were the last URL blockers for Google OAuth. After deploy, activate OAuth per HANDOFF.md runbook.
+| Railway deploy | **V** | Deployment `2528ebec` — Online |
+| `/contact` HTTP 200 | **V** | `curl https://www.letszero.in/contact → 200` |
+| `/privacy` HTTP 200 | **V** | `curl https://www.letszero.in/privacy → 200` |
+| `/terms` HTTP 200 | **V** | `curl https://www.letszero.in/terms → 200` |
+
+**Milestone status: COMPLETE — All three legal URLs return HTTP 200.**  
+**OAuth blocker status: CLEAR.** `/privacy` and `/terms` were the last URL blockers. Activate Google OAuth per HANDOFF.md runbook.

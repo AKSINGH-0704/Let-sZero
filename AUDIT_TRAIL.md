@@ -2653,6 +2653,14 @@ Railway auto-redeployed. Health confirmed post-redeploy:
 | `/privacy` | 200 |
 | `/terms` | 200 |
 
+### Production verification
+
+| URL | HTTP status | Deployment |
+|-----|-------------|-----------|
+| `https://www.letszero.in/contact` | 200 | `2528ebec` |
+| `https://www.letszero.in/privacy` | 200 | `2528ebec` |
+| `https://www.letszero.in/terms` | 200 | `2528ebec` |
+
 ### OAuth readiness
 
-`/privacy` and `/terms` are the only OAuth-blocking URLs. All other OAuth prerequisites remain as documented in the Google OAuth Activation Runbook in HANDOFF.md. Google OAuth activation can proceed once this commit is deployed and URLs verified live.
+`/privacy` and `/terms` were the last URL-level blockers for Google OAuth consent screen review. Both now return HTTP 200. Google OAuth activation can proceed per the Google OAuth Activation Runbook in HANDOFF.md.
