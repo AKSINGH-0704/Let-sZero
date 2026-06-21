@@ -634,3 +634,24 @@ Create `/privacy` and `/terms` pages; add footer links across all public marketi
 
 **Milestone status: COMPLETE — All three legal URLs return HTTP 200.**  
 **OAuth blocker status: CLEAR.** `/privacy` and `/terms` were the last URL blockers. Activate Google OAuth per HANDOFF.md runbook.
+
+---
+
+### 24 · Phase 14.1: Legal Structure Hardening (2026-06-22)
+
+Two-layer legal architecture: LetsZero corporate pages + RepMail product-specific pages.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| `client/src/pages/RepMailPrivacy.jsx` created | **I** | 12 sections: contact uploads, SES delivery, open tracking, click tracking, AI content, bounce/complaint handling, suppression, retention table, termination |
+| `client/src/pages/RepMailTerms.jsx` created | **I** | 13 sections: anti-spam requirements, enforcement thresholds, contact responsibility, credits/refunds, AI policy, suppression obligations, termination grounds |
+| `/repmail/privacy` route added | **I** | Unprotected `<Route>` in App.jsx |
+| `/repmail/terms` route added | **I** | Unprotected `<Route>` in App.jsx |
+| Navbar user dropdown — Privacy Policy link | **I** | Points to `/repmail/privacy` with Shield icon |
+| Navbar user dropdown — Terms of Service link | **I** | Points to `/repmail/terms` with FileText icon |
+| LandingExperience nav audit | **I** | Added Features (→ `#products`) and Pricing (→ `/pricing`); final: Products, Features, Pricing, Contact + Sign In + Explore RepMail CTA |
+| HANDOFF.md legal architecture section | **I** | Two-layer table, navigation rationale, OAuth status |
+| Audit 028 appended | **I** | Full implementation log, nav audit table |
+| `npm run build` | **I** | PASS — 0 errors |
+
+**Pending:** Railway deploy + HTTP 200 verification for `/repmail/privacy` and `/repmail/terms`

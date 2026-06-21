@@ -22,6 +22,8 @@ import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
+import RepMailPrivacy from "@/pages/RepMailPrivacy";
+import RepMailTerms from "@/pages/RepMailTerms";
 import NotFound from "@/pages/not-found";
 import WaitlistLanding from "@/pages/WaitlistLanding";
 import AcceptInvite from "@/pages/AcceptInvite";
@@ -101,6 +103,14 @@ function AppRoutes() {
 
       <Route path="/terms">
         {() => <Terms />}
+      </Route>
+
+      <Route path="/repmail/privacy">
+        {() => <RepMailPrivacy />}
+      </Route>
+
+      <Route path="/repmail/terms">
+        {() => <RepMailTerms />}
       </Route>
 
       <Route path="/accept-invite">

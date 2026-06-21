@@ -151,10 +151,7 @@ export default function LandingExperience() {
           </div>
 
           {/* Desktop Navigation Menu */}
-          <div className="hidden md:flex items-center gap-10">
-            <a href="#" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Home
-            </a>
+          <div className="hidden md:flex items-center gap-8">
             <div className="relative">
               <button
                 onClick={() => setIsProductsOpen(!isProductsOpen)}
@@ -223,8 +220,11 @@ export default function LandingExperience() {
                 )}
               </AnimatePresence>
             </div>
-            <a href="#mission" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Mission
+            <a href="#products" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Features
+            </a>
+            <a href="/pricing" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Pricing
             </a>
             <a href="#contact" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Contact
@@ -301,26 +301,26 @@ export default function LandingExperience() {
               className="md:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]/98 backdrop-blur-xl"
             >
               <div className="px-4 py-4 space-y-1">
-                <a href="#" onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
-                  style={{ fontFamily: "'Inter', sans-serif" }}>
-                  Home
-                </a>
                 <button onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
                   className="w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium text-left"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   <div className="w-6 h-6 rounded-md bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
                     <Mail className="w-3.5 h-3.5 text-cyan-400" />
                   </div>
-                  RepMail
+                  Products
                   <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
                 </button>
                 <button
-                  onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('mission')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
+                  onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
                   className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium w-full text-left"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
-                  Mission
+                  Features
                 </button>
+                <a href="/pricing" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Pricing
+                </a>
                 <button
                   onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
                   className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium w-full text-left"

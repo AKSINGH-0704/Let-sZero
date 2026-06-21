@@ -2664,3 +2664,59 @@ Railway auto-redeployed. Health confirmed post-redeploy:
 ### OAuth readiness
 
 `/privacy` and `/terms` were the last URL-level blockers for Google OAuth consent screen review. Both now return HTTP 200. Google OAuth activation can proceed per the Google OAuth Activation Runbook in HANDOFF.md.
+
+---
+
+## Audit 028 — Phase 14.1: Legal Structure Hardening
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Separate LetsZero corporate legal layer from RepMail product legal layer; add RepMail-specific operational legal pages; add legal links to authenticated user menu; audit and update marketing page header navigation
+
+### Legal Architecture Decision
+
+Two-layer legal structure established:
+
+| Layer | Routes | Audience | Branding |
+|-------|--------|----------|---------|
+| LetsZero Corporate | `/privacy`, `/terms` | OAuth visitors, general public | LetsZero |
+| RepMail Product | `/repmail/privacy`, `/repmail/terms` | Authenticated RepMail users | RepMail (cyan palette) |
+
+**Rationale:** Google OAuth requires URLs for a company's general privacy and terms (Layer 1). RepMail users need product-specific operational policies covering SES, open/click tracking, AI content, bounce/complaint thresholds, and suppression — these belong in a product-scoped layer (Layer 2) accessible from inside the app.
+
+### Files created
+
+| File | Route | Content |
+|------|-------|---------|
+| `client/src/pages/RepMailPrivacy.jsx` | `/repmail/privacy` | 12-section RepMail product privacy policy: account data, contact uploads, SES delivery, open tracking, click tracking, AI content, bounce handling, complaint handling, suppression management, data retention schedule, termination, contact |
+| `client/src/pages/RepMailTerms.jsx` | `/repmail/terms` | 13-section RepMail product ToS: platform description, anti-spam requirements with automatic enforcement thresholds (bounce >5%, complaint >0.1%), contact responsibility, credits/payments/refunds, AI content policy, suppression obligations, team accounts, availability, termination grounds, liability, governing law |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `client/src/App.jsx` | Added imports for RepMailPrivacy, RepMailTerms; added routes `/repmail/privacy`, `/repmail/terms` |
+| `client/src/components/layout/Navbar.jsx` | Added Shield + FileText imports; added Privacy Policy and Terms of Service items to user dropdown (above Log Out separator) pointing to `/repmail/privacy` and `/repmail/terms` |
+| `marketing/LFP_final/LandingExperience.tsx` | Header nav: removed "Home" and "Mission" from center nav; added "Features" (→ `#products`) and "Pricing" (→ `/pricing`); final nav order: Products, Features, Pricing, Contact; desktop CTAs: Sign In (ghost) + Explore RepMail (violet); mobile menu updated to match |
+
+### Header navigation audit result
+
+| Item | Before | After |
+|------|--------|-------|
+| Products | Present (dropdown) | Present (dropdown) |
+| Features | Absent | Added → `#products` section |
+| Pricing | Absent | Added → `/pricing` |
+| Contact | Present | Present |
+| Sign In | Present (ghost button) | Present |
+| Get Started / Explore RepMail | Present (violet CTA) | Present |
+| Privacy in primary nav | Absent (correct) | Absent (correct) |
+| Terms in primary nav | Absent (correct) | Absent (correct) |
+
+### Build verification
+
+| Check | Result |
+|-------|--------|
+| `npm run build` | PASS — 0 errors |
+| `/repmail/privacy` route | Unprotected — accessible pre-auth |
+| `/repmail/terms` route | Unprotected — accessible pre-auth |
+| User dropdown legal links | Present in Navbar.jsx |

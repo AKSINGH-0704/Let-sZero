@@ -763,19 +763,46 @@ railway run node scripts/check-schema-parity.mjs
 
 ---
 
-## Phase 14 — Legal Pages (2026-06-22, COMPLETE)
+## Legal Architecture (Phase 14 + 14.1)
 
-`/privacy` and `/terms` were 404 before this phase. Both are now live.
+RepMail has two distinct legal layers:
 
-| Page | File | Route | Status |
-|------|------|-------|--------|
-| Privacy Policy | `client/src/pages/Privacy.jsx` | `/privacy` | Live after deploy |
-| Terms of Service | `client/src/pages/Terms.jsx` | `/terms` | Live after deploy |
-| Contact | `client/src/pages/Contact.jsx` | `/contact` | Pre-existing |
+### Layer 1 — LetsZero Corporate (general company)
 
-Footer links added to all public marketing pages: `Landing.jsx`, `PublicPricing.jsx`, `WaitlistLanding.jsx`, `LandingExperience.tsx`.
+| Page | File | Route | Audience |
+|------|------|-------|---------|
+| Privacy Policy | `client/src/pages/Privacy.jsx` | `/privacy` | General/OAuth visitors |
+| Terms of Service | `client/src/pages/Terms.jsx` | `/terms` | General/OAuth visitors |
+| Contact | `client/src/pages/Contact.jsx` | `/contact` | All visitors |
 
-**OAuth status:** `/privacy` and `/terms` were the last URL-level blockers for Google OAuth consent screen submission. Activate OAuth per the Google OAuth Activation Runbook section below.
+LetsZero corporate pages use LetsZero branding and cover company-wide data practices.
+These are the URLs referenced in the Google OAuth consent screen.
+
+### Layer 2 — RepMail Product (operational specifics)
+
+| Page | File | Route | Audience |
+|------|------|-------|---------|
+| RepMail Privacy | `client/src/pages/RepMailPrivacy.jsx` | `/repmail/privacy` | Authenticated users |
+| RepMail Terms | `client/src/pages/RepMailTerms.jsx` | `/repmail/terms` | Authenticated users |
+
+RepMail product pages use RepMail branding (cyan palette, RepMail logo) and cover:
+- Contact upload responsibilities and data retention schedules
+- Anti-spam enforcement (bounce >5%, complaint >0.1% → auto-pause)
+- SES delivery processing and event pipeline (SNS → webhook → `sns_events`)
+- Open and click tracking mechanics (pixel + URL rewriting)
+- AI-generated content policy (OpenAI, per-user daily quotas, validation)
+- Bounce and complaint classification and auto-suppression
+- Suppression management obligations and retention (indefinite)
+- Account termination grounds and appeal process
+
+### Navigation rationale
+
+- `/privacy` and `/terms` are linked in page footers (marketing pages) and referenced by Google OAuth
+- `/repmail/privacy` and `/repmail/terms` are linked in the authenticated Navbar user dropdown
+- Primary navigation (header) does NOT contain Privacy or Terms links — industry standard for SaaS
+- Primary nav verified: Products, Features, Pricing, Contact, Sign In, Explore RepMail (CTA)
+
+**OAuth status:** `/privacy` and `/terms` (Layer 1) were the last URL-level blockers. Both return HTTP 200. Activate OAuth per the Google OAuth Activation Runbook below.
 
 ---
 

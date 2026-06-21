@@ -28,7 +28,8 @@ import {
   CreditCard,
   ShieldOff,
   Menu,
-  X
+  X,
+  Shield
 } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 
@@ -136,6 +137,19 @@ export default function Navbar() {
                 <Link href="/app/profile" className="w-full cursor-pointer" data-testid="menu-profile">
                   <User className="mr-2 h-4 w-4" />
                   Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/repmail/privacy" className="w-full cursor-pointer">
+                  <Shield className="mr-2 h-4 w-4" />
+                  Privacy Policy
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/repmail/terms" className="w-full cursor-pointer">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Terms of Service
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
