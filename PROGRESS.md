@@ -654,4 +654,8 @@ Two-layer legal architecture: LetsZero corporate pages + RepMail product-specifi
 | Audit 028 appended | **I** | Full implementation log, nav audit table |
 | `npm run build` | **I** | PASS — 0 errors |
 
-**Pending:** Railway deploy + HTTP 200 verification for `/repmail/privacy` and `/repmail/terms`
+| Railway deploy | **V** | Deployment `2e51052d` — Online |
+| `/repmail/privacy` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/privacy → 200` |
+| `/repmail/terms` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/terms → 200` |
+
+**Milestone status: COMPLETE — All five legal URLs return HTTP 200. Two-layer legal architecture is live.**
