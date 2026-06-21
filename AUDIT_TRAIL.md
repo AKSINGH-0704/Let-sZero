@@ -2303,3 +2303,176 @@ Google OAuth (Google Sign-In) scales to **any number of users** — there is no 
 
 **client/src/pages/Profile.jsx:**
 - Corrected `PROFILE_PLAN_LIMITS` values; removed stale `maxTeamMembers` field; fixed label
+
+---
+
+## Audit 025 — Free Plan & Google OAuth Launch Readiness Verification (2026-06-21)
+
+**Scope:** Production database verification of all user state, free-credit schema columns, and Google OAuth configuration. No code changes. Outputs: exact migration SQL, rollback SQL, activation runbooks (added to HANDOFF.md).
+
+**Method:** Live `railway run node` queries against production PostgreSQL.
+
+---
+
+### Investigation 1 — Production User State
+
+**Query:**
+```sql
+SELECT username, email, plan, role, is_trial_user,
+       (credits_received - credits_allocated - credits_used) AS paid_balance,
+       free_credits_used, free_credits_reset_at
+FROM users ORDER BY plan, role;
+```
+
+**Result (5 users, 2026-06-21):**
+
+| username | plan | role | is_trial_user | paid_balance | free_credits_used | free_credits_reset_at |
+|----------|------|------|---------------|--------------|-------------------|----------------------|
+| admin | enterprise | ROOT_ADMIN | true | 89,969 | 0 | null |
+| Aksingh | enterprise | SUB_ADMIN | true | 5,000 | 0 | null |
+| Krishna | enterprise | SUB_ADMIN | true | 5,000 | 0 | null |
+| Abhishek | free | SUB_ADMIN | true | 0 | 0 | null |
+| epsteindapuccy_5vu7 | free | USER | true | 499 | 0 | null |
+
+**Key observations:**
+- All 5 users have `is_trial_user = true` — this is the pre-migration state
+- All 5 users have `free_credits_used = 0` and `free_credits_reset_at = null` — monthly credit path never triggered
+- 2 free-plan users will be affected by the backfill SQL
+- 3 enterprise users: `MONTHLY_CREDITS.enterprise = 0` — setting `is_trial_user = false` for them has zero functional effect
+- `epsteindapuccy_5vu7` already has 499 paid credits (from the GAP-1 trial claim, now fixed)
+
+---
+
+### Investigation 2 — Free Credit Schema Column Verification
+
+**Query:**
+```sql
+SELECT column_name, data_type, column_default
+FROM information_schema.columns
+WHERE table_name = 'users'
+  AND column_name IN ('free_credits_used','free_credits_reset_at','is_trial_user','trial_credits','trial_credits_used')
+ORDER BY column_name;
+```
+
+**Result:**
+
+| column_name | data_type | column_default |
+|-------------|-----------|----------------|
+| `free_credits_reset_at` | timestamp without time zone | null |
+| `free_credits_used` | integer | 0 |
+| `is_trial_user` | boolean | true |
+| `trial_credits` | integer | 5 |
+| `trial_credits_used` | integer | 0 |
+
+**Finding:** All required columns exist in production. Schema is fully ready. `db:push` step in the Free Plan runbook is already complete.
+
+---
+
+### Investigation 3 — Free Credit Monthly Refresh Logic Verification
+
+**Code path traced in `server/storage.js`:**
+
+The lazy refresh fires whenever all three conditions hold:
+1. `process.env.FREE_PLAN_ENABLED === "true"`
+2. `!user.isTrialUser` (user has been backfilled)
+3. `DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01') AT TIME ZONE 'UTC') < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')`
+
+For users with `free_credits_reset_at = null` (all current users): `COALESCE(null, '1970-01-01')` evaluates to `1970-01-01` which is always less than the current month. First-ever action triggers the refresh automatically.
+
+After refresh: `free_credits_used = 0`, `free_credits_reset_at = NOW()`. Next refresh triggers when `DATE_TRUNC('month', free_credits_reset_at)` is before the current calendar month — i.e., on the first credit-touching action in each subsequent month.
+
+**Credit deduction order** (from `deductCreditAtomic`):
+1. Free pool (if `FREE_PLAN_ENABLED=true` AND `!isTrialUser` AND plan has monthly grant)
+2. Paid pool (`credits_received - credits_allocated - credits_used >= 1`)
+3. Legacy trial pool (if `isTrialUser=true`)
+
+After backfill, `epsteindapuccy_5vu7` will use free credits first (500/month), then fall back to their 499 paid credits if the free pool is exhausted. Effective monthly capacity: 999 emails.
+
+**Logic is correct and ready to activate.** No bugs found.
+
+---
+
+### Investigation 4 — Exact Migration SQL
+
+**Pre-flight (read-only, run first):**
+```sql
+SELECT plan, is_trial_user, COUNT(*)::int as user_count
+FROM users WHERE is_active = true
+GROUP BY plan, is_trial_user
+ORDER BY plan;
+-- Expected: enterprise/true/3, free/true/2
+```
+
+**Migration (affects 2 users):**
+```sql
+UPDATE users
+SET is_trial_user = false,
+    updated_at = NOW()
+WHERE plan = 'free'
+  AND is_active = true;
+```
+
+**Post-migration verification:**
+```sql
+SELECT COUNT(*)::int AS converted FROM users WHERE plan = 'free' AND is_trial_user = false;
+-- Must be 2
+
+SELECT COUNT(*)::int AS remaining FROM users WHERE plan = 'free' AND is_trial_user = true;
+-- Must be 0
+```
+
+---
+
+### Investigation 5 — Rollback Plan
+
+**Before backfill:** Set `FREE_PLAN_ENABLED=false` in Railway. No SQL needed.
+
+**After backfill (no credits spent):**
+```sql
+UPDATE users SET is_trial_user = true, updated_at = NOW()
+WHERE plan = 'free' AND is_active = true;
+```
+Set `FREE_PLAN_ENABLED=false`. Verify `COUNT(*) WHERE plan='free' AND is_trial_user=true` = 2.
+
+**After backfill (some credits spent):**
+```sql
+-- Only revert users who haven't used free credits yet
+UPDATE users SET is_trial_user = true, updated_at = NOW()
+WHERE plan = 'free' AND is_active = true AND free_credits_used = 0;
+```
+Users who spent credits retain their `is_trial_user=false` state. Legacy trial path (5 credits) applies for them, which is a minor degradation but does not lose paid credits.
+
+---
+
+### Investigation 6 — Google OAuth Current Status
+
+**Environment variables in Railway:** `GOOGLE_CLIENT_ID` = **NOT SET**, `GOOGLE_CLIENT_SECRET` = **NOT SET**
+
+**Code behavior when vars are absent:**
+- Passport strategy is never registered
+- `GET /api/auth/google` → Passport returns 401 ("Unknown authentication strategy google")
+- No user impact — login/register via password/email works normally
+
+**New user behavior when activated:**
+- `role = USER` (non-admin, cannot self-elevate)
+- `plan = free`
+- `mustResetPassword = false` (OAuth, no password needed)
+- `isTrialUser` derived from `FREE_PLAN_ENABLED` at creation time
+- `passwordHash` = 32-byte random hex (account is passwordless by default; forgot-password flow can set one)
+
+**Scalability:** Google OAuth is free with no per-user cost or cap. App verification (optional) removes the "unverified app" warning after consistent > 100 daily unique logins.
+
+---
+
+### Summary
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | Production DB verified (5 users, all `is_trial_user=true`) | Done | Exact SQL produced for migration |
+| 2 | Free credit schema columns verified | Done | Both columns present in production |
+| 3 | Monthly refresh logic verified | Done | Logic is correct; lazy trigger on null `free_credits_reset_at` works |
+| 4 | Migration SQL produced | Done | Affects 2 users (`plan=free`) |
+| 5 | Rollback plan produced (3 scenarios) | Done | No code rollback needed in any scenario |
+| 6 | Google OAuth current status verified | Done | Feature dormant; no env vars set |
+| 7 | Google OAuth activation runbook | Done | Added to HANDOFF.md |
+| 8 | Free Plan runbook updated | Done | Production state, exact counts, rollback expanded |

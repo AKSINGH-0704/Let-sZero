@@ -247,17 +247,41 @@ Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read
 
 ---
 
-## Free Plan Deployment Runbook
+## Free Plan Activation Runbook
 
 Execute in this exact order. Do not proceed to the next step if the current step's verification fails.
 
-### STEP 0 — IMMEDIATE: Check if `a6b0f65` is already deployed
+### Production state as of 2026-06-21 (verified)
 
-Commit `a6b0f65` references `free_credits_used` and `free_credits_reset_at` in the Drizzle schema. If Railway auto-deployed it and `db:push` has not been run, all user queries are failing.
+Run before starting to confirm nothing has changed:
 
-**Check Railway logs for:** `ERROR: column "free_credits_used" does not exist`
+```sql
+SELECT username, email, plan, role, is_trial_user,
+       (credits_received - credits_allocated - credits_used) AS paid_balance,
+       free_credits_used,
+       free_credits_reset_at
+FROM users ORDER BY plan, role;
+```
 
-If present → run Step 2 (`db:push`) immediately before anything else.
+**Expected output (current production, 5 users):**
+
+| username | plan | role | is_trial_user | paid_balance | free_credits_used | free_credits_reset_at |
+|----------|------|------|---------------|--------------|-------------------|----------------------|
+| admin | enterprise | ROOT_ADMIN | true | 89,969 | 0 | null |
+| Aksingh | enterprise | SUB_ADMIN | true | 5,000 | 0 | null |
+| Krishna | enterprise | SUB_ADMIN | true | 5,000 | 0 | null |
+| Abhishek | free | SUB_ADMIN | true | 0 | 0 | null |
+| epsteindapuccy_5vu7 | free | USER | true | 499 | 0 | null |
+
+**Schema columns verified present in production:**
+
+| Column | Type | Default |
+|--------|------|---------|
+| `free_credits_used` | integer | 0 (NOT NULL) |
+| `free_credits_reset_at` | timestamp | null |
+| `is_trial_user` | boolean | true |
+
+> **All schema work is done. Steps 2 (`db:push`) is already complete.** Skip directly to Step 1.
 
 ---
 
@@ -269,26 +293,18 @@ Prevents a future git push from deploying mid-sequence.
 
 ---
 
-### STEP 2 — `db:push`
+### STEP 2 — `db:push` ✅ ALREADY COMPLETE
 
-Adds two columns to production `users` table. Zero downtime (catalog-only, no row rewrite).
+`free_credits_used` and `free_credits_reset_at` columns exist in production (verified 2026-06-21). Skip this step.
 
-```bash
-# Option A: local with production DATABASE_URL
-DATABASE_URL="postgres://..." npm run db:push
-
-# Option B: Railway CLI
-railway run npm run db:push
-```
-
-**Verify:**
+**To confirm if uncertain:**
 ```sql
-SELECT column_name, data_type, is_nullable, column_default
+SELECT column_name, data_type, column_default
 FROM information_schema.columns
 WHERE table_name = 'users'
   AND column_name IN ('free_credits_used', 'free_credits_reset_at');
+-- Must return 2 rows
 ```
-Expected: 2 rows. `free_credits_used`: NOT NULL, default 0. `free_credits_reset_at`: nullable, no default.
 
 ---
 
@@ -325,30 +341,46 @@ At this point: new users get `isTrialUser=false`. Existing users still have `isT
 SELECT plan, is_trial_user, COUNT(*)
 FROM users WHERE is_active = true
 GROUP BY plan, is_trial_user ORDER BY plan;
+```
 
--- Confirm column defaults
+**Expected result (as of 2026-06-21):**
+
+| plan | is_trial_user | count |
+|------|---------------|-------|
+| enterprise | true | 3 |
+| free | true | 2 |
+
+```sql
+-- Confirm free-plan users have no previously spent free credits
 SELECT COUNT(*) AS total,
   SUM(CASE WHEN free_credits_used = 0 THEN 1 ELSE 0 END) AS at_zero,
   SUM(CASE WHEN free_credits_reset_at IS NULL THEN 1 ELSE 0 END) AS null_reset
 FROM users WHERE plan = 'free' AND is_active = true;
--- Both at_zero and null_reset should equal total
+-- Expected: total=2, at_zero=2, null_reset=2
 ```
 
-Save the count of `plan='free', is_trial_user=true` — this is the rollback verification number.
+**Rollback baseline:** `plan='free', is_trial_user=true` = **2 users**. Save this before running Step 6.
 
 ---
 
 ### STEP 6 — Backfill
 
+Transitions free-plan users from legacy trial behavior to the free monthly credit path.
+
+**Affects: 2 users** (Abhishek — 0 paid credits, epsteindapuccy_5vu7 — 499 paid credits).
+Enterprise users (admin, Aksingh, Krishna) are NOT included: `MONTHLY_CREDITS.enterprise = 0`, so changing their `is_trial_user` has zero functional effect.
+
 ```sql
 UPDATE users
-SET is_trial_user = false
-WHERE plan = 'free' AND is_active = true;
+SET is_trial_user = false,
+    updated_at = NOW()
+WHERE plan = 'free'
+  AND is_active = true;
 ```
 
 **Verify immediately:**
 ```sql
--- Should match the count from Step 5
+-- Must equal 2 (the users converted)
 SELECT COUNT(*) AS converted FROM users
 WHERE plan = 'free' AND is_active = true AND is_trial_user = false;
 
@@ -356,6 +388,8 @@ WHERE plan = 'free' AND is_active = true AND is_trial_user = false;
 SELECT COUNT(*) AS remaining FROM users
 WHERE plan = 'free' AND is_active = true AND is_trial_user = true;
 ```
+
+After this step: on the next campaign or credit-check request, each free-plan user will trigger a lazy monthly refresh (`free_credits_used = 0, free_credits_reset_at = NOW()`) and receive 500 credits. No manual credit insertion is needed.
 
 ---
 
@@ -379,29 +413,42 @@ WHERE plan = 'free' AND is_active = true AND is_trial_user = true;
 
 ### ROLLBACK
 
-**Before Step 6 (backfill not run):**
+**Scenario A — Revert before Step 6 (backfill not yet run):**
 ```bash
-# Railway dashboard: set FREE_PLAN_ENABLED=false (triggers redeploy)
-# No SQL needed — columns exist but are never written with flag off
+# Railway dashboard → Variables → set FREE_PLAN_ENABLED=false → auto-redeploys
+# No SQL needed. Columns exist but the code never touches them when flag is off.
 ```
 
-**After Step 6 (backfill ran):**
+**Scenario B — Revert after Step 6 (backfill ran, free credits not yet spent):**
 ```sql
--- Immediate
-UPDATE users SET is_trial_user = true
+-- Restore is_trial_user for the 2 free-plan users
+UPDATE users
+SET is_trial_user = true, updated_at = NOW()
 WHERE plan = 'free' AND is_active = true;
 ```
 ```bash
 # Railway: set FREE_PLAN_ENABLED=false
 ```
 ```sql
--- Verify
+-- Verify: must return 2
 SELECT COUNT(*) FROM users
 WHERE plan = 'free' AND is_active = true AND is_trial_user = true;
--- Must match the Step 5 baseline count
 ```
 
-Full revert restores 100% of prior behavior. No code rollback needed. Columns remain harmlessly in DB.
+**Scenario C — Revert after free credits were spent (`free_credits_used > 0`):**
+```sql
+-- Only revert users who have NOT spent free credits yet
+-- (users who have spent credits keep their balances; legacy trial path shows 5 credits,
+--  but their paid balance is unaffected and will still deduct correctly)
+UPDATE users
+SET is_trial_user = true, updated_at = NOW()
+WHERE plan = 'free' AND is_active = true AND free_credits_used = 0;
+```
+```bash
+# Railway: set FREE_PLAN_ENABLED=false
+```
+
+**All scenarios:** No code rollback needed. No columns need to be dropped. Restores 100% of prior behavior for all affected users.
 
 ---
 
@@ -486,13 +533,143 @@ Before setting `FREE_PLAN_ENABLED=true` in Railway:
 
 ### Google OAuth activation checklist (pending)
 
-1. Create OAuth 2.0 Client in GCP Console (Web application type).
-2. Add Authorized Origins: `https://www.letszero.in`
-3. Add Authorized Redirect URI: `https://www.letszero.in/api/auth/google/callback`
-4. Configure OAuth consent screen as External + Production. Verify `letszero.in` domain in Google Search Console.
-5. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in Railway.
-6. No code changes needed — feature is already implemented and conditionally registered.
-7. For > 100 daily users without Google app verification: users see an "unverified app" warning. Submit for Google verification (1–3 weeks) for a polished experience.
+See the Google OAuth Activation Runbook section below for the full step-by-step procedure.
+
+---
+
+## Google OAuth Activation Runbook
+
+### Current status (verified 2026-06-21)
+
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT set** in Railway production. The Passport strategy is conditionally registered only when both variables are present — feature is fully dormant. No code changes are needed for activation.
+
+**Code reference (`server/routes.js:638`):**
+```js
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(new GoogleStrategy({ ... callbackURL: "/api/auth/google/callback" }, ...));
+}
+```
+
+**Callback URL in production:** `https://www.letszero.in/api/auth/google/callback`  
+**OAuth scopes requested:** `profile`, `email` (non-sensitive — no Google verification required for basic usage)
+
+---
+
+### STEP 1 — GCP Project setup
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Select or create a project (e.g. `repmail-production`)
+3. Navigate to **APIs & Services → OAuth consent screen**
+
+---
+
+### STEP 2 — OAuth consent screen
+
+| Setting | Value |
+|---------|-------|
+| User Type | **External** (allows any Google account) |
+| App name | RepMail |
+| User support email | epsteindapuccy@gmail.com (or support address) |
+| Developer contact | same |
+| Authorized domain | `letszero.in` |
+| Privacy policy URL | `https://www.letszero.in/privacy` (or existing page) |
+| Terms of service URL | `https://www.letszero.in/terms` (or existing page) |
+
+**Scopes to add:** `.../auth/userinfo.email`, `.../auth/userinfo.profile`, `openid`  
+These are non-sensitive. Google does not require app verification for these scopes.
+
+**Publishing:** Click **Publish App** to move from "Testing" to "Production" mode. In Testing mode, only the 100 manually added test users can log in. In Production mode, any Google user can log in.
+
+> **Note on unverified app warning:** If the app is published but not submitted for Google verification, users with fewer than 100 unique daily OAuth logins will see a warning: "Google hasn't verified this app." They can click "Continue" to proceed. This is acceptable for early launch. Submit for Google verification when daily OAuth logins approach 100 consistently.
+
+---
+
+### STEP 3 — Domain verification
+
+Google requires ownership verification of `letszero.in` before adding it as an authorized domain.
+
+1. Go to [search.google.com/search-console](https://search.google.com/search-console)
+2. Add property → Domain type → enter `letszero.in`
+3. Follow DNS TXT record verification (add the TXT record to the domain's DNS provider)
+4. Once verified, the domain appears as "Verified" in Search Console
+5. Return to GCP OAuth consent screen → add `letszero.in` as an Authorized Domain
+
+---
+
+### STEP 4 — Create OAuth 2.0 credentials
+
+1. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
+2. Application type: **Web application**
+3. Name: `RepMail Web`
+4. **Authorized JavaScript origins:**
+   - `https://www.letszero.in`
+5. **Authorized redirect URIs:**
+   - `https://www.letszero.in/api/auth/google/callback`
+6. Click **Create** → copy `Client ID` and `Client Secret`
+
+---
+
+### STEP 5 — Set Railway environment variables
+
+Railway dashboard → Service `Let-sZero` → Variables → Add:
+
+| Variable | Value |
+|----------|-------|
+| `GOOGLE_CLIENT_ID` | `<Client ID from Step 4>` |
+| `GOOGLE_CLIENT_SECRET` | `<Client Secret from Step 4>` |
+
+Railway auto-redeploys on variable change. Wait ~60 seconds for the new deployment to go live.
+
+---
+
+### STEP 6 — Verify activation
+
+```bash
+# Should redirect to accounts.google.com (not return 404 or 500)
+curl -I https://www.letszero.in/api/auth/google
+# Expected: HTTP 302, Location: https://accounts.google.com/o/oauth2/...
+```
+
+Then test the full flow manually:
+1. Open `https://www.letszero.in/login` in an incognito window
+2. Click **Sign in with Google**
+3. Complete Google authentication
+4. Should land on `/app/dashboard`
+
+**Verify a new user was created:**
+```sql
+SELECT username, email, role, plan, is_trial_user, must_reset_password, created_at
+FROM users ORDER BY created_at DESC LIMIT 3;
+-- New Google user should have: role=USER, plan=free, must_reset_password=false
+```
+
+---
+
+### STEP 7 — Behavior of Google OAuth users
+
+| Property | Value | Reason |
+|----------|-------|--------|
+| `role` | `USER` | Cannot self-elevate. ROOT_ADMIN must promote manually. |
+| `plan` | `free` | Same as password-signup users |
+| `mustResetPassword` | `false` | OAuth users authenticate via Google, not password |
+| `isTrialUser` | Depends on `FREE_PLAN_ENABLED` | If `true` → 5 trial credits; if `false` → 500/month free credits |
+| `passwordHash` | Random 32-byte hex | Users can't log in via password (intentional). Forgot-password flow can set one if desired. |
+
+---
+
+### Scaling considerations
+
+- **Google OAuth is free** for any number of users. No per-user billing.
+- **No user cap** for authentication. Scales to millions.
+- **App verification** (optional) removes the "unverified" warning. Required only if daily unique OAuth logins consistently exceed 100 unverified users. Process: submit in GCP Console, ~1–3 week Google review.
+
+---
+
+### Rollback
+
+1. Remove `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from Railway → auto-redeploys
+2. Google OAuth routes return 404 (Passport strategy not registered)
+3. No user data affected. Google-created accounts remain in DB with full access via normal login (if password was set) or are re-linkable if Google OAuth is re-enabled.
 
 ---
 

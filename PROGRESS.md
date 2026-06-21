@@ -561,3 +561,25 @@ Comprehensive evidence-based audit of plan system, AI entitlement, credit system
 | **HANDOFF.md Phase 13 Hardening section** | **I** | All activation checklists: Free Plan + Google OAuth. |
 
 **Milestone status: COMPLETE** — 1 HIGH security fix, 1 medium logic fix, 2 low cleanup fixes. All 4 changes committed and deployed.
+
+---
+
+### 21b · Phase 13 Launch Readiness Execution (2026-06-21)
+
+Production DB verified, exact migration SQL produced, rollback plans documented, Google OAuth readiness confirmed, and detailed activation runbooks written into HANDOFF.md.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Production user state verified via live DB query | **V** | 5 users total, all `is_trial_user=true`. 2 free-plan users (Abhishek: 0 paid, epsteindapuccy: 499 paid). |
+| Free credit schema columns confirmed present | **V** | `free_credits_used` (int, default 0) and `free_credits_reset_at` (timestamp, null) both exist. `db:push` step is done. |
+| Monthly refresh logic verified correct | **V** | Lazy trigger fires on first action with `free_credits_reset_at=null`. Correct calendar-month boundary logic. No bugs found. |
+| Exact migration SQL produced (affects 2 users) | **V** | `UPDATE users SET is_trial_user=false WHERE plan='free' AND is_active=true` |
+| Three-scenario rollback plan documented | **V** | Before backfill / after backfill (no spend) / after backfill (partial spend). See HANDOFF.md. |
+| Google OAuth production status verified | **V** | `GOOGLE_CLIENT_ID` not set. Feature dormant. Routes return 401 when vars absent. |
+| Free Plan Activation Runbook updated (HANDOFF.md) | **I** | Added production state table, Step 2 marked complete, Step 5 with exact counts, Step 6 with per-user impact, all 3 rollback scenarios. |
+| Google OAuth Activation Runbook added (HANDOFF.md) | **I** | Full 7-step runbook: GCP setup → consent screen → domain verification → credentials → Railway vars → verification → behavior table. |
+| Audit 025 appended to AUDIT_TRAIL.md | **I** | Live DB query results, schema verification, logic trace, SQL, rollback, Google OAuth status. |
+
+**Ready to activate Free Plan:** Run Step 6 SQL, then set `FREE_PLAN_ENABLED=true` in Railway.  
+**Ready to activate Google OAuth:** GCP project setup + domain verification + Railway vars (see runbook).  
+**No code changes needed for either activation.**
