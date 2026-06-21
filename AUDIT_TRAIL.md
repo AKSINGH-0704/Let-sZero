@@ -2574,3 +2574,85 @@ Railway auto-redeployed. Health confirmed post-redeploy:
 | New free user: `isTrialUser=false` on creation | PASS |
 | Enterprise credits unchanged (99,969 total) | PASS |
 | Health endpoint post-redeploy | PASS |
+
+---
+
+## Audit 027 — Phase 14: Legal Pages + OAuth Readiness
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Create `/privacy` and `/terms` pages; add footer links to all public marketing pages; verify all three legal URLs return HTTP 200; prepare OAuth readiness state
+**Trigger:** `/privacy` and `/terms` returned 404; Google OAuth consent screen review requires both URLs to be live
+
+### Pre-state (before this audit)
+
+| URL | Status before |
+|-----|--------------|
+| `/contact` | 200 — Contact.jsx routed and complete |
+| `/privacy` | 404 — no route, no page |
+| `/terms` | 404 — no route, no page |
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `client/src/pages/Privacy.jsx` | Full Privacy Policy page — 13 sections covering account creation, Google OAuth, email collection, campaign analytics, SES events, cookies, data retention, rights, security, international transfers |
+| `client/src/pages/Terms.jsx` | Full Terms of Service page — 14 sections covering acceptable use, anti-spam, contact responsibility, credit purchases, refund policy, availability, suspension criteria, liability limits, governing law |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `client/src/App.jsx` | Added `import Privacy`, `import Terms`; added `/privacy` and `/terms` `<Route>` entries |
+| `client/src/pages/Landing.jsx` | Footer: `#privacy` → `/privacy` Link, `#terms` → `/terms` Link, removed `#security` anchor |
+| `client/src/pages/PublicPricing.jsx` | Footer nav: added Privacy and Terms links |
+| `client/src/pages/WaitlistLanding.jsx` | Footer: added Privacy / Terms / Contact links |
+| `marketing/LFP_final/LandingExperience.tsx` | Added footer with Privacy / Terms / Contact links + copyright |
+
+### Privacy Policy coverage
+
+| Topic | Covered |
+|-------|---------|
+| Account creation + Google OAuth | Section 2.1 |
+| Contact lists uploaded by users | Section 2.2 |
+| Campaign content and analytics | Section 2.3, 2.4 |
+| SES delivery/open/click/bounce events | Section 2.4 |
+| Cookies and session management | Section 7 |
+| Data retention periods | Section 6 |
+| User deletion / account removal | Section 6 |
+| Contact email for data requests | Sections 8, 13 |
+| International data transfers | Section 11 |
+
+### Terms of Service coverage
+
+| Topic | Covered |
+|-------|---------|
+| Acceptable use + anti-spam | Sections 3, 4 |
+| Contact data responsibility | Section 5 |
+| Credit purchases and validity (6 months) | Section 6.1, 6.2 |
+| Refund policy (7 days, less than 10% used) | Section 6.3 |
+| Free plan credits (500/month, no rollover) | Section 6.4 |
+| Availability/uptime (99.5% target) | Section 8 |
+| Suspension criteria (complaint >0.1%, bounce >5%) | Section 9 |
+| Limitation of liability | Section 10 |
+| Governing law (India, Bengaluru courts) | Section 12 |
+
+### Build verification
+
+| Check | Result |
+|-------|--------|
+| `npm run build` | PASS — 0 errors, 5045 modules transformed |
+| New routes reachable without auth | PASS — unprotected Route entries |
+| Footer links added to 5 public pages | PASS |
+
+### Post-state
+
+| URL | Expected status after deploy |
+|-----|-----|
+| `/contact` | 200 |
+| `/privacy` | 200 |
+| `/terms` | 200 |
+
+### OAuth readiness
+
+`/privacy` and `/terms` are the only OAuth-blocking URLs. All other OAuth prerequisites remain as documented in the Google OAuth Activation Runbook in HANDOFF.md. Google OAuth activation can proceed once this commit is deployed and URLs verified live.

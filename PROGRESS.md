@@ -606,3 +606,26 @@ Live activation of Free Plan: pre-flight, backfill, env-var toggle, and full pro
 
 **Milestone status: COMPLETE — Free Plan is LIVE in production.**  
 New users and existing free-plan users now receive 500 emails/month. Enterprise accounts unaffected.
+
+---
+
+### 23 · Phase 14: Legal Pages + OAuth Readiness (2026-06-22)
+
+Create `/privacy` and `/terms` pages; add footer links across all public marketing pages; unblock Google OAuth consent screen verification.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| `client/src/pages/Privacy.jsx` created | **I** | 13-section Privacy Policy: account data, Google OAuth, contacts, SES events, cookies, retention, user rights, security, international transfers |
+| `client/src/pages/Terms.jsx` created | **I** | 14-section Terms of Service: acceptable use, anti-spam, contact responsibility, credits, refunds (7d/<10%), availability, suspension thresholds, liability cap, governing law (India) |
+| `/privacy` route added to `App.jsx` | **I** | Unprotected `<Route path="/privacy">` in `<Switch>` |
+| `/terms` route added to `App.jsx` | **I** | Unprotected `<Route path="/terms">` in `<Switch>` |
+| Footer links — `Landing.jsx` | **I** | Replaced `#privacy`/`#terms` anchors with proper `/privacy`/`/terms` wouter Links |
+| Footer links — `PublicPricing.jsx` | **I** | Added Privacy and Terms to footer nav array |
+| Footer links — `WaitlistLanding.jsx` | **I** | Added Privacy / Terms / Contact to minimal footer |
+| Footer links — `LandingExperience.tsx` | **I** | Added complete footer section before closing div |
+| `/contact` route | **I** | Pre-existing — Contact.jsx complete with form + support@letszero.in |
+| `npm run build` | **I** | PASS — 0 errors, 5045 modules |
+| Audit 027 appended to AUDIT_TRAIL.md | **I** | Full implementation log with coverage tables |
+
+**Pending:** Railway deploy + live HTTP 200 verification for `/privacy`, `/terms`, `/contact`  
+**OAuth blocker status:** `/privacy` and `/terms` were the last URL blockers for Google OAuth. After deploy, activate OAuth per HANDOFF.md runbook.

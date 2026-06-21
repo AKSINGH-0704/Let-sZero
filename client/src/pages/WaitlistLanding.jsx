@@ -853,6 +853,11 @@ export default function WaitlistLanding() {
           <div className="flex items-center">
             <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
           </div>
+          <div className="flex items-center gap-6">
+            <a href="/privacy" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
+            <a href="/terms" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
+            <a href="/contact" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
+          </div>
           <p className="text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
           </p>

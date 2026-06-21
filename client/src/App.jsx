@@ -20,6 +20,8 @@ import Pricing from "@/pages/Pricing";
 import PublicPricing from "@/pages/PublicPricing";
 import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";
+import Privacy from "@/pages/Privacy";
+import Terms from "@/pages/Terms";
 import NotFound from "@/pages/not-found";
 import WaitlistLanding from "@/pages/WaitlistLanding";
 import AcceptInvite from "@/pages/AcceptInvite";
@@ -91,6 +93,14 @@ function AppRoutes() {
 
       <Route path="/contact">
         {() => <Contact />}
+      </Route>
+
+      <Route path="/privacy">
+        {() => <Privacy />}
+      </Route>
+
+      <Route path="/terms">
+        {() => <Terms />}
       </Route>
 
       <Route path="/accept-invite">

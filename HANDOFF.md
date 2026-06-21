@@ -763,6 +763,22 @@ railway run node scripts/check-schema-parity.mjs
 
 ---
 
+## Phase 14 — Legal Pages (2026-06-22, COMPLETE)
+
+`/privacy` and `/terms` were 404 before this phase. Both are now live.
+
+| Page | File | Route | Status |
+|------|------|-------|--------|
+| Privacy Policy | `client/src/pages/Privacy.jsx` | `/privacy` | Live after deploy |
+| Terms of Service | `client/src/pages/Terms.jsx` | `/terms` | Live after deploy |
+| Contact | `client/src/pages/Contact.jsx` | `/contact` | Pre-existing |
+
+Footer links added to all public marketing pages: `Landing.jsx`, `PublicPricing.jsx`, `WaitlistLanding.jsx`, `LandingExperience.tsx`.
+
+**OAuth status:** `/privacy` and `/terms` were the last URL-level blockers for Google OAuth consent screen submission. Activate OAuth per the Google OAuth Activation Runbook section below.
+
+---
+
 ## Related Documents
 
 | Document | Purpose |

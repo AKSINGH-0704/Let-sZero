@@ -2207,6 +2207,8 @@ export default function PublicPricing() {
             {[
               { href: "/", label: "Home" },
               { href: "/products/repmail", label: "Product" },
+              { href: "/privacy", label: "Privacy" },
+              { href: "/terms", label: "Terms" },
               { href: "/contact", label: "Contact" },
               { href: "/login", label: "Sign In" },
             ].map(({ href, label }) => (

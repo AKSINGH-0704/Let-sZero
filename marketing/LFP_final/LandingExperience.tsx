@@ -1435,6 +1435,23 @@ export default function LandingExperience() {
           </motion.div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="w-full border-t border-white/[0.05] py-10" style={{ background: "#0A0A0F" }}>
+        <div className="max-w-[1440px] mx-auto px-6 md:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center">
+            <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
+          </div>
+          <div className="flex items-center gap-6">
+            <a href="/privacy" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Privacy</a>
+            <a href="/terms" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Terms</a>
+            <a href="/contact" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Contact</a>
+          </div>
+          <p className="text-xs text-gray-600" style={{ fontFamily: "'Inter', sans-serif" }}>
+            &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
