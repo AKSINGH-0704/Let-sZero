@@ -232,20 +232,51 @@ export default function LandingExperience() {
           </div>
 
           {/* Desktop Action Buttons */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2">
             <button
-              onClick={() => window.location.href = '/products/repmail'}
-              className="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg transition-all"
-              style={{ fontFamily: "'Inter', sans-serif" }}
+              onClick={() => window.location.href = '/login'}
+              className="px-4 py-2 text-sm font-medium rounded-lg transition-all"
+              style={{
+                color: "#C4C4D4",
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "transparent",
+                fontFamily: "'Inter', sans-serif",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "#FFFFFF";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.25)";
+                (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.color = "#C4C4D4";
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+              }}
             >
-              Explore RepMail
+              Sign In
             </button>
             <button
-              onClick={() => window.location.href = '/early-access'}
-              className="px-5 py-2.5 text-sm bg-white text-black rounded-xl transition-all hover:shadow-lg hover:shadow-white/20 font-medium"
-              style={{ fontFamily: "'Inter', sans-serif" }}
+              onClick={() => window.location.href = '/products/repmail'}
+              className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all"
+              style={{
+                background: "linear-gradient(135deg, rgba(109,40,217,0.85) 0%, rgba(76,29,149,0.85) 100%)",
+                color: "#EDE9FE",
+                border: "1px solid rgba(139,92,246,0.3)",
+                boxShadow: "0 2px 14px rgba(109,40,217,0.18)",
+                fontFamily: "'Inter', sans-serif",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(124,58,237,0.95) 0%, rgba(109,40,217,0.95) 100%)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 22px rgba(109,40,217,0.32)";
+                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(109,40,217,0.85) 0%, rgba(76,29,149,0.85) 100%)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 2px 14px rgba(109,40,217,0.18)";
+                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+              }}
             >
-              Request Early Access
+              Explore RepMail
             </button>
           </div>
 
@@ -298,18 +329,28 @@ export default function LandingExperience() {
                 </button>
                 <div className="pt-3 pb-1 space-y-2 border-t border-white/5 mt-2">
                   <button
-                    onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
-                    className="w-full px-4 py-3 text-sm text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-all text-left font-medium"
-                    style={{ fontFamily: "'Inter', sans-serif" }}
+                    onClick={() => { window.location.href = '/login'; setMobileMenuOpen(false); }}
+                    className="w-full px-4 py-3 text-sm font-medium rounded-xl transition-all text-left"
+                    style={{
+                      color: "#C4C4D4",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "transparent",
+                      fontFamily: "'Inter', sans-serif",
+                    }}
                   >
-                    Explore RepMail
+                    Sign In
                   </button>
                   <button
-                    onClick={() => { window.location.href = '/early-access'; setMobileMenuOpen(false); }}
-                    className="w-full px-4 py-3 text-sm bg-white text-black rounded-xl font-semibold transition-all hover:bg-gray-100"
-                    style={{ fontFamily: "'Inter', sans-serif" }}
+                    onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}
+                    className="w-full px-4 py-3 text-sm font-semibold rounded-xl transition-all text-center"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(109,40,217,0.85) 0%, rgba(76,29,149,0.85) 100%)",
+                      color: "#EDE9FE",
+                      border: "1px solid rgba(139,92,246,0.3)",
+                      fontFamily: "'Inter', sans-serif",
+                    }}
                   >
-                    Request Early Access
+                    Explore RepMail
                   </button>
                 </div>
               </div>
@@ -1443,11 +1484,17 @@ export default function LandingExperience() {
             <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
           </div>
           <div className="flex items-center gap-6">
-            <a href="/privacy" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Privacy</a>
-            <a href="/terms" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Terms</a>
-            <a href="/contact" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>Contact</a>
+            <a href="/privacy" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Privacy</a>
+            <a href="/terms" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Terms</a>
+            <a href="/contact" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Contact</a>
           </div>
-          <p className="text-xs text-gray-600" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <p className="text-xs" style={{ color: "#6B7280", fontFamily: "'Inter', sans-serif" }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
           </p>
         </div>
