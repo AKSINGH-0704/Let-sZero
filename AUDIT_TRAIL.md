@@ -2476,3 +2476,101 @@ Users who spent credits retain their `is_trial_user=false` state. Legacy trial p
 | 6 | Google OAuth current status verified | Done | Feature dormant; no env vars set |
 | 7 | Google OAuth activation runbook | Done | Added to HANDOFF.md |
 | 8 | Free Plan runbook updated | Done | Production state, exact counts, rollback expanded |
+
+---
+
+## Audit 026 — FREE_PLAN_ENABLED Production Activation (2026-06-21)
+
+**Scope:** End-to-end execution of Free Plan activation: pre-flight, backfill, env-var toggle, and full production validation across all 5 accounts.
+
+**Result: PASS — Free Plan is live in production.**
+
+---
+
+### Step 1 — Pre-flight results (live DB query)
+
+| plan | is_trial_user | count |
+|------|---------------|-------|
+| enterprise | true | 3 |
+| free | true | 2 |
+
+Per-user: admin (89,969 paid), Aksingh (5,000 paid), Krishna (5,000 paid), Abhishek (0 paid), epsteindapuccy_5vu7 (499 paid). All `free_credits_used = 0`, `free_credits_reset_at = null`.
+
+---
+
+### Step 2 — Backfill execution
+
+```sql
+UPDATE users
+SET is_trial_user = false, updated_at = NOW()
+WHERE plan = 'free' AND is_active = true;
+-- Rows updated: 2
+```
+
+**Verification results:**
+
+| Check | Expected | Actual |
+|-------|----------|--------|
+| `converted` (free, `is_trial_user=false`) | 2 | **2 ✓** |
+| `remaining` (free, `is_trial_user=true`) | 0 | **0 ✓** |
+| Enterprise `is_trial_user` | all true | **all true ✓** |
+| Enterprise `paid_balance` total | 99,969 | **99,969 ✓** |
+
+---
+
+### Step 3 — FREE_PLAN_ENABLED enabled
+
+Railway CLI: `railway variables set FREE_PLAN_ENABLED=true --service "Let-sZero"`
+
+Railway auto-redeployed. Health confirmed post-redeploy:
+```json
+{ "status": "ok", "postgres": "connected", "redis": "connected", "worker": "running" }
+```
+
+---
+
+### Step 4 — Production validation (all 5 accounts)
+
+**Existing free user — epsteindapuccy_5vu7:**
+- `is_trial_user = false` ✓
+- `free_credits_reset_at = null` → lazy refresh will fire on first use ✓
+- Monthly grant: 500
+- Deduction path: FREE_POOL → PAID_POOL (499)
+- Total available this month: **999** ✓
+
+**Abhishek (zero-balance free user):**
+- `is_trial_user = false` ✓
+- Monthly grant: 500
+- Deduction path: FREE_POOL only
+- Total available this month: **500** ✓
+
+**New free user simulation:**
+- `isTrialUser = process.env.FREE_PLAN_ENABLED !== "true"` → `false` ✓
+- Would get 500/month on first action: **true** ✓
+- `free_credits_reset_at = null` → lazy refresh triggers: **true** ✓
+- Test user created and cleaned up
+
+**Enterprise accounts (admin, Aksingh, Krishna):**
+- `is_trial_user` unchanged: **all true** ✓
+- `MONTHLY_CREDITS.enterprise = 0` → free path never triggers ✓
+- Total enterprise paid credits: **99,969** (unchanged) ✓
+- Deduction path: PAID_POOL only
+
+**Credit deduction order verified:**
+1. FREE_POOL (if `FREE_PLAN_ENABLED=true` AND `!isTrialUser` AND plan has monthly grant) → fires first
+2. PAID_POOL fallback
+3. TRIAL_POOL (skipped for `isTrialUser=false` users)
+
+---
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Backfill ran correctly (2 users modified) | PASS |
+| Enterprise accounts untouched | PASS |
+| `FREE_PLAN_ENABLED=true` live in Railway | PASS |
+| Existing free user: 500/month credit path ready | PASS |
+| New free user: `isTrialUser=false` on creation | PASS |
+| Enterprise credits unchanged (99,969 total) | PASS |
+| Health endpoint post-redeploy | PASS |

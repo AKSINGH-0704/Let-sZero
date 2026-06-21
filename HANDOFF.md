@@ -247,7 +247,10 @@ Both `processCampaign` (worker.js) and `executeCampaign` (routes.js) now re-read
 
 ---
 
-## Free Plan Activation Runbook
+## Free Plan Activation Runbook ✅ COMPLETE (2026-06-21)
+
+> **Status: FREE_PLAN_ENABLED=true is live in Railway production.**
+> All steps below were executed and verified. This runbook is kept for rollback reference only.
 
 Execute in this exact order. Do not proceed to the next step if the current step's verification fails.
 
@@ -541,7 +544,9 @@ See the Google OAuth Activation Runbook section below for the full step-by-step 
 
 ### Current status (verified 2026-06-21)
 
-`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT set** in Railway production. The Passport strategy is conditionally registered only when both variables are present — feature is fully dormant. No code changes are needed for activation.
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT set** in Railway production. The Passport strategy is conditionally registered only when both variables are present — feature is fully dormant. **No code changes are needed for activation.**
+
+> The Google OAuth code is complete and has been reviewed. Activation requires only GCP console configuration and two Railway environment variables.
 
 **Code reference (`server/routes.js:638`):**
 ```js

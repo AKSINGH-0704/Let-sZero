@@ -583,3 +583,26 @@ Production DB verified, exact migration SQL produced, rollback plans documented,
 **Ready to activate Free Plan:** Run Step 6 SQL, then set `FREE_PLAN_ENABLED=true` in Railway.  
 **Ready to activate Google OAuth:** GCP project setup + domain verification + Railway vars (see runbook).  
 **No code changes needed for either activation.**
+
+---
+
+### 22 · Free Plan Activation — Production Execution (2026-06-21)
+
+Live activation of Free Plan: pre-flight, backfill, env-var toggle, and full production validation.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| Pre-flight SQL run — 2 free users confirmed | **V** | enterprise/true/3, free/true/2. Enterprise paid balances intact. |
+| Backfill SQL executed — 2 rows updated | **I** | `UPDATE users SET is_trial_user=false WHERE plan='free' AND is_active=true` → 2 rows |
+| Verification: converted=2, remaining=0 | **V** | Both checks passed. |
+| Enterprise accounts untouched | **V** | All 3 enterprise users: `is_trial_user=true`, paid balances unchanged (99,969 total) |
+| `FREE_PLAN_ENABLED=true` set in Railway | **I** | Railway CLI `railway variables set FREE_PLAN_ENABLED=true` |
+| Post-redeploy health check | **V** | `status: ok`, all services connected |
+| Existing free user (epsteindapuccy_5vu7): 500 free + 499 paid = 999 total | **V** | Deduction path: FREE_POOL → PAID_POOL. Lazy refresh triggers on first use. |
+| Abhishek (0 paid): 500 free credits available | **V** | Deduction path: FREE_POOL only |
+| New free user: `isTrialUser=false` on creation | **V** | `process.env.FREE_PLAN_ENABLED !== "true"` → `false`. 500/month ready. |
+| Enterprise deduction path: PAID_POOL only | **V** | `MONTHLY_CREDITS.enterprise=0` confirmed. Free path never triggers. |
+| Audit 026 appended to AUDIT_TRAIL.md | **I** | Full activation log with all results. |
+
+**Milestone status: COMPLETE — Free Plan is LIVE in production.**  
+New users and existing free-plan users now receive 500 emails/month. Enterprise accounts unaffected.
