@@ -728,8 +728,8 @@ export default function Landing() {
             <span>© 2026 RepMail by LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center space-x-6">
-            <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
+            <Link href="/repmail/privacy" className="hover:text-white transition-colors">Privacy</Link>
+            <Link href="/repmail/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
           </div>
         </div>
