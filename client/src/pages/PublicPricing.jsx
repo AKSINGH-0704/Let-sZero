@@ -1805,7 +1805,7 @@ export default function PublicPricing() {
                         ✦ +{fmtNum(row.bonus)}
                       </span>
                     ) : (
-                      <span className="text-sm" style={{ color: "#3A3A50" }}>—</span>
+                      <span className="text-sm" style={{ color: "#8888A0" }}>—</span>
                     )}
                   </div>
                   <div
