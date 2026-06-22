@@ -3246,3 +3246,64 @@ No fabricated metrics, customer counts, roadmap dates, uptime SLAs, or enterpris
 ### Updated launch readiness score
 
 **9.5/10** — Full public surface verified. Every claim on LetsZero landing, RepMail landing, pricing, and waitlist pages is either objectively true or appropriately labeled as planned/future.
+
+---
+
+## Audit 038 — Context-Aware Branding: Browser Title + Favicon (2026-06-22)
+
+**Date:** 2026-06-22  
+**Conducted by:** Claude Sonnet 4.6 + AK Singh  
+**Scope:** Browser title and favicon identity across all public routes  
+**Trigger:** LetsZero marketing page showing "RepMail" in browser tab and RepMail favicon  
+**Commit:** `ca3b362`  
+**Method:** Read index.html, App.jsx, full route map → root cause → implementation → build verify → push
+
+### Root Cause
+
+`client/index.html` was hardcoded:
+```html
+<title>RepMail</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
+```
+No `document.title` assignment, Helmet, or per-route metadata existed anywhere in the React codebase. All routes displayed RepMail browser identity regardless of page.
+
+### Solution
+
+Two-file fix:
+
+**`client/index.html`** — default changed to LetsZero (primary entry at `/`):
+```html
+<title>LetsZero</title>
+<link rel="icon" type="image/png" href="/letszero-logo.png" />
+<link rel="apple-touch-icon" href="/letszero-logo.png" />
+```
+
+**`client/src/App.jsx`** — `BrandingManager` component added to `AppRoutes`:
+- Reads `useLocation()` from wouter (already imported)
+- On every navigation, checks if path starts with a RepMail prefix
+- Sets `document.title` and updates all `<link rel="icon">` elements imperatively
+
+### Route Classification
+
+| Route | Brand | Title | Favicon |
+|---|---|---|---|
+| / | LetsZero | LetsZero | /letszero-logo.png |
+| /early-access | LetsZero | LetsZero | /letszero-logo.png |
+| /contact | LetsZero | LetsZero | /letszero-logo.png |
+| /privacy | LetsZero | LetsZero | /letszero-logo.png |
+| /terms | LetsZero | LetsZero | /letszero-logo.png |
+| /products/repmail | RepMail | RepMail | /favicon.png |
+| /pricing | RepMail | RepMail | /favicon.png |
+| /login | RepMail | RepMail | /favicon.png |
+| /repmail/privacy | RepMail | RepMail | /favicon.png |
+| /repmail/terms | RepMail | RepMail | /favicon.png |
+| /accept-invite | RepMail | RepMail | /favicon.png |
+| /app/* | RepMail | RepMail | /favicon.png |
+
+### Build Verification
+
+`npm run build` — 0 TypeScript errors. 5047 modules. Built `dist/public/index.html` confirmed: `<title>LetsZero</title>`, `/letszero-logo.png` favicon.
+
+### Updated launch readiness score
+
+**9.6/10** — Browser identity now matches brand context on every route. Single source of truth in `REPMAIL_PREFIXES` array in App.jsx.

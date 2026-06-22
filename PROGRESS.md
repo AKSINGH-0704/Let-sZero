@@ -851,3 +851,25 @@ One commit: `f26391b` (TRUST).
 **Updated launch readiness score: 9.5/10**
 
 **Milestone status: COMPLETE — Audit 037.**
+
+---
+
+### 34 · Context-Aware Branding: LetsZero vs RepMail (2026-06-22)
+
+One commit: `ca3b362` (BRAND).
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Root cause identified | **COMPLETE** | index.html hardcoded to RepMail — no per-route metadata existed |
+| index.html default title | **COMPLETE** | "RepMail" → "LetsZero" |
+| index.html default favicon | **COMPLETE** | /favicon.png → /letszero-logo.png |
+| BrandingManager component | **COMPLETE** | App.jsx — fires on every wouter location change |
+| LetsZero routes show LetsZero | **COMPLETE** | /, /early-access, /contact, /privacy, /terms |
+| RepMail routes show RepMail | **COMPLETE** | /products/repmail, /pricing, /login, /repmail/*, /accept-invite, /app/* |
+| Built artifact verified | **COMPLETE** | dist/public/index.html — title LetsZero, favicon letszero-logo.png |
+| Extensibility | **COMPLETE** | Future products add prefix to REPMAIL_PREFIXES array |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Updated launch readiness score: 9.6/10**
+
+**Milestone status: COMPLETE — Audit 038.**
