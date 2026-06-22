@@ -717,3 +717,33 @@ Focus shifts from building and hardening to validating end-to-end production wor
 | First successful campaign from non-admin account | **I** | No non-admin campaign run in production |
 
 **Milestone status: OPEN — all items PENDING.**
+
+---
+
+### 28 · Phase 15 Operational Validation Audit (2026-06-22)
+
+Surgical production audit of Google OAuth, AI entitlement, payment/credit allocation, and first customer journey. No code changes — findings are advisory.
+
+| Finding | Severity | Status |
+|---------|----------|--------|
+| A-1: OAuth isActive not checked in Passport strategy | MEDIUM | Mitigated by authMiddleware — deferred |
+| A-2: Missing USER_CREATED audit for OAuth signups | LOW | Deferred |
+| A-3: No audit log for failed OAuth | LOW | Deferred |
+| B-1: AI quota race (no SELECT FOR UPDATE) | LOW | Deferred |
+| C-1: No audit log for plan upgrades | MEDIUM | Deferred |
+| C-2: PAYMENT_SUCCESS audit outside transaction | LOW | Deferred |
+| D-1: Free credits show as 0 on dashboard | MEDIUM | Deferred |
+
+| Verified correct | Evidence |
+|-----------------|---------|
+| OAuth role/plan/mustResetPassword/isTrialUser | routes.js:658–661, storage.js:71–73 |
+| Login + logout audited | routes.js:690–695, 1003–1008 |
+| AI quota on all 3 endpoints, plan-aware | routes.js:2081/2148/2225, storage.js:1383 |
+| Payment dual HMAC-SHA256, atomic double-credit guard | razorpayWebhook.js:16–31, storage.js:1168–1173 |
+| Credit ledger consistent | storage.js:1183–1190 |
+
+**Full report:** `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`  
+**Audit:** Audit 032 in AUDIT_TRAIL.md  
+**Launch score:** 8.5/10 — APPROVE LAUNCH
+
+**Milestone status: COMPLETE — Audit 032.**

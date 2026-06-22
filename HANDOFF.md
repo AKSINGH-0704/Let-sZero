@@ -126,15 +126,30 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 **OPERATIONAL VALIDATION PHASE** — No further feature or architecture work. RepMail is feature-complete and deployed. The focus is now validating end-to-end production workflows with real external actors.
 
+### Phase 15 audit — launch verdict (Audit 032, 2026-06-22)
+
+**Score: 8.5/10. APPROVE LAUNCH.** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+
+**Deferred fixes (recommended before external user onboarding):**
+
+| ID | Fix | Effort | Priority |
+|----|-----|--------|----------|
+| A-1 | Add `isActive` check in OAuth Passport strategy (`routes.js:650`) | 1 line | Do before first external user |
+| D-1 | Surface free-plan credits (500) on dashboard for new users | 1 component change | Do before first external user |
+| C-1 | Add `PLAN_UPGRADED` audit log in `fulfillPayment.js` | 2 lines | Do with next payment test |
+| A-2 | Add `USER_CREATED` audit log in OAuth callback for new users | 3 lines | Low priority |
+| B-1 | Add `FOR UPDATE` to `checkAndIncrementAiQuota` SELECT | 1 line | Low priority |
+
 ### Operational validation checklist
 
-| Item | What to do | Success criteria |
-|------|-----------|-----------------|
-| 1. Google OAuth activation | Follow the Google OAuth Activation Runbook below | User can sign in with Google; profile created correctly |
-| 2. Razorpay production transaction | Place a real INR order from a non-admin account | `payments` row status `SUCCESS`; credits allocated; `credit_transactions` row present |
-| 3. First external user onboarding | Invite a real external user (not admin); they sign up and log in | Account created; welcome email received |
-| 4. Payment-to-credit allocation flow | External user purchases credits via Razorpay | Balance updated; history visible in dashboard |
-| 5. First campaign from non-admin account | External user creates + sends a campaign | Campaign completes; SES delivery confirmed; analytics populated |
+| Item | Status | What to do | Success criteria |
+|------|--------|-----------|-----------------|
+| Phase 15 audit | **COMPLETE** | See Audit 032 | 8.5/10, no blockers |
+| 1. Google OAuth activation | **PENDING** | GCP project setup + set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Railway | User can sign in with Google; profile created correctly |
+| 2. Razorpay production transaction | **PENDING** | Place a real INR order from a non-admin account | `payments` row status `SUCCESS`; credits allocated; `credit_transactions` row present |
+| 3. First external user onboarding | **PENDING** | Invite a real external user (not admin); they sign up and log in | Account created; welcome email received |
+| 4. Payment-to-credit allocation flow | **PENDING** | External user purchases credits via Razorpay | Balance updated; history visible in dashboard |
+| 5. First campaign from non-admin account | **PENDING** | External user creates + sends a campaign | Campaign completes; SES delivery confirmed; analytics populated |
 
 All five items must pass before RepMail is considered externally validated.
 

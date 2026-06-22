@@ -2940,3 +2940,63 @@ Total edits: 6 (2 `scrollTo` functions + 2 desktop sidebar buttons + 2 mobile pi
 ```
 
 Pre-existing chunk-size advisory unchanged.
+
+---
+
+## Audit 032 — Phase 15 Operational Validation Audit
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Production-critical revenue and onboarding flows — Google OAuth, AI entitlement enforcement, payment/credit allocation, first customer simulation. No code changes made (findings are advisory).
+
+### Method
+
+Surgical code audit: `server/routes.js`, `server/storage.js`, `server/razorpayWebhook.js`, `server/fulfillPayment.js`, `server/index.js`, `shared/schema.js`. Railway CLI status + live HTTP verification. Full report in `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+
+### Summary of findings
+
+| ID | Area | Finding | Severity | Launch blocker |
+|----|------|---------|----------|---------------|
+| A-1 | OAuth | `isActive` not checked in Passport strategy (mitigated by authMiddleware) | MEDIUM | NO |
+| A-2 | OAuth | Missing `USER_CREATED` audit log for new Google OAuth signups | LOW | NO |
+| A-3 | OAuth | No audit log for failed OAuth attempts | LOW | NO |
+| A-4 | OAuth | OAuth routes registered regardless of env var guard | LOW | NO |
+| B-1 | AI | `checkAndIncrementAiQuota` SELECT without FOR UPDATE — race condition | LOW | NO |
+| C-1 | Payment | `upgradePlanIfHigher` emits no audit log for plan changes | MEDIUM | NO |
+| C-2 | Payment | `PAYMENT_SUCCESS` audit written outside DB transaction | LOW | NO |
+| C-3 | Payment | Dispute resolution (won/lost) is manual | LOW | NO — deferred |
+| D-1 | UX | Free plan credits (500) not visible in dashboard until first send | MEDIUM | NO |
+| D-2 | UX | No clear "set up sender profile" CTA before AI generation | LOW | NO |
+| D-3 | UX | No post-OAuth onboarding flow | LOW | NO |
+
+**No CRITICAL findings. Zero launch blockers.**
+
+### Verified-correct paths
+
+| Path | Verification |
+|------|-------------|
+| OAuth: role USER, plan free, mustResetPassword false | Code: routes.js:658–661 |
+| OAuth: isTrialUser=false with FREE_PLAN_ENABLED=true | Code: storage.js:71–73 |
+| OAuth: login audited (USER_LOGIN + IP + user-agent) | Code: routes.js:690–695 |
+| OAuth: logout audited (USER_LOGOUT) | Code: routes.js:1003–1008 |
+| OAuth: no duplicate user risk (email-based dedup) | Code: routes.js:650 |
+| AI: server-side quota on all 3 endpoints | Code: routes.js:2081, 2148, 2225 |
+| AI: plan inheritance via getEffectivePlan | Code: storage.js:1383 |
+| AI: enterprise Infinity bypass before DB transaction | Code: storage.js:1386 |
+| AI: quota refund on failure (GREATEST to prevent negative) | Code: storage.js:1422 |
+| Payment: dual-path HMAC-SHA256 signature verification | Code: razorpayWebhook.js:16–31, routes.js:2448–2457 |
+| Payment: atomic `.returning()` gate prevents double credit | Code: storage.js:1168–1173 |
+| Payment: credit + status in same DB transaction | Code: storage.js:1159–1191 |
+| Payment: failed payments never allocate credits | Code: storage.js:1204–1218 |
+| Payment: creditTransactions ledger entry on every allocation | Code: storage.js:1183–1190 |
+
+### Launch verdict
+
+**Score: 8.5/10. APPROVE LAUNCH.**
+
+Recommended next actions:
+1. Activate Google OAuth (GCP setup + Railway env vars — no code changes needed)
+2. Execute first Razorpay production transaction (real INR payment from test account)
+3. Fix A-1 (one-line isActive check) before external user onboarding
+4. Fix D-1 (surface free credits on dashboard for new free-plan users)
+5. Fix C-1 (add PLAN_UPGRADED audit log to upgradePlanIfHigher)
