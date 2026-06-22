@@ -140,7 +140,7 @@ export default function LandingExperience() {
               style={{ height: "36px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
               className="md:h-[48px] lg:h-[64px]"
             />
-            <span style={{ fontSize: "20px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.02em", lineHeight: 1 }}>
+            <span style={{ fontSize: "24px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.02em", lineHeight: 1 }}>
               LetsZero
             </span>
           </div>
@@ -764,7 +764,7 @@ export default function LandingExperience() {
                       className="w-16 h-16 mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center"
                       whileHover={{ rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
                     >
-                      <Mail className="w-8 h-8 text-cyan-400" />
+                      <img src="/repmail-logo-white.png" alt="RepMail" style={{ width: "38px", height: "38px", objectFit: "contain" }} />
                     </motion.div>
 
                     {/* Content */}
@@ -772,31 +772,25 @@ export default function LandingExperience() {
                       RepMail
                     </h3>
                     <p className="text-base text-gray-400 mb-6 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
-                      Enterprise-grade email infrastructure designed for reliability,
-                      observability, and scale. Real-time analytics, automated deliverability
-                      optimization, and transparent reporting built in.
+                      Email infrastructure built on AWS SES. Send campaigns, track delivery,
+                      manage credits, and monitor results — production-ready from day one.
                     </p>
 
-                    {/* Metrics */}
-                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 pb-6 border-b border-white/5">
-                      <div>
-                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          99.98%
+                    {/* Capabilities */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 mb-6 pb-6 border-b border-white/5">
+                      {[
+                        "SES-Backed Delivery",
+                        "AI-Powered Templates",
+                        "Bounce Protection",
+                        "Team Management",
+                        "Delivery Tracking",
+                        "Credit Governance",
+                      ].map((cap) => (
+                        <div key={cap} className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 flex-shrink-0" />
+                          <span className="text-xs text-gray-300" style={{ fontFamily: "'Inter', sans-serif" }}>{cap}</span>
                         </div>
-                        <div className="text-xs text-gray-600">Uptime</div>
-                      </div>
-                      <div>
-                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          &lt;50ms
-                        </div>
-                        <div className="text-xs text-gray-600">Latency</div>
-                      </div>
-                      <div>
-                        <div className="text-lg sm:text-2xl font-semibold text-white mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          1.2B+
-                        </div>
-                        <div className="text-xs text-gray-600">Delivered</div>
-                      </div>
+                      ))}
                     </div>
 
                     {/* CTA */}
@@ -832,7 +826,7 @@ export default function LandingExperience() {
                     {/* Status */}
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-xs text-gray-500 tracking-wider" style={{ fontFamily: "'Inter', sans-serif" }}>
-                        Q2 2026
+                        Planned
                       </span>
                       <div className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
                         <span className="text-xs text-gray-500">Coming Soon</span>
@@ -876,7 +870,7 @@ export default function LandingExperience() {
                     {/* Status */}
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-xs text-gray-500 tracking-wider" style={{ fontFamily: "'Inter', sans-serif" }}>
-                        Q3 2026
+                        Future
                       </span>
                       <div className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
                         <span className="text-xs text-gray-500">Coming Soon</span>
