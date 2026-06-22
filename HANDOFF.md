@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `cd04db8` (2026-06-17) — see AUDIT_TRAIL.md Audits 015–018  
+**Verified against:** commit `cd04db8` (2026-06-17) through Phase 14.2 a11y polish — see AUDIT_TRAIL.md Audits 015–031  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -124,9 +124,21 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ## Current Priorities
 
-**No further feature or architecture work.** RepMail is VERIFIED IN PRODUCTION as of 2026-06-20.
+**OPERATIONAL VALIDATION PHASE** — No further feature or architecture work. RepMail is feature-complete and deployed. The focus is now validating end-to-end production workflows with real external actors.
 
-**Completed order:**
+### Operational validation checklist
+
+| Item | What to do | Success criteria |
+|------|-----------|-----------------|
+| 1. Google OAuth activation | Follow the Google OAuth Activation Runbook below | User can sign in with Google; profile created correctly |
+| 2. Razorpay production transaction | Place a real INR order from a non-admin account | `payments` row status `SUCCESS`; credits allocated; `credit_transactions` row present |
+| 3. First external user onboarding | Invite a real external user (not admin); they sign up and log in | Account created; welcome email received |
+| 4. Payment-to-credit allocation flow | External user purchases credits via Razorpay | Balance updated; history visible in dashboard |
+| 5. First campaign from non-admin account | External user creates + sends a campaign | Campaign completes; SES delivery confirmed; analytics populated |
+
+All five items must pass before RepMail is considered externally validated.
+
+### Phase completion history (for reference)
 1. ~~Confirm Railway deployed commits `a6c25bf` + `f2b4cfa` + `379006a`~~ *(DONE)*
 2. ~~Send one test email to Gmail — confirm `dmarc=pass`~~ *(DONE — `spf=pass dkim=pass dmarc=pass` confirmed 2026-06-16)*
 3. ~~Add RFC compliance headers~~ *(DONE — `5b396b9`)*
@@ -795,7 +807,9 @@ RepMail product pages use RepMail branding (cyan palette, RepMail logo, dashboar
 - Suppression management obligations and retention (indefinite)
 - Account termination grounds and appeal process
 
-**Phase 14.2 — Visual identity:** Both RepMail legal pages use a `max-w-7xl` two-column grid layout (220px sticky sidebar + content). The sidebar has 8 section nav items with IntersectionObserver-based active-state highlighting. Section headers have lucide-react icons. Cards use `#0A1428` background with `#162035` border. Mobile uses a horizontal scrollable pill nav strip. Privacy page uses cyan (`#00E5C8`) accent; Terms uses violet (`#A78BFA`) accent to distinguish the two documents.
+**Phase 14.2 — Visual identity:** Both RepMail legal pages use a `max-w-7xl` two-column grid layout (220px sticky sidebar + content). The sidebar has 8 section nav items with scroll-based active-state highlighting. Section headers have lucide-react icons. Cards use `#0A1428` background with `#162035` border. Mobile uses a horizontal scrollable pill nav strip. Privacy page uses cyan (`#00E5C8`) accent; Terms uses violet (`#A78BFA`) accent to distinguish the two documents.
+
+**Phase 14.2 a11y polish (Audit 031):** Active sidebar/pill `<button>` elements carry `aria-current="true"` for screen-reader announcement. Inactive label colour raised from `#4B5563` to `#6B7280` (~3.6:1 on `#050A14`, WCAG AA for UI components). `scrollTo()` respects `prefers-reduced-motion` — uses `"auto"` instead of `"smooth"` when the OS accessibility setting is active.
 
 ### Navigation rationale
 

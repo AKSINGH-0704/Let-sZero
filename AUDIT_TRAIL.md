@@ -2907,3 +2907,36 @@ Updated (this entry) because one bug was found and fixed.
 | 8. AUDIT_TRAIL update | Done |
 
 **Phase 14.2 COMPLETE.**
+
+---
+
+## Audit 031 — Phase 14.2 Accessibility Polish
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Three targeted accessibility improvements to `RepMailPrivacy.jsx` and `RepMailTerms.jsx` as documented in Audit 030 non-blocking recommendations. No UI changes, no legal content changes.
+
+### Changes applied
+
+| Change | Location | Before | After |
+|--------|----------|--------|-------|
+| `aria-current="true"` on active sidebar item | Both pages — desktop sidebar `<button>` | missing | `aria-current={on ? "true" : undefined}` |
+| `aria-current="true"` on active mobile pill | Both pages — mobile pill `<button>` | missing | `aria-current={on ? "true" : undefined}` |
+| Inactive label contrast | Both pages — sidebar + pill `color` | `#4B5563` (~2.7:1) | `#6B7280` (~3.6:1, WCAG AA PASS for UI components) |
+| `prefers-reduced-motion` in `scrollTo` | Both pages — `scrollTo()` function | `behavior: "smooth"` always | `behavior: reducedMotion ? "auto" : "smooth"` |
+
+Total edits: 6 (2 `scrollTo` functions + 2 desktop sidebar buttons + 2 mobile pill buttons).
+
+### Contrast verification
+
+- `#6B7280` on `#050A14`: luminance ratio ≈ 3.6:1 — passes WCAG AA for non-text UI components (3:1 threshold) ✅
+- Active items: cyan `#00E5C8` / violet `#A78BFA` on `#0A1428` — unchanged, well above 4.5:1 ✅
+
+### Build verification
+
+```
+✓ built in 28.46s
+5047 modules transformed. Exit code 0.
+```
+
+Pre-existing chunk-size advisory unchanged.

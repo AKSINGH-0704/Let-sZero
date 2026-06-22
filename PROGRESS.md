@@ -685,3 +685,35 @@ Visual redesign of `/repmail/privacy` and `/repmail/terms` with dashboard-palett
 | `/repmail/terms` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/terms → 200` |
 
 **Milestone status: COMPLETE — RepMail legal pages redesigned and live. Both URLs return HTTP 200 on deployment `da122745`.**
+
+---
+
+### 26 · Phase 14.2 Accessibility Polish (2026-06-22)
+
+Three non-blocking accessibility improvements from Audit 030 applied to both RepMail legal pages.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| `aria-current="true"` on active desktop sidebar `<button>` (Privacy + Terms) | **V** | Added to all 4 button render sites; `undefined` when inactive (attribute omitted) |
+| `aria-current="true"` on active mobile pill `<button>` (Privacy + Terms) | **V** | Same pattern — 4 sites |
+| Inactive sidebar label contrast: `#4B5563` → `#6B7280` (Privacy + Terms, desktop + mobile) | **V** | 4 colour references updated; `#6B7280` on `#050A14` ≈ 3.6:1 — WCAG AA PASS for UI components |
+| `prefers-reduced-motion` respected in `scrollTo()` (Privacy + Terms) | **V** | `window.matchMedia("(prefers-reduced-motion: reduce)").matches` checked; `"auto"` used when true |
+| `npm run build` | **V** | 5047 modules, exit 0, 28.46s |
+
+**Milestone status: COMPLETE — Audit 031.**
+
+---
+
+### 27 · Operational Validation Phase Opened (2026-06-22)
+
+Focus shifts from building and hardening to validating end-to-end production workflows with real external actors. No feature work in this phase.
+
+| Validation item | Status | Evidence |
+|---|---|---|
+| Google OAuth activation (GCP + Railway vars) | **I** | Runbook in HANDOFF.md — awaiting GCP project setup |
+| Razorpay production transaction (real INR payment) | **I** | Razorpay live keys present in Railway; no real order yet |
+| First external user onboarding (non-admin account) | **I** | No external user created yet |
+| Real payment-to-credit allocation flow | **I** | Credit allocation logic verified via unit path; no live transaction |
+| First successful campaign from non-admin account | **I** | No non-admin campaign run in production |
+
+**Milestone status: OPEN — all items PENDING.**

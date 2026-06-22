@@ -71,7 +71,8 @@ export default function RepMailPrivacy() {
   }, []);
 
   const scrollTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
   };
 
   return (
@@ -136,11 +137,12 @@ export default function RepMailPrivacy() {
                     <button
                       key={id}
                       onClick={() => scrollTo(id)}
+                      aria-current={on ? "true" : undefined}
                       className="w-full flex items-center gap-2.5 px-3 py-2 rounded-r-lg text-sm text-left transition-all"
                       style={{
                         background: on ? "rgba(0,229,200,0.07)" : "transparent",
                         borderLeft: on ? "2px solid #00E5C8" : "2px solid transparent",
-                        color: on ? "#00E5C8" : "#4B5563",
+                        color: on ? "#00E5C8" : "#6B7280",
                         fontWeight: on ? 500 : 400,
                       }}
                     >
@@ -162,11 +164,12 @@ export default function RepMailPrivacy() {
                   <button
                     key={id}
                     onClick={() => scrollTo(id)}
+                    aria-current={on ? "true" : undefined}
                     className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all"
                     style={{
                       background: on ? "rgba(0,229,200,0.12)" : "rgba(22,32,53,0.6)",
                       border: on ? "1px solid rgba(0,229,200,0.35)" : "1px solid #1E2D47",
-                      color: on ? "#00E5C8" : "#4B5563",
+                      color: on ? "#00E5C8" : "#6B7280",
                     }}
                   >
                     {label}
