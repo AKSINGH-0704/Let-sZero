@@ -843,7 +843,9 @@ function ProcessPayment({ paymentId }) {
         title: "Payment successful!",
         description: `${formatNumber(data.payment.credits)} credits added to your account.`,
       });
-      setLocation("/app/payments");
+      const planKey = (data.payment?.planId || data.payment?.planName || "").toLowerCase();
+      const isTeamCapable = ["growth", "scale"].some(id => planKey.includes(id));
+      setLocation(isTeamCapable ? "/app/payments?activate=team" : "/app/payments");
     },
     onError: (err) => {
       setCheckoutError(err.message || "Payment verification failed. Contact support.");
@@ -1077,6 +1079,9 @@ export default function Payments() {
   const [teamBilling, setTeamBilling] = useState("annual");
   const [teamUsers, setTeamUsers] = useState(5);
   const [pricingTab, setPricingTab] = useState("individual");
+  const [showTeamActivation, setShowTeamActivation] = useState(
+    () => new URLSearchParams(window.location.search).get("activate") === "team"
+  );
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -1255,6 +1260,50 @@ export default function Payments() {
 
         {/* Main content */}
         <div className="relative z-10 px-4 sm:px-6 py-10 max-w-7xl mx-auto space-y-14">
+
+          {/* ── Team Activation Banner ───────────────────────────────────── */}
+          <AnimatePresence>
+            {showTeamActivation && (
+              <motion.div
+                initial={{ opacity: 0, y: -12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.3 }}
+                className="rounded-xl p-4 flex items-center gap-4 flex-wrap sm:flex-nowrap"
+                style={{ background: "rgba(0,229,200,0.06)", border: "1px solid rgba(0,229,200,0.2)" }}
+              >
+                <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: "#00E5C8" }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold" style={{ color: "#F0F0F5" }}>
+                    Credits added. Next step: invite your team members.
+                  </div>
+                  <div className="text-xs mt-0.5" style={{ color: "#7878A0" }}>
+                    Open Team Management to assign roles and allocate credits to each member.
+                  </div>
+                </div>
+                <button
+                  onClick={() => setLocation("/app/users")}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
+                  style={{ background: "rgba(0,229,200,0.12)", border: "1px solid rgba(0,229,200,0.3)", color: "#00E5C8" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,229,200,0.2)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,229,200,0.12)"; }}
+                >
+                  Open Team Management
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setShowTeamActivation(false)}
+                  className="flex-shrink-0 p-1.5 rounded-lg transition-colors"
+                  style={{ color: "#55556A" }}
+                  aria-label="Dismiss"
+                  onMouseEnter={e => (e.currentTarget.style.color = "#F0F0F5")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "#55556A")}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── Credit Balance Card ──────────────────────────────────────── */}
           <motion.div
@@ -1722,8 +1771,18 @@ export default function Payments() {
                           )}
                         </div>
                         <div className="text-xs mt-1" style={{ color: "#7878A0" }}>
-                          {teamUsers} members = {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}/month total
+                          {teamUsers} members = {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}/month
+                          {teamBilling === "annual" && (
+                            <span style={{ color: "#55556A" }}> · billed annually</span>
+                          )}
                         </div>
+                        {teamBilling === "annual" && (
+                          <div className="text-xs mt-0.5" style={{ color: "#55556A" }}>
+                            {currency === "INR"
+                              ? `₹${fmtNum(TEAM.annual * 12)}/member/year`
+                              : `$${(TEAM.annual / USD_RATE * 12).toFixed(2)}/member/year`}
+                          </div>
+                        )}
                       </div>
                       <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
                       <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>Everything on Growth, plus:</div>
@@ -1735,6 +1794,21 @@ export default function Payments() {
                           </li>
                         ))}
                       </ul>
+                      <div className="mt-5 pt-4" style={{ borderTop: "1px solid #1A1A2E" }}>
+                        <p className="text-xs mb-3" style={{ color: "#55556A" }}>
+                          Growth: up to 5 members · Scale: up to 10 members
+                        </p>
+                        <button
+                          onClick={() => setPricingTab("individual")}
+                          className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                          style={{ background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)", color: "#06060B", fontWeight: 700 }}
+                          onMouseEnter={e => { e.currentTarget.style.opacity = "0.9"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "translateY(0)"; }}
+                        >
+                          Choose Your Plan
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
