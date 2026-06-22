@@ -67,7 +67,7 @@ export async function razorpayWebhookHandler(req, res) {
 
       const transactionId = payment?.id || order.id;
       await storage.completePayment(repPayment.id, transactionId);
-      await upgradePlanIfHigher(repPayment.userId, repPayment.planName);
+      await upgradePlanIfHigher(repPayment.userId, repPayment.planName, repPayment.id);
       console.log(`[RZP-WEBHOOK] order.paid — ${repPayment.id} completed, plan upgraded for user ${repPayment.userId}`);
 
     } else if (eventType === "payment.failed") {

@@ -62,7 +62,7 @@ export async function stripeWebhookHandler(req, res) {
     }
 
     const payment = await storage.completePayment(paymentId, intent.id);
-    await upgradePlanIfHigher(payment.userId, payment.planName);
+    await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
     console.log(`[STRIPE] Payment ${paymentId} completed — ${payment.credits} credits → user ${payment.userId}`);
   } catch (err) {
     console.error("[STRIPE] Payment completion error:", err.message);

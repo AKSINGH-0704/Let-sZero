@@ -127,14 +127,21 @@ export default function Dashboard() {
     queryKey: ["/api/credits/info"]
   });
 
-  // Use total from credits/info (paid + trial) so it matches the Payments page
-  const creditsRemaining = creditsInfo?.total ?? (user
-    ? calculateCreditsRemaining(
-        user.creditsReceived || 0,
-        user.creditsAllocated || 0,
-        user.creditsUsed || 0
-      )
-    : 0);
+  // Use total from credits/info (paid + free) so it matches the Payments page.
+  // Free-plan accounts have creditsReceived=0 until first send; fall back to 500
+  // so the dashboard never shows a misleading "0 available" before creditsInfo loads.
+  const FREE_MONTHLY = 500; // mirrors MONTHLY_CREDITS.free in shared/schema.js
+  const creditsRemaining = creditsInfo != null
+    ? (creditsInfo.total ?? 0)
+    : user
+      ? (user.plan === "free" && !user.isTrialUser
+          ? Math.max(0, FREE_MONTHLY - (user.freeCreditsUsed || 0))
+          : calculateCreditsRemaining(
+              user.creditsReceived || 0,
+              user.creditsAllocated || 0,
+              user.creditsUsed || 0
+            ))
+      : 0;
 
   // Chart data: real monthly aggregates from stats (last 6 calendar months).
   const chartData = stats?.monthlyChart || [];
@@ -328,7 +335,12 @@ export default function Dashboard() {
               <div>
                 <p className="text-slate-200 text-sm mb-1">Total Credits</p>
                 <p className="text-lg sm:text-xl font-medium text-white">
-                  {statsLoading ? '...' : formatNumber(creditsInfo?.total ?? user?.creditsReceived ?? 0)}
+                  {statsLoading ? '...' : formatNumber(
+                    creditsInfo?.total ??
+                    (user?.plan === "free" && !user?.isTrialUser
+                      ? Math.max(0, 500 - (user?.freeCreditsUsed || 0))
+                      : (user?.creditsReceived ?? 0))
+                  )}
                 </p>
               </div>
               <div className="flex-1"></div>
@@ -437,7 +449,7 @@ export default function Dashboard() {
                         <span className="text-sm font-medium text-cyan-700 dark:text-cyan-400">Free Credits This Month</span>
                       </div>
                       <span className="text-sm font-bold text-cyan-700 dark:text-cyan-400">
-                        {formatNumber(creditsInfo.free ?? 0)} / {formatNumber(creditsInfo.monthlyFreeCredits || 500)}
+                        {formatNumber(creditsInfo.free ?? 0)} of {formatNumber(creditsInfo.monthlyFreeCredits || 500)} remaining
                       </span>
                     </div>
                     <div className="w-full bg-cyan-200 dark:bg-cyan-900 rounded-full h-2 mb-2">

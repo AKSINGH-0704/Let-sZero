@@ -649,6 +649,16 @@ export async function registerRoutes(httpServer, app) {
 
           let user = await storage.getUserByEmail(email);
 
+          // A-1: inactive accounts must not gain access via OAuth
+          if (user && !user.isActive) {
+            await storage.createAuditLog({
+              userId: user.id,
+              action: AUDIT_ACTIONS.USER_LOGIN,
+              details: { via: "google_oauth", blocked: true, reason: "account_inactive", email },
+            });
+            return done(null, false);
+          }
+
           if (!user) {
             const base = (email.split("@")[0]).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20);
             const username = `${base}_${Math.random().toString(36).slice(2, 6)}`;
@@ -2466,7 +2476,7 @@ export async function registerRoutes(httpServer, app) {
       }
 
       const payment = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
-      const user = await upgradePlanIfHigher(payment.userId, payment.planName);
+      const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
       console.log(`[RAZORPAY] Payment ${repmail_payment_id} verified — ${payment.credits} credits → user ${payment.userId}`);
 
       res.json({ payment, user: storage.sanitizeUser(user) });
@@ -2486,7 +2496,7 @@ export async function registerRoutes(httpServer, app) {
       const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
       const payment = await storage.completePayment(id, transactionId);
-      const user = await upgradePlanIfHigher(payment.userId, payment.planName);
+      const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
 
       res.json({ payment, user: storage.sanitizeUser(user) });
     } catch (error) {

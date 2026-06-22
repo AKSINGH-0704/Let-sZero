@@ -357,8 +357,14 @@ export default function TemplateBuilder() {
         <Alert className="border-red-200 bg-red-50 dark:border-red-800/50 dark:bg-red-950/20">
           <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500" />
           <AlertDescription className="text-red-800 dark:text-red-300 text-sm">
-            AI generation is disabled until your <a href="/app/profile" className="underline font-medium">sender profile</a> is complete.
-            Add your name and company to enable template generation.
+            <p>AI generation requires your sender name and company. Add them to enable template generation.</p>
+            <div className="mt-3">
+              <a href="/app/profile">
+                <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
+                  Complete Sender Profile
+                </Button>
+              </a>
+            </div>
           </AlertDescription>
         </Alert>
       ) : !user?.senderTitle && (
