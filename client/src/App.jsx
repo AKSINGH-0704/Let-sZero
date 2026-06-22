@@ -1,10 +1,37 @@
 import { Switch, Route, Redirect, useLocation } from "wouter";
+import { useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+
+// Routes that belong to the RepMail product context.
+// Everything else is LetsZero context.
+const REPMAIL_PREFIXES = [
+  "/products/repmail",
+  "/pricing",
+  "/login",
+  "/repmail/",
+  "/accept-invite",
+  "/app/",
+];
+
+function BrandingManager() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    const isRepMail = REPMAIL_PREFIXES.some((p) => location.startsWith(p));
+    document.title = isRepMail ? "RepMail" : "LetsZero";
+    const favicon = isRepMail ? "/favicon.png" : "/letszero-logo.png";
+    document
+      .querySelectorAll("link[rel~='icon'], link[rel='apple-touch-icon']")
+      .forEach((el) => { el.href = favicon; });
+  }, [location]);
+
+  return null;
+}
 
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
@@ -72,10 +99,12 @@ function AppRoutes() {
   }
 
   return (
-    <Switch>
-      <Route path="/">
-        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <LandingExperience />}
-      </Route>
+    <>
+      <BrandingManager />
+      <Switch>
+        <Route path="/">
+          {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <LandingExperience />}
+        </Route>
 
       <Route path="/early-access">
         {() => <WaitlistLanding />}
@@ -185,6 +214,7 @@ function AppRoutes() {
 
       <Route component={NotFound} />
     </Switch>
+    </>
   );
 }
 
