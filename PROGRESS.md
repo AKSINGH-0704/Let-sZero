@@ -747,3 +747,20 @@ Surgical production audit of Google OAuth, AI entitlement, payment/credit alloca
 **Launch score:** 8.5/10 — APPROVE LAUNCH
 
 **Milestone status: COMPLETE — Audit 032.**
+
+---
+
+### 29 · Phase 15.1 Pre-Activation Hardening (2026-06-22)
+
+All 4 Phase 15 MEDIUM/priority findings implemented and deployed. Commit `39bd09a`.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| A-1: OAuth isActive enforcement | **COMPLETE** | `server/routes.js` — guard before session creation; audit log on block |
+| C-1: Plan upgrade audit trail | **COMPLETE** | `server/fulfillPayment.js` — `PLAN_UPGRADED` entries for root + children + grandchildren |
+| D-1: Free-plan credit visibility | **COMPLETE** | `client/src/pages/Dashboard.jsx` — no "0 credits" flash; tracker label clarified |
+| D-2: Sender profile CTA | **COMPLETE** | `client/src/components/campaign/TemplateBuilder.jsx` — "Complete Sender Profile" button |
+
+**Updated launch readiness score: 9.0/10**
+
+**Milestone status: COMPLETE — Audit 033.**

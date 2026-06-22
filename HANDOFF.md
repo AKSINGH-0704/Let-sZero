@@ -128,23 +128,24 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ### Phase 15 audit — launch verdict (Audit 032, 2026-06-22)
 
-**Score: 8.5/10. APPROVE LAUNCH.** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+**Score: 8.5/10 → updated to 9.0/10 after Phase 15.1 (Audit 033).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
 
-**Deferred fixes (recommended before external user onboarding):**
+**Pre-activation hardening (Phase 15.1, commit `39bd09a`, 2026-06-22):**
 
-| ID | Fix | Effort | Priority |
-|----|-----|--------|----------|
-| A-1 | Add `isActive` check in OAuth Passport strategy (`routes.js:650`) | 1 line | Do before first external user |
-| D-1 | Surface free-plan credits (500) on dashboard for new users | 1 component change | Do before first external user |
-| C-1 | Add `PLAN_UPGRADED` audit log in `fulfillPayment.js` | 2 lines | Do with next payment test |
-| A-2 | Add `USER_CREATED` audit log in OAuth callback for new users | 3 lines | Low priority |
-| B-1 | Add `FOR UPDATE` to `checkAndIncrementAiQuota` SELECT | 1 line | Low priority |
+| ID | Fix | Status |
+|----|-----|--------|
+| A-1 | `isActive` check in OAuth Passport strategy — blocks inactive users, audit-logged | **DONE** |
+| D-1 | Free-plan credits (500) surfaced on dashboard — no misleading "0" state | **DONE** |
+| C-1 | `PLAN_UPGRADED` audit log in `upgradePlanIfHigher()` — root + children + grandchildren | **DONE** |
+| D-2 | "Complete Sender Profile" CTA button in TemplateBuilder when sender blocked | **DONE** |
+| A-2 | `USER_CREATED` audit log in OAuth callback for new users | Low priority — deferred |
+| B-1 | `FOR UPDATE` in `checkAndIncrementAiQuota` SELECT | Low priority — deferred |
 
 ### Operational validation checklist
 
 | Item | Status | What to do | Success criteria |
 |------|--------|-----------|-----------------|
-| Phase 15 audit | **COMPLETE** | See Audit 032 | 8.5/10, no blockers |
+| Phase 15 audit | **COMPLETE** | See Audit 032 | 9.0/10 after Phase 15.1 hardening |
 | 1. Google OAuth activation | **PENDING** | GCP project setup + set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Railway | User can sign in with Google; profile created correctly |
 | 2. Razorpay production transaction | **PENDING** | Place a real INR order from a non-admin account | `payments` row status `SUCCESS`; credits allocated; `credit_transactions` row present |
 | 3. First external user onboarding | **PENDING** | Invite a real external user (not admin); they sign up and log in | Account created; welcome email received |

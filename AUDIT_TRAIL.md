@@ -3000,3 +3000,34 @@ Recommended next actions:
 3. Fix A-1 (one-line isActive check) before external user onboarding
 4. Fix D-1 (surface free credits on dashboard for new free-plan users)
 5. Fix C-1 (add PLAN_UPGRADED audit log to upgradePlanIfHigher)
+
+---
+
+## Audit 033 — Phase 15.1 Pre-Activation Hardening
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Commit:** `39bd09a`
+**Scope:** Implementation and verification of 4 Phase 15 findings (A-1, C-1, D-1, D-2). No other changes.
+
+### Changes implemented
+
+| ID | Finding | File(s) | Change |
+|----|---------|---------|--------|
+| A-1 | OAuth inactive-user bypass | `server/routes.js` | Added `isActive` guard inside Passport verify callback; `done(null, false)` on inactive user; audit log written with `blocked:true, reason:"account_inactive"` |
+| C-1 | Plan upgrade audit gap | `server/fulfillPayment.js`, `shared/schema.js` | Added `PLAN_UPGRADED` action to `AUDIT_ACTIONS`; `upgradePlanIfHigher()` now accepts `paymentId` and emits audit entries for root user + all child + grandchild cascades; all 4 callers (routes.js ×2, razorpayWebhook.js, stripeWebhook.js) updated |
+| D-1 | Free-plan "0 credits" state | `client/src/pages/Dashboard.jsx` | `creditsRemaining` fallback now uses `500 - freeCreditsUsed` for free-plan users when `creditsInfo` not yet loaded; "Total Credits" stat uses same safe fallback; free credits tracker label changed from `X / 500` to `X of 500 remaining` |
+| D-2 | Sender profile UX | `client/src/components/campaign/TemplateBuilder.jsx` | Replaced inline `<a>` text link with a proper "Complete Sender Profile" `<Button>` CTA routing to `/app/profile` |
+
+### Verification
+
+- Build: no TypeScript errors; `git diff --stat` confirms 7 files, 63 insertions, 17 deletions
+- A-1: Guard is placed before the `if (!user)` creation block — new OAuth users are unaffected; only existing inactive users are blocked
+- C-1: `paymentId = null` default — existing callers without paymentId (e.g. manual admin grants) still work without modification
+- D-1: `creditsInfo != null` check (not `?.total`) ensures the free-plan fallback only fires during loading, never overrides server data
+- D-2: Button uses `variant="outline"` matching the red alert context; `<a href>` routing works with wouter's SPA navigation
+- Railway auto-deploy triggered by push to `origin/main` (`39bd09a`)
+
+### Updated launch readiness score
+
+**9.0/10** — All MEDIUM findings resolved. Remaining deferred items are LOW priority (A-2 USER_CREATED for OAuth, B-1 SELECT FOR UPDATE, D-3 onboarding flow) and are not launch blockers.
