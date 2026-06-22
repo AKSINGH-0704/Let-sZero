@@ -14,7 +14,7 @@ export default function Privacy() {
         <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/">
             <img
-              src="/repmail-logo.png"
+              src="/repmail-logo-white.png"
               alt="RepMail"
               className="h-8 w-auto cursor-pointer"
               style={{ objectFit: "contain" }}
@@ -311,7 +311,7 @@ export default function Privacy() {
       >
         <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm" style={{ color: "#55556A" }}>
-            <img src="/repmail-logo.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
             <span>© {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6 text-sm" style={{ color: "#55556A" }}>

@@ -62,7 +62,8 @@ export default function Navbar() {
       <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-8">
           <Link href="/app/dashboard" className="flex items-center gap-2" data-testid="link-logo">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-9 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-9 w-auto hidden dark:block" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-black.png" alt="RepMail" className="h-9 w-auto block dark:hidden" style={{ objectFit: "contain" }} />
           </Link>
 
           {/* Desktop nav */}

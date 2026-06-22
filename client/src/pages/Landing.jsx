@@ -256,7 +256,7 @@ export default function Landing() {
             className="flex items-center gap-3"
           >
             <img
-              src="/repmail-logo.png"
+              src="/repmail-logo-white.png"
               alt="RepMail"
               className="h-10 w-auto rounded-lg"
               style={{ objectFit: "contain" }}
@@ -720,7 +720,7 @@ export default function Landing() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-400 text-sm">
           <div className="flex items-center gap-2">
             <img
-              src="/repmail-logo.png"
+              src="/repmail-logo-white.png"
               alt="RepMail"
               className="h-10 w-auto rounded"
               style={{ objectFit: "contain" }}

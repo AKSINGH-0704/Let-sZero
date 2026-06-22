@@ -148,7 +148,8 @@ export default function Pricing() {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2" data-testid="link-logo">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-14 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-14 w-auto hidden dark:block" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-black.png" alt="RepMail" className="h-14 w-auto block dark:hidden" style={{ objectFit: "contain" }} />
           </Link>
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -420,7 +421,8 @@ Billed in INR via Razorpay. All transactions are processed securely.
       <footer className="py-8 border-t border-border">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-10 w-auto hidden dark:block" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-black.png" alt="RepMail" className="h-10 w-auto block dark:hidden" style={{ objectFit: "contain" }} />
           </div>
           <div className="flex items-center gap-6">
             <Link href="/" className="text-muted-foreground hover:text-foreground text-sm transition-colors" data-testid="link-home-footer">

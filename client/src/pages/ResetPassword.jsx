@@ -32,7 +32,7 @@ function BrandingPanel() {
 
       <div className="relative z-10 flex flex-col justify-center px-12 xl:px-16">
         <div className="flex items-center gap-3 mb-10">
-          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
+          <img src="/repmail-logo-white.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
         </div>
 
         <h2 className="text-3xl xl:text-4xl font-bold text-white leading-tight mb-4">
@@ -155,7 +155,8 @@ export default function ResetPassword() {
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Mobile logo */}
             <div className="lg:hidden flex flex-col items-center mb-6">
-              <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto mb-2" style={{ objectFit: "contain" }} />
+              <img src="/repmail-logo-white.png" alt="RepMail" className="h-16 w-auto mb-2 hidden dark:block" style={{ objectFit: "contain" }} />
+              <img src="/repmail-logo-black.png" alt="RepMail" className="h-16 w-auto mb-2 block dark:hidden" style={{ objectFit: "contain" }} />
             </div>
 
             {/* Desktop heading */}

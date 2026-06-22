@@ -101,7 +101,8 @@ export default function AcceptInvite() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo */}
         <div className="flex justify-center">
-          <img src="/repmail-logo.png" alt="RepMail" className="h-10 w-auto object-contain" />
+          <img src="/repmail-logo-white.png" alt="RepMail" className="h-10 w-auto object-contain hidden dark:block" />
+          <img src="/repmail-logo-black.png" alt="RepMail" className="h-10 w-auto object-contain block dark:hidden" />
         </div>
 
         {validating ? (

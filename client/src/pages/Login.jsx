@@ -44,7 +44,7 @@ function BrandingPanel() {
 
       <div className="relative z-10 flex flex-col justify-center px-12 xl:px-20">
         <div className="flex items-center gap-3 mb-14">
-          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
+          <img src="/repmail-logo-white.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
         </div>
 
         <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-5">
@@ -102,7 +102,7 @@ function MobileHeader() {
           <ThemeToggle />
         </div>
         <div className="flex items-center gap-3">
-          <img src="/repmail-logo.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
+          <img src="/repmail-logo-white.png" alt="RepMail" className="h-16 w-auto" style={{ objectFit: "contain" }} />
           <div>
             <p className="text-sm text-white/60">Enterprise Email Platform</p>
           </div>

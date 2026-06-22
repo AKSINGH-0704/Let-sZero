@@ -82,7 +82,7 @@ export default function RepMailPrivacy() {
       <nav className="sticky top-0 z-50 backdrop-blur-xl border-b" style={{ background: "rgba(5,10,20,0.94)", borderColor: "#162035" }}>
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/app/dashboard">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-9 w-auto cursor-pointer" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-9 w-auto cursor-pointer" style={{ objectFit: "contain" }} />
           </Link>
           <div className="flex items-center gap-6 text-sm" style={{ color: "#64748B" }}>
             <Link href="/repmail/terms" className="hover:text-white transition-colors">Terms</Link>
@@ -483,7 +483,7 @@ export default function RepMailPrivacy() {
       <footer className="border-t" style={{ background: "#050A14", borderColor: "#162035" }}>
         <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm" style={{ color: "#334155" }}>
-            <img src="/repmail-logo.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
             <span>© {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6 text-sm">

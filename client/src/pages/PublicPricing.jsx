@@ -678,7 +678,7 @@ export default function PublicPricing() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/products/repmail" className="flex items-center group">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-14 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-14 w-auto" style={{ objectFit: "contain" }} />
           </Link>
           <div className="flex items-center gap-3">
             <Link href="/login">
@@ -2201,7 +2201,7 @@ export default function PublicPricing() {
       <footer className="relative px-4 sm:px-6 py-8" style={{ background: "#06060B", borderTop: "1px solid #1A1A2E", zIndex: 2 }}>
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center">
-            <img src="/repmail-logo.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
+            <img src="/repmail-logo-white.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
           </div>
           <div className="flex items-center gap-6">
             {[
