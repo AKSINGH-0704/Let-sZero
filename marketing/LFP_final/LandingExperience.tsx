@@ -140,14 +140,9 @@ export default function LandingExperience() {
               style={{ height: "36px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
               className="md:h-[48px] lg:h-[64px]"
             />
-            <div className="flex flex-col leading-none">
-              <span className="hidden sm:block" style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: "#FFFFFF", fontFamily: "'Inter', sans-serif", marginBottom: "4px" }}>
-                Zero Noise
-              </span>
-              <span style={{ fontSize: "16px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.01em" }}>
-                LetsZero
-              </span>
-            </div>
+            <span style={{ fontSize: "20px", fontWeight: 700, color: "#FFFFFF", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "-0.02em", lineHeight: 1 }}>
+              LetsZero
+            </span>
           </div>
 
           {/* Desktop Navigation Menu */}
