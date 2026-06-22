@@ -7,14 +7,14 @@ import {
 } from "lucide-react";
 
 const NAV = [
-  { id: "acceptable-use",        label: "Acceptable Use",  icon: Shield },
-  { id: "credits",               label: "Credits",         icon: CreditCard },
-  { id: "ai-content",            label: "AI Usage",        icon: Sparkles },
-  { id: "anti-spam",             label: "Anti-Spam",       icon: Ban },
-  { id: "suppression-obligations", label: "Suppressions",  icon: ShieldOff },
-  { id: "team-accounts",         label: "Teams",           icon: Users2 },
-  { id: "liability",             label: "Liability",       icon: TriangleAlert },
-  { id: "contact-us",            label: "Contact",         icon: Mail },
+  { id: "acceptable-use",          label: "Acceptable Use",  icon: Shield },
+  { id: "anti-spam",               label: "Anti-Spam",       icon: Ban },
+  { id: "credits",                 label: "Credits",         icon: CreditCard },
+  { id: "ai-content",              label: "AI Usage",        icon: Sparkles },
+  { id: "suppression-obligations", label: "Suppressions",    icon: ShieldOff },
+  { id: "team-accounts",           label: "Teams",           icon: Users2 },
+  { id: "liability",               label: "Liability",       icon: TriangleAlert },
+  { id: "contact-us",              label: "Contact",         icon: Mail },
 ];
 
 function Section({ id, title, icon: Icon, iconColor = "#00E5C8", iconBg = "rgba(0,229,200,0.07)", iconBorder = "rgba(0,229,200,0.14)", children }) {

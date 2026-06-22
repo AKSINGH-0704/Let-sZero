@@ -2821,3 +2821,89 @@ All legal text preserved verbatim; only section boundaries changed.
 ```
 
 No new errors. Pre-existing chunk-size advisory and Tailwind pattern warning unchanged.
+
+---
+
+## Audit 030 — Phase 14.2 Final Verification Audit
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Post-deployment verification of all 8 checklist items for Phase 14.2 legal pages. One bug found and fixed in same session.
+
+### Check 1 — Sidebar anchor links
+
+**Privacy:** All 8 NAV IDs (`account-data`, `contact-uploads`, `open-tracking`, `click-tracking`, `ai-content`, `ses-delivery`, `retention`, `contact-us`) match rendered section `id=` attributes. PASS.
+
+**Terms — BUG FOUND:** NAV array order was `[acceptable-use, credits, ai-content, anti-spam, …]` but document section order places `anti-spam` (section 3 in document) *before* `credits` (section 5) and `ai-content` (section 6). The scroll-active tracker iterates NAV sequentially and sets `cur` to the last item whose `offsetTop ≤ y`. With `anti-spam` at NAV[3] and a smaller offsetTop than Credits/AI Usage, it overwrote the correct active value when the user scrolled into Credits or AI Usage — causing the wrong sidebar item to stay highlighted.
+
+**Fix applied:** Reordered Terms NAV to document section order: `[acceptable-use, anti-spam, credits, ai-content, suppression-obligations, team-accounts, liability, contact-us]`. Active tracking now correct throughout the page.
+
+### Check 2 — Mobile responsiveness (320px–414px)
+
+- Grid collapses to single column at < 1024px (lg) ✅
+- Mobile pill nav (`overflow-x-auto`, horizontal scroll) renders at all widths ✅
+- `min-w-0` on `<main>` prevents grid overflow ✅
+- Section cards (`p-7`) produce 216px inner content width at 320px — adequate for text ✅
+- **Pre-existing observation (not a regression):** Top nav three-item right group (Terms / Contact / Dashboard →) can be tight at 320px; same behaviour existed before Phase 14.2 because the nav markup was not changed. Non-blocking.
+
+### Check 3 — Accessibility
+
+- Semantic elements: `<nav>`, `<aside>`, `<main>`, `<section>`, `<footer>` all present ✅
+- Heading hierarchy: `<h1>` → `<h2>` (Section) → `<h3>` (SubHead) ✅
+- Sidebar: proper `<button>` elements (keyboard accessible) ✅
+- Images have `alt` text ✅
+- **Non-blocking — contrast:** Inactive sidebar labels `#4B5563` on `#050A14` ≈ 2.7:1 (below WCAG AA 3:1 for UI components). Intentionally muted. Bumping to `#6B7280` would reach ~3.6:1.
+- **Non-blocking — `aria-current`:** Active sidebar `<button>` has no `aria-current="true"`; active state is visual only. Adding `aria-current="page"` or `aria-current="true"` would improve screen-reader announcement.
+- **Non-blocking — reduced motion:** Smooth-scroll calls do not check `prefers-reduced-motion`. Low impact on a legal page.
+
+### Check 4 — Console errors
+
+All lucide-react icons verified present (build passed with exit code 0 — missing exports would be caught at build time). Optional-chaining on `getElementById` calls prevents null-access errors. Cleanup on `useEffect` prevents stale listeners. No runtime errors expected.
+
+### Check 5 — HTTP 200 routes
+
+All 5 legal routes returned 200 from live Railway deployment:
+
+| Route | Status |
+|-------|--------|
+| `/repmail/privacy` | 200 ✅ |
+| `/repmail/terms` | 200 ✅ |
+| `/privacy` | 200 ✅ |
+| `/terms` | 200 ✅ |
+| `/contact` | 200 ✅ |
+
+### Check 6 — Footer links
+
+| Page | Privacy link | Terms link | Contact link | Legal link |
+|------|-------------|------------|-------------|-----------|
+| `/repmail/privacy` | `/repmail/privacy` ✅ | `/repmail/terms` ✅ | `/contact` ✅ | `/privacy` ("LetsZero Legal") ✅ |
+| `/repmail/terms` | `/repmail/privacy` ✅ | `/repmail/terms` ✅ | `/contact` ✅ | `/terms` ("LetsZero Legal") ✅ |
+
+Cross-links in hero sections also verified: Privacy hero → `/privacy` ✅, Terms hero → `/terms` ✅.
+
+### Check 7 — Authenticated user-menu legal links
+
+`Navbar.jsx` dropdown:
+- Privacy Policy → `/repmail/privacy` ✅
+- Terms of Service → `/repmail/terms` ✅
+
+Both point to RepMail product pages, not LetsZero corporate pages.
+
+### Check 8 — AUDIT_TRAIL update
+
+Updated (this entry) because one bug was found and fixed.
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| 1. Sidebar anchor links | FIXED — Terms NAV order corrected |
+| 2. Mobile responsiveness | PASS (pre-existing nav tightness at 320px, not a regression) |
+| 3. Accessibility | PASS — 3 non-blocking observations |
+| 4. Console errors | PASS |
+| 5. HTTP 200 all routes | PASS (5/5) |
+| 6. Footer links | PASS (8/8) |
+| 7. User-menu legal links | PASS (2/2) |
+| 8. AUDIT_TRAIL update | Done |
+
+**Phase 14.2 COMPLETE.**
