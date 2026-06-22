@@ -680,4 +680,8 @@ Visual redesign of `/repmail/privacy` and `/repmail/terms` with dashboard-palett
 | `npm run build` | **I** | PASS — 5047 modules, exit 0 |
 | LetsZero corporate pages untouched | **V** | `/privacy`, `/terms`, `/contact` — no file modifications |
 
-**Milestone status: I** — redesign complete, build verified. Deploy and production verify pending.
+| Railway deploy | **V** | Deployment `da122745` — Online |
+| `/repmail/privacy` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/privacy → 200` |
+| `/repmail/terms` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/terms → 200` |
+
+**Milestone status: COMPLETE — RepMail legal pages redesigned and live. Both URLs return HTTP 200 on deployment `da122745`.**
