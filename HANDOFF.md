@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `0c574ea` (2026-06-22) through Phase 15.2 Polish — see AUDIT_TRAIL.md Audits 015–036  
+**Verified against:** commit `f26391b` (2026-06-22) through Phase 15.2 Trust Hardening — see AUDIT_TRAIL.md Audits 015–037  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -128,7 +128,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ### Phase 15 audit — launch verdict (Audit 032, 2026-06-22)
 
-**Score: 8.5/10 → 9.0/10 after Phase 15.1 (Audit 033) → 9.2/10 after Phase 15.2 (Audit 035) → 9.3/10 after Phase 15.2 Polish (Audit 036).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+**Score: 8.5/10 → 9.0/10 after Phase 15.1 (Audit 033) → 9.2/10 after Phase 15.2 (Audit 035) → 9.3/10 after Phase 15.2 Polish (Audit 036) → 9.5/10 after Trust Hardening (Audit 037).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
 
 **Pre-activation hardening (Phase 15.1, commit `39bd09a`, 2026-06-22):**
 
