@@ -764,3 +764,20 @@ All 4 Phase 15 MEDIUM/priority findings implemented and deployed. Commit `39bd09
 **Updated launch readiness score: 9.0/10**
 
 **Milestone status: COMPLETE — Audit 033.**
+
+---
+
+### 30 · Branding — Logo Migration (2026-06-22)
+
+White/black logo variants deployed across all RepMail surfaces. Favicon updated. Commit `d2d2d04`.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| White logo on all always-dark pages | **COMPLETE** | Landing, Login, Pricing, PublicPricing, Privacy, Terms, RepMailPrivacy, RepMailTerms, ResetPassword (BrandingPanel) |
+| Dual-logo pattern on theme-aware surfaces | **COMPLETE** | Navbar, AcceptInvite, Pricing (CTA), ResetPassword (mobile form) — `hidden dark:block` / `block dark:hidden` |
+| Favicon → black logo | **COMPLETE** | `client/public/favicon.png` replaced; `client/index.html` updated |
+| Legacy `repmail-logo.png` preserved | **COMPLETE** | Replaced with white version for backward compat |
+| Zero raw `repmail-logo.png` refs in `client/src/` | **COMPLETE** | grep confirmed 0 matches |
+| LetsZero logo untouched | **COMPLETE** | `WaitlistLanding.jsx`, `LandingExperience.tsx` — unchanged |
+
+**Milestone status: COMPLETE — Audit 034.**

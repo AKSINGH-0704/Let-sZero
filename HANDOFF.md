@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `cd04db8` (2026-06-17) through Phase 14.2 a11y polish — see AUDIT_TRAIL.md Audits 015–031  
+**Verified against:** commit `d2d2d04` (2026-06-22) through Phase 15.1 + logo migration — see AUDIT_TRAIL.md Audits 015–034  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -835,6 +835,24 @@ RepMail product pages use RepMail branding (cyan palette, RepMail logo, dashboar
 - Primary nav verified: Products, Features, Pricing, Contact, Sign In, Explore RepMail (CTA)
 
 **OAuth status:** `/privacy` and `/terms` (Layer 1) were the last URL-level blockers. Both return HTTP 200. Activate OAuth per the Google OAuth Activation Runbook below.
+
+---
+
+### Logo & Branding (Phase 15.1 — commit `d2d2d04`)
+
+Two canonical logo assets: `repmail-logo-white.png` (light on dark) and `repmail-logo-black.png` (dark on light). Both are in `client/public/`.
+
+**Classification rule:**
+- **Always-dark pages** (hardcoded hex bg `#050A14`/`#0A1428`): use white logo only.
+- **Theme-aware pages** (`bg-background` + ThemeToggle): use dual-logo pattern — `hidden dark:block` on white, `block dark:hidden` on black.
+
+**Legacy file:** `repmail-logo.png` is now a copy of the white version. Keep it for any missed reference — do not delete.
+
+**Favicon:** `client/public/favicon.png` = black logo (renders on light browser chrome).
+
+**LetsZero logo:** `WaitlistLanding.jsx` and `marketing/LFP_final/LandingExperience.tsx` reference `/letszero-logo.png`. Do not touch.
+
+**Audit:** Audit 034 in AUDIT_TRAIL.md. Milestone 30 in PROGRESS.md.
 
 ---
 

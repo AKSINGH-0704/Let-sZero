@@ -3031,3 +3031,56 @@ Recommended next actions:
 ### Updated launch readiness score
 
 **9.0/10** — All MEDIUM findings resolved. Remaining deferred items are LOW priority (A-2 USER_CREATED for OAuth, B-1 SELECT FOR UPDATE, D-3 onboarding flow) and are not launch blockers.
+
+---
+
+## Audit 034 — Logo Migration & Branding Pass
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Commit:** `d2d2d04`
+**Scope:** Replace all RepMail logo references with supplied black/white assets. Update favicon and browser tab title. LetsZero logo untouched.
+
+### Assets
+
+| File | Role | Background |
+|------|------|-----------|
+| `client/public/repmail-logo-white.png` | New canonical white logo | Dark surfaces |
+| `client/public/repmail-logo-black.png` | New canonical black logo | Light surfaces |
+| `client/public/repmail-logo.png` | Legacy filename (now = white) | Backward compat |
+| `client/public/favicon.png` | Browser tab icon (now = black) | Light browser chrome |
+
+### Classification applied
+
+**Always-dark pages** (hardcoded hex backgrounds — `#050A14` / `#0A1428`):
+White logo only. No dual-image needed. Files updated: `Landing.jsx`, `Login.jsx` (BrandingPanel), `Pricing.jsx` (header), `PublicPricing.jsx`, `Privacy.jsx`, `Terms.jsx`, `RepMailPrivacy.jsx`, `RepMailTerms.jsx`, `ResetPassword.jsx` (BrandingPanel).
+
+**Theme-aware pages** (Tailwind `bg-background` + ThemeToggle):
+Dual-logo pattern — `hidden dark:block` for white / `block dark:hidden` for black. Files updated: `Navbar.jsx`, `AcceptInvite.jsx`, `Pricing.jsx` (inner CTA area), `ResetPassword.jsx` (mobile form area).
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `client/index.html` | `<title>RepMail</title>`; favicon + apple-touch-icon → `/favicon.png` |
+| `client/public/repmail-logo-white.png` | Added (17,952 bytes) |
+| `client/public/repmail-logo-black.png` | Added (18,069 bytes) |
+| `client/public/repmail-logo.png` | Replaced with white version |
+| `client/public/favicon.png` | Replaced with black version |
+| `client/src/components/layout/Navbar.jsx` | Dual-logo pattern |
+| `client/src/pages/AcceptInvite.jsx` | Dual-logo pattern |
+| `client/src/pages/Login.jsx` | White logo (BrandingPanel always dark) |
+| `client/src/pages/Pricing.jsx` | White logo header + dual-logo mobile form |
+| `client/src/pages/PublicPricing.jsx` | White logo (both locations) |
+| `client/src/pages/Privacy.jsx` | White logo (both locations) |
+| `client/src/pages/Terms.jsx` | White logo (both locations) |
+| `client/src/pages/RepMailPrivacy.jsx` | White logo (both locations) |
+| `client/src/pages/RepMailTerms.jsx` | White logo (both locations) |
+| `client/src/pages/ResetPassword.jsx` | White logo BrandingPanel; dual-logo mobile form |
+| `client/src/pages/Landing.jsx` | White logo (both locations); footer links already fixed (commit 2533754) |
+
+### Verification
+
+- `grep -r "repmail-logo.png" client/src/` → 0 results (all references updated)
+- LetsZero logo: `WaitlistLanding.jsx`, `marketing/LFP_final/LandingExperience.tsx` — both untouched, still reference `/letszero-logo.png`
+- Railway auto-deploy triggered by push to `origin/main` (`d2d2d04`)
