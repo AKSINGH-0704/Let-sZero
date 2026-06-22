@@ -506,8 +506,8 @@ export const CREDIT_TIERS = [
 ];
 
 export const TEAM_PRICING = {
-  monthly: 99,   // INR per user per month
-  annual:  79,   // INR per user per month (billed annually)
+  monthly: 129,  // INR per user per month
+  annual:  99,   // INR per user per month (billed annually)
   minUsers: 3,
   maxUsers: 15,
 };

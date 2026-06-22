@@ -61,7 +61,7 @@ const CREDIT_TIERS = [
   { min: 100000, max: 300000, perCredit: 0.10, prevRate: 0.11 },
 ];
 
-const TEAM = { monthly: 99, annual: 79, min: 3, max: 15 };
+const TEAM = { monthly: 129, annual: 99, min: 3, max: 15 };
 
 const CREDIT_PRESETS = [3000, 5000, 10000, 15000, 25000, 50000, 100000, 200000, 300000];
 
@@ -169,7 +169,7 @@ const PLANS = [
       campaigns: "5",
       templates: "10",
       scheduling: true,
-      teamMembers: "1",
+      teamMembers: "3",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -194,7 +194,7 @@ const PLANS = [
       campaigns: "10",
       templates: "25",
       scheduling: true,
-      teamMembers: "5",
+      teamMembers: "10",
       auditExport: false,
       bonusCredits: "+1,250",
       aiPersonalization: true,
@@ -218,7 +218,7 @@ const PLANS = [
       campaigns: "20",
       templates: "100",
       scheduling: true,
-      teamMembers: "10",
+      teamMembers: "25",
       auditExport: true,
       bonusCredits: "+4,545",
       aiPersonalization: true,
@@ -312,7 +312,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "How do teams work?",
-    a: "Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work. Growth plan includes up to 5 members, Scale up to 10, Enterprise unlimited.",
+    a: "Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work. Growth plan includes up to 10 members, Scale up to 25, Enterprise unlimited.",
   },
   {
     q: "Can I buy more credits anytime?",
@@ -1378,7 +1378,7 @@ export default function PublicPricing() {
                     <div>
                       <div className="p-6 rounded-2xl text-center" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
                         <p className="text-gray-300 text-base leading-relaxed">
-                          Team members are included in your plan. Growth includes up to 5 members. Scale includes up to 10. Enterprise offers unlimited team members.
+                          Team members are included in your plan. Growth includes up to 10 members. Scale includes up to 25. Enterprise offers unlimited team members.
                         </p>
                         <p className="text-gray-500 text-sm mt-3">
                           Need more?{" "}

@@ -21,7 +21,7 @@ import { formatDate, formatNumber, cn } from "@/lib/utils";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const USD_RATE = 83.5;
-const TEAM = { monthly: 99, annual: 79, min: 3, max: 15 };
+const TEAM = { monthly: 129, annual: 99, min: 3, max: 15 };
 
 function fmtNum(n) {
   return n == null ? "—" : n.toLocaleString("en-IN");
@@ -77,7 +77,7 @@ const PLANS = [
       campaigns: "5",
       templates: "10",
       scheduling: true,
-      teamMembers: "1",
+      teamMembers: "3",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -101,7 +101,7 @@ const PLANS = [
       campaigns: "10",
       templates: "25",
       scheduling: true,
-      teamMembers: "5",
+      teamMembers: "10",
       auditExport: false,
       bonusCredits: "+1,250",
       aiPersonalization: true,
@@ -124,7 +124,7 @@ const PLANS = [
       campaigns: "20",
       templates: "100",
       scheduling: true,
-      teamMembers: "10",
+      teamMembers: "25",
       auditExport: true,
       bonusCredits: "+4,545",
       aiPersonalization: true,
@@ -1619,7 +1619,7 @@ export default function Payments() {
                                     fontSize: "10px",
                                   }}
                                 >
-                                  25% OFF
+                                  {Math.round((1 - TEAM.annual / TEAM.monthly) * 100)}% OFF
                                 </span>
                               )}
                             </button>
@@ -1796,7 +1796,7 @@ export default function Payments() {
                       </ul>
                       <div className="mt-5 pt-4" style={{ borderTop: "1px solid #1A1A2E" }}>
                         <p className="text-xs mb-3" style={{ color: "#55556A" }}>
-                          Growth: up to 5 members · Scale: up to 10 members
+                          Growth: up to 10 members · Scale: up to 25 members
                         </p>
                         <button
                           onClick={() => setPricingTab("individual")}
