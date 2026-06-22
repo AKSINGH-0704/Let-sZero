@@ -805,3 +805,25 @@ Three commits: `d4323d7` (UX), `3ec108c` (BRANDING), `3202032` (TRUST).
 **Updated launch readiness score: 9.2/10**
 
 **Milestone status: COMPLETE — Audit 035.**
+
+---
+
+### 32 · Phase 15.2 Polish — LandingExperience Trust + RepMail Card (2026-06-22)
+
+Two commits: `c6de3af` (TRUST), `0c574ea` (UI).
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| LetsZero nav brand text prominence | **COMPLETE** | LandingExperience.tsx — 20px → 24px |
+| RepMail card fake metrics removed | **COMPLETE** | LandingExperience.tsx — 99.98%/&lt;50ms/1.2B+ block removed |
+| RepMail card real capabilities | **COMPLETE** | 6-item grid: SES-Backed Delivery, AI-Powered Templates, Bounce Protection, Team Management, Delivery Tracking, Credit Governance |
+| RepMail card description cleaned | **COMPLETE** | Removed "Enterprise-grade", false claims |
+| RepMail card text contrast | **COMPLETE** | text-gray-300 on #0A0A0F — WCAG AA |
+| RepMail card logo (was Mail icon) | **COMPLETE** | /repmail-logo-white.png 38×38 |
+| LandingExperience roadmap dates | **COMPLETE** | Q2 2026 → "Planned"; Q3 2026 → "Future" |
+| Pricing dash visibility | **COMPLETE** | PublicPricing.jsx — #3A3A50 → #8888A0 |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Updated launch readiness score: 9.3/10**
+
+**Milestone status: COMPLETE — Audit 036.**
