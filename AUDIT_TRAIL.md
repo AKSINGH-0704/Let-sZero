@@ -2720,3 +2720,104 @@ Two-layer legal structure established:
 | `/repmail/privacy` route | Unprotected — accessible pre-auth |
 | `/repmail/terms` route | Unprotected — accessible pre-auth |
 | User dropdown legal links | Present in Navbar.jsx |
+
+### Production verification
+
+| URL | HTTP status | Deployment |
+|-----|-------------|-----------|
+| `https://www.letszero.in/repmail/privacy` | 200 | `2e51052d` |
+| `https://www.letszero.in/repmail/terms` | 200 | `2e51052d` |
+
+---
+
+## Audit 029 — Phase 14.2: RepMail Brand Identity Pass
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Visual redesign of `/repmail/privacy` and `/repmail/terms` only — presentation layer improvements, no legal content changes. LetsZero corporate pages (`/privacy`, `/terms`, `/contact`) untouched.
+
+### Design Objectives
+
+1. Dashboard-palette visual identity (dark navy `#050A14`, cyan `#00E5C8`, sidebar blues)
+2. Sticky section navigation sidebar with IntersectionObserver-based active-state tracking
+3. Wider layout (`max-w-7xl` two-column grid vs prior `max-w-4xl` single-column)
+4. Lightweight icons on section headers via lucide-react
+5. Card-based sections with subtle background `#0A1428` + border `#162035`
+6. Mobile pill navigation (horizontal scrollable) below 1024px breakpoint
+7. Colour-differentiated icon containers for warning-category sections (orange for bounce/complaint/termination/liability, cyan for data/tracking sections)
+
+### Privacy page — sidebar nav items (8 per spec)
+
+| Sidebar label | Section ID | Icon |
+|---------------|------------|------|
+| Data Collection | `#account-data` | Database |
+| Contact Uploads | `#contact-uploads` | Upload |
+| Open Tracking | `#open-tracking` | Eye |
+| Click Tracking | `#click-tracking` | MousePointer2 |
+| AI Content | `#ai-content` | Sparkles |
+| Deliverability | `#ses-delivery` | Zap |
+| Retention | `#retention` | Clock |
+| Contact | `#contact-us` | Mail |
+
+### Terms page — sidebar nav items (8 per spec)
+
+| Sidebar label | Section ID | Icon |
+|---------------|------------|------|
+| Acceptable Use | `#acceptable-use` | Shield |
+| Credits | `#credits` | CreditCard |
+| AI Usage | `#ai-content` | Sparkles |
+| Anti-Spam | `#anti-spam` | Ban |
+| Suppressions | `#suppression-obligations` | ShieldOff |
+| Teams | `#team-accounts` | Users2 |
+| Liability | `#liability` | TriangleAlert |
+| Contact | `#contact-us` | Mail |
+
+### Terms content restructure
+
+Section 2 "Anti-Spam Requirements" split into two sections to support 8 sidebar items:
+- New Section 2 `#acceptable-use` — prohibited sending practices (Acceptable Use)
+- New Section 3 `#anti-spam` — applicable regulations + automatic enforcement thresholds (Anti-Spam Compliance)
+
+All legal text preserved verbatim; only section boundaries changed.
+
+### Technical implementation
+
+| Component | Implementation |
+|-----------|---------------|
+| Active section tracking | scroll event listener + `offsetTop` comparison at 30% viewport height |
+| Sidebar sticky offset | `top: 88px` (below 64px nav + buffer) |
+| `scrollMarginTop` | `90px` on all section elements for smooth-scroll offset |
+| Mobile sidebar | `overflow-x: auto; scrollbarWidth: none` pill strip (displays `lg:hidden`) |
+| Sidebar (desktop) | `hidden lg:block` column in CSS grid `220px 1fr` |
+| Hero gradient (Privacy) | `rgba(0,229,200,0.04) → rgba(59,130,246,0.02)` — cyan tint |
+| Hero gradient (Terms) | `rgba(139,92,246,0.04) → rgba(59,130,246,0.02)` — violet tint |
+| Terms accent colour | `#A78BFA` (violet-400) — distinguishes Terms from Privacy |
+| Data retention table | Alternating row backgrounds, wider column contrast |
+| InfoBox (red) | Bounce >5%, complaint >0.1% enforcement thresholds |
+| InfoBox (cyan) | Refund conditions |
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `client/src/pages/RepMailPrivacy.jsx` | Full rewrite — two-column layout, sticky sidebar, 8-item nav, icons, card sections, wider container, mobile pills |
+| `client/src/pages/RepMailTerms.jsx` | Full rewrite — same visual treatment, violet accent, Section 2 split into Acceptable Use + Anti-Spam, 8-item sidebar |
+
+### Files NOT modified
+
+| File | Reason |
+|------|--------|
+| `client/src/pages/Privacy.jsx` | LetsZero corporate — frozen |
+| `client/src/pages/Terms.jsx` | LetsZero corporate — frozen |
+| `client/src/pages/Contact.jsx` | LetsZero corporate — frozen |
+| `client/src/App.jsx` | Routes unchanged |
+| `client/src/components/layout/Navbar.jsx` | Links unchanged |
+
+### Build verification
+
+```
+✓ built in 25.84s
+5047 modules transformed. Exit code 0.
+```
+
+No new errors. Pre-existing chunk-size advisory and Tailwind pattern warning unchanged.

@@ -763,7 +763,7 @@ railway run node scripts/check-schema-parity.mjs
 
 ---
 
-## Legal Architecture (Phase 14 + 14.1)
+## Legal Architecture (Phase 14 + 14.1 + 14.2)
 
 RepMail has two distinct legal layers:
 
@@ -785,7 +785,7 @@ These are the URLs referenced in the Google OAuth consent screen.
 | RepMail Privacy | `client/src/pages/RepMailPrivacy.jsx` | `/repmail/privacy` | Authenticated users |
 | RepMail Terms | `client/src/pages/RepMailTerms.jsx` | `/repmail/terms` | Authenticated users |
 
-RepMail product pages use RepMail branding (cyan palette, RepMail logo) and cover:
+RepMail product pages use RepMail branding (cyan palette, RepMail logo, dashboard-style layout) and cover:
 - Contact upload responsibilities and data retention schedules
 - Anti-spam enforcement (bounce >5%, complaint >0.1% → auto-pause)
 - SES delivery processing and event pipeline (SNS → webhook → `sns_events`)
@@ -794,6 +794,8 @@ RepMail product pages use RepMail branding (cyan palette, RepMail logo) and cove
 - Bounce and complaint classification and auto-suppression
 - Suppression management obligations and retention (indefinite)
 - Account termination grounds and appeal process
+
+**Phase 14.2 — Visual identity:** Both RepMail legal pages use a `max-w-7xl` two-column grid layout (220px sticky sidebar + content). The sidebar has 8 section nav items with IntersectionObserver-based active-state highlighting. Section headers have lucide-react icons. Cards use `#0A1428` background with `#162035` border. Mobile uses a horizontal scrollable pill nav strip. Privacy page uses cyan (`#00E5C8`) accent; Terms uses violet (`#A78BFA`) accent to distinguish the two documents.
 
 ### Navigation rationale
 

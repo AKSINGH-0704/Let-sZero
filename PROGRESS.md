@@ -659,3 +659,25 @@ Two-layer legal architecture: LetsZero corporate pages + RepMail product-specifi
 | `/repmail/terms` HTTP 200 | **V** | `curl https://www.letszero.in/repmail/terms → 200` |
 
 **Milestone status: COMPLETE — All five legal URLs return HTTP 200. Two-layer legal architecture is live.**
+
+---
+
+### 25 · Phase 14.2: RepMail Brand Identity Pass (2026-06-22)
+
+Visual redesign of `/repmail/privacy` and `/repmail/terms` with dashboard-palette styling, sticky sidebar navigation, and wider layout. All legal content preserved verbatim.
+
+| Sub-item | Status | Evidence |
+|---|---|---|
+| `RepMailPrivacy.jsx` — two-column grid layout (`max-w-7xl`, 220px sidebar + content) | **I** | File rewritten; `grid-cols-1 lg:grid-cols-[220px_1fr]` |
+| `RepMailPrivacy.jsx` — sticky sidebar, 8-item section nav with active tracking | **I** | `useState + useEffect + scroll listener`; active item highlighted cyan |
+| `RepMailPrivacy.jsx` — section icons (Database, Upload, Eye, MousePointer2, Sparkles, Zap, Clock, Mail) | **I** | lucide-react icons in icon container `rgba(0,229,200,0.07)` background |
+| `RepMailPrivacy.jsx` — card-based sections (`#0A1428` bg, `#162035` border) | **I** | All 12 content sections in rounded-2xl cards |
+| `RepMailPrivacy.jsx` — mobile pill nav (horizontal scrollable) | **I** | `lg:hidden` pill strip with active state |
+| `RepMailPrivacy.jsx` — hero gradient (cyan tint) | **I** | `rgba(0,229,200,0.04) → rgba(59,130,246,0.02)` |
+| `RepMailTerms.jsx` — same two-column layout and sidebar pattern | **I** | Mirrors Privacy structure; violet (`#A78BFA`) accent |
+| `RepMailTerms.jsx` — 8-item sidebar: Acceptable Use, Credits, AI Usage, Anti-Spam, Suppressions, Teams, Liability, Contact | **I** | Section 2 split into `#acceptable-use` + `#anti-spam` to support 8 items |
+| `RepMailTerms.jsx` — InfoBox components (red: thresholds, cyan: refund conditions) | **I** | Preserved from prior version |
+| `npm run build` | **I** | PASS — 5047 modules, exit 0 |
+| LetsZero corporate pages untouched | **V** | `/privacy`, `/terms`, `/contact` — no file modifications |
+
+**Milestone status: I** — redesign complete, build verified. Deploy and production verify pending.
