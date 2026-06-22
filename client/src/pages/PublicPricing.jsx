@@ -1495,7 +1495,7 @@ export default function PublicPricing() {
                     <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
                     <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>Everything on Team Plan, plus:</div>
                     <ul className="space-y-2 text-xs">
-                      {["Unlimited team members", "Dedicated account manager", "Custom credit packages", "SSO / SAML (Soon)", "99.9% uptime SLA"].map(f => (
+                      {["Unlimited team members", "Dedicated account manager", "Custom credit packages", "SSO / SAML (Soon)", "Priority support"].map(f => (
                         <li key={f} className="flex items-center gap-2">
                           <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#A78BFA" }} />
                           <span style={{ color: "#D1D5DB" }}>{f}</span>

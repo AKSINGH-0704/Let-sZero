@@ -102,7 +102,7 @@ export default function LandingExperience() {
     {
       icon: Zap,
       title: "Scalability",
-      description: "Built to grow with you. From startup to enterprise without architectural compromise.",
+      description: "Built to grow with you. From small teams to high-volume senders without architectural trade-offs.",
       color: "violet",
       delay: 0.4,
       position: { top: "0%", right: "15%" }
@@ -178,7 +178,7 @@ export default function LandingExperience() {
                           <span className="text-sm font-medium text-white group-hover:text-cyan-300 transition-colors">RepMail</span>
                           <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded-full">LIVE</span>
                         </div>
-                        <span className="text-xs text-gray-500">Enterprise Email Infrastructure</span>
+                        <span className="text-xs text-gray-500">Email Campaign Platform</span>
                       </div>
                     </button>
                     <div className="w-full flex items-center gap-3 p-3 rounded-lg opacity-60 cursor-not-allowed">
@@ -190,7 +190,7 @@ export default function LandingExperience() {
                           <span className="text-sm font-medium text-gray-400">MessageHub</span>
                           <span className="px-1.5 py-0.5 text-[10px] font-medium bg-white/5 text-gray-500 rounded-full flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
-                            Q2 2026
+                            Planned
                           </span>
                         </div>
                         <span className="text-xs text-gray-600">Unified Messaging Platform</span>
@@ -205,7 +205,7 @@ export default function LandingExperience() {
                           <span className="text-sm font-medium text-gray-400">NotifyStream</span>
                           <span className="px-1.5 py-0.5 text-[10px] font-medium bg-white/5 text-gray-500 rounded-full flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
-                            Q3 2026
+                            Future
                           </span>
                         </div>
                         <span className="text-xs text-gray-600">Multi-channel Notifications</span>
@@ -462,7 +462,7 @@ export default function LandingExperience() {
                   RepMail
                 </span>
                 <span className="text-sm text-gray-500" style={{ fontFamily: "'Inter', sans-serif" }}>
-                  Enterprise Email Infrastructure
+                  Email Campaign Platform
                 </span>
               </motion.div>
             </div>
@@ -486,8 +486,8 @@ export default function LandingExperience() {
                 <div className="space-y-3">
                   <div className="flex items-end justify-between">
                     <span className="text-xs text-gray-500">Throughput</span>
-                    <span className="text-lg font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      847K/hr
+                    <span className="text-lg font-semibold text-emerald-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      Active
                     </span>
                   </div>
                   <div className="h-1 bg-white/10 rounded-full overflow-hidden">
@@ -500,8 +500,8 @@ export default function LandingExperience() {
                   </div>
                   <div className="flex items-end justify-between">
                     <span className="text-xs text-gray-500">Success Rate</span>
-                    <span className="text-lg font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      99.94%
+                    <span className="text-lg font-semibold text-emerald-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      Healthy
                     </span>
                   </div>
                 </div>
@@ -524,14 +524,14 @@ export default function LandingExperience() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-400">Latency (p95)</span>
-                    <span className="text-sm font-medium text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      42ms
+                    <span className="text-sm font-medium text-gray-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                      —
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-400">Uptime</span>
                     <span className="text-sm font-medium text-emerald-400" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      100%
+                      Online
                     </span>
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/10">
@@ -559,7 +559,7 @@ export default function LandingExperience() {
                     <div className="text-sm font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                       RepMail
                     </div>
-                    <div className="text-xs text-gray-500">v2.4.1</div>
+                    <div className="text-xs text-gray-500">Email Platform</div>
                   </div>
                 </div>
                 <div className="text-xs text-gray-400 leading-relaxed">
@@ -593,26 +593,26 @@ export default function LandingExperience() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-8">
               <div>
                 <div className="text-xs text-gray-600 mb-2" style={{ fontFamily: "'Inter', sans-serif" }}>
-                  TRUSTED BY
+                  DELIVERY BACKBONE
                 </div>
                 <div className="text-2xl font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  200+ Teams
+                  AWS SES
                 </div>
               </div>
               <div>
                 <div className="text-xs text-gray-600 mb-2" style={{ fontFamily: "'Inter', sans-serif" }}>
-                  MESSAGES DELIVERED
+                  AI GENERATION
                 </div>
                 <div className="text-2xl font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  1.2B+
+                  GPT-4o
                 </div>
               </div>
               <div>
                 <div className="text-xs text-gray-600 mb-2" style={{ fontFamily: "'Inter', sans-serif" }}>
-                  AVERAGE UPTIME
+                  PRICING FROM
                 </div>
                 <div className="text-2xl font-semibold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  99.98%
+                  ₹0.10 / email
                 </div>
               </div>
               <div>
@@ -888,7 +888,7 @@ export default function LandingExperience() {
                     </h3>
                     <p className="text-sm text-gray-500 leading-relaxed" style={{ fontFamily: "'Inter', sans-serif" }}>
                       Multi-channel notification engine designed for compliance,
-                      intelligent delivery, and observability at enterprise scale.
+                      intelligent delivery, and observability at scale.
                     </p>
                   </div>
                 </motion.div>
