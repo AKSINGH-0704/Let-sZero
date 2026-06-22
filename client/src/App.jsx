@@ -7,27 +7,42 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 
-// Routes that belong to the RepMail product context.
-// Everything else is LetsZero context.
-const REPMAIL_PREFIXES = [
-  "/products/repmail",
-  "/pricing",
-  "/login",
-  "/repmail/",
-  "/accept-invite",
-  "/app/",
-];
+// Central brand registry.
+// Add a new entry here when a new product launches — no logic changes needed.
+const BRANDS = {
+  letszero: {
+    title: "LetsZero",
+    favicon: "/letszero-logo.png",
+    routes: ["/", "/early-access", "/contact", "/privacy", "/terms"],
+  },
+  repmail: {
+    title: "RepMail",
+    favicon: "/favicon.png",
+    routes: ["/products/repmail", "/pricing", "/login", "/repmail/", "/accept-invite", "/app/"],
+  },
+};
+
+const DEFAULT_BRAND = BRANDS.letszero;
+
+function resolveBrand(location) {
+  for (const brand of Object.values(BRANDS)) {
+    if (brand.routes.some((prefix) => location.startsWith(prefix) && prefix !== "/") ||
+        (brand.routes.includes("/") && location === "/")) {
+      return brand;
+    }
+  }
+  return DEFAULT_BRAND;
+}
 
 function BrandingManager() {
   const [location] = useLocation();
 
   useEffect(() => {
-    const isRepMail = REPMAIL_PREFIXES.some((p) => location.startsWith(p));
-    document.title = isRepMail ? "RepMail" : "LetsZero";
-    const favicon = isRepMail ? "/favicon.png" : "/letszero-logo.png";
+    const brand = resolveBrand(location);
+    document.title = brand.title;
     document
       .querySelectorAll("link[rel~='icon'], link[rel='apple-touch-icon']")
-      .forEach((el) => { el.href = favicon; });
+      .forEach((el) => { el.href = brand.favicon; });
   }, [location]);
 
   return null;
