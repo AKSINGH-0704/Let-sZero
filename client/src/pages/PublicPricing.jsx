@@ -83,6 +83,23 @@ function getCreditTier(credits) {
   return CREDIT_TIERS.find(t => credits >= t.min && credits <= t.max) || null;
 }
 
+// ─── Logarithmic slider scale (3K–300K spans 2 orders of magnitude) ───────────
+// A linear slider makes 10K look identical to 3K. Log scale spaces them evenly.
+const _LOG_MIN = Math.log10(3000);
+const _LOG_MAX = Math.log10(300000);
+const _SLIDER_MAX = 1000;
+
+function creditsToSlider(c) {
+  const clamped = Math.max(3000, Math.min(300000, c));
+  return Math.round(((Math.log10(clamped) - _LOG_MIN) / (_LOG_MAX - _LOG_MIN)) * _SLIDER_MAX);
+}
+
+function sliderToCredits(pos) {
+  const t = pos / _SLIDER_MAX;
+  const raw = Math.pow(10, _LOG_MIN + t * (_LOG_MAX - _LOG_MIN));
+  return Math.max(3000, Math.min(300000, Math.round(raw / 1000) * 1000));
+}
+
 function calcPurchase(credits) {
   const tier = getCreditTier(credits);
   if (!tier) return null;
@@ -315,7 +332,7 @@ const FAQ_ITEMS = [
 const VOLUME_ROWS = [
   { credits: 3000,   priceINR: 390,   bonus: 0,     total: 3000 },
   { credits: 5000,   priceINR: 650,   bonus: 0,     total: 5000 },
-  { credits: 10000,  priceINR: 1300,  bonus: 0,     total: 10000 },
+  { credits: 10000,  priceINR: 1200,  bonus: 833,   total: 10833 },
   { credits: 15000,  priceINR: 1800,  bonus: 1250,  total: 16250 },
   { credits: 25000,  priceINR: 3000,  bonus: 2083,  total: 27083 },
   { credits: 50000,  priceINR: 5500,  bonus: 4545,  total: 54545 },
@@ -949,11 +966,11 @@ export default function PublicPricing() {
                 {/* Custom styled slider — 1,000-credit increments */}
                 <div className="relative py-4">
                   <Slider
-                    min={3000}
-                    max={300000}
-                    step={1000}
-                    value={[credits]}
-                    onValueChange={([v]) => setCredits(v)}
+                    min={0}
+                    max={_SLIDER_MAX}
+                    step={1}
+                    value={[creditsToSlider(credits)]}
+                    onValueChange={([v]) => setCredits(sliderToCredits(v))}
                     className="w-full"
                     style={{ "--slider-track": "#16162A", "--slider-range": "#00E5C8" }}
                     aria-label="Select credit amount"
