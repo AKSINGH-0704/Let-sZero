@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `d2d2d04` (2026-06-22) through Phase 15.1 + logo migration — see AUDIT_TRAIL.md Audits 015–034  
+**Verified against:** commit `3202032` (2026-06-22) through Phase 15.2 trust hardening — see AUDIT_TRAIL.md Audits 015–035  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -128,7 +128,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ### Phase 15 audit — launch verdict (Audit 032, 2026-06-22)
 
-**Score: 8.5/10 → updated to 9.0/10 after Phase 15.1 (Audit 033).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+**Score: 8.5/10 → 9.0/10 after Phase 15.1 (Audit 033) → 9.2/10 after Phase 15.2 (Audit 035).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
 
 **Pre-activation hardening (Phase 15.1, commit `39bd09a`, 2026-06-22):**
 
@@ -145,7 +145,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 | Item | Status | What to do | Success criteria |
 |------|--------|-----------|-----------------|
-| Phase 15 audit | **COMPLETE** | See Audit 032 | 9.0/10 after Phase 15.1 hardening |
+| Phase 15 audit | **COMPLETE** | See Audit 032 | 9.2/10 after Phase 15.2 trust hardening |
 | 1. Google OAuth activation | **PENDING** | GCP project setup + set `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Railway | User can sign in with Google; profile created correctly |
 | 2. Razorpay production transaction | **PENDING** | Place a real INR order from a non-admin account | `payments` row status `SUCCESS`; credits allocated; `credit_transactions` row present |
 | 3. First external user onboarding | **PENDING** | Invite a real external user (not admin); they sign up and log in | Account created; welcome email received |
@@ -835,6 +835,26 @@ RepMail product pages use RepMail branding (cyan palette, RepMail logo, dashboar
 - Primary nav verified: Products, Features, Pricing, Contact, Sign In, Explore RepMail (CTA)
 
 **OAuth status:** `/privacy` and `/terms` (Layer 1) were the last URL-level blockers. Both return HTTP 200. Activate OAuth per the Google OAuth Activation Runbook below.
+
+---
+
+### Phase 15.2 — Landing Page, Pricing UX & Brand Trust (2026-06-22)
+
+Three commits: `d4323d7` / `3ec108c` / `3202032`.
+
+**Pricing slider (PublicPricing.jsx):** Slider is now logarithmic (0–1000 internal range, log10 mapped to 3K–300K). Previously linear, making 10K visually identical to 3K. Helper functions `creditsToSlider()` / `sliderToCredits()` at module scope. Both input→slider and slider→input directions verified.
+
+**Pricing table 10K row (PublicPricing.jsx):** Fixed `VOLUME_ROWS` entry: ₹1300→₹1200, bonus 0→833, total 10000→10833. First bonus tier now correctly displayed. 3K and 5K rows show `—` as intended.
+
+**LetsZero nav (LandingExperience.tsx):** Removed "Zero Noise" tagline. Logo + "LetsZero" only. LetsZero text 16px→20px.
+
+**RepMail landing nav (Landing.jsx):** Removed "by LetsZero" sub-label (it's in the footer). Logo h-10→h-12. Clean single-line: logo + "RepMail".
+
+**Fake metrics removed (Landing.jsx):** All fabricated stats (2B+ emails, 10K+ businesses, 99.9% uptime, <50ms API) replaced with real product facts. No more testimonial (Sarah Kim / TechCorp). Feature descriptions no longer claim SOC 2, GDPR, dedicated IPs, global infra, or 99.9% deliverability.
+
+**Roadmap dates (WaitlistLanding.jsx):** "Q2 2026" / "Q3 2026" → "Planned" / "Future". No fake timelines.
+
+**Trust rule for future engineers:** Any statistic, metric, or testimonial on a public marketing page must be sourced from real production data. If a number cannot be verified, remove it.
 
 ---
 

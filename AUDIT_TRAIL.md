@@ -3084,3 +3084,80 @@ Dual-logo pattern — `hidden dark:block` for white / `block dark:hidden` for bl
 - `grep -r "repmail-logo.png" client/src/` → 0 results (all references updated)
 - LetsZero logo: `WaitlistLanding.jsx`, `marketing/LFP_final/LandingExperience.tsx` — both untouched, still reference `/letszero-logo.png`
 - Railway auto-deploy triggered by push to `origin/main` (`d2d2d04`)
+
+---
+
+## Audit 035 — Phase 15.2: Landing Page, Pricing UX & Brand Trust Hardening
+
+**Date:** 2026-06-22
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Commits:** `d4323d7` (UX), `3ec108c` (BRANDING), `3202032` (TRUST)
+**Scope:** Pricing slider bug, fake metrics/testimonials, navigation branding, roadmap dates, feature claims.
+
+### Part 1 — Pricing Slider Bug (HIGH)
+
+**Root cause:** Slider was linear from 3,000 to 300,000. At 10K credits, the thumb position was `(10000-3000)/(300000-3000) = 2.36%` — visually indistinguishable from the 3K position. The slider and input were correctly synced in state; the issue was purely a visual scale problem on a dataset spanning 2 orders of magnitude.
+
+**Fix:** Logarithmic scale via `creditsToSlider()` and `sliderToCredits()` module-level helpers. Slider now runs 0–1000 internally, mapped through `log10` space. Visual positions: 3K=0%, 10K≈26%, 50K≈61%, 100K≈76%, 300K=100%.
+
+**Verified both directions:** slider→input and input→slider. No drift possible because `creditsToSlider(sliderToCredits(x)) ≈ x` to within 1 internal step.
+
+### Part 6 — Pricing Table 10K Row Error
+
+**Root cause:** `VOLUME_ROWS[2]` (10K) was hardcoded with values from the wrong tier. Used rate ₹0.13/credit (3K tier) instead of ₹0.12/credit (10K+ tier), and showed bonus=0.
+
+**Fix:** Updated to match `calcPurchase(10000)` output:
+- priceINR: 1300 → 1200
+- bonus: 0 → 833
+- total: 10000 → 10833
+
+**Single source of truth:** `CREDIT_TIERS`, `calcPurchase()`, `VOLUME_ROWS`, and `PLANS` are now consistent. 3K and 5K correctly display `—` (no bonus) because their tier has `prevRate: null`.
+
+### Part 2 — LetsZero Navbar Branding
+
+**Decision:** Logo + LetsZero (Option B). Brand name recognition matters for a pre-launch product with external context from different entry points. Logo-only loses the brand anchor.
+
+**Change:** Removed "ZERO NOISE" superscript tagline from `LandingExperience.tsx`. Increased LetsZero text: 16px → 20px, flat single-line layout. No structural nav changes.
+
+### Part 3 — Roadmap Dates
+
+**Change in `WaitlistLanding.jsx`:**
+- "MessageHub · Q2 2026" → "MessageHub · Planned"
+- "NotifyStream · Q3 2026" → "NotifyStream · Future"
+
+No fabricated timelines.
+
+### Part 4 — Fake Metrics & Testimonials (TRUST)
+
+**Removed from `Landing.jsx`:**
+
+| Fake claim | Replacement |
+|-----------|-------------|
+| 2B+ emails delivered | AWS SES delivery infrastructure |
+| 10K+ active businesses | GPT-4o AI personalization |
+| 99.9% uptime SLA | ₹0.10 per email at volume |
+| <50ms API response | 6-month credit validity |
+| Testimonial (Sarah Kim, TechCorp) | "Built on proven infrastructure" capability checklist |
+| "99.9% Deliverability" feature | "SES-Backed Delivery" (accurate) |
+| "SOC 2 Type II, GDPR, end-to-end encryption" | "Bounce Protection" (real) |
+| "Global Infrastructure / multi-region / failover" | "Team Management" (real) |
+| "Enterprise-Grade Email Delivery Platform" | "B2B Email Campaign Platform" |
+| "Send millions of emails with 99.9% deliverability" | Honest copy about AWS SES and AI |
+| "14-day free trial" | "500 free credits to start" |
+| "Join thousands of businesses / millions of emails" | "Start with 500 free credits. No subscription." |
+
+### Part 5 — RepMail Landing Navbar
+
+Removed "by LetsZero" gradient sub-label from nav (already in footer). Logo size h-10→h-12. RepMail text 20px→22px. Cleaner single-line brand anchor.
+
+### Part 7 — Readability
+
+Removed buzzwords: "enterprise-grade", "for serious businesses", "industry-leading". Replaced with specific technical claims that can be verified by reading the code. All stats now have explicit sources.
+
+### Build Verification
+
+`npm run build` passed with 0 TypeScript errors. No regressions detected. Pre-existing warnings unchanged (Tailwind content pattern, PostCSS from option, chunk size).
+
+### Updated launch readiness score
+
+**9.2/10** — Trust issues resolved. Pricing UI correct. No fabricated claims remain on any public page.

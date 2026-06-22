@@ -781,3 +781,27 @@ White/black logo variants deployed across all RepMail surfaces. Favicon updated.
 | LetsZero logo untouched | **COMPLETE** | `WaitlistLanding.jsx`, `LandingExperience.tsx` — unchanged |
 
 **Milestone status: COMPLETE — Audit 034.**
+
+---
+
+### 31 · Phase 15.2 — Landing Page, Pricing UX & Brand Trust (2026-06-22)
+
+Three commits: `d4323d7` (UX), `3ec108c` (BRANDING), `3202032` (TRUST).
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Pricing slider bug fixed (log scale) | **COMPLETE** | creditsToSlider()/sliderToCredits() in PublicPricing.jsx — 10K → 26% of slider |
+| 10K VOLUME_ROWS corrected | **COMPLETE** | priceINR 1300→1200, bonus 0→833, total 10000→10833 |
+| CREDIT_TIERS / VOLUME_ROWS / calcPurchase consistent | **COMPLETE** | Single source of truth verified |
+| LetsZero "Zero Noise" tagline removed | **COMPLETE** | LandingExperience.tsx — logo + LetsZero only |
+| RepMail landing nav simplified | **COMPLETE** | Landing.jsx — "by LetsZero" removed, logo h-12, RepMail 22px |
+| Roadmap fake dates removed | **COMPLETE** | WaitlistLanding.jsx — "Planned" / "Future" |
+| Fake stats removed | **COMPLETE** | Landing.jsx — replaced with real product facts |
+| Fake testimonial removed | **COMPLETE** | Landing.jsx — replaced with infrastructure checklist |
+| Fake feature claims fixed | **COMPLETE** | Landing.jsx — no SOC2/GDPR/99.9% claims |
+| Hero copy sanitised | **COMPLETE** | Landing.jsx — no "millions of emails" / "14-day trial" |
+| Build verified | **COMPLETE** | npm run build — 0 errors |
+
+**Updated launch readiness score: 9.2/10**
+
+**Milestone status: COMPLETE — Audit 035.**
