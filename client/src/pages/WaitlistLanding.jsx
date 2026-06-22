@@ -759,12 +759,12 @@ export default function WaitlistLanding() {
               <div className="w-px h-5 bg-white/10" />
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub · Q2 2026</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub · Planned</span>
               </div>
               <div className="w-px h-5 bg-white/10 hidden sm:block" />
               <div className="hidden sm:flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream · Q3 2026</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream · Future</span>
               </div>
             </motion.div>
           </div>

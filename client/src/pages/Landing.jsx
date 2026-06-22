@@ -186,49 +186,49 @@ const getColorClasses = (color) => {
 // Features data
 const features = [
   {
-    icon: TrendingUp,
-    title: '99.9% Deliverability',
-    description: 'Industry-leading inbox placement with dedicated IPs and DKIM/SPF authentication',
+    icon: Send,
+    title: 'SES-Backed Delivery',
+    description: 'Email delivery via AWS SES SMTP with DKIM and SPF authentication. Real-time bounce and complaint processing via SNS.',
     gradient: 'from-cyan-500/10 to-cyan-500/5'
   },
   {
     icon: BarChart3,
     title: 'Real-Time Analytics',
-    description: 'Track opens, clicks, bounces, and conversions with millisecond precision',
+    description: 'Track opens, clicks, bounces, and complaints per campaign. Full credit usage history and delivery dashboard.',
     gradient: 'from-indigo-500/10 to-indigo-500/5'
   },
   {
     icon: Zap,
     title: 'AI Personalization',
-    description: 'Dynamic content blocks that adapt to each recipient automatically',
+    description: 'GPT-4o powered template generation per campaign type. Spam scoring and inbox placement analysis before you send.',
     gradient: 'from-purple-500/10 to-purple-500/5'
   },
   {
     icon: Shield,
-    title: 'Enterprise Security',
-    description: 'SOC 2 Type II, GDPR compliant, with end-to-end encryption',
+    title: 'Bounce Protection',
+    description: 'Automatic suppression list management. Campaign auto-pause on bounce or complaint thresholds to protect sender reputation.',
     gradient: 'from-emerald-500/10 to-emerald-500/5'
   },
   {
-    icon: Globe,
-    title: 'Global Infrastructure',
-    description: 'Send from multiple regions with automatic failover and load balancing',
+    icon: Users,
+    title: 'Team Management',
+    description: 'Three-tier role hierarchy with credit distribution across sub-admins and users. Audit log on every action.',
     gradient: 'from-blue-500/10 to-blue-500/5'
   },
   {
-    icon: Users,
-    title: 'Team Collaboration',
-    description: 'Role-based access, approval workflows, and audit logs for compliance',
+    icon: Upload,
+    title: 'Contact Management',
+    description: 'Import contacts via CSV or Excel with smart field detection. Duplicate handling, validation, and per-contact send history.',
     gradient: 'from-pink-500/10 to-pink-500/5'
   }
 ];
 
-// Stats data
+// Stats data — real product facts, no fabricated numbers
 const stats = [
-  { value: '2B+', label: 'Emails Delivered' },
-  { value: '99.9%', label: 'Uptime SLA' },
-  { value: '10K+', label: 'Active Businesses' },
-  { value: '<50ms', label: 'API Response' }
+  { value: 'AWS SES', label: 'Delivery Infrastructure' },
+  { value: 'GPT-4o', label: 'AI Personalization' },
+  { value: '₹0.10', label: 'Per Email at Volume' },
+  { value: '6 months', label: 'Credit Validity' },
 ];
 
 export default function Landing() {
@@ -258,35 +258,19 @@ export default function Landing() {
             <img
               src="/repmail-logo-white.png"
               alt="RepMail"
-              className="h-10 w-auto rounded-lg"
+              className="h-12 w-auto rounded-lg"
               style={{ objectFit: "contain" }}
             />
-            <div className="flex flex-col leading-none">
-              <span style={{
-                fontSize: "11px",
-                fontWeight: 600,
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                background: "linear-gradient(90deg, #00E5C8, #60A5FA)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-                fontFamily: "'Inter', sans-serif",
-                marginBottom: "3px"
-              }}>
-                by LetsZero
-              </span>
-              <span style={{
-                fontSize: "20px",
-                fontWeight: 700,
-                letterSpacing: "-0.02em",
-                color: "#FFFFFF",
-                fontFamily: "'Space Grotesk', 'Inter', sans-serif",
-                lineHeight: 1
-              }}>
-                RepMail
-              </span>
-            </div>
+            <span style={{
+              fontSize: "22px",
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+              color: "#FFFFFF",
+              fontFamily: "'Space Grotesk', 'Inter', sans-serif",
+              lineHeight: 1
+            }}>
+              RepMail
+            </span>
           </motion.div>
         </div>
         <div className="flex items-center space-x-3">
@@ -351,7 +335,7 @@ export default function Landing() {
             variants={fadeInUp}
           >
             <Zap className="w-4 h-4" />
-            <span>Enterprise-Grade Email Delivery Platform</span>
+            <span>B2B Email Campaign Platform</span>
           </motion.div>
           
           <motion.h1 
@@ -369,7 +353,7 @@ export default function Landing() {
             className="text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed"
             variants={fadeInUp}
           >
-            Send millions of emails with 99.9% deliverability. Get advanced analytics, AI-powered personalization, and enterprise-grade security for serious businesses.
+            Run B2B email campaigns on AWS SES with AI-powered personalization and real-time delivery analytics. Built for sales teams who need control over their outbound pipeline.
           </motion.p>
           
           <motion.div 
@@ -406,7 +390,7 @@ export default function Landing() {
           >
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>14-day free trial</span>
+              <span>500 free credits to start</span>
             </div>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
@@ -414,7 +398,7 @@ export default function Landing() {
             </div>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>500 trial free credits</span>
+              <span>No subscription required</span>
             </div>
           </motion.div>
         </motion.div>
@@ -641,42 +625,32 @@ export default function Landing() {
         </motion.div>
       </section>
 
-      {/* Testimonial */}
+      {/* Infrastructure Highlights */}
       <section className="relative z-10 container mx-auto px-6 py-16">
-        <motion.div 
+        <motion.div
           className="max-w-4xl mx-auto"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
           variants={fadeInUp}
         >
-          <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-10 text-center">
-            <div className="flex justify-center mb-6">
-              {[...Array(5)].map((_, i) => (
-                <motion.svg 
-                  key={i} 
-                  className="w-6 h-6 text-yellow-400 fill-current" 
-                  viewBox="0 0 24 24"
-                  initial={{ opacity: 0, scale: 0 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 }}
-                >
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </motion.svg>
+          <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-10">
+            <h3 className="text-xl font-bold text-white mb-2 text-center">Built on proven infrastructure</h3>
+            <p className="text-slate-400 text-sm text-center mb-8">Every component is production-grade — no placeholder integrations.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                'AWS SES SMTP delivery with DKIM/SPF',
+                'BullMQ async campaign processing queue',
+                'Real-time SNS bounce and complaint events',
+                'GPT-4o AI email personalization',
+                'Automatic suppression list management',
+                'Full audit log on every system action',
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-3">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                  <span className="text-slate-300 text-sm">{item}</span>
+                </div>
               ))}
-            </div>
-            <blockquote className="text-xl text-white mb-6 italic">
-              "REPMAIL transformed our outreach. We went from 20% to 95% delivery rates overnight. The AI personalization is incredible."
-            </blockquote>
-            <div className="flex items-center justify-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-cyan-400 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold">
-                SK
-              </div>
-              <div className="text-left">
-                <div className="text-white font-medium">Sarah Kim</div>
-                <div className="text-slate-400 text-sm">Head of Marketing, TechCorp</div>
-              </div>
             </div>
           </div>
         </motion.div>
@@ -691,8 +665,8 @@ export default function Landing() {
           viewport={{ once: true }}
           variants={scaleIn}
         >
-          <h2 className="text-4xl font-bold text-white">Ready to transform your email marketing?</h2>
-          <p className="text-xl text-slate-300">Join thousands of businesses sending millions of emails with confidence</p>
+          <h2 className="text-4xl font-bold text-white">Ready to run your first campaign?</h2>
+          <p className="text-xl text-slate-300">Start with 500 free credits. No subscription required.</p>
           <motion.div whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.98 }}>
             <Link href="/login">
               <Button 
@@ -704,7 +678,7 @@ export default function Landing() {
               </Button>
             </Link>
           </motion.div>
-          <p className="text-sm text-slate-500">No credit card required • 500 trial free credits • Cancel anytime</p>
+          <p className="text-sm text-slate-500">No credit card required • 500 free credits • No subscription</p>
         </motion.div>
       </section>
 
