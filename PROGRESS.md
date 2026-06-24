@@ -1088,3 +1088,20 @@ Full production readiness audit (Audit 047) + implementation of approved finding
 | Build clean | **COMPLETE** | 0 errors, 5047 modules |
 
 **Milestone status: COMPLETE — Audit 048.**
+
+---
+
+### 45 · SEO Infrastructure — sitemap.xml + robots.txt (2026-06-25)
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| `client/public/sitemap.xml` created | **COMPLETE** | 6 URLs, W3C-valid XML, served at `/sitemap.xml` |
+| `client/public/robots.txt` created | **COMPLETE** | `Allow: /` + Sitemap directive |
+| Beta gate extended for `.xml` and `.txt` | **COMPLETE** | `server/index.js` `isStaticFile` regex updated |
+| `dist/public/sitemap.xml` present after build | **VERIFIED** | Confirmed in built output |
+| `dist/public/robots.txt` present after build | **VERIFIED** | Confirmed in built output |
+| Build clean | **COMPLETE** | 0 errors, 5047 modules |
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 049.
+
+**Milestone status: COMPLETE — Audit 049.**

@@ -514,7 +514,7 @@ async function diagnoseSMTPPath() {
     ];
 
     const isAllowed = allowedPaths.some(path => req.path === path);
-    const isStaticFile = /\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map)$/i.test(req.path);
+    const isStaticFile = /\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map|xml|txt)$/i.test(req.path);
     const isAsset = req.path.startsWith('/assets');
 
     if (isAllowed || isStaticFile || isAsset) return next();

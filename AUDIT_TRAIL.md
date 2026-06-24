@@ -3922,3 +3922,83 @@ Tag is unconditional — present on every page render, every route, every enviro
 ### Verification
 
 After Railway deploys: view-source `https://www.letszero.in` and search for `google-site-verification`. Then submit verification in Google Search Console.
+
+---
+
+## Audit 049 — SEO Infrastructure: sitemap.xml + robots.txt (2026-06-25)
+
+**Date:** 2026-06-25
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full SEO infrastructure audit; sitemap.xml and robots.txt creation; beta-gate structural fix for static files
+**Trigger:** Search Console reporting `/sitemap.xml` as 404 / "Couldn't fetch"
+
+### Infrastructure Audit Findings
+
+| Check | Status | Detail |
+|-------|--------|--------|
+| `sitemap.xml` exists in codebase | **MISSING** | No file anywhere in repo before this change |
+| `robots.txt` exists in codebase | **MISSING** | Same |
+| Vite public directory | **EXISTS** | `client/public/` — files copied verbatim to `dist/public/` at build time, no hashing |
+| Express static serving | **CORRECT** | `server/static.js`: `express.static(distPath)` serves `dist/public/` before SPA catch-all |
+| Beta gate `.xml`/`.txt` extensions | **MISSING** | `isStaticFile` regex only covered `js\|css\|png\|jpg\|jpeg\|svg\|ico\|woff\|woff2\|ttf\|eot\|map` — `.xml` and `.txt` absent. With `REPMAIL_PUBLIC=true` inert; structural risk if beta mode re-enabled. |
+| `<meta name="description">` | **MISSING** | `client/index.html` has no description meta tag |
+| Open Graph tags | **MISSING** | No `og:title`, `og:description`, `og:image` |
+| Canonical URL | **MISSING** | No `<link rel="canonical">` |
+| `Disallow` for app/API routes | **MISSING** | No robots.txt disallow rules for `/app/` or `/api/` |
+| Page `<title>` | **GENERIC** | `<title>LetsZero</title>` — no keyword context, no brand descriptor |
+
+### Changes Implemented
+
+**1. `client/public/sitemap.xml` — CREATED**
+
+6 URLs, W3C-valid XML sitemap format, `xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"`:
+- `/` — priority 1.0, weekly
+- `/products/repmail` — priority 0.9, weekly
+- `/pricing` — priority 0.9, weekly
+- `/contact` — priority 0.7, monthly
+- `/privacy` — priority 0.3, monthly
+- `/terms` — priority 0.3, monthly
+
+**2. `client/public/robots.txt` — CREATED**
+
+```
+User-agent: *
+Allow: /
+
+Sitemap: https://www.letszero.in/sitemap.xml
+```
+
+**3. `server/index.js` — beta gate `isStaticFile` regex extended**
+
+Before: `js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map`
+After: `js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map|xml|txt`
+
+Ensures `sitemap.xml` and `robots.txt` pass through the beta gate even if `REPMAIL_PUBLIC` is ever set to false.
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules.
+
+`dist/public/sitemap.xml` — present ✓
+`dist/public/robots.txt` — present ✓
+
+### Constructive SEO Review — Additional Issues
+
+The following are not launch-blocking in the same way as a missing sitemap, but should be addressed before serious SEO investment:
+
+| Issue | Severity | Fix |
+|-------|----------|-----|
+| No `<meta name="description">` | HIGH | Add to `client/index.html` — affects SERP snippet quality |
+| Generic `<title>LetsZero</title>` | HIGH | Should be "RepMail by LetsZero — AI Email Campaigns for Sales Teams" or similar |
+| No Open Graph tags | MEDIUM | `og:title`, `og:description`, `og:image` — required for social sharing |
+| No `Disallow: /app/ /api/` in robots.txt | MEDIUM | Crawlers should not index authenticated app routes |
+| No canonical URL | MEDIUM | `<link rel="canonical" href="https://www.letszero.in/" />` — prevents duplicate-content penalties from www/non-www |
+| SPA rendering | INFO | Google renders JS but with delay. Static HTML for marketing pages (SSG/SSR) would improve crawl reliability. Not urgent at current traffic. |
+| `letszero.in` → `www.letszero.in` redirect | INFO | If not configured at DNS/Railway level, non-www has separate indexing |
+
+### Verification URLs
+
+```
+https://www.letszero.in/sitemap.xml   → must return 200 with XML content
+https://www.letszero.in/robots.txt    → must return 200 with text content
+```

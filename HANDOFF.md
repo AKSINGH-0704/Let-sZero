@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–048 applied through 2026-06-24  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–049 applied through 2026-06-25  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -828,6 +828,41 @@ railway run node scripts/check-schema-parity.mjs
 5. Deploy to Railway — `runSchemaCheck()` verifies columns on boot, exits 1 if mismatch
 
 **Note:** `migrations/` directory does not yet exist. Run `npm run db:generate` once to bootstrap the migration baseline from the current schema before using `db:migrate`.
+
+---
+
+## SEO Infrastructure
+
+### Static files (Audit 049)
+
+| File | Source | Served at |
+|------|--------|----------|
+| `client/public/sitemap.xml` | Vite public dir → `dist/public/sitemap.xml` | `https://www.letszero.in/sitemap.xml` |
+| `client/public/robots.txt` | Vite public dir → `dist/public/robots.txt` | `https://www.letszero.in/robots.txt` |
+
+Files in `client/public/` are copied verbatim by Vite (no hashing) and served by `express.static` in `server/static.js`.
+
+### Sitemap URLs
+
+```
+https://www.letszero.in/
+https://www.letszero.in/products/repmail
+https://www.letszero.in/pricing
+https://www.letszero.in/contact
+https://www.letszero.in/privacy
+https://www.letszero.in/terms
+```
+
+### Known SEO gaps (deferred)
+
+| Gap | Priority |
+|-----|---------|
+| No `<meta name="description">` in `client/index.html` | HIGH |
+| Generic `<title>LetsZero</title>` — no keyword context | HIGH |
+| No Open Graph tags (`og:title`, `og:description`, `og:image`) | MEDIUM |
+| No `Disallow: /app/ /api/` in robots.txt | MEDIUM |
+| No canonical URL tag | MEDIUM |
+| `letszero.in` (non-www) redirect not confirmed at DNS level | INFO |
 
 ---
 
