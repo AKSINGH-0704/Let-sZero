@@ -681,39 +681,43 @@ export async function registerRoutes(httpServer, app) {
         }
       }
     ));
-  }
 
-  // Redirect to Google
-  app.get("/api/auth/google",
-    passport.authenticate("google", { scope: ["profile", "email"], session: false })
-  );
+    // Redirect to Google
+    app.get("/api/auth/google",
+      passport.authenticate("google", { scope: ["profile", "email"], session: false })
+    );
 
-  // Google callback — create session token and set cookie
-  app.get("/api/auth/google/callback",
-    passport.authenticate("google", { session: false, failureRedirect: "/login?error=google_failed" }),
-    async (req, res) => {
-      try {
-        const session = await storage.createSession(req.user.id);
-        res.cookie("token", session.token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 24 * 60 * 60 * 1000,
-        });
-        await storage.createAuditLog({
-          userId: req.user.id,
-          action: AUDIT_ACTIONS.USER_LOGIN,
-          ipAddress: req.ip,
-          userAgent: req.headers["user-agent"],
-        });
-        const isNewOAuthUser = req.user._isNewOAuthUser === true;
-        res.redirect(isNewOAuthUser ? "/app/dashboard?welcome=1" : "/app/dashboard");
-      } catch (err) {
-        console.error("Google callback error:", err);
-        res.redirect("/login?error=google_failed");
+    // Google callback — create session token and set cookie
+    app.get("/api/auth/google/callback",
+      passport.authenticate("google", { session: false, failureRedirect: "/login?error=google_failed" }),
+      async (req, res) => {
+        try {
+          const session = await storage.createSession(req.user.id);
+          res.cookie("token", session.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 24 * 60 * 60 * 1000,
+          });
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.USER_LOGIN,
+            ipAddress: req.ip,
+            userAgent: req.headers["user-agent"],
+          });
+          const isNewOAuthUser = req.user._isNewOAuthUser === true;
+          res.redirect(isNewOAuthUser ? "/app/dashboard?welcome=1" : "/app/dashboard");
+        } catch (err) {
+          console.error("Google callback error:", err);
+          res.redirect("/login?error=google_failed");
+        }
       }
-    }
-  );
+    );
+  } else {
+    console.warn("[OAuth] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not configured — Google sign-in disabled");
+    app.get("/api/auth/google", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
+    app.get("/api/auth/google/callback", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
+  }
   // ── End Google OAuth ───────────────────────────────────────────────────────
 
   // ── Public: unsubscribe ────────────────────────────────────────────────────

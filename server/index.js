@@ -504,9 +504,13 @@ async function diagnoseSMTPPath() {
       '/',
       '/early-access',
       '/contact',
+      '/login',
       '/api/waitlist',
       '/api/contact',
       '/api/health',
+      '/api/auth/google',
+      '/api/auth/google/callback',
+      '/api/auth/logout',
     ];
 
     const isAllowed = allowedPaths.some(path => req.path === path);
