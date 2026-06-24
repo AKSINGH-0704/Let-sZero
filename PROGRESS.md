@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-24
-**Current commit:** `0e37843` — see AUDIT_TRAIL.md Audits 039–041
+**Current commit:** `00a260a` — see AUDIT_TRAIL.md Audits 039–042
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -941,3 +941,27 @@ LetsZero (Privacy.jsx / Terms.jsx)
 ```
 
 **Milestone status: COMPLETE — Audit 041.**
+
+---
+
+### 38 · Legal Content Review + Pre-Deploy Fixes (2026-06-24)
+
+One commit: `00a260a`. Pushed to origin/main.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Section-by-section content audit | **COMPLETE** | 12 Privacy sections + 13 Terms sections reviewed |
+| Privacy S2.6: "anomaly detection" removed | **COMPLETE** | "server-side log monitoring and error tracking" |
+| Privacy S10: GDPR Art.46 language removed | **COMPLETE** | No "appropriate safeguards" claim; factual statement only |
+| Terms hero: em dash removed | **COMPLETE** | `&middot;` consistent with Privacy page |
+| Terms S2: ambiguous account limit rewritten | **COMPLETE** | Duplicate prohibition clear; multi-product use not restricted |
+| Terms S3: "suppression enforcement" removed | **COMPLETE** | "built-in safeguards" — platform-neutral |
+| Terms S7: "high-availability" removed | **COMPLETE** | "consistent, reliable service" — no false SLA claim |
+| No RepMail language remaining | **VERIFIED** | Full text scan — clean |
+| No fake certifications | **VERIFIED** | No SOC 2, ISO 27001, GDPR cert claims |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+| Pushed to origin/main | **COMPLETE** | Railway auto-deploy triggered |
+
+**Trust policy decisions documented:** AUDIT_TRAIL.md Audit 042.
+
+**Milestone status: COMPLETE — Audit 042.**

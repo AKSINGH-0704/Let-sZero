@@ -3439,3 +3439,68 @@ New products add a supplemental privacy notice and supplemental terms. Platform 
 ### Build Verification
 
 `npm run build` — 0 errors. 5047 modules transformed.
+
+---
+
+## Audit 042 — Legal Content Review + Pre-Deploy Fixes (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Section-by-section content review of both legal pages prior to deploy. 6 issues identified and fixed.
+**Commits:** `0e37843` (initial rewrite) + `00a260a` (content fixes)
+**Pushed to origin/main:** Yes
+
+### Issues Found and Corrected
+
+| # | File | Section | Issue | Fix |
+|---|---|---|---|---|
+| 1 | Privacy.jsx | S2.6 | "anomaly detection" overstates monitoring — implies automated behavioral analysis not confirmed to exist | Changed to "server-side log monitoring and error tracking" |
+| 2 | Privacy.jsx | S10 | "appropriate safeguards" is GDPR Art.46 language; no SCCs or DPAs exist | Removed. Replaced: providers operate under applicable frameworks; security applied regardless of processing location |
+| 3 | Terms.jsx | Hero | `&mdash;` em dash in subtitle violates style requirement | Replaced with `&middot;` |
+| 4 | Terms.jsx | S2 | "One account per person per product" — ambiguous; could imply separate accounts required per product | Rewritten: prohibition on duplicates for same product. Multi-product use not restricted. |
+| 5 | Terms.jsx | S3 | "suppression enforcement" is email/RepMail-specific language | Replaced with "built-in safeguards" |
+| 6 | Terms.jsx | S7 | "high-availability service" implies formal SLA (99.9%+) without supporting commitment | Replaced with "consistent, reliable service" |
+
+### Verified Clean
+
+| Check | Result |
+|-------|--------|
+| RepMail-specific language remaining | None |
+| SES / SNS / Railway / Razorpay remaining | None |
+| Fake compliance certifications | None |
+| Promise of uninterrupted service | None (Terms S10 explicitly disclaims) |
+| Enterprise-grade security claims | None |
+| Em dashes | None after fix 3 |
+
+### Decisions Documented in This Phase
+
+| Decision | Authority record |
+|----------|-----------------|
+| LetsZero does not claim GDPR Art.46 safeguards (no SCCs/DPAs in place) | This audit entry |
+| LetsZero does not make SLA commitments at the platform level | This audit entry |
+| Platform legal documents name no specific infrastructure vendors | Audit 041 |
+| Supplemental terms/privacy pattern governs product-specific disclosures | Audit 041 |
+
+### Pre-Existing Operational Commitments
+
+These were in the original docs and carried forward. They require process, not code.
+
+| Commitment | Sections | Required operational process |
+|------------|----------|-------------------------------|
+| Data removed within 30 days of deletion request | Privacy S6, Terms S8 | Manual deletion within 30 days. No automated deletion job confirmed in codebase. |
+| Rights requests answered within 30 days | Privacy S7 | Support inbox tracking required |
+| Material changes notified 14 days in advance | Privacy S11, Terms S12 | Email-to-all-users capability required for mass notification |
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed. Pushed `d5d05f9..00a260a` to origin/main.
+
+### Documentation Verification
+
+**AUDIT_TRAIL.md:** Updated. Audit 042 appended. Records content review decisions as authoritative policy record.
+
+**PROGRESS.md:** Updated. Milestone 38 added.
+
+**HANDOFF.md:** Updated. Operational commitments section added. Current commit updated to `00a260a`.
+
+**LAUNCH_READINESS_REPORT.md:** Not updated. Reason: This phase is a trust and brand improvement. No launch gate condition changed. LAUNCH APPROVED status from Phase 11 (2026-06-20) remains valid. Report will be updated when a new operational validation phase changes readiness status.
