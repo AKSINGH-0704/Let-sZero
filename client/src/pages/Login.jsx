@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Redirect, Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
@@ -199,8 +199,21 @@ function SignInForm({ login, isLoggingIn, loginError }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [oauthError, setOauthError] = useState(null);
   const { toast } = useToast();
   const [, navigate] = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
+    if (code === "google_failed") {
+      setOauthError("Google sign-in was unsuccessful. Please try again or sign in with your username and password.");
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (code === "oauth_unavailable") {
+      setOauthError("Google sign-in is not available right now. Please sign in with your username and password.");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -227,6 +240,20 @@ function SignInForm({ login, isLoggingIn, loginError }) {
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
       <form onSubmit={handleSubmit} className="space-y-5">
+        {oauthError && (
+          <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-300 relative">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="pr-6">{oauthError}</AlertDescription>
+            <button
+              type="button"
+              onClick={() => setOauthError(null)}
+              className="absolute top-3 right-3 text-destructive-foreground/60 hover:text-destructive-foreground transition-colors"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </Alert>
+        )}
         {loginError && (
           <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2 duration-300">
             <AlertCircle className="h-4 w-4" />
