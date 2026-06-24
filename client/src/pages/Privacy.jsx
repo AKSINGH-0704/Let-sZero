@@ -14,8 +14,8 @@ export default function Privacy() {
         <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/">
             <img
-              src="/repmail-logo-white.png"
-              alt="RepMail"
+              src="/letszero-logo.png"
+              alt="LetsZero"
               className="h-8 w-auto cursor-pointer"
               style={{ objectFit: "contain" }}
             />
@@ -50,185 +50,226 @@ export default function Privacy() {
           Privacy Policy
         </h1>
         <p className="text-base mb-2" style={{ color: "#7878A0" }}>
-          Last updated: June 2026 &nbsp;·&nbsp; Effective for all RepMail users
+          Last updated: June 2026 &nbsp;&middot;&nbsp; Applies to all LetsZero accounts and products
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
-          LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;) operates the RepMail
-          email outreach platform available at{" "}
-          <span style={{ color: "#00E5C8" }}>letszero.in</span>. This Privacy Policy explains
-          what data we collect, how we use it, and your rights regarding that data.
+          LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) develops and operates
+          multiple business software products available at letszero.in. This Privacy Policy explains what
+          data we collect, how we use it, and your rights regarding that data. Individual products may
+          publish supplemental privacy notices for functionality specific to that product.
         </p>
       </div>
 
-      <div
-        className="max-w-4xl mx-auto px-6 pb-24"
-        style={{ "--accent": "#00E5C8" }}
-      >
-        <Section id="overview" title="1. Who We Are">
+      <div className="max-w-4xl mx-auto px-6 pb-24">
+        {/* Table of Contents */}
+        <nav
+          className="mb-12 p-5 rounded-xl"
+          style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
+        >
+          <p
+            className="text-xs font-semibold mb-3 uppercase tracking-widest"
+            style={{ color: "#55556A" }}
+          >
+            Contents
+          </p>
+          <ol className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5">
+            {[
+              ["#who-we-are",    "1.",  "Who We Are"],
+              ["#data-we-collect","2.", "What We Collect"],
+              ["#how-we-use",    "3.",  "How We Use Your Data"],
+              ["#legal-basis",   "4.",  "Legal Basis for Processing"],
+              ["#data-sharing",  "5.",  "Who We Share Data With"],
+              ["#data-retention","6.",  "Data Retention"],
+              ["#your-rights",   "7.",  "Your Rights"],
+              ["#security",      "8.",  "Security"],
+              ["#children",      "9.",  "Children's Privacy"],
+              ["#international", "10.", "International Data Transfers"],
+              ["#changes",       "11.", "Changes to This Policy"],
+              ["#contact",       "12.", "Contact"],
+            ].map(([href, num, title]) => (
+              <li key={href} className="flex items-start gap-2 text-sm">
+                <span className="flex-shrink-0" style={{ color: "#55556A", minWidth: "1.5rem" }}>
+                  {num}
+                </span>
+                <a
+                  href={href}
+                  className="hover:text-white transition-colors"
+                  style={{ color: "#7878A0" }}
+                >
+                  {title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <Section id="who-we-are" title="1. Who We Are">
           <p>
-            LetsZero Technologies provides RepMail, a credit-based email outreach platform
-            that lets teams send personalised campaigns through Amazon SES. Our registered
-            contact address for privacy matters is{" "}
+            LetsZero Technologies is a software company that builds and operates business software
+            products. Our products are available at{" "}
+            <span style={{ color: "#00E5C8" }}>letszero.in</span>. For privacy-related inquiries,
+            contact us at{" "}
             <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
               support@letszero.in
             </a>
             .
           </p>
+          <p className="mt-3">
+            This Policy establishes the baseline privacy standards that apply across all LetsZero
+            products. Where an individual product handles data in ways specific to its functionality,
+            a supplemental privacy notice for that product provides additional detail.
+          </p>
         </Section>
 
-        <Section id="data-we-collect" title="2. Data We Collect">
+        <Section id="data-we-collect" title="2. What We Collect">
           <SubHead>2.1 Account Information</SubHead>
           <p>
-            When you create a RepMail account — including via Google OAuth — we collect your
-            name, email address, and (optionally) your company name. If you sign in with
-            Google, we receive only the profile fields you authorise: name, email, and profile
-            picture. We do not receive your Google password or access to your Google mailbox.
+            When you register for a LetsZero account, we collect your name, email address, and any
+            additional profile information you choose to provide. If you sign in using a third-party
+            identity provider, we receive only the profile fields you authorise during that
+            authentication flow. We do not receive your third-party account password or persistent
+            access to your accounts on those services.
           </p>
 
-          <SubHead>2.2 Contact Lists</SubHead>
+          <SubHead>2.2 Usage Information</SubHead>
           <p>
-            When you upload a contact list for a campaign, we store the recipient email
-            addresses and any custom fields you provide (name, company, custom variables). You
-            are solely responsible for having lawful permission to contact these recipients.
-            We do not use your contact data for our own marketing.
+            We collect data about how you interact with our products, including feature usage, API
+            request timestamps, and error events. This data is used for platform reliability,
+            performance monitoring, and product improvement. We do not use third-party advertising
+            networks or ad-tracking pixels.
           </p>
 
-          <SubHead>2.3 Campaign Content</SubHead>
+          <SubHead>2.3 Billing Information</SubHead>
           <p>
-            We store the templates and campaign configurations you create. Email body content
-            is retained to power the campaign history and deliverability analytics you see in
-            the dashboard.
+            Payments are handled by our payment processor. We do not store card numbers, bank
+            details, or payment credentials. We retain transaction records, amounts, and associated
+            identifiers for your billing history and for compliance with applicable law.
           </p>
 
-          <SubHead>2.4 Email Delivery Events</SubHead>
+          <SubHead>2.4 Support Communications</SubHead>
           <p>
-            Amazon SES reports delivery events — sends, deliveries, bounces, complaints,
-            opens, and clicks — back to us via SNS webhooks. We store these events to populate
-            your campaign analytics and to maintain the suppression list required by CAN-SPAM
-            and similar regulations.
+            When you contact our support team, we retain those communications to resolve your
+            inquiry and to improve our support quality over time.
           </p>
 
-          <SubHead>2.5 Usage and Technical Data</SubHead>
+          <SubHead>2.5 Product-Specific Data</SubHead>
           <p>
-            We log server-side activity (API request timestamps, error events) for
-            debugging and uptime monitoring. We use session cookies to keep you signed in.
-            We do not use third-party analytics SDKs or ad-tracking pixels.
+            Individual products may process additional categories of data specific to their
+            functionality. Where this applies, the product&rsquo;s supplemental privacy notice
+            describes what is collected and why.
           </p>
 
-          <SubHead>2.6 Payment Information</SubHead>
+          <SubHead>2.6 Security and Monitoring</SubHead>
           <p>
-            Credit purchases are processed by Razorpay. We do not store card numbers or bank
-            details. We store the transaction ID, amount, and credit amount for your payment
-            history.
+            We monitor platform activity to detect abuse, fraud, and security threats. This
+            includes log analysis and anomaly detection on platform infrastructure. This data is
+            used exclusively for security and integrity purposes.
+          </p>
+
+          <SubHead>2.7 Cookies and Sessions</SubHead>
+          <p>
+            We use session cookies to keep you authenticated during your use of our products. We
+            do not use advertising cookies or third-party tracking cookies. Disabling cookies will
+            prevent you from signing in.
           </p>
         </Section>
 
         <Section id="how-we-use" title="3. How We Use Your Data">
           <ul className="list-disc pl-5 space-y-2">
-            <li>To create and manage your RepMail account.</li>
-            <li>To send emails on your behalf via Amazon SES.</li>
-            <li>To generate campaign analytics (open, click, bounce, complaint rates).</li>
-            <li>To enforce suppression lists and maintain CAN-SPAM/GDPR compliance.</li>
-            <li>To process credit purchases and maintain your payment history.</li>
-            <li>To respond to support requests sent to support@letszero.in.</li>
-            <li>To detect and prevent fraudulent or abusive use of the platform.</li>
-            <li>To send transactional notifications about your account (e.g. password resets).</li>
+            <li>To create and manage your account across LetsZero products.</li>
+            <li>To deliver the products and features you use.</li>
+            <li>To process billing and maintain your payment history.</li>
+            <li>To respond to support requests.</li>
+            <li>
+              To send transactional communications: account alerts, password resets, and billing
+              receipts.
+            </li>
+            <li>To detect and prevent fraud, abuse, and security threats.</li>
+            <li>To maintain platform reliability and improve product quality.</li>
           </ul>
           <p className="mt-4">
-            We do not sell your data. We do not use your data for advertising. We do not
-            share your contact lists with third parties.
+            We do not sell your data. We do not use your data for advertising. We do not share
+            your data with advertising networks.
           </p>
         </Section>
 
         <Section id="legal-basis" title="4. Legal Basis for Processing">
           <p>
-            If you are in the European Economic Area (EEA), our legal basis for processing
-            your data is:
+            If you are located in the European Economic Area (EEA) or the United Kingdom, our
+            legal bases for processing your personal data are:
           </p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>
               <strong style={{ color: "#F0F0F5" }}>Contract performance</strong> — processing
-              necessary to deliver the RepMail service you signed up for.
+              necessary to deliver the product or service you signed up for.
             </li>
             <li>
               <strong style={{ color: "#F0F0F5" }}>Legitimate interests</strong> — fraud
               prevention, security monitoring, and platform integrity.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Legal obligation</strong> — maintaining
-              suppression lists as required by anti-spam law.
+              <strong style={{ color: "#F0F0F5" }}>Legal obligation</strong> — compliance with
+              applicable laws and regulations.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Consent</strong> — where we ask for
-              optional permissions (e.g. Google OAuth scopes).
+              <strong style={{ color: "#F0F0F5" }}>Consent</strong> — where we have obtained
+              your explicit permission for specific optional processing.
             </li>
           </ul>
         </Section>
 
         <Section id="data-sharing" title="5. Who We Share Data With">
-          <p>We share your data only with:</p>
+          <p>We share your data only with service providers necessary to operate our platform:</p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Amazon Web Services (SES, SNS)</strong> —
-              to deliver your emails and receive delivery event notifications.
+              <strong style={{ color: "#F0F0F5" }}>Cloud infrastructure providers</strong> —
+              companies that host our applications and databases.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Razorpay</strong> — to process credit
-              purchases. Subject to Razorpay&rsquo;s own privacy policy.
+              <strong style={{ color: "#F0F0F5" }}>Payment processors</strong> — providers that
+              handle billing transactions on our behalf.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Railway</strong> — our cloud
-              infrastructure provider that hosts the RepMail application and PostgreSQL database.
-            </li>
-            <li>
-              <strong style={{ color: "#F0F0F5" }}>Google (if OAuth is used)</strong> — only
-              to verify your identity at sign-in. We do not receive ongoing access to your
-              Google account.
+              <strong style={{ color: "#F0F0F5" }}>Identity providers</strong> — third-party
+              sign-in services, if you choose to authenticate through them.
             </li>
           </ul>
           <p className="mt-4">
-            We may disclose data if required by law, court order, or to protect the safety
-            and rights of our users.
+            We may also disclose data when required by law, court order, or to protect the safety
+            and rights of our users. We do not sell your data or share it for marketing or
+            advertising purposes.
+          </p>
+          <p className="mt-3">
+            Specific providers used by each product are identified in that product&rsquo;s
+            supplemental privacy notice.
           </p>
         </Section>
 
         <Section id="data-retention" title="6. Data Retention">
           <p>
-            We retain your account data for as long as your account is active. Campaign data
-            and analytics are retained for 24 months from the campaign send date to support
-            your reporting history.
+            We retain your account data for as long as your account is active. If you delete your
+            account, your personal data is removed within 30 days, except where retention is
+            required by law or necessary to protect legitimate interests such as fraud prevention
+            or legal compliance.
           </p>
           <p className="mt-3">
-            Suppression list entries (bounced and complained addresses) are retained
-            indefinitely to comply with anti-spam obligations. If you delete your account, all
-            personal data is removed within 30 days except where retention is required by law
-            or to protect legitimate interests (e.g. fraud prevention).
+            Specific retention periods for product data — such as activity logs or usage history
+            — are described in each product&rsquo;s supplemental privacy notice.
           </p>
         </Section>
 
-        <Section id="cookies" title="7. Cookies and Sessions">
-          <p>
-            RepMail uses a single session cookie to keep you signed in. We do not use
-            tracking cookies, advertising cookies, or third-party analytics cookies.
-            Disabling cookies in your browser will prevent you from logging in to the
-            application.
-          </p>
-        </Section>
-
-        <Section id="your-rights" title="8. Your Rights">
-          <p>
-            Depending on your location, you may have the right to:
-          </p>
+        <Section id="your-rights" title="7. Your Rights">
+          <p>Depending on your location, you may have the right to:</p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>Access the personal data we hold about you.</li>
             <li>Correct inaccurate data.</li>
-            <li>Request deletion of your account and associated data.</li>
+            <li>Request deletion of your account and associated personal data.</li>
             <li>Object to or restrict certain processing.</li>
-            <li>Receive a copy of your data in a portable format.</li>
+            <li>Receive a portable copy of your data.</li>
             <li>Withdraw consent where processing is based on consent.</li>
           </ul>
           <p className="mt-4">
-            To exercise any of these rights, email us at{" "}
+            To exercise any of these rights, email{" "}
             <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
               support@letszero.in
             </a>
@@ -236,16 +277,15 @@ export default function Privacy() {
           </p>
         </Section>
 
-        <Section id="security" title="9. Security">
+        <Section id="security" title="8. Security">
           <p>
-            We use industry-standard measures including TLS encryption in transit, encrypted
-            database connections, bcrypt password hashing, and session-based authentication.
-            Our infrastructure is hosted on Railway with private internal networking between
-            the application and database.
+            We apply security measures across our platform, including encryption of data in
+            transit, encrypted database connections, secure password storage, and access controls
+            on internal systems.
           </p>
           <p className="mt-3">
-            No system is completely secure. If you believe you&rsquo;ve found a security
-            vulnerability, please report it to{" "}
+            No system is entirely secure. If you discover a security vulnerability, please report
+            it to{" "}
             <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
               support@letszero.in
             </a>{" "}
@@ -253,36 +293,38 @@ export default function Privacy() {
           </p>
         </Section>
 
-        <Section id="children" title="10. Children's Privacy">
+        <Section id="children" title="9. Children's Privacy">
           <p>
-            RepMail is not directed at children under 13. We do not knowingly collect data
-            from children. If you believe we have inadvertently collected data from a child,
-            please contact us immediately.
+            LetsZero products are not directed at children under 13. We do not knowingly collect
+            personal data from children. If you believe we have received data from a child, contact
+            us immediately at{" "}
+            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+              support@letszero.in
+            </a>
+            .
           </p>
         </Section>
 
-        <Section id="international" title="11. International Data Transfers">
+        <Section id="international" title="10. International Data Transfers">
           <p>
-            Our servers are located in the United States (Railway, US West region). Amazon
-            SES sends email from the EU North (Stockholm) region. By using RepMail, you
-            consent to your data being processed in these jurisdictions. We apply appropriate
-            safeguards for cross-border transfers.
+            Our services are primarily hosted in the United States. By using LetsZero products,
+            you acknowledge that your data may be processed in jurisdictions outside your own. We
+            apply appropriate safeguards for cross-border transfers consistent with applicable data
+            protection law.
           </p>
         </Section>
 
-        <Section id="changes" title="12. Changes to This Policy">
+        <Section id="changes" title="11. Changes to This Policy">
           <p>
             We may update this Privacy Policy from time to time. Material changes will be
-            announced via email to registered account holders at least 14 days before they
-            take effect. Continued use of RepMail after the effective date constitutes
+            communicated by email to registered account holders at least 14 days before they take
+            effect. Continued use of LetsZero products after the effective date constitutes
             acceptance of the revised policy.
           </p>
         </Section>
 
-        <Section id="contact" title="13. Contact">
-          <p>
-            For any privacy-related questions, data requests, or concerns:
-          </p>
+        <Section id="contact" title="12. Contact">
+          <p>For privacy questions, data requests, or concerns:</p>
           <div
             className="mt-4 p-4 rounded-xl"
             style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
@@ -297,7 +339,9 @@ export default function Privacy() {
             <p className="mt-1">
               Web:{" "}
               <Link href="/contact">
-                <span className="cursor-pointer" style={{ color: "#00E5C8" }}>letszero.in/contact</span>
+                <span className="cursor-pointer" style={{ color: "#00E5C8" }}>
+                  letszero.in/contact
+                </span>
               </Link>
             </p>
           </div>
@@ -305,14 +349,16 @@ export default function Privacy() {
       </div>
 
       {/* Footer */}
-      <footer
-        className="border-t"
-        style={{ background: "#06060B", borderColor: "#1A1A2E" }}
-      >
+      <footer className="border-t" style={{ background: "#06060B", borderColor: "#1A1A2E" }}>
         <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm" style={{ color: "#55556A" }}>
-            <img src="/repmail-logo-white.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
-            <span>© {new Date().getFullYear()} LetsZero. All rights reserved.</span>
+            <img
+              src="/letszero-logo.png"
+              alt="LetsZero"
+              className="h-6 w-auto"
+              style={{ objectFit: "contain" }}
+            />
+            <span>&copy; {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6 text-sm" style={{ color: "#55556A" }}>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
@@ -328,10 +374,7 @@ export default function Privacy() {
 function Section({ id, title, children }) {
   return (
     <section id={id} className="mt-12">
-      <div
-        className="w-8 h-px mb-4"
-        style={{ background: "#00E5C8" }}
-      />
+      <div className="w-8 h-px mb-4" style={{ background: "#00E5C8" }} />
       <h2
         className="text-xl font-bold mb-4"
         style={{ color: "#F0F0F5", fontFamily: "'Space Grotesk', sans-serif" }}

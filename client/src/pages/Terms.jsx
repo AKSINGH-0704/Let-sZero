@@ -14,8 +14,8 @@ export default function Terms() {
         <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/">
             <img
-              src="/repmail-logo-white.png"
-              alt="RepMail"
+              src="/letszero-logo.png"
+              alt="LetsZero"
               className="h-8 w-auto cursor-pointer"
               style={{ objectFit: "contain" }}
             />
@@ -26,7 +26,7 @@ export default function Terms() {
             <Link href="/login">
               <span
                 className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                style={{ background: "rgba(0,229,200,0.1)", border: "1px solid rgba(0,229,200,0.25)", color: "#00E5C8" }}
+                style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#8B5CF6" }}
               >
                 Sign In
               </span>
@@ -50,81 +50,132 @@ export default function Terms() {
           Terms of Service
         </h1>
         <p className="text-base mb-2" style={{ color: "#7878A0" }}>
-          Last updated: June 2026 &nbsp;·&nbsp; Binding on all RepMail accounts
+          Last updated: June 2026 &nbsp;&middot;&nbsp; Platform agreement &mdash; applies to all LetsZero products and services
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
-          These Terms of Service (&ldquo;Terms&rdquo;) govern your use of RepMail and related
-          services operated by LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;).
-          By creating an account or using RepMail, you agree to these Terms. If you do not
-          agree, do not use the service.
+          These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of software products
+          and related services operated by LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;,
+          &ldquo;us&rdquo;, &ldquo;our&rdquo;). By creating an account or using any LetsZero product, you agree
+          to these Terms. If you do not agree, do not use the services.
         </p>
       </div>
 
       <div className="max-w-4xl mx-auto px-6 pb-24">
-        <Section id="service" title="1. The Service">
+        {/* Table of Contents */}
+        <nav
+          className="mb-12 p-5 rounded-xl"
+          style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
+        >
+          <p
+            className="text-xs font-semibold mb-3 uppercase tracking-widest"
+            style={{ color: "#55556A" }}
+          >
+            Contents
+          </p>
+          <ol className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5">
+            {[
+              ["#about",          "1.",  "About These Terms"],
+              ["#accounts",       "2.",  "Accounts and Eligibility"],
+              ["#acceptable-use", "3.",  "Acceptable Use"],
+              ["#your-data",      "4.",  "Your Data and Our Role"],
+              ["#billing",        "5.",  "Subscriptions and Billing"],
+              ["#ip-and-content", "6.",  "Intellectual Property"],
+              ["#availability",   "7.",  "Platform Availability"],
+              ["#suspension",     "8.",  "Suspension and Termination"],
+              ["#liability",      "9.",  "Limitation of Liability"],
+              ["#disclaimer",     "10.", "Disclaimer of Warranties"],
+              ["#governing-law",  "11.", "Governing Law"],
+              ["#changes",        "12.", "Changes to These Terms"],
+              ["#contact",        "13.", "Contact"],
+            ].map(([href, num, title]) => (
+              <li key={href} className="flex items-start gap-2 text-sm">
+                <span className="flex-shrink-0" style={{ color: "#55556A", minWidth: "1.5rem" }}>
+                  {num}
+                </span>
+                <a
+                  href={href}
+                  className="hover:text-white transition-colors"
+                  style={{ color: "#7878A0" }}
+                >
+                  {title}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <Section id="about" title="1. About These Terms">
           <p>
-            RepMail is a credit-based email outreach platform. You purchase credits, create
-            campaigns, upload contact lists, and send personalised emails via Amazon SES.
-            One credit is consumed per email successfully submitted to SES for delivery.
+            LetsZero Technologies builds and operates multiple software products for businesses.
+            These Terms establish the agreement between you and LetsZero for your use of all
+            LetsZero products and services.
           </p>
           <p className="mt-3">
-            We provide the platform &ldquo;as-is&rdquo; and reserve the right to modify, suspend, or
-            discontinue any feature with reasonable notice. We will use reasonable efforts to
-            notify active users of material changes via the email address on file.
+            Individual products may have supplemental terms that apply in addition to these Terms,
+            addressing billing specifics or functionality unique to that product. Where supplemental
+            terms conflict with these Terms, the supplemental terms govern for that product.
           </p>
         </Section>
 
         <Section id="accounts" title="2. Accounts and Eligibility">
           <ul className="list-disc pl-5 space-y-2">
-            <li>You must be at least 18 years old to use RepMail.</li>
-            <li>You must provide accurate registration information. Fake accounts are prohibited.</li>
+            <li>You must be at least 18 years old to create a LetsZero account.</li>
             <li>
-              One free plan account per person. Creating multiple accounts to circumvent free
-              credit limits is prohibited and may result in suspension.
+              You must provide accurate registration information. Accounts created with false
+              information may be suspended.
             </li>
             <li>
-              You are responsible for maintaining the security of your account credentials.
-              Notify us immediately at{" "}
+              One account per person per product. Creating multiple accounts to extend free-tier
+              access or circumvent plan limits is prohibited and may result in suspension.
+            </li>
+            <li>
+              You are responsible for maintaining the security of your credentials. If you suspect
+              unauthorized access, notify us immediately at{" "}
               <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
                 support@letszero.in
-              </a>{" "}
-              if you suspect unauthorised access.
+              </a>
+              .
             </li>
             <li>
-              Team sub-accounts created under your account are your responsibility. You are
-              accountable for all activity on accounts you manage.
+              Where a LetsZero product supports team accounts or sub-users, you are responsible
+              for all activity on accounts you administer.
             </li>
           </ul>
         </Section>
 
         <Section id="acceptable-use" title="3. Acceptable Use">
-          <p>You agree to use RepMail only for lawful purposes. The following are strictly prohibited:</p>
+          <p>
+            You agree to use LetsZero products only for lawful purposes. The following are
+            prohibited:
+          </p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Spam and unsolicited email</strong> — sending
-              emails to recipients who have not given valid permission or have unsubscribed.
+              <strong style={{ color: "#F0F0F5" }}>Unlawful communications</strong> — sending
+              messages or notifications to recipients without a valid legal basis to do so,
+              including those who have opted out or unsubscribed.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Purchased or harvested lists</strong> —
-              uploading contacts obtained without their knowledge or from scrapers and data
-              brokers who do not obtain explicit consent.
+              <strong style={{ color: "#F0F0F5" }}>Identity misrepresentation</strong> —
+              impersonating another person or company, forging sender information, or using
+              deceptive identification.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Deceptive content</strong> — impersonating
-              another person or company, forging headers, or sending misleading subject lines.
+              <strong style={{ color: "#F0F0F5" }}>Harmful content</strong> — distributing
+              malware, phishing links, or content designed to deceive recipients into disclosing
+              credentials or sensitive information.
             </li>
             <li>
-              <strong style={{ color: "#F0F0F5" }}>Illegal content</strong> — campaigns
-              promoting illegal goods, services, or activities.
-            </li>
-            <li>
-              <strong style={{ color: "#F0F0F5" }}>Malware and phishing</strong> — sending
-              links to malicious sites or content designed to deceive recipients into disclosing
-              credentials.
+              <strong style={{ color: "#F0F0F5" }}>Illegal content</strong> — promoting illegal
+              goods, services, or activities through any LetsZero product.
             </li>
             <li>
               <strong style={{ color: "#F0F0F5" }}>Platform abuse</strong> — attempting to
-              bypass rate limits, trial-credit restrictions, or suppression enforcement.
+              circumvent rate limits, trial restrictions, suppression enforcement, or access
+              controls.
+            </li>
+            <li>
+              <strong style={{ color: "#F0F0F5" }}>Unauthorized resale</strong> — reselling or
+              sublicensing access to LetsZero products without our written permission.
             </li>
           </ul>
           <p className="mt-4">
@@ -133,184 +184,156 @@ export default function Terms() {
           </p>
         </Section>
 
-        <Section id="anti-spam" title="4. Anti-Spam Compliance">
+        <Section id="your-data" title="4. Your Data and Our Role">
           <p>
-            RepMail is designed for legitimate outreach to contacts you have a genuine
-            relationship with or explicit permission to contact. You are solely responsible
-            for complying with all applicable anti-spam laws, including:
+            Where a LetsZero product processes data on your behalf — such as customer or contact
+            information you import or manage through a product — you act as the data controller
+            and LetsZero acts as a data processor under applicable data protection law. You are
+            responsible for ensuring you have a lawful basis to process that data and for
+            complying with all applicable privacy and data protection obligations.
           </p>
-          <ul className="list-disc pl-5 space-y-2 mt-3">
-            <li>CAN-SPAM Act (United States)</li>
-            <li>CASL — Canada&rsquo;s Anti-Spam Legislation</li>
-            <li>GDPR (European Union) — consent requirements for marketing emails</li>
-            <li>IT Act and related rules (India)</li>
-          </ul>
-          <p className="mt-4">
-            RepMail automatically honours unsubscribes and bounces by adding affected
-            addresses to your suppression list. You must not manually remove suppressed
-            addresses to re-contact them.
+          <p className="mt-3">
+            We process customer-provided data only to deliver the services you have requested.
+            We do not use your contact or customer data for our own marketing.
+          </p>
+          <p className="mt-3">
+            For details on how LetsZero handles your own personal account data, see our{" "}
+            <Link href="/privacy">
+              <span className="cursor-pointer" style={{ color: "#8B5CF6" }}>
+                Privacy Policy
+              </span>
+            </Link>
+            .
           </p>
         </Section>
 
-        <Section id="contact-responsibility" title="5. Your Contact Data Responsibility">
+        <Section id="billing" title="5. Subscriptions and Billing">
+          <SubHead>5.1 Pricing Models</SubHead>
           <p>
-            By uploading a contact list, you represent and warrant that:
-          </p>
-          <ul className="list-disc pl-5 space-y-2 mt-3">
-            <li>
-              You have a lawful basis to contact each recipient (opt-in consent, legitimate
-              business relationship, or other legal basis applicable in your jurisdiction).
-            </li>
-            <li>
-              Your contact data was collected lawfully and you have the right to process it.
-            </li>
-            <li>
-              You will honour opt-out requests promptly and not re-add suppressed contacts.
-            </li>
-          </ul>
-          <p className="mt-4">
-            LetsZero is a data processor on your behalf for the contact data you upload.
-            You remain the data controller and bear full responsibility for your contact
-            data practices under applicable privacy laws.
-          </p>
-        </Section>
-
-        <Section id="credits" title="6. Credits and Payments">
-          <SubHead>6.1 Credit Purchases</SubHead>
-          <p>
-            Credits are purchased in advance. Prices are displayed in INR or USD at the time
-            of purchase. One credit is consumed per email successfully submitted to Amazon SES
-            for delivery. Credits are non-refundable except as stated in Section 6.3.
+            LetsZero products are available under various pricing models, including subscriptions,
+            credit-based usage, and free plans. The applicable pricing is displayed on each
+            product&rsquo;s pricing page before purchase. By completing a purchase, you agree to
+            the price and terms presented at that time.
           </p>
 
-          <SubHead>6.2 Credit Validity</SubHead>
+          <SubHead>5.2 Payment Processing</SubHead>
           <p>
-            Purchased credits are valid for 6 months from the date of purchase. After
-            expiry, unused credits may be forfeited. Volume bonus credits share the same
-            expiry as the base purchase. Free plan monthly credits (500/month) expire at the
-            end of each calendar month and do not roll over.
+            Payments are handled by our designated payment processor. We do not store card numbers,
+            bank credentials, or payment instrument details. All charges are final unless a refund
+            is granted under Section 5.3 or required by applicable law.
           </p>
 
-          <SubHead>6.3 Refund Policy</SubHead>
+          <SubHead>5.3 Refunds</SubHead>
           <p>
-            We offer refunds for unused purchased credits within 7 days of purchase, provided
-            fewer than 10% of the purchased credits have been used. To request a refund,
-            email{" "}
+            Refund eligibility is described on each product&rsquo;s pricing page or in the
+            product&rsquo;s supplemental terms. As a general principle, refund requests for
+            recently purchased plans or credits may be honoured within a reasonable window where
+            minimal usage has occurred. To request a refund, contact us at{" "}
             <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
               support@letszero.in
             </a>{" "}
-            with your payment ID. Refunds are processed within 5–7 business days. We reserve
-            the right to deny refund requests where there is evidence of platform abuse.
+            with your transaction details. We reserve the right to deny refund requests where
+            there is evidence of abuse or violation of these Terms.
           </p>
 
-          <SubHead>6.4 Free Plan</SubHead>
+          <SubHead>5.4 Free Plans and Trials</SubHead>
           <p>
-            The Free Plan provides 500 credits per calendar month at no charge. Free credits
-            cannot be rolled over to the next month. Free Plan accounts are subject to
-            reduced sending limits and feature restrictions as displayed on the pricing page.
+            Some LetsZero products offer free plans or trial access subject to usage limits and
+            feature restrictions. Details are described on each product&rsquo;s pricing page.
+            Creating multiple accounts to extend free access is a violation of these Terms.
           </p>
         </Section>
 
-        <Section id="ip-and-content" title="7. Intellectual Property">
+        <Section id="ip-and-content" title="6. Intellectual Property">
           <p>
-            RepMail, the LetsZero brand, and all platform code, design, and functionality are
-            owned by LetsZero Technologies. You may not copy, reverse engineer, or create
-            derivative works based on the platform.
+            LetsZero Technologies owns all rights to our products, brand, codebase, and platform
+            design. You may not copy, reverse engineer, or create derivative works based on any
+            LetsZero product.
           </p>
           <p className="mt-3">
-            You retain ownership of your campaign content, templates, and contact data. By
-            using RepMail, you grant LetsZero a limited licence to store and process this
-            content solely to provide the service.
+            You retain ownership of content you create within LetsZero products. By using our
+            products, you grant LetsZero a limited licence to store and process your content
+            solely to provide the services you have requested.
           </p>
         </Section>
 
-        <Section id="availability" title="8. Availability and SLA">
+        <Section id="availability" title="7. Platform Availability">
           <p>
-            We target 99.5% monthly uptime for the RepMail platform. Planned maintenance
-            windows will be announced with at least 24 hours notice via the status page or
-            email. We are not liable for downtime caused by third-party providers (AWS SES,
-            Railway, Razorpay, etc.).
+            We aim to maintain reliable, high-availability service across our products. Planned
+            maintenance will be announced in advance where practicable. We are not liable for
+            downtime caused by third-party infrastructure providers or circumstances outside our
+            control.
           </p>
           <p className="mt-3">
-            In the event of extended unplanned downtime exceeding 2 hours in a single
-            incident, we will credit affected accounts with a proportional number of free
-            credits at our discretion.
+            We provide our services &ldquo;as available&rdquo; and reserve the right to modify,
+            suspend, or discontinue any product or feature. We will use reasonable efforts to
+            notify active users of material changes via the email address on file.
           </p>
         </Section>
 
-        <Section id="suspension" title="9. Suspension and Termination">
-          <p>
-            We may suspend or terminate your account with immediate effect if:
-          </p>
+        <Section id="suspension" title="8. Suspension and Termination">
+          <p>We may suspend or terminate your account with immediate effect if:</p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
-            <li>You violate the Acceptable Use Policy (Section 3).</li>
-            <li>Your campaigns generate complaint rates above 0.1% or bounce rates above 5%.</li>
-            <li>We receive abuse complaints from your recipients.</li>
-            <li>Your account is found to be engaged in fraud or credit farming.</li>
+            <li>You violate these Terms or the Acceptable Use Policy in Section 3.</li>
+            <li>Your use of a LetsZero product violates applicable law.</li>
+            <li>We receive credible abuse reports relating to your account.</li>
+            <li>Your account is found to be engaged in fraud.</li>
           </ul>
           <p className="mt-4">
-            For minor violations, we will issue a warning before suspension. You may appeal
-            suspensions by contacting{" "}
+            For minor violations, we will issue a warning before suspension where practicable.
+            You may appeal a suspension by contacting{" "}
             <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
               support@letszero.in
             </a>
-            . Refunds for suspended accounts are at our discretion and will not be issued for
-            violations of these Terms.
+            . Refunds will not be issued for accounts terminated for violations of these Terms.
           </p>
           <p className="mt-3">
-            You may terminate your account at any time by contacting support. Upon
-            termination, your data will be deleted within 30 days.
+            You may close your account at any time by contacting support. Your data will be
+            deleted within 30 days of account closure.
           </p>
         </Section>
 
-        <Section id="liability" title="10. Limitation of Liability">
+        <Section id="liability" title="9. Limitation of Liability">
           <p>
-            To the maximum extent permitted by applicable law, LetsZero shall not be liable
-            for any indirect, incidental, special, consequential, or punitive damages,
-            including lost profits, lost revenue, loss of data, or loss of goodwill, arising
-            from your use of (or inability to use) RepMail.
+            To the maximum extent permitted by applicable law, LetsZero shall not be liable for
+            any indirect, incidental, special, consequential, or punitive damages, including lost
+            profits, loss of data, or loss of goodwill, arising from your use of or inability to
+            use our products.
           </p>
           <p className="mt-3">
-            Our total liability to you for any claims arising under these Terms shall not
-            exceed the amount you paid to us in the 3 months preceding the claim.
-          </p>
-          <p className="mt-3">
-            We are not responsible for the deliverability, open rates, or click rates of
-            your campaigns, which depend on recipient mail servers, spam filters, and
-            factors outside our control.
+            Our total aggregate liability to you for any claims arising under these Terms shall
+            not exceed the amount you paid to LetsZero in the 3 months preceding the claim.
           </p>
         </Section>
 
-        <Section id="disclaimer" title="11. Disclaimer of Warranties">
+        <Section id="disclaimer" title="10. Disclaimer of Warranties">
           <p>
-            RepMail is provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo; without warranties of any kind,
-            express or implied, including but not limited to merchantability, fitness for a
-            particular purpose, and non-infringement. We do not warrant that the service will
-            be error-free, uninterrupted, or secure.
+            LetsZero products are provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;
+            without warranties of any kind, express or implied, including merchantability,
+            fitness for a particular purpose, or non-infringement. We do not warrant that our
+            products will be error-free, uninterrupted, or entirely secure.
           </p>
         </Section>
 
-        <Section id="governing-law" title="12. Governing Law">
+        <Section id="governing-law" title="11. Governing Law">
           <p>
-            These Terms are governed by the laws of India. Any disputes shall be subject to
-            the exclusive jurisdiction of the courts located in Bengaluru, Karnataka, India.
-            If you are a consumer in the EU, you may also be entitled to bring a claim in
-            the courts of your country of residence.
+            These Terms are governed by the laws of India. Disputes shall be subject to the
+            exclusive jurisdiction of the courts in Bengaluru, Karnataka, India. If you are a
+            consumer in the EU, you may also bring a claim in the courts of your country of
+            residence.
           </p>
         </Section>
 
-        <Section id="changes" title="13. Changes to These Terms">
+        <Section id="changes" title="12. Changes to These Terms">
           <p>
-            We reserve the right to modify these Terms at any time. Material changes will be
-            communicated via email at least 14 days before the effective date. Your continued
-            use of RepMail after the effective date constitutes acceptance of the revised Terms.
+            We may update these Terms from time to time. Material changes will be communicated
+            by email at least 14 days before the effective date. Continued use of LetsZero
+            products after the effective date constitutes acceptance of the revised Terms.
           </p>
         </Section>
 
-        <Section id="contact" title="14. Contact">
-          <p>
-            Questions about these Terms?
-          </p>
+        <Section id="contact" title="13. Contact">
+          <p>Questions about these Terms?</p>
           <div
             className="mt-4 p-4 rounded-xl"
             style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
@@ -325,7 +348,9 @@ export default function Terms() {
             <p className="mt-1">
               Web:{" "}
               <Link href="/contact">
-                <span className="cursor-pointer" style={{ color: "#8B5CF6" }}>letszero.in/contact</span>
+                <span className="cursor-pointer" style={{ color: "#8B5CF6" }}>
+                  letszero.in/contact
+                </span>
               </Link>
             </p>
           </div>
@@ -333,14 +358,16 @@ export default function Terms() {
       </div>
 
       {/* Footer */}
-      <footer
-        className="border-t"
-        style={{ background: "#06060B", borderColor: "#1A1A2E" }}
-      >
+      <footer className="border-t" style={{ background: "#06060B", borderColor: "#1A1A2E" }}>
         <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm" style={{ color: "#55556A" }}>
-            <img src="/repmail-logo-white.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
-            <span>© {new Date().getFullYear()} LetsZero. All rights reserved.</span>
+            <img
+              src="/letszero-logo.png"
+              alt="LetsZero"
+              className="h-6 w-auto"
+              style={{ objectFit: "contain" }}
+            />
+            <span>&copy; {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6 text-sm" style={{ color: "#55556A" }}>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
@@ -356,10 +383,7 @@ export default function Terms() {
 function Section({ id, title, children }) {
   return (
     <section id={id} className="mt-12">
-      <div
-        className="w-8 h-px mb-4"
-        style={{ background: "#8B5CF6" }}
-      />
+      <div className="w-8 h-px mb-4" style={{ background: "#8B5CF6" }} />
       <h2
         className="text-xl font-bold mb-4"
         style={{ color: "#F0F0F5", fontFamily: "'Space Grotesk', sans-serif" }}
