@@ -444,6 +444,7 @@ export default function PublicPricing() {
   const [teamUsers, setTeamUsers] = useState(5);
   const [hoveredCol, setHoveredCol] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
+  const [dedicatedIpNotified, setDedicatedIpNotified] = useState(false);
 
   // Inject Fontshare CSS once
   useEffect(() => {
@@ -1998,7 +1999,7 @@ export default function PublicPricing() {
         </div>
       </section>
 
-      {/* ── Dedicated IP Add-On ───────────────────────────────────────────── */}
+      {/* ── Dedicated IP Add-On (Coming Soon) ────────────────────────────── */}
       <section className="relative px-4 sm:px-6 py-16" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-3xl mx-auto">
           <motion.div
@@ -2006,52 +2007,89 @@ export default function PublicPricing() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ duration: 0.6 }}
-            className="rounded-2xl p-7 flex flex-col sm:flex-row items-start sm:items-center gap-6"
-            style={{ background: "#0C0C14", border: "1px solid rgba(139,92,246,0.15)" }}
+            className="rounded-2xl p-7 flex flex-col sm:flex-row items-start sm:items-center gap-6 relative overflow-hidden"
+            style={{
+              background: "linear-gradient(135deg, #0C0C14 0%, #0E0E1A 100%)",
+              border: "1px solid rgba(139,92,246,0.18)",
+            }}
           >
+            {/* decorative glow */}
+            <div
+              style={{
+                position: "absolute", top: 0, right: 0,
+                width: "250px", height: "100%",
+                background: "radial-gradient(ellipse at top right, rgba(139,92,246,0.07) 0%, transparent 65%)",
+                pointerEvents: "none",
+              }}
+            />
+
             <div
               className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
-              style={{ background: "rgba(139,92,246,0.1)" }}
+              style={{ background: "rgba(139,92,246,0.08)" }}
             >
-              <Server className="w-6 h-6" style={{ color: "#8B5CF6" }} />
+              <Server className="w-6 h-6" style={{ color: "#8B7FC8" }} />
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-1">
+
+            <div className="flex-1 relative">
+              <div className="flex items-center gap-3 mb-1.5">
                 <h3
                   className="text-base font-bold"
-                  style={{ color: "#F0F0F5", fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif" }}
+                  style={{ color: "#C0C0D8", fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif" }}
                 >
                   Dedicated IP Addresses
                 </h3>
                 <span
-                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1.5"
                   style={{
-                    background: "rgba(139,92,246,0.12)",
-                    border: "1px solid rgba(139,92,246,0.25)",
-                    color: "#8B5CF6",
+                    background: "rgba(245,158,11,0.1)",
+                    border: "1px solid rgba(245,158,11,0.3)",
+                    color: "#F59E0B",
                   }}
                 >
-                  Add-on
+                  <span
+                    className="w-1.5 h-1.5 rounded-full animate-pulse"
+                    style={{ background: "#F59E0B" }}
+                  />
+                  Coming Soon
                 </span>
               </div>
-              <p className="text-sm" style={{ color: "#A8A8C0" }}>
-                Maintain dedicated email reputation for high-volume senders. Included with
-                Enterprise · Optional on Growth & Scale.
+              <p className="text-sm" style={{ color: "#7878A0" }}>
+                Send from IPs exclusive to your account — your reputation, fully isolated. No
+                shared-IP risk from other senders. Essential for high-volume campaigns on Growth &
+                Scale.
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+
+            <div className="flex flex-col items-end gap-2 flex-shrink-0 relative">
               <div
                 className="text-xl font-bold"
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
-                  color: "#F0F0F5",
+                  color: "#7878A0",
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
                 {currency === "INR" ? "₹1,800" : "$21.56"}
                 <span className="text-sm font-normal" style={{ color: "#55556A" }}>/mo</span>
               </div>
-              <div className="text-xs" style={{ color: "#7878A0" }}>billed annually</div>
+              <button
+                onClick={() => setDedicatedIpNotified(true)}
+                disabled={dedicatedIpNotified}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                style={dedicatedIpNotified ? {
+                  background: "rgba(0,229,200,0.08)",
+                  border: "1px solid rgba(0,229,200,0.2)",
+                  color: "#00E5C8",
+                  cursor: "default",
+                } : {
+                  background: "rgba(245,158,11,0.08)",
+                  border: "1px solid rgba(245,158,11,0.25)",
+                  color: "#F59E0B",
+                  cursor: "pointer",
+                }}
+              >
+                {dedicatedIpNotified ? "✓ We'll notify you" : "Notify me →"}
+              </button>
             </div>
           </motion.div>
         </div>
