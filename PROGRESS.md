@@ -1105,3 +1105,28 @@ Full production readiness audit (Audit 047) + implementation of approved finding
 **Decisions documented:** AUDIT_TRAIL.md Audit 049.
 
 **Milestone status: COMPLETE — Audit 049.**
+
+---
+
+### 46 · Google OAuth End-to-End Production Verification (2026-06-25)
+
+| Check | Status | Evidence |
+|-------|--------|---------|
+| Login page Google button visible | **PASS** | `Login.jsx:349–358` — unconditional render, `data-testid="button-google"` |
+| Button reaches Google consent screen | **PASS** | Full-page redirect to `/api/auth/google` → Passport builds OAuth URL → 302 to Google |
+| Callback URL exact match | **PASS** | `routes.js:643–645` — `https://www.letszero.in/api/auth/google/callback` in production |
+| New user flow (create + welcome banner) | **PASS** | `createUser` → `_isNewOAuthUser` flag → `?welcome=1` → Dashboard `useEffect` → banner |
+| Existing user flow (no duplicate) | **PASS** | `getUserByEmail` hit → `if (!user)` skipped → DB `unique()` constraint as backstop |
+| All failure paths handled | **PASS** | 8 scenarios mapped — all land at `/login?error=...` with dismissible alert |
+| Cookie attributes correct | **PASS** | `httpOnly`, `secure`, `sameSite: lax`, 24h TTL; `trust proxy: 1` enables Secure on Railway |
+| No redirect loops | **PASS** | Redirect graph fully acyclic; `mustResetPassword: false` for OAuth users removes reset-loop risk |
+| OAuth routes publicly accessible | **PASS** | `REPMAIL_PUBLIC=true` bypasses gate; `allowedPaths` defence covers future flag changes |
+| Launch-ready verdict | **PASS** | All checks pass — Google OAuth cleared for production |
+
+**Remaining risks (non-blocking):** R1 `FREE_PLAN_ENABLED` env var unconfirmed (new OAuth users may get trial credits), R2 `cookie-parser` missing, R3 `getUserByEmail` unsanitized, R4 no rate limit on initiation route.
+
+**Live production test checklist:** 17-step browser walkthrough provided to user (see Audit 051 in AUDIT_TRAIL.md).
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 051.
+
+**Milestone status: COMPLETE — Audit 051.**

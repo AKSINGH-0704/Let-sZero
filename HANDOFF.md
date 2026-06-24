@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–049 applied through 2026-06-25  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–051 applied through 2026-06-25  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -597,11 +597,11 @@ See the Google OAuth Activation Runbook section below for the full step-by-step 
 
 ## Google OAuth Activation Runbook
 
-### Current status (verified 2026-06-24, Audit 047)
+### Current status (verified 2026-06-25, Audit 051)
 
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **set in Railway production**. The Passport strategy is conditionally registered — feature is ready to activate. Railway variables `REPMAIL_PUBLIC=true` and `APP_URL=https://www.letszero.in` are confirmed set.
 
-> The Google OAuth code is complete, production-hardened, and audited (Audits 046–047). Activation requires only GCP console configuration (see Steps 1–4 below) — Railway variables are already configured.
+> The Google OAuth code is complete, production-hardened, and audited (Audits 046–047, 051). End-to-end code verification: all 10 checks PASS (see Audit 051 in AUDIT_TRAIL.md). Activation requires only GCP console configuration (see Steps 1–4 below) and a live browser test (see the 17-step checklist in Audit 051).
 
 **Code reference (`server/routes.js:638`):**
 ```js

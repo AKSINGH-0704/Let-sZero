@@ -4002,3 +4002,179 @@ The following are not launch-blocking in the same way as a missing sitemap, but 
 https://www.letszero.in/sitemap.xml   → must return 200 with XML content
 https://www.letszero.in/robots.txt    → must return 200 with text content
 ```
+
+---
+
+## Audit 051 — Google OAuth End-to-End Production Verification (2026-06-25)
+
+**Date:** 2026-06-25
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full end-to-end code-level audit of Google OAuth implementation for production readiness
+**Method:** Read-only analysis of all relevant files — `server/routes.js`, `server/index.js`, `server/storage.js`, `client/src/pages/Login.jsx`, `client/src/pages/Dashboard.jsx`, `client/src/context/AuthContext.jsx`, `client/src/App.jsx`
+**Status:** PASS — Google OAuth is production-ready; live browser test checklist provided to user
+
+---
+
+### Check 1 — Login Page Google Button
+
+**PASS**
+
+`client/src/pages/Login.jsx:349–358` — Button rendered unconditionally inside `SignInForm`, 2-column grid below "or continue with" divider. `data-testid="button-google"` present. `onClick={() => handleOAuthRedirect("Google")}` → `window.location.href = "/api/auth/google"`.
+
+---
+
+### Check 2 — Clicking Google Reaches Google's Consent Screen
+
+**PASS**
+
+`handleOAuthRedirect` uses `window.location.href` (full-page redirect, not fetch). Server registers `GET /api/auth/google` → `passport.authenticate("google", { scope: ["profile", "email"], session: false })` inside the credential guard. `GOOGLE_CLIENT_ID` confirmed set in Railway — strategy is registered.
+
+---
+
+### Check 3 — Callback URL Match
+
+**PASS — Exact match confirmed**
+
+`server/routes.js:643–645`
+
+```javascript
+callbackURL: process.env.NODE_ENV === "production"
+  ? "https://www.letszero.in/api/auth/google/callback"
+  : "/api/auth/google/callback",
+```
+
+Railway sets `NODE_ENV=production`. Production callback URL: `https://www.letszero.in/api/auth/google/callback`. This exact value must be registered in Google Cloud Console under Authorized redirect URIs.
+
+---
+
+### Check 4 — New User Flow
+
+**PASS**
+
+| Step | Code | Status |
+|------|------|--------|
+| Email not in DB | `getUserByEmail()` returns `null` | PASS |
+| Username generated | `base_XXXX` from email prefix + 4 random chars | PASS |
+| User created | `createUser({ role: "USER", plan: "free", creditsReceived: 0, mustResetPassword: false })` | PASS |
+| `isActive: true` | Hardcoded in `storage.js:85` | PASS |
+| `_isNewOAuthUser` flag | Set on `user` object after `createUser` | PASS |
+| Session created | `crypto.randomBytes(32).toString("hex")`, 24h TTL, `sessions` table | PASS |
+| Cookie set | `httpOnly: true`, `secure: true`, `sameSite: "lax"`, `maxAge: 86400000` | PASS |
+| Redirect | `/app/dashboard?welcome=1` | PASS |
+| Welcome banner | Dashboard `useEffect` reads `?welcome=1`, sets localStorage, cleans URL | PASS |
+
+**Advisory:** New OAuth user plan behavior depends on `FREE_PLAN_ENABLED` env var. If not set in Railway, `isTrialUser` defaults to `true` (legacy 5-credit trial mode). Confirm `FREE_PLAN_ENABLED=true` is set to give OAuth users the 500/month free plan.
+
+---
+
+### Check 5 — Existing User Flow
+
+**PASS**
+
+`getUserByEmail()` returns existing user → `if (!user)` block skipped → `_isNewOAuthUser` not set → callback handler redirects to `/app/dashboard` (no `?welcome=1`) → no welcome banner. `email` column has `unique()` DB constraint — duplicate account creation impossible even under race conditions.
+
+---
+
+### Check 6 — Failure Paths
+
+**PASS — All paths handled**
+
+| Scenario | Handler | Code |
+|----------|---------|------|
+| Google returns no email | `done(new Error("..."), null)` → `failureRedirect` | `routes.js:649–650` |
+| User clicks Cancel on consent | Passport detects OAuth error → `failureRedirect` | Passport built-in |
+| Google-side provider error | Passport OAuth error → `failureRedirect` | Passport built-in |
+| Malformed callback (state mismatch) | Passport CSRF check → `failureRedirect` | Passport built-in |
+| Inactive account | `done(null, false)` + audit log → `failureRedirect` | `routes.js:655–661` |
+| `createUser` DB error | `catch (err)` → `done(err, null)` → `failureRedirect` | `routes.js:679–681` |
+| Session creation fails | Catch in callback handler → `res.redirect("/login?error=google_failed")` | `routes.js:710–713` |
+| Missing OAuth credentials | Graceful fallback routes → `res.redirect("/login?error=oauth_unavailable")` | `routes.js:717–719` |
+
+All failure paths land at `/login` with a readable `?error=` param. Login page `useEffect` reads it, shows a dismissible alert, and cleans the URL. No blank pages, no 500 errors, no loops.
+
+---
+
+### Check 7 — Cookie Attributes
+
+**PASS**
+
+| Attribute | Value | Rationale |
+|-----------|-------|-----------|
+| `httpOnly` | `true` | XSS protection — JS cannot read session token |
+| `secure` | `true` (production) | HTTPS-only — `trust proxy: 1` ensures Railway proxy doesn't break this |
+| `sameSite` | `"lax"` | Correct for OAuth: permits cookie on top-level cross-site navigations (Google→server redirect), blocks CSRF sub-requests |
+| `maxAge` | 86400000 (24h) | Matches server-side session TTL |
+| `domain` | unset (defaults to exact host) | Correct |
+| `path` | unset (defaults to `/`) | Correct |
+
+`app.set("trust proxy", 1)` at `server/index.js:20` is required for the `Secure` flag to work on Railway. Confirmed present.
+
+---
+
+### Check 8 — No Redirect Loops
+
+**PASS**
+
+Full redirect graph is acyclic:
+```
+/login → /api/auth/google → accounts.google.com → /api/auth/google/callback → /app/dashboard
+```
+
+- `Login.jsx:421`: `if (isAuthenticated) return <Redirect to="/app/dashboard" />` — authenticated users at `/login` go to dashboard, not back to login.
+- `App.jsx:90–91`: `if (!isAuthenticated) return <Redirect to="/login" />` — unauthenticated users go to login, not back to dashboard.
+- OAuth users have `mustResetPassword: false` — password-reset redirect guard at `App.jsx:112` never fires for them.
+
+---
+
+### Check 9 — OAuth Routes Publicly Accessible
+
+**PASS — Doubly protected**
+
+**Primary:** `REPMAIL_PUBLIC=true` in Railway → beta gate calls `return next()` on line 499, bypassing all path inspection.
+
+**Defence-in-depth (Audit 047):** `allowedPaths` in `server/index.js:503–517` now explicitly includes `/api/auth/google`, `/api/auth/google/callback`, `/login`, `/api/auth/logout`. OAuth survives a future `REPMAIL_PUBLIC` change without regression.
+
+---
+
+### Check 10 — Launch Readiness
+
+**PASS — Google OAuth is launch-ready**
+
+All 9 prior checks pass. No blocking defects found.
+
+---
+
+### Remaining Risks
+
+| # | Item | Severity |
+|---|------|----------|
+| R1 | `FREE_PLAN_ENABLED` env var not confirmed — new OAuth users may get trial mode (5 credits) instead of free plan (500/month) | MEDIUM |
+| R2 | `cookie-parser` not installed — `req.cookies` dead code, manual cookie parsing fallback in use | LOW |
+| R3 | `getUserByEmail` returns unsanitized user row (includes `passwordHash`) — server-side only, never client-exposed | LOW |
+| R4 | No rate limit on `GET /api/auth/google` initiation route | LOW |
+| R5 | GCP Console Authorized redirect URI must exactly match `https://www.letszero.in/api/auth/google/callback` (no trailing slash, no HTTP) | ADVISORY |
+
+---
+
+### Production Test Checklist (for user to run in browser)
+
+```
+□ 1.  Open https://www.letszero.in/login in incognito
+□ 2.  Confirm Google button visible below "or continue with" divider
+□ 3.  Click "Google"
+□ 4.  Confirm browser reaches accounts.google.com
+□ 5.  Sign in with a Google account NOT previously used with RepMail
+□ 6.  Confirm redirect to https://www.letszero.in/app/dashboard?welcome=1
+□ 7.  Confirm URL cleans to /app/dashboard (no ?welcome=1)
+□ 8.  Confirm "Welcome to RepMail" banner appears with "New Campaign" button
+□ 9.  Dismiss banner — confirm it disappears
+□ 10. Log out
+□ 11. Sign in again with the SAME Google account
+□ 12. Confirm redirect to /app/dashboard (no ?welcome=1, no welcome banner)
+□ 13. Log out
+□ 14. Click Google on login page → click Cancel on consent screen
+□ 15. Confirm redirect to /login with dismissible error alert
+□ 16. Confirm URL shows /login (no ?error= visible in address bar)
+□ 17. Run: SELECT username, email, role, plan FROM users ORDER BY created_at DESC LIMIT 3;
+□     Confirm single user row for the test Google account
+```
