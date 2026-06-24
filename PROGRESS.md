@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
-**Last updated:** 2026-06-16
-**Current commit:** (pending push — Audit 015 + Audit 016) — see AUDIT_TRAIL.md
+**Last updated:** 2026-06-24
+**Current commit:** `64a7f82` — see AUDIT_TRAIL.md Audits 039–040
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -873,3 +873,38 @@ One commit: `ca3b362` (BRAND).
 **Updated launch readiness score: 9.6/10**
 
 **Milestone status: COMPLETE — Audit 038.**
+
+---
+
+### 35 · Team Plan UX + Pricing Commercial Consistency (2026-06-20)
+
+Two commits: `14eaf69` (UX fixes) + `d5d05f9` (pricing + capacity consistency).
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Team card billing cadence | **COMPLETE** | Sub-line shows total/month + "billed annually" + per-member/year |
+| Team CTA context-aware | **COMPLETE** | "Choose Your Plan →" switches to Individual tab; no auto-plan selection |
+| Post-purchase activation banner | **COMPLETE** | `/app/payments?activate=team` shows banner → Open Team Management |
+| Team member limits aligned | **COMPLETE** | UI corrected to schema authority: starter=3, growth=10, scale=25 |
+| Pricing update (₹99/₹79 → ₹129/₹99) | **COMPLETE** | All 3 copies updated atomically (schema.js + Payments.jsx + PublicPricing.jsx) |
+| Savings badge accuracy | **COMPLETE** | Dynamic `Math.round((1 - TEAM.annual / TEAM.monthly) * 100)% OFF` = 23% OFF |
+| Build verified | **COMPLETE** | npm run build — 0 errors |
+
+**Milestone status: COMPLETE — Audit 039.**
+
+---
+
+### 36 · Dedicated IP — Honest Coming Soon Preview (2026-06-24)
+
+One commit: `64a7f82`.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Backend investigation | **COMPLETE** | `server/email.js` uses shared SMTP — no dedicated IP pool, no ConfigurationSet |
+| Feature honesty | **COMPLETE** | Removed false "Included with Enterprise · Optional on Growth & Scale" claim |
+| Coming Soon badge | **COMPLETE** | Pulsing amber dot + "Coming Soon" — signals active development |
+| Card visual treatment | **COMPLETE** | Gradient bg + radial glow; icon/title/price dimmed but readable; not abandoned-looking |
+| Notify me CTA | **COMPLETE** | "Notify me →" toggles to "✓ We'll notify you" (client-state only) |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Milestone status: COMPLETE — Audit 040.**

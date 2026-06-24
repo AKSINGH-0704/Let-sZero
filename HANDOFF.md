@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `ca3b362` (2026-06-22) through Context-Aware Branding — see AUDIT_TRAIL.md Audits 015–038  
+**Verified against:** commit `64a7f82` (2026-06-24) through Dedicated IP Coming Soon — see AUDIT_TRAIL.md Audits 015–040  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -129,6 +129,17 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 ### Phase 15 audit — launch verdict (Audit 032, 2026-06-22)
 
 **Score: 8.5/10 → 9.0/10 after Phase 15.1 (Audit 033) → 9.2/10 after Phase 15.2 (Audit 035) → 9.3/10 after Phase 15.2 Polish (Audit 036) → 9.5/10 after Trust Hardening (Audit 037) → 9.6/10 after Context-Aware Branding (Audit 038).** No CRITICAL findings. No launch blockers. Full report: `PHASE15_OPERATIONAL_VALIDATION_REPORT.md`.
+
+**Team Plan + Pricing consistency (commits `14eaf69`, `d5d05f9`, 2026-06-20 — Audit 039):**
+- Team card: billing cadence visible, context-aware CTA, post-purchase activation banner
+- Team member limits corrected to schema authority: starter=3, growth=10, scale=25
+- Pricing updated ₹129/₹99 (monthly/annual per member); savings badge now dynamic (23% OFF)
+- Three hardcoded `TEAM` constant copies updated atomically
+
+**Dedicated IP Coming Soon (commit `64a7f82`, 2026-06-24 — Audit 040):**
+- Feature is NOT implemented. `server/email.js` uses shared SMTP — no dedicated IP pool anywhere.
+- Card on `/pricing` replaced with captivating feature-preview treatment: pulsing amber "Coming Soon" badge, readable title/icon (not muted to gray), value-first description copy, price at mid-opacity, "Notify me →" CTA with client-side toggle state.
+- No backend changes. Notification CTA is UI-only (no email collection wired).
 
 **Pre-activation hardening (Phase 15.1, commit `39bd09a`, 2026-06-22):**
 

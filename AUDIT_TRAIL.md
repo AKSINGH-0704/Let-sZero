@@ -3307,3 +3307,66 @@ Two-file fix:
 ### Updated launch readiness score
 
 **9.6/10** — Browser identity now matches brand context on every route. Single source of truth in `REPMAIL_PREFIXES` array in App.jsx.
+
+---
+
+## Audit 039 — Team Plan UX + Pricing Commercial Consistency (2026-06-20)
+
+**Date:** 2026-06-20
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Team Plan card UX, pricing accuracy, billing cadence, team member limits
+**Commit:** `d5d05f9`
+
+### Findings
+
+| ID | Area | Finding | Action |
+|----|------|---------|--------|
+| FIX-1 | Team card UX | No billing cadence shown below team total — customer couldn't tell monthly vs annual | Added "billed annually" and annual per-member/year line |
+| FIX-2 | Team card CTA | "Choose Team Plan" auto-selected Growth — removed customer agency | Changed to "Choose Your Plan →" which switches to Individual tab; customer selects explicitly |
+| FIX-3 | Post-purchase onboarding | No guided next step after team-capable plan purchase | Added dismissible activation banner on `/app/payments?activate=team` routing to `/app/users` |
+| GAP-1 | Team capacity UI | UI showed starter=1, growth=5, scale=10 — schema enforces 3/10/25 | Corrected all UI display to match `MAX_TEAM_MEMBERS` server authority |
+| GAP-2 | Pricing copies | Three independent hardcoded `TEAM` constant copies (schema.js, Payments.jsx, PublicPricing.jsx) | Updated all three atomically; noted fragmentation as known debt |
+| GAP-3 | Savings badge | Hardcoded "25% OFF" — actual discount was 20.2%, then 23.3% after price update | Replaced with dynamic `Math.round((1 - TEAM.annual / TEAM.monthly) * 100)% OFF` |
+| FIX-4 | Pricing update | ₹99/₹79 → ₹129/₹99 (monthly/annual per member) | Updated all three copies + schema.js |
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed.
+
+---
+
+## Audit 040 — Dedicated IP Theoretical + Coming Soon Treatment (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Dedicated IP Addresses add-on card honesty + UX quality
+**Commit:** `64a7f82`
+
+### Finding
+
+The Dedicated IP Addresses card on `/pricing` was displaying as a purchasable add-on (₹1,800/mo, "Included with Enterprise · Optional on Growth & Scale"). Backend investigation confirmed:
+- `server/email.js` uses `nodemailer` with `SES_SMTP_HOST` at port 587 — standard shared SMTP endpoint
+- No `ConfigurationSet`, no dedicated IP pool, no SES SendingPool configuration anywhere in `server/`
+- Feature is display-only. Nothing in the codebase provisions or routes to a dedicated IP.
+
+### Action taken
+
+Replaced the static "Add-on" card with a captivating "Coming Soon" feature preview:
+
+| Element | Before | After |
+|---------|--------|-------|
+| Badge | "Add-on" (purple) | "Coming Soon" with pulsing amber dot |
+| Card | Flat `#0C0C14` bg | `linear-gradient(135deg, #0C0C14, #0E0E1A)` + radial glow at top-right |
+| Icon | Bright purple `#8B5CF6` | Desaturated `#8B7FC8` — feature still feels RepMail-native, not abandoned |
+| Title | `#F0F0F5` | `#C0C0D8` — readable, not muted gray |
+| Description | "Included with Enterprise · Optional on Growth & Scale" (implies current availability) | "Send from IPs exclusive to your account — your reputation, fully isolated. No shared-IP risk from other senders." (value-first, honest) |
+| Price | ₹1,800 at full brightness | ₹1,800 at `#7878A0` — visible for budget planning, not highlighted |
+| CTA | None | "Notify me →" toggles to "✓ We'll notify you" on click (client-side state only) |
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed. `dist/public/index.html` confirmed.
+
+### Iron Rule confirmed
+
+Dedicated IP provisioning is not implemented and is not a planned sprint item. The Coming Soon treatment is honest to that state.
