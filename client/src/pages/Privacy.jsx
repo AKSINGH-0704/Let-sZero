@@ -53,7 +53,7 @@ export default function Privacy() {
           Last updated: June 2026 &nbsp;&middot;&nbsp; Applies to all LetsZero accounts and products
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
-          LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) develops and operates
+          LetsZero Solutions Private Limited (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) develops and operates
           multiple business software products available at letszero.in. This Privacy Policy explains what
           data we collect, how we use it, and your rights regarding that data. Individual products may
           publish supplemental privacy notices for functionality specific to that product.
@@ -105,7 +105,7 @@ export default function Privacy() {
 
         <Section id="who-we-are" title="1. Who We Are">
           <p>
-            LetsZero Technologies is a software company that builds and operates business software
+            LetsZero Solutions Private Limited is a software company that builds and operates business software
             products. Our products are available at{" "}
             <span style={{ color: "#00E5C8" }}>letszero.in</span>. For privacy-related inquiries,
             contact us at{" "}
@@ -330,7 +330,7 @@ export default function Privacy() {
             className="mt-4 p-4 rounded-xl"
             style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
           >
-            <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Technologies</p>
+            <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Solutions Private Limited</p>
             <p className="mt-1">
               Email:{" "}
               <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>

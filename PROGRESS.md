@@ -965,3 +965,23 @@ One commit: `00a260a`. Pushed to origin/main.
 **Trust policy decisions documented:** AUDIT_TRAIL.md Audit 042.
 
 **Milestone status: COMPLETE — Audit 042.**
+
+---
+
+### 39 · Legal Entity Name Standardization (2026-06-24)
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Full codebase audit for incorrect entity variants | **COMPLETE** | Grep across all .jsx/.tsx/.js/.ts/.md/.html files |
+| Privacy.jsx — 3 legal references corrected | **COMPLETE** | Lines 56, 108, 333: "LetsZero Technologies" → "LetsZero Solutions Private Limited" |
+| Terms.jsx — 4 legal references corrected | **COMPLETE** | Lines 57, 109, 250, 342 |
+| RepMailPrivacy.jsx — 2 legal references corrected | **COMPLETE** | Lines 113, 457 |
+| RepMailTerms.jsx — 2 legal references corrected | **COMPLETE** | Lines 123, 533 |
+| Brand/copyright references verified unchanged | **VERIFIED** | All "© LetsZero", "LetsZero Platform", "LetsZero products" untouched |
+| Residual scan — zero "LetsZero Technologies" remaining | **VERIFIED** | `grep LetsZero Technologies **/*.{jsx,tsx,js,ts,md}` — 0 matches |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+| Pushed to origin/main | **COMPLETE** | See commit hash in Audit 043 |
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 043.
+
+**Milestone status: COMPLETE — Audit 043.**

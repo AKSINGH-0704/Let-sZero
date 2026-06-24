@@ -54,7 +54,7 @@ export default function Terms() {
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
           These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of software products
-          and related services operated by LetsZero Technologies (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;,
+          and related services operated by LetsZero Solutions Private Limited (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;,
           &ldquo;us&rdquo;, &ldquo;our&rdquo;). By creating an account or using any LetsZero product, you agree
           to these Terms. If you do not agree, do not use the services.
         </p>
@@ -106,7 +106,7 @@ export default function Terms() {
 
         <Section id="about" title="1. About These Terms">
           <p>
-            LetsZero Technologies builds and operates multiple software products for businesses.
+            LetsZero Solutions Private Limited builds and operates multiple software products for businesses.
             These Terms establish the agreement between you and LetsZero for your use of all
             LetsZero products and services.
           </p>
@@ -247,7 +247,7 @@ export default function Terms() {
 
         <Section id="ip-and-content" title="6. Intellectual Property">
           <p>
-            LetsZero Technologies owns all rights to our products, brand, codebase, and platform
+            LetsZero Solutions Private Limited owns all rights to our products, brand, codebase, and platform
             design. You may not copy, reverse engineer, or create derivative works based on any
             LetsZero product.
           </p>
@@ -339,7 +339,7 @@ export default function Terms() {
             className="mt-4 p-4 rounded-xl"
             style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
           >
-            <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Technologies</p>
+            <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Solutions Private Limited</p>
             <p className="mt-1">
               Email:{" "}
               <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>

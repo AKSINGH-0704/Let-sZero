@@ -149,6 +149,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - `RepMailPrivacy.jsx` and `RepMailTerms.jsx` untouched — product-specific, correct as-is.
 - New products (MessageHub, NotifyStream) add supplemental terms only. Platform docs require no rewrite.
 - **Content review fixes applied (Audit 042):** "anomaly detection" removed (overstated); GDPR Art.46 "appropriate safeguards" removed (no SCCs/DPAs exist); em dash removed from Terms; "high-availability" claim removed (no SLA defined); "suppression enforcement" generalized; duplicate account clause clarified.
+- **Legal entity standardized (Audit 043):** All legal-facing references corrected from "LetsZero Technologies" to the registered entity name "LetsZero Solutions Private Limited". Affected: Privacy.jsx (3), Terms.jsx (4), RepMailPrivacy.jsx (2), RepMailTerms.jsx (2). Brand references ("© LetsZero", "LetsZero Platform", "LetsZero products") intentionally unchanged — trading name is correct for marketing contexts. Zero residual occurrences of incorrect variant confirmed by grep.
 - **Ongoing operational commitments carried forward from original docs (no code enforcement — require process):**
   - Account data deleted within 30 days of deletion request (manual process; no automated job)
   - Rights requests answered within 30 days (support inbox tracking required)

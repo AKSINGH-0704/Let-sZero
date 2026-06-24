@@ -120,7 +120,7 @@ export default function RepMailTerms() {
           </p>
           <p className="text-base leading-relaxed max-w-2xl" style={{ color: "#94A3B8" }}>
             These Terms govern your use of the RepMail email outreach platform operated by
-            LetsZero Technologies. By creating an account or sending a campaign, you accept these
+            LetsZero Solutions Private Limited. By creating an account or sending a campaign, you accept these
             Terms. See also the{" "}
             <Link href="/terms">
               <span className="cursor-pointer" style={{ color: "#A78BFA" }}>LetsZero Corporate Terms of Service</span>
@@ -530,7 +530,7 @@ export default function RepMailTerms() {
 
             <Section id="contact-us" title="Contact" icon={Mail}>
               <div className="rounded-xl p-5" style={{ background: "#060E1E", border: "1px solid #1E2D47" }}>
-                <p className="font-semibold mb-2" style={{ color: "#F1F5F9" }}>RepMail / LetsZero Technologies</p>
+                <p className="font-semibold mb-2" style={{ color: "#F1F5F9" }}>RepMail / LetsZero Solutions Private Limited</p>
                 <p>
                   Email:{" "}
                   <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>support@letszero.in</a>

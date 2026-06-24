@@ -110,7 +110,7 @@ export default function RepMailPrivacy() {
             Last updated: June 2026 &nbsp;·&nbsp; Applies to all RepMail accounts
           </p>
           <p className="text-base leading-relaxed max-w-2xl" style={{ color: "#94A3B8" }}>
-            How RepMail (operated by LetsZero Technologies) collects, uses, and protects your data.
+            How RepMail (operated by LetsZero Solutions Private Limited) collects, uses, and protects your data.
             RepMail is a product of LetsZero — see also the{" "}
             <Link href="/privacy">
               <span className="cursor-pointer" style={{ color: "#00E5C8" }}>LetsZero Corporate Privacy Policy</span>
@@ -454,7 +454,7 @@ export default function RepMailPrivacy() {
 
             <Section id="contact-us" title="Contact" icon={Mail}>
               <div className="rounded-xl p-5" style={{ background: "#060E1E", border: "1px solid #1E2D47" }}>
-                <p className="font-semibold mb-2" style={{ color: "#F1F5F9" }}>RepMail / LetsZero Technologies</p>
+                <p className="font-semibold mb-2" style={{ color: "#F1F5F9" }}>RepMail / LetsZero Solutions Private Limited</p>
                 <p>
                   Email:{" "}
                   <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>support@letszero.in</a>
