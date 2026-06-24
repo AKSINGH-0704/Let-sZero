@@ -1130,3 +1130,25 @@ Full production readiness audit (Audit 047) + implementation of approved finding
 **Decisions documented:** AUDIT_TRAIL.md Audit 051.
 
 **Milestone status: COMPLETE — Audit 051.**
+
+---
+
+### 47 · OAuth + Launch Readiness Hardening (2026-06-25)
+
+| Item | Status | Finding |
+|------|--------|---------|
+| FREE_PLAN_ENABLED behavior traced | **COMPLETE** | `createUser` derives `isTrialUser` from env var — must be `true` or OAuth users get 5 trial credits |
+| FREE_PLAN_ENABLED production value | **VERIFY IN RAILWAY** | Not yet confirmed in Railway dashboard |
+| www → www redirect | **ADVISORY** | OAuth flow unaffected (hardcoded callbackURL). SEO risk only. Fix deferred. |
+| cookie-parser audit | **DEFERRED** | Manual parse safe for hex tokens. Low risk. |
+| OAuth rate limiting | **RECOMMENDED** | 6-line implementation plan documented. Pending approval. |
+| Full launch readiness review | **COMPLETE** | 9 gaps inventoried — G1 is only HIGH item |
+
+**Pre-launch action item:**
+```
+□ Verify FREE_PLAN_ENABLED=true in Railway → then Google OAuth is cleared for launch
+```
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 052.
+
+**Milestone status: COMPLETE — Audit 052.**

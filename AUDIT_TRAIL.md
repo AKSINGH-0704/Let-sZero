@@ -4178,3 +4178,120 @@ All 9 prior checks pass. No blocking defects found.
 □ 17. Run: SELECT username, email, role, plan FROM users ORDER BY created_at DESC LIMIT 3;
 □     Confirm single user row for the test Google account
 ```
+
+---
+
+## Audit 052 — Final OAuth + Launch Readiness Hardening (2026-06-25)
+
+**Date:** 2026-06-25
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** FREE_PLAN_ENABLED behavior, www redirect, cookie-parser, OAuth rate limiting, full launch readiness
+**Method:** Read-only code trace — `server/storage.js`, `server/routes.js:36–76`, `server/routes.js:640–720`, `server/index.js`, `shared/schema.js:110–527`
+
+---
+
+### Item 1 — FREE_PLAN_ENABLED Behavior
+
+**FAIL (configuration gap — must verify before launch)**
+
+The OAuth `createUser` call (`routes.js:667–674`) does not pass `isTrialUser`. Resolution in `storage.js:71–73`:
+
+```javascript
+const isTrialUser = "isTrialUser" in userData
+  ? Boolean(userData.isTrialUser)
+  : process.env.FREE_PLAN_ENABLED !== "true";
+```
+
+Behavior table:
+
+| `FREE_PLAN_ENABLED` | `isTrialUser` in DB | Credits |
+|---|---|---|
+| `"true"` | `false` | 500/month (lazy-reset on UTC month boundary) |
+| not set or `"false"` | `true` | 5 total (`trial_credits` DB default: `schema.js:110`) — never refreshed |
+
+`MONTHLY_CREDITS["free"] = 500` (`shared/schema.js:519`). If `FREE_PLAN_ENABLED` is absent, new OAuth users exhaust credits after 5 email sends with no recovery path except purchasing credits. Dashboard shows trial widget, not the free plan meter.
+
+**Required action:** Verify `FREE_PLAN_ENABLED=true` is set in Railway before opening Google Sign-In to the public. This is the single remaining precondition for correct launch behavior.
+
+---
+
+### Item 2 — Non-www → www Redirect
+
+**ADVISORY — not OAuth-blocking**
+
+No redirect middleware in `server/index.js`. No `railway.toml`. The OAuth `callbackURL` is hardcoded to `https://www.letszero.in/api/auth/google/callback` regardless of which domain initiated the flow — so OAuth completes correctly even when a user starts from `letszero.in`. Cookie is set on `www.letszero.in` and the tab is switched there mid-flow. No `redirect_uri_mismatch` risk.
+
+Real impacts: SEO duplicate indexing, minor cookie-domain inconsistency if users bounce between domains.
+
+**Recommended fix (not approved yet):**
+```javascript
+// server/index.js — after app.set("trust proxy", 1)
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === "production" && req.hostname === "letszero.in") {
+    return res.redirect(301, `https://www.letszero.in${req.originalUrl}`);
+  }
+  next();
+});
+```
+Alternative: Railway dashboard custom domain redirect. **Defer until after OAuth launch. Fix before SEO investment.**
+
+---
+
+### Item 3 — Cookie Handling
+
+**PASS — manual parse is safe, cookie-parser deferred**
+
+`cookie-parser` is not installed. `req.cookies?.token` is always `undefined` — dead code. `authMiddleware` falls through to manual parse of `req.headers.cookie`. Manual parse is correct for 64-char hex tokens (no `=`, `;`, or special characters in values).
+
+Implementation is trivial (`npm install cookie-parser` + `app.use(cookieParser())` + import). **Recommended: DEFER.**
+
+---
+
+### Item 4 — OAuth Initiation Rate Limiting
+
+**PASS (no active exploit path) — RECOMMEND IMPLEMENTING**
+
+No rate limiter on `GET /api/auth/google`. `express-rate-limit` is already imported and used for 4 other routes. The initiation route is lightweight (302 redirect, no DB write), so abuse risk is low, but consistency with existing patterns argues for adding a limiter.
+
+**Implementation plan (pending approval):**
+```javascript
+// After existing limiter definitions (routes.js ~line 70)
+const oauthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many sign-in attempts. Please try again in a minute." },
+});
+
+// Apply to initiation only (NOT callback — would break in-flight OAuth completions)
+app.get("/api/auth/google", oauthLimiter,
+  passport.authenticate("google", { scope: ["profile", "email"], session: false })
+);
+```
+
+---
+
+### Item 5 — Full Launch Readiness Review
+
+**PASS with one configuration precondition**
+
+| ID | Area | Severity | Status |
+|----|------|----------|--------|
+| G1 | `FREE_PLAN_ENABLED=true` must be set in Railway | HIGH | Verify before launch |
+| G2 | `cookie-parser` not installed — manual parse fallback works | LOW | Defer |
+| G3 | `getUserByEmail` returns unsanitized row (passwordHash on `req.user`) — server-side only | LOW | Defer |
+| G4 | `USER_CREATED` not logged for OAuth signups | LOW | Defer |
+| G5 | No rate limit on `GET /api/auth/google` | LOW | Approve, then implement |
+| G6 | No www→www redirect | ADVISORY | Defer to after launch |
+| G7 | `robots.txt` missing `Disallow: /app/ /api/` | MEDIUM (SEO) | Defer |
+| G8 | No meta description or OG tags | MEDIUM (SEO) | Defer |
+| G9 | Invite email + OAuth signup email clash → 409 on invite accept | LOW (edge case) | Acceptable behavior |
+
+**Final verdict: CONDITIONALLY APPROVED.**
+
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway → Google OAuth is GO
+```
+
+All 15 code-level checks from Audit 051 remain PASS. No new code defects found.
