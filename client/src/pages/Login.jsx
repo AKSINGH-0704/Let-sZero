@@ -385,7 +385,7 @@ function RequestAccessPanel({ onSignIn }) {
           <div>
             <p className="text-sm font-medium">Quick setup</p>
             <p className="text-xs text-muted-foreground">
-              Once approved, you&apos;ll receive credentials and 5 free trial credits to get started.
+              Once approved, you&apos;ll receive credentials and 500 free monthly credits to get started.
             </p>
           </div>
         </div>

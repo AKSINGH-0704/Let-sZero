@@ -145,7 +145,7 @@ const PLANS = [
       campaigns: "1",
       templates: "3",
       scheduling: false,
-      teamMembers: "1",
+      teamMembers: "Solo",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -1491,7 +1491,7 @@ export default function PublicPricing() {
                     </div>
                     <div className="mb-4">
                       <div className="text-xl font-bold" style={{ color: "#C8B4F8", fontFamily: "'Cabinet Grotesk', sans-serif" }}>Custom Pricing</div>
-                      <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Volume-based · Dedicated SLA</div>
+                      <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Volume-based · Priority support</div>
                     </div>
                     <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
                     <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>Everything on Team Plan, plus:</div>
@@ -2333,7 +2333,7 @@ function PlanCard({ plan, currency }) {
       val: plan.features.scheduling,
     },
     {
-      label: `${plan.features.teamMembers} team member${plan.features.teamMembers === "1" ? "" : "s"}`,
+      label: plan.features.teamMembers === "Solo" ? "Solo account" : `${plan.features.teamMembers} team members`,
       icon: <Users className="w-3.5 h-3.5" />,
       val: true,
     },
@@ -2495,7 +2495,7 @@ function PlanCard({ plan, currency }) {
             >
               Tailored to your scale
             </span>
-            <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Custom volume · Dedicated SLA</div>
+            <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Custom volume · Priority support</div>
           </div>
         ) : plan.isTrial ? (
           <span

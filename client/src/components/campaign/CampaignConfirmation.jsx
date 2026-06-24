@@ -54,6 +54,8 @@ export default function CampaignConfirmation() {
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
 
+  const senderProfileComplete = !!(user?.senderName?.trim());
+
   const creditsRequired = contacts.length;
   const creditsAvailable = creditsInfo?.total ?? calculateCreditsRemaining(
     user?.creditsReceived || 0,
@@ -470,6 +472,19 @@ export default function CampaignConfirmation() {
         </div>
       )}
 
+      {!senderProfileComplete && (
+        <Alert className="border-amber-500/40 bg-amber-500/10">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertDescription className="text-amber-400">
+            <strong>Sender profile not set up.</strong> Your name and title appear in every email you send.{" "}
+            <a href="/app/profile" className="underline hover:text-amber-300">
+              Set up your sender profile
+            </a>{" "}
+            before launching this campaign.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -494,9 +509,9 @@ export default function CampaignConfirmation() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button 
+        <Button
           onClick={handleSend}
-          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || sendMutation.isPending}
+          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || !senderProfileComplete || sendMutation.isPending}
           data-testid="button-send-campaign"
         >
           {sendMutation.isPending ? (

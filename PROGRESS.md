@@ -985,3 +985,25 @@ One commit: `00a260a`. Pushed to origin/main.
 **Decisions documented:** AUDIT_TRAIL.md Audit 043.
 
 **Milestone status: COMPLETE — Audit 043.**
+
+---
+
+### 40 · Growth & Activation Hardening — Priority 0 + Sender Profile Gate (2026-06-24)
+
+13 corrections across 5 files based on 7-phase RepMail Growth & Activation Audit (Audit 044).
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Free plan teamMembers "1" → "Solo" (PublicPricing + Payments) | **COMPLETE** | `MAX_TEAM_MEMBERS.free = 0` — UI now reflects solo account |
+| Badge label rendering for "Solo" plan | **COMPLETE** | Displays "Solo account" instead of "1 team member" |
+| Starter plan team contradiction removed | **COMPLETE** | `MAX_TEAM_MEMBERS.starter = 3` — copy now says "Starter (3), Growth (10), Scale (25)" |
+| "99.9% uptime SLA" regression removed (Payments.jsx) | **COMPLETE** | Replaced with "Priority support" — no SLA exists |
+| All "Dedicated SLA" claims → "Priority support" | **COMPLETE** | 4 occurrences across PublicPricing.jsx and Payments.jsx |
+| Login.jsx "5 free trial credits" → "500 free monthly credits" | **COMPLETE** | Matches `MONTHLY_CREDITS.free = 500` |
+| Dashboard "1 credit = 1 email sent" added | **COMPLETE** | Subtitle under credit balance heading |
+| Sender profile gate in CampaignConfirmation | **COMPLETE** | Amber warning + disabled Send button if `senderName` is null |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 044.
+
+**Milestone status: COMPLETE — Audit 044.**

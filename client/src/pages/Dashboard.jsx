@@ -299,7 +299,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between mb-6">
               <div>
                 <p className="text-slate-200 text-sm mb-1">Available Credits</p>
-                <motion.h2 
+                <motion.h2
                   className="text-3xl sm:text-4xl md:text-5xl font-semibold text-white"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -311,6 +311,7 @@ export default function Dashboard() {
                     formatNumber(creditsRemaining)
                   )}
                 </motion.h2>
+                <p className="text-xs text-white/40 mt-1">1 credit = 1 email sent</p>
               </div>
               <motion.div 
                 className="px-4 py-2 bg-white/10 backdrop-blur rounded-lg hover:bg-white/20 transition-all cursor-pointer"
