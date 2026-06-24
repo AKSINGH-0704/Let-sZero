@@ -7,3 +7,12 @@ vite.config.ts.*
 .env
 .env.local
 .env.*.local
+
+# Ephemeral logs
+*.log
+.dev-server.log
+.test-server.log
+server_output.log
+
+# Claude Code local config and memory
+.claude/
