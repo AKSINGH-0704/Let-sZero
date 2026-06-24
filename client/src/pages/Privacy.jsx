@@ -162,8 +162,8 @@ export default function Privacy() {
           <SubHead>2.6 Security and Monitoring</SubHead>
           <p>
             We monitor platform activity to detect abuse, fraud, and security threats. This
-            includes log analysis and anomaly detection on platform infrastructure. This data is
-            used exclusively for security and integrity purposes.
+            includes server-side log monitoring and error tracking on platform infrastructure.
+            This data is used exclusively for security and integrity purposes.
           </p>
 
           <SubHead>2.7 Cookies and Sessions</SubHead>
@@ -309,8 +309,9 @@ export default function Privacy() {
           <p>
             Our services are primarily hosted in the United States. By using LetsZero products,
             you acknowledge that your data may be processed in jurisdictions outside your own. We
-            apply appropriate safeguards for cross-border transfers consistent with applicable data
-            protection law.
+            work with infrastructure providers that operate under their own applicable legal
+            frameworks, and we apply security measures to protect your data regardless of where
+            it is processed.
           </p>
         </Section>
 

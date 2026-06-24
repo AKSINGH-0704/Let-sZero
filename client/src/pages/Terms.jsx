@@ -50,7 +50,7 @@ export default function Terms() {
           Terms of Service
         </h1>
         <p className="text-base mb-2" style={{ color: "#7878A0" }}>
-          Last updated: June 2026 &nbsp;&middot;&nbsp; Platform agreement &mdash; applies to all LetsZero products and services
+          Last updated: June 2026 &nbsp;&middot;&nbsp; Platform agreement &nbsp;&middot;&nbsp; applies to all LetsZero products and services
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
           These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of software products
@@ -125,8 +125,9 @@ export default function Terms() {
               information may be suspended.
             </li>
             <li>
-              One account per person per product. Creating multiple accounts to extend free-tier
-              access or circumvent plan limits is prohibited and may result in suspension.
+              Creating duplicate accounts for the same product to extend free-tier access or
+              circumvent plan limits is prohibited and may result in suspension of all associated
+              accounts.
             </li>
             <li>
               You are responsible for maintaining the security of your credentials. If you suspect
@@ -170,7 +171,7 @@ export default function Terms() {
             </li>
             <li>
               <strong style={{ color: "#F0F0F5" }}>Platform abuse</strong> — attempting to
-              circumvent rate limits, trial restrictions, suppression enforcement, or access
+              circumvent rate limits, trial restrictions, built-in safeguards, or access
               controls.
             </li>
             <li>
@@ -259,7 +260,7 @@ export default function Terms() {
 
         <Section id="availability" title="7. Platform Availability">
           <p>
-            We aim to maintain reliable, high-availability service across our products. Planned
+            We aim to maintain consistent, reliable service across our products. Planned
             maintenance will be announced in advance where practicable. We are not liable for
             downtime caused by third-party infrastructure providers or circumstances outside our
             control.
