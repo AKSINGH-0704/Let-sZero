@@ -115,6 +115,16 @@ export default function Dashboard() {
     setShowWelcomeBanner(false);
   };
 
+  // OAuth new users land with ?welcome=1 — set localStorage key and show banner
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("welcome") === "1") {
+      try { localStorage.setItem("repmail_new_user", JSON.stringify({ isNewUser: true })); } catch {}
+      setShowWelcomeBanner(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard/stats"]
   });

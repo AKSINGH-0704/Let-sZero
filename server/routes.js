@@ -640,7 +640,9 @@ export async function registerRoutes(httpServer, app) {
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "/api/auth/google/callback",
+        callbackURL: process.env.NODE_ENV === "production"
+          ? "https://www.letszero.in/api/auth/google/callback"
+          : "/api/auth/google/callback",
       },
       async (_accessToken, _refreshToken, profile, done) => {
         try {
@@ -670,6 +672,7 @@ export async function registerRoutes(httpServer, app) {
               creditsReceived: 0,
               mustResetPassword: false,
             });
+            user._isNewOAuthUser = true;
           }
 
           return done(null, user);
@@ -703,7 +706,8 @@ export async function registerRoutes(httpServer, app) {
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
         });
-        res.redirect("/app/dashboard");
+        const isNewOAuthUser = req.user._isNewOAuthUser === true;
+        res.redirect(isNewOAuthUser ? "/app/dashboard?welcome=1" : "/app/dashboard");
       } catch (err) {
         console.error("Google callback error:", err);
         res.redirect("/login?error=google_failed");

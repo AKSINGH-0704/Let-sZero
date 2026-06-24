@@ -1033,3 +1033,24 @@ Team Plan converted from a pricing product into a bundled plan entitlement. All 
 **Decisions documented:** AUDIT_TRAIL.md Audit 045.
 
 **Milestone status: COMPLETE — Audit 045.**
+
+---
+
+### 42 · Google OAuth Production Hardening (2026-06-24)
+
+Production hardening of Google OAuth configuration identified in Audit 046 read-only review.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| `callbackURL` absolute in production | **COMPLETE** | `process.env.NODE_ENV === "production" ? "https://www.letszero.in/api/auth/google/callback" : "/api/auth/google/callback"` |
+| Localhost callback URL audit | **VERIFIED CLEAN** | Zero matches across server/, client/src/, shared/ |
+| Login page Google button | **VERIFIED** | `window.location.href = "/api/auth/google"` — correct |
+| Passport scopes | **VERIFIED** | `["profile", "email"]` only — non-sensitive, no app verification required |
+| Session creation | **VERIFIED** | Opaque 64-char hex token, HttpOnly cookie, 24h TTL — no JWT |
+| Inactive account blocking | **VERIFIED** | `isActive` check with audit log in verify callback |
+| Welcome banner for OAuth new users | **COMPLETE** | `?welcome=1` query param → Dashboard reads on mount → existing banner shown → param cleaned |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 046.
+
+**Milestone status: COMPLETE — Audit 046.**

@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–046 applied through 2026-06-24  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -597,16 +597,20 @@ See the Google OAuth Activation Runbook section below for the full step-by-step 
 
 ## Google OAuth Activation Runbook
 
-### Current status (verified 2026-06-21)
+### Current status (verified 2026-06-24)
 
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT set** in Railway production. The Passport strategy is conditionally registered only when both variables are present — feature is fully dormant. **No code changes are needed for activation.**
 
-> The Google OAuth code is complete and has been reviewed. Activation requires only GCP console configuration and two Railway environment variables.
+> The Google OAuth code is complete and production-hardened (Audit 046). Activation requires only GCP console configuration and two Railway environment variables.
 
 **Code reference (`server/routes.js:638`):**
 ```js
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport.use(new GoogleStrategy({ ... callbackURL: "/api/auth/google/callback" }, ...));
+  passport.use(new GoogleStrategy({
+    callbackURL: process.env.NODE_ENV === "production"
+      ? "https://www.letszero.in/api/auth/google/callback"
+      : "/api/auth/google/callback",
+  }, ...));
 }
 ```
 
@@ -694,7 +698,8 @@ Then test the full flow manually:
 1. Open `https://www.letszero.in/login` in an incognito window
 2. Click **Sign in with Google**
 3. Complete Google authentication
-4. Should land on `/app/dashboard`
+4. **New users:** land on `/app/dashboard?welcome=1` → welcome banner shown ("Welcome to RepMail. Ready to send your first campaign?") → URL cleaned to `/app/dashboard`
+5. **Returning users:** land directly on `/app/dashboard` — no banner
 
 **Verify a new user was created:**
 ```sql
@@ -714,6 +719,7 @@ FROM users ORDER BY created_at DESC LIMIT 3;
 | `mustResetPassword` | `false` | OAuth users authenticate via Google, not password |
 | `isTrialUser` | Depends on `FREE_PLAN_ENABLED` | If `true` → 5 trial credits; if `false` → 500/month free credits |
 | `passwordHash` | Random 32-byte hex | Users can't log in via password (intentional). Forgot-password flow can set one if desired. |
+| Welcome banner | Shown once for new accounts | Redirect goes to `?welcome=1`; Dashboard reads param on mount, shows existing banner, cleans URL |
 
 ---
 

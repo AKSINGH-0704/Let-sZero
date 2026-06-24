@@ -3679,3 +3679,113 @@ Zero instances of: ₹129, ₹99/member, TEAM constant, teamBilling, teamUsers, 
 **AUDIT_TRAIL.md:** Audit 045 appended.
 **PROGRESS.md:** Milestone 41 added.
 **HANDOFF.md:** Updated with Option B decision, future revisit threshold, and surface changes.
+
+---
+
+## Audit 046 — Google OAuth Production Hardening (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full Google OAuth configuration review (Audit 046 read-only) + production hardening implementation
+**Commit at time of audit:** `1d5e011`
+**Method:** Full read of `server/routes.js` GoogleStrategy, callback handler, `client/src/pages/Login.jsx`, `Dashboard.jsx`; grep for localhost callback URLs across entire codebase
+
+### Findings from Read-Only Audit (Audit 046)
+
+| Finding | Severity | Detail |
+|---------|----------|--------|
+| `callbackURL: "/api/auth/google/callback"` — relative path | **Blocking** | On Railway behind a reverse proxy, passport-google-oauth20 may construct `http://` instead of `https://` for the absolute URL, causing Google to reject with `redirect_uri_mismatch` |
+| Scopes: `["profile", "email"]` | Clean | Non-sensitive — no Google app verification required |
+| Session handling | Clean | Opaque 64-char hex token via `crypto.randomBytes(32)`, stored in `sessions` DB table with 24h TTL, `session: false` on all Passport calls — no JWT issued |
+| No `passport.serializeUser`/`deserializeUser` | Clean | Correct and intentional (`session: false` throughout) |
+| OAuth inactive account blocking | Clean | `isActive` check before `done(null, user)` with audit log |
+| Welcome banner gap (non-blocking) | UX gap | `localStorage.getItem("repmail_new_user")` welcome banner not set during OAuth callback — new Google users land on dashboard cold with no onboarding signal |
+| LinkedIn button | Known / deferred | Exists in UI, shows toast only — not implemented |
+
+### Authorized JavaScript Origins (for GCP Console)
+```
+https://www.letszero.in
+https://letszero.in
+```
+
+### Authorized Redirect URIs (for GCP Console)
+```
+https://www.letszero.in/api/auth/google/callback
+```
+
+### Changes Implemented
+
+**`server/routes.js:643` — callbackURL hardened for production**
+
+Before:
+```javascript
+callbackURL: "/api/auth/google/callback",
+```
+After:
+```javascript
+callbackURL: process.env.NODE_ENV === "production"
+  ? "https://www.letszero.in/api/auth/google/callback"
+  : "/api/auth/google/callback",
+```
+Production gets the absolute HTTPS URL — no proxy resolution risk. Local dev keeps the relative path (no reverse proxy, no issue).
+
+**`server/routes.js:675` — new OAuth user flag**
+
+After `storage.createUser(...)` for new Google accounts:
+```javascript
+user._isNewOAuthUser = true;
+```
+
+**`server/routes.js:709–710` — redirect with welcome signal for new users**
+
+```javascript
+const isNewOAuthUser = req.user._isNewOAuthUser === true;
+res.redirect(isNewOAuthUser ? "/app/dashboard?welcome=1" : "/app/dashboard");
+```
+
+**`client/src/pages/Dashboard.jsx` — read `?welcome=1` on mount**
+
+```javascript
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("welcome") === "1") {
+    try { localStorage.setItem("repmail_new_user", JSON.stringify({ isNewUser: true })); } catch {}
+    setShowWelcomeBanner(true);
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+}, []);
+```
+Existing welcome banner ("Welcome to RepMail. Ready to send your first campaign?" + New Campaign CTA) now shows for OAuth new users. Query param is cleaned from the URL immediately after reading. Returning OAuth users (existing accounts) get the normal redirect to `/app/dashboard` — no banner.
+
+### Localhost Callback URL Audit
+
+Grep across entire codebase (`server/`, `client/src/`, `shared/`) for `localhost.*callback`, `127.0.0.1.*callback`, `localhost.*oauth`:
+**Zero matches.** No hardcoded localhost OAuth URLs exist anywhere in the repository.
+
+### Railway Environment Variables
+
+| Variable | Status | Notes |
+|----------|--------|-------|
+| `GOOGLE_CLIENT_ID` | Must be set in Railway | Local `.env` has a value for local dev; Railway must have its own |
+| `GOOGLE_CLIENT_SECRET` | Must be set in Railway | Same |
+| `NODE_ENV` | Railway sets `production` automatically | Controls callbackURL selection |
+
+No new environment variables required. The callbackURL selection is automatic via `NODE_ENV`.
+
+### OAuth Onboarding Experience — Full Path Audit
+
+| Code Path | Status |
+|-----------|--------|
+| Login page Google button | `window.location.href = "/api/auth/google"` — correct full-page redirect |
+| Passport strategy | `scope: ["profile", "email"]`, `session: false` — correct |
+| Callback route | Absolute URL in production, opaque session token created, HttpOnly cookie set |
+| New user creation | `role: USER`, `plan: free`, `mustResetPassword: false`, `creditsReceived: 0` |
+| New user redirect | `/app/dashboard?welcome=1` — triggers welcome banner |
+| Returning user redirect | `/app/dashboard` — clean, no banner |
+| Welcome banner | "Welcome to RepMail. Ready to send your first campaign?" + New Campaign button |
+| Inactive account | Blocked in verify callback, audit-logged, `done(null, false)` → `failureRedirect: /login?error=google_failed` |
+| Error handling | `catch (err)` in callback handler → `res.redirect("/login?error=google_failed")` |
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed. Same bundle size (Dashboard.jsx `useEffect` is negligible).
