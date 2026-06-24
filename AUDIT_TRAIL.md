@@ -3370,3 +3370,72 @@ Replaced the static "Add-on" card with a captivating "Coming Soon" feature previ
 ### Iron Rule confirmed
 
 Dedicated IP provisioning is not implemented and is not a planned sprint item. The Coming Soon treatment is honest to that state.
+
+---
+
+## Audit 041 — LetsZero Platform Legal Architecture (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** LetsZero Privacy Policy (`/privacy`) and Terms of Service (`/terms`) only. RepMail legal pages untouched.
+**Commit:** `0e37843`
+
+### Problem Statement
+
+Both LetsZero legal pages were RepMail-specific documents masquerading as platform-level legal agreements:
+- Navigation and footer used the RepMail logo
+- Hero text scoped the documents to "all RepMail users" / "all RepMail accounts"
+- Privacy Policy opened by defining LetsZero as "operates the RepMail email outreach platform" — making LetsZero a single-product company by definition
+- Every data collection section named RepMail-specific infrastructure (Amazon SES, SNS, Razorpay, Railway)
+- Terms of Service described the product as a "credit-based email outreach platform" — entirely invalid for future products
+- No supplemental terms pattern established; adding MessageHub or NotifyStream would require rewriting both documents
+
+### Changes Made
+
+**Privacy.jsx:**
+
+| Issue | Fix |
+|-------|-----|
+| RepMail logo in nav/footer | LetsZero logo (`/letszero-logo.png`) |
+| "Effective for all RepMail users" | "Applies to all LetsZero accounts and products" |
+| "LetsZero operates the RepMail platform" | "LetsZero develops and operates multiple business software products" |
+| Named infrastructure vendors (SES, Razorpay, Railway) | Categorical descriptions (cloud infrastructure, payment processor, identity provider) |
+| RepMail-specific data collection | Platform-level categories + supplemental notice reference |
+| No navigation | Inline TOC (12 sections, 2-column grid) |
+
+**Terms.jsx:**
+
+| Issue | Fix |
+|-------|-----|
+| RepMail logo in nav/footer | LetsZero logo |
+| "Binding on all RepMail accounts" | "Platform agreement — applies to all LetsZero products" |
+| "RepMail is a credit-based email outreach platform" (Section 1) | Section 1 establishes multi-product platform context + supplemental terms pattern |
+| No data controller/processor section | Section 4: data controller/processor split for B2B users (critical for agencies) |
+| Credits/Razorpay/SES-specific billing | Generic pricing models section (subscriptions, credits, free plans) |
+| Hardcoded "500 credits", "6 months", "Amazon SES" | Removed; product-specific details belong in RepMailTerms.jsx |
+| RepMail-specific SLA (99.5%) | General platform availability commitment |
+| No navigation | Inline TOC (13 sections, 2-column grid) |
+
+### Architecture Established
+
+```
+LetsZero (Privacy.jsx / Terms.jsx)
+├── RepMail (RepMailPrivacy.jsx / RepMailTerms.jsx)
+├── MessageHub (future supplemental terms)
+├── NotifyStream (future supplemental terms)
+└── Additional products (add supplemental terms; platform docs unchanged)
+```
+
+New products add a supplemental privacy notice and supplemental terms. Platform documents require no rewrite.
+
+### What Was NOT Changed
+
+- `RepMailPrivacy.jsx` — product-specific, remains correct as-is
+- `RepMailTerms.jsx` — product-specific, remains correct as-is
+- Route structure in `App.jsx` — unchanged
+- No fake compliance certifications added
+- No em dashes added
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed.

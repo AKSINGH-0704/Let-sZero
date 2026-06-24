@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `64a7f82` (2026-06-24) through Dedicated IP Coming Soon — see AUDIT_TRAIL.md Audits 015–040  
+**Verified against:** commit `0e37843` (2026-06-24) through LetsZero Platform Legal — see AUDIT_TRAIL.md Audits 015–041  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -140,6 +140,14 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - Feature is NOT implemented. `server/email.js` uses shared SMTP — no dedicated IP pool anywhere.
 - Card on `/pricing` replaced with captivating feature-preview treatment: pulsing amber "Coming Soon" badge, readable title/icon (not muted to gray), value-first description copy, price at mid-opacity, "Notify me →" CTA with client-side toggle state.
 - No backend changes. Notification CTA is UI-only (no email collection wired).
+
+**LetsZero Platform Legal Architecture (commit `0e37843`, 2026-06-24 — Audit 041):**
+- `Privacy.jsx` and `Terms.jsx` redesigned as platform-level documents. Previously both were RepMail-specific.
+- LetsZero logo (`/letszero-logo.png`) replaces RepMail logo in nav/footer of both pages.
+- Privacy: provider categories instead of named vendors; supplemental notice pattern introduced; 12-section TOC.
+- Terms: Section 1 establishes multi-product platform context + supplemental terms pattern; Section 4 covers data controller/processor split for B2B users; billing section uses generic pricing model language; 13-section TOC.
+- `RepMailPrivacy.jsx` and `RepMailTerms.jsx` untouched — product-specific, correct as-is.
+- New products (MessageHub, NotifyStream) add supplemental terms only. Platform docs require no rewrite.
 
 **Pre-activation hardening (Phase 15.1, commit `39bd09a`, 2026-06-22):**
 

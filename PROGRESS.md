@@ -1,7 +1,7 @@
 # RepMail — Launch Readiness
 
 **Last updated:** 2026-06-24
-**Current commit:** `64a7f82` — see AUDIT_TRAIL.md Audits 039–040
+**Current commit:** `0e37843` — see AUDIT_TRAIL.md Audits 039–041
 
 **Related documents:**
 - [HANDOFF.md](./HANDOFF.md) — Onboarding, current state, priorities, gaps, non-goals
@@ -908,3 +908,36 @@ One commit: `64a7f82`.
 | Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
 
 **Milestone status: COMPLETE — Audit 040.**
+
+---
+
+### 37 · LetsZero Platform Legal Architecture (2026-06-24)
+
+One commit: `0e37843`.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Existing page audit | **COMPLETE** | 10+ RepMail-specific violations identified in each page |
+| Privacy.jsx — LetsZero logo | **COMPLETE** | `/letszero-logo.png` in nav + footer |
+| Privacy.jsx — platform framing | **COMPLETE** | "multiple business software products" — no product names |
+| Privacy.jsx — infrastructure abstraction | **COMPLETE** | Provider categories (not named vendors) |
+| Privacy.jsx — supplemental notice pattern | **COMPLETE** | Section 1 + Section 2.5 establish the pattern |
+| Privacy.jsx — TOC | **COMPLETE** | 12-section inline TOC with 2-column grid |
+| Terms.jsx — LetsZero logo | **COMPLETE** | `/letszero-logo.png` in nav + footer |
+| Terms.jsx — platform framing | **COMPLETE** | Section 1 establishes multi-product context + supplemental terms pattern |
+| Terms.jsx — data controller/processor | **COMPLETE** | Section 4 added for B2B/agency users |
+| Terms.jsx — generic billing | **COMPLETE** | No hardcoded credits, amounts, or vendor names |
+| Terms.jsx — TOC | **COMPLETE** | 13-section inline TOC with 2-column grid |
+| RepMailPrivacy.jsx | **UNTOUCHED** | Product-specific, correct as-is |
+| RepMailTerms.jsx | **UNTOUCHED** | Product-specific, correct as-is |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Platform architecture established:**
+```
+LetsZero (Privacy.jsx / Terms.jsx)
+├── RepMail (RepMailPrivacy.jsx / RepMailTerms.jsx)
+├── MessageHub (add supplemental terms when ready)
+└── NotifyStream (add supplemental terms when ready)
+```
+
+**Milestone status: COMPLETE — Audit 041.**
