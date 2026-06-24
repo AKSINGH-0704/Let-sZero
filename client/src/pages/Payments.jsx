@@ -15,23 +15,16 @@ import {
   Check, X, Sparkles, Mail, Shield, CreditCard, Zap, Users, ArrowRight,
   Building2, BarChart3, Globe, Webhook, HeadphonesIcon, Lock, Server, Bot,
   Calendar, Download, CheckCircle, XCircle, Clock, Receipt, Loader2,
-  Smartphone, Gift, Minus, Plus,
+  Smartphone, Gift,
 } from "lucide-react";
 import { formatDate, formatNumber, cn } from "@/lib/utils";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const USD_RATE = 83.5;
-const TEAM = { monthly: 129, annual: 99, min: 3, max: 15 };
+
 
 function fmtNum(n) {
   return n == null ? "—" : n.toLocaleString("en-IN");
-}
-function fmtINR(n) {
-  return n == null ? "—" : `₹${n.toLocaleString("en-IN")}`;
-}
-function fmtUSD(n) {
-  if (n == null) return "—";
-  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function formatCurrency(amount, currency) {
   if (currency === "INR") return `₹${formatNumber(Math.round(amount))}`;
@@ -844,7 +837,7 @@ function ProcessPayment({ paymentId }) {
         description: `${formatNumber(data.payment.credits)} credits added to your account.`,
       });
       const planKey = (data.payment?.planId || data.payment?.planName || "").toLowerCase();
-      const isTeamCapable = ["growth", "scale"].some(id => planKey.includes(id));
+      const isTeamCapable = ["starter", "growth", "scale"].some(id => planKey.includes(id));
       setLocation(isTeamCapable ? "/app/payments?activate=team" : "/app/payments");
     },
     onError: (err) => {
@@ -1076,8 +1069,6 @@ export default function Payments() {
   const [currency, setCurrency] = useState("INR");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedTier, setSelectedTier] = useState(null);
-  const [teamBilling, setTeamBilling] = useState("annual");
-  const [teamUsers, setTeamUsers] = useState(5);
   const [pricingTab, setPricingTab] = useState("individual");
   const [showTeamActivation, setShowTeamActivation] = useState(
     () => new URLSearchParams(window.location.search).get("activate") === "team"
@@ -1145,11 +1136,6 @@ export default function Payments() {
   // Determine current plan from last successful payment
   const lastSuccessful = payments?.find(p => p.status === "SUCCESS");
   const currentPlanId = lastSuccessful?.planId || null;
-
-  const teamMonthly = teamBilling === "annual" ? TEAM.annual : TEAM.monthly;
-  const teamTotal = teamMonthly * teamUsers;
-  const teamTotalUSD = +(teamTotal / USD_RATE).toFixed(2);
-  const teamMonthlyUSD = +(teamMonthly / USD_RATE).toFixed(2);
 
   if (matchProcess && paramsProcess?.id) {
     return <ProcessPayment paymentId={paramsProcess.id} />;
@@ -1576,117 +1562,33 @@ export default function Payments() {
                   ))}
                 </motion.div>
 
-                {/* Billing calculator */}
+                {/* Team capacity + role capabilities */}
                 <div
                   className="rounded-2xl p-7 md:p-9 mb-8"
                   style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                 >
                   <div className="grid md:grid-cols-2 gap-10">
-                    {/* Left: controls */}
+                    {/* Left: plan capacity */}
                     <div>
-                      <div className="mb-7">
-                        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: "#7878A0" }}>
-                          Billing cycle
-                        </div>
-                        <div
-                          className="relative inline-flex rounded-xl p-1"
-                          style={{ background: "#16162A", border: "1px solid #2A2A45" }}
-                        >
-                          <motion.div
-                            className="absolute inset-y-1 rounded-lg"
-                            style={{ background: "#00E5C8", width: "calc(50% - 4px)" }}
-                            animate={{ x: teamBilling === "monthly" ? "calc(100% + 8px)" : 0 }}
-                            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                          />
-                          {[
-                            { id: "annual", label: "Annual" },
-                            { id: "monthly", label: "Monthly" },
-                          ].map(({ id, label }) => (
-                            <button
-                              key={id}
-                              onClick={() => setTeamBilling(id)}
-                              className="relative z-10 px-5 py-2 text-sm font-semibold rounded-lg transition-colors"
-                              style={{ color: teamBilling === id ? "#06060B" : "#8888A0" }}
-                            >
-                              {label}
-                              {id === "annual" && (
-                                <span
-                                  className="ml-2 text-xs px-1.5 py-0.5 rounded-full"
-                                  style={{
-                                    background: teamBilling === "annual" ? "rgba(6,6,11,0.2)" : "rgba(52,211,153,0.15)",
-                                    color: teamBilling === "annual" ? "#06060B" : "#34D399",
-                                    border: teamBilling === "annual" ? "none" : "1px solid rgba(52,211,153,0.3)",
-                                    fontSize: "10px",
-                                  }}
-                                >
-                                  {Math.round((1 - TEAM.annual / TEAM.monthly) * 100)}% OFF
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
+                      <div className="text-xs uppercase tracking-widest mb-4" style={{ color: "#7878A0" }}>Team Capacity by Plan</div>
+                      <div className="space-y-2">
+                        {[
+                          { plan: "Starter", seats: "3", color: "#60A5FA" },
+                          { plan: "Growth", seats: "10", color: "#00E5C8" },
+                          { plan: "Scale", seats: "25", color: "#A78BFA" },
+                          { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
+                        ].map(({ plan, seats, color }) => (
+                          <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
+                            <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
+                            <span className="text-xs" style={{ color: "#B8B8D0" }}>
+                              {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-
-                      <div className="mb-7">
-                        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: "#7878A0" }}>
-                          Team members (3–15)
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <button
-                            onClick={() => setTeamUsers(u => Math.max(TEAM.min, u - 1))}
-                            disabled={teamUsers <= TEAM.min}
-                            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-                            style={{
-                              background: "#16162A",
-                              border: "1px solid #2A2A45",
-                              color: teamUsers <= TEAM.min ? "#3A3A50" : "#F0F0F5",
-                              opacity: teamUsers <= TEAM.min ? 0.4 : 1,
-                            }}
-                            aria-label="Remove team member"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <motion.span
-                            key={teamUsers}
-                            initial={{ opacity: 0.5, y: -8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="text-3xl font-bold w-12 text-center"
-                            style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F0F0F5", fontVariantNumeric: "tabular-nums" }}
-                          >
-                            {teamUsers}
-                          </motion.span>
-                          <button
-                            onClick={() => setTeamUsers(u => Math.min(TEAM.max, u + 1))}
-                            disabled={teamUsers >= TEAM.max}
-                            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-                            style={{
-                              background: "#16162A",
-                              border: "1px solid #2A2A45",
-                              color: teamUsers >= TEAM.max ? "#3A3A50" : "#F0F0F5",
-                              opacity: teamUsers >= TEAM.max ? 0.4 : 1,
-                            }}
-                            aria-label="Add team member"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                          <span className="text-sm" style={{ color: "#7878A0" }}>users</span>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl p-5" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
-                        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: "#7878A0" }}>Monthly cost</div>
-                        <div
-                          className="text-4xl font-bold mb-1"
-                          style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F0F0F5", fontVariantNumeric: "tabular-nums" }}
-                        >
-                          {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}
-                          <span className="text-base font-normal ml-1" style={{ color: "#7878A0" }}>/mo</span>
-                        </div>
-                        <div className="text-sm" style={{ color: "#A8A8C0" }}>
-                          {teamUsers} members × {currency === "INR" ? `₹${teamMonthly}` : `$${teamMonthlyUSD}`}/member/month
-                          {teamBilling === "annual" && <span style={{ color: "#7878A0" }}> · billed annually</span>}
-                        </div>
-                      </div>
+                      <p className="text-xs mt-4" style={{ color: "#55556A" }}>
+                        Team seats are included in all paid plans at no additional cost.
+                      </p>
                     </div>
 
                     {/* Right: role comparison table */}
@@ -1739,77 +1641,47 @@ export default function Payments() {
                   </div>
                 </div>
 
-                {/* Team Plan cards */}
+                {/* Team action cards */}
                 <div className="grid md:grid-cols-2 gap-5">
-                  {/* Team Plan card */}
-                  <div
-                    className="p-px rounded-2xl"
-                    style={{ background: "linear-gradient(135deg, rgba(0,229,200,0.4) 0%, rgba(0,229,200,0.05) 60%, transparent 100%)" }}
-                  >
-                    <div className="relative rounded-2xl p-6 h-full" style={{ background: "linear-gradient(160deg, #0F0F20 0%, #0C0C18 100%)" }}>
-                      <div
-                        className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap"
-                        style={{ background: "#00E5C8", color: "#06060B", boxShadow: "0 4px 20px rgba(0,229,200,0.35)", letterSpacing: "0.15em" }}
-                      >
-                        Most Popular
-                      </div>
-                      <div className="text-xs font-bold uppercase tracking-widest mb-3 mt-2" style={{ color: "#00E5C8", letterSpacing: "0.15em" }}>
-                        Team Plan
-                      </div>
-                      <div className="mb-4">
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          <span className="text-3xl font-bold" style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F0F0F5" }}>
-                            {currency === "INR"
-                              ? teamBilling === "annual" ? `₹${TEAM.annual}` : `₹${TEAM.monthly}`
-                              : teamBilling === "annual" ? `$${(TEAM.annual / USD_RATE).toFixed(2)}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
-                          </span>
-                          <span className="text-sm" style={{ color: "#7878A0" }}>/member/month</span>
-                          {teamBilling === "annual" && (
-                            <span className="text-xs line-through" style={{ color: "#3A3A50" }}>
-                              {currency === "INR" ? `₹${TEAM.monthly}` : `$${(TEAM.monthly / USD_RATE).toFixed(2)}`}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs mt-1" style={{ color: "#7878A0" }}>
-                          {teamUsers} members = {currency === "INR" ? `₹${fmtNum(teamTotal)}` : fmtUSD(teamTotalUSD)}/month
-                          {teamBilling === "annual" && (
-                            <span style={{ color: "#55556A" }}> · billed annually</span>
-                          )}
-                        </div>
-                        {teamBilling === "annual" && (
-                          <div className="text-xs mt-0.5" style={{ color: "#55556A" }}>
-                            {currency === "INR"
-                              ? `₹${fmtNum(TEAM.annual * 12)}/member/year`
-                              : `$${(TEAM.annual / USD_RATE * 12).toFixed(2)}/member/year`}
-                          </div>
-                        )}
-                      </div>
-                      <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
-                      <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>Everything on Growth, plus:</div>
-                      <ul className="space-y-2 text-xs">
-                        {["Team credit distribution", "Role-based access control", "Centralized billing", "Team activity dashboard", "Up to 15 members"].map(f => (
-                          <li key={f} className="flex items-center gap-2">
-                            <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#00E5C8" }} />
-                            <span style={{ color: "#D1D5DB" }}>{f}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="mt-5 pt-4" style={{ borderTop: "1px solid #1A1A2E" }}>
-                        <p className="text-xs mb-3" style={{ color: "#55556A" }}>
-                          Growth: up to 10 members · Scale: up to 25 members
-                        </p>
-                        <button
-                          onClick={() => setPricingTab("individual")}
-                          className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-                          style={{ background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)", color: "#06060B", fontWeight: 700 }}
-                          onMouseEnter={e => { e.currentTarget.style.opacity = "0.9"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "translateY(0)"; }}
-                        >
-                          Choose Your Plan
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                  {/* How to activate your team */}
+                  <div className="rounded-2xl p-6 flex flex-col h-full" style={{ background: "#0C0C14", border: "1px solid rgba(0,229,200,0.12)" }}>
+                    <div className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#00E5C8", letterSpacing: "0.15em" }}>
+                      Getting Started
                     </div>
+                    <div className="text-xl font-semibold mb-5" style={{ color: "#F0F0F5", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
+                      How to activate your team
+                    </div>
+                    <div className="space-y-4 flex-1">
+                      {[
+                        { n: "1", title: "Purchase a plan", desc: "Starter (3 seats), Growth (10), or Scale (25). Team access is included at no extra cost." },
+                        { n: "2", title: "Invite team members", desc: "Go to Team Management and invite members. Assign each a role — Manager or Member." },
+                        { n: "3", title: "Allocate credits", desc: "Distribute your credits to each member. They spend only what you allocate to them." },
+                        { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
+                      ].map(({ n, title, desc }) => (
+                        <div key={n} className="flex gap-3">
+                          <div
+                            className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5"
+                            style={{ background: "rgba(0,229,200,0.12)", color: "#00E5C8", border: "1px solid rgba(0,229,200,0.25)", fontFamily: "'JetBrains Mono', monospace" }}
+                          >
+                            {n}
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold mb-0.5" style={{ color: "#F0F0F5" }}>{title}</div>
+                            <div className="text-xs leading-relaxed" style={{ color: "#7878A0" }}>{desc}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setPricingTab("individual")}
+                      className="mt-5 w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                      style={{ background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)", color: "#06060B", fontWeight: 700 }}
+                      onMouseEnter={e => { e.currentTarget.style.opacity = "0.9"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "translateY(0)"; }}
+                    >
+                      View Credit Plans
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                   {/* Enterprise Teams card */}
@@ -1826,7 +1698,7 @@ export default function Payments() {
                       <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Volume-based · Priority support</div>
                     </div>
                     <div className="mb-4 h-px" style={{ background: "#1A1A2E" }} />
-                    <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>Everything on Team Plan, plus:</div>
+                    <div className="text-xs font-semibold mb-3" style={{ color: "#7878A0" }}>For organizations that need more:</div>
                     <ul className="space-y-2 text-xs">
                       {["Unlimited team members", "Dedicated account manager", "Custom credit packages", "SSO / SAML (Soon)", "Priority support"].map(f => (
                         <li key={f} className="flex items-center gap-2">

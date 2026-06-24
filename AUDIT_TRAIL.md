@@ -3565,6 +3565,72 @@ The registered legal entity is **LetsZero Solutions Private Limited**. All prior
 
 ---
 
+## Audit 045 — Team Plan Commercialization Removal: Option B (Bundled Entitlement) (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full Team Plan surface audit and implementation of Option B architecture decision
+**Commit at time of audit:** `e0d31ed`
+**Method:** Full read of both Teams tab sections in PublicPricing.jsx and Payments.jsx; grep audit for all team-pricing state variables, constants, and copy; build verification
+
+### Architecture Decision
+
+Option B chosen: Team access is a **bundled plan entitlement**, not a separate subscription.
+
+| Decision | Rationale |
+|----------|-----------|
+| No recurring team seat billing | Backend already enforces team capacity via `MAX_TEAM_MEMBERS`. Adding a parallel billing model would create two conflicting sources of truth. |
+| No ₹129/member/month pricing | No Razorpay recurring mandate, no team_subscriptions schema table, no dunning or seat-count enforcement in server code. Presenting this as purchasable was deceptive. |
+| Team included in credit plans | Starter = 3, Growth = 10, Scale = 25, Enterprise = custom. Already the operational reality. |
+| Future revisit threshold | 50–100 active customers who need more seats than their credit tier allows. At that point, Option A (separate subscription) is the appropriate architecture. |
+
+### Surfaces Audited
+
+| Surface | Finding |
+|---------|---------|
+| `PublicPricing.jsx` Teams tab | Team Plan pricing card with ₹129/member, "Most Popular" badge, billing toggle, animated total — all removed |
+| `Payments.jsx` Teams tab | Same pricing card plus billing calculator (billing cycle toggle, member counter, monthly cost display) — all removed |
+| `TEAM` constant | `{ monthly: 129, annual: 99, min: 3, max: 15 }` — removed from both files |
+| `teamBilling`, `teamUsers` state | Removed from both files (no longer needed) |
+| `teamMonthly`, `teamTotal`, `teamTotalUSD`, `teamMonthlyUSD` | Removed from both files |
+| `animatedTeamTotal` | Removed from PublicPricing.jsx |
+| `fmtINR`, `fmtUSD` helper functions | Removed from Payments.jsx (only used in team calculator) |
+| `Minus`, `Plus` imports | Removed from Payments.jsx (only used in team member stepper) |
+| FAQ: free plan "1 team member" | Corrected to "no team seats" |
+| FAQ: teams answer | Updated to include Starter (3) in the plan list |
+| "Teams available on Growth plan and above" | Corrected to "Team seats are included in all paid plans" |
+| "Everything on Team Plan, plus:" (Enterprise card) | Changed to "For organizations that need more:" |
+| `isTeamCapable` in Razorpay webhook handler | Extended to include "starter" — Starter purchases now trigger team activation banner |
+| Billing section left side (Payments.jsx) | Replaced full calculator with plan-capacity rows (Starter 3 / Growth 10 / Scale 25 / Enterprise custom) |
+| Billing section left side (PublicPricing.jsx) | Already had info box — updated to structured plan-capacity rows including Starter |
+| Team Plan card → "How to activate your team" card | 4-step activation guide: Purchase a plan → Invite team members → Allocate credits → Launch campaigns. CTA: "View Credit Plans" → switches to Individual tab |
+
+### Team Limit Consistency Verification
+
+Post-implementation grep confirms all team member values flow from the PLANS array, which matches `shared/schema.js MAX_TEAM_MEMBERS`:
+
+| Plan | Schema | UI (PLANS array) | Display |
+|------|--------|-----------------|---------|
+| Free/Trial | 0 | `"Solo"` | "Solo account" |
+| Starter | 3 | `"3"` | "Up to 3 team members" |
+| Growth | 10 | `"10"` | "Up to 10 team members" |
+| Scale | 25 | `"25"` | "Up to 25 team members" |
+| Enterprise | Infinity | `"Unlimited"` | "Custom team size" |
+
+Zero instances of: ₹129, ₹99/member, TEAM constant, teamBilling, teamUsers, "Most Popular" team badge, "Up to 15 members" pricing claim.
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed. Bundle 3 KB smaller than before (unused calculator code removed).
+
+### Documentation Verification
+
+**AUDIT_TRAIL.md:** Audit 045 appended.
+**PROGRESS.md:** Milestone 41 added.
+**HANDOFF.md:** Updated with Option B decision, future revisit threshold, and surface changes.
+
+---
+
 ## Audit 044 — Growth & Activation Hardening: Priority 0 + Sender Profile Gate (2026-06-24)
 
 **Date:** 2026-06-24

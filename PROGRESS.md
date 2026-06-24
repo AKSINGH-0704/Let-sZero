@@ -1007,3 +1007,29 @@ One commit: `00a260a`. Pushed to origin/main.
 **Decisions documented:** AUDIT_TRAIL.md Audit 044.
 
 **Milestone status: COMPLETE — Audit 044.**
+
+---
+
+### 41 · Team Plan Commercialization Removal — Option B (2026-06-24)
+
+Team Plan converted from a pricing product into a bundled plan entitlement. All fake pricing surfaces removed.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Architecture decision: Option B (bundled) | **COMPLETE** | Starter=3, Growth=10, Scale=25 — matches backend MAX_TEAM_MEMBERS |
+| TEAM constant removed (both files) | **COMPLETE** | No TEAM object in PublicPricing.jsx or Payments.jsx |
+| teamBilling / teamUsers state removed | **COMPLETE** | No unused React state |
+| Billing calculator removed (Payments.jsx) | **COMPLETE** | Replaced with plan-capacity rows |
+| Team Plan pricing card removed (both files) | **COMPLETE** | Replaced with "How to activate your team" 4-step guide |
+| FAQ updated: free plan, teams answer | **COMPLETE** | Includes Starter (3), removes "1 team member" for free |
+| "Teams available on Growth and above" fixed | **COMPLETE** | Now says "included in all paid plans" |
+| Enterprise card copy updated | **COMPLETE** | "For organizations that need more:" |
+| isTeamCapable extended to Starter | **COMPLETE** | Starter purchases now trigger team activation banner |
+| Team limit consistency: Solo/3/10/25/Unlimited | **VERIFIED** | Grep confirmed — zero stale values remain |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules, bundle 3 KB smaller |
+
+**Future revisit:** At 50–100 active customers needing seats beyond tier limits, re-evaluate Option A (recurring subscription).
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 045.
+
+**Milestone status: COMPLETE — Audit 045.**
