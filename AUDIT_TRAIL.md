@@ -3789,3 +3789,105 @@ No new environment variables required. The callbackURL selection is automatic vi
 ### Build Verification
 
 `npm run build` — 0 errors. 5047 modules transformed. Same bundle size (Dashboard.jsx `useEffect` is negligible).
+
+---
+
+## Audit 047 — Google OAuth Production Readiness Audit + Implementation (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Full end-to-end production readiness audit of Google OAuth; implementation of approved findings
+**Commit at time of audit:** `d2c8dd0`
+**Method:** Full read of `server/routes.js`, `server/index.js`, `server/storage.js`, `server/env.js`, `client/src/pages/Login.jsx`, `package.json`, `.env`
+
+### Task 1 — Production Variable Verification
+
+Railway production variables confirmed by operator:
+
+| Variable | Status |
+|----------|--------|
+| `GOOGLE_CLIENT_ID` | Present in Railway |
+| `GOOGLE_CLIENT_SECRET` | Present in Railway |
+| `REPMAIL_PUBLIC` | `true` |
+| `APP_URL` | `https://www.letszero.in` |
+
+Code evidence — exact variable names as read in `server/routes.js:638–642`:
+```javascript
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+```
+No aliases, no fallbacks, no legacy names. `env.js` loads `.env` but Railway variables take precedence (only sets keys not already in `process.env`).
+
+### Task 2 — H1 Fix: OAuth Route Safety
+
+**Finding:** `app.get("/api/auth/google")` and `app.get("/api/auth/google/callback")` were registered unconditionally — outside the `GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET` guard block. If env vars were absent, Passport threw `"Unknown authentication strategy 'google'"` → unhandled 500 error.
+
+**Fix applied (`server/routes.js:638–720`):** Both route registrations moved inside the credential guard. `else` block added with graceful fallbacks:
+```javascript
+} else {
+  console.warn("[OAuth] GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not configured — Google sign-in disabled");
+  app.get("/api/auth/google", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
+  app.get("/api/auth/google/callback", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
+}
+```
+
+Behavior when credentials missing: user hits Google button → `oauth_unavailable` error param → login page shows clear message. Zero 500 errors, zero unhandled Passport exceptions.
+
+### Task 3 — M1 Fix: Failed Google Login UX
+
+**Finding:** `failureRedirect: "/login?error=google_failed"` was set server-side, but `Login.jsx` never read `window.location.search`. Users who failed Google OAuth saw a blank login form with no explanation.
+
+**Fix applied (`client/src/pages/Login.jsx`):**
+- Added `useEffect` to React import
+- `useEffect` in `SignInForm` reads `?error` param on mount
+- Sets `oauthError` state with customer-friendly message
+- Cleans URL via `window.history.replaceState` immediately
+- Dismissible `<Alert variant="destructive">` renders above the form with `✕` button
+- Handles both `google_failed` and `oauth_unavailable` error codes
+
+Messages:
+- `google_failed`: "Google sign-in was unsuccessful. Please try again or sign in with your username and password."
+- `oauth_unavailable`: "Google sign-in is not available right now. Please sign in with your username and password."
+
+### Task 4 — C1 Review: Private Beta Gate
+
+**Finding:** `REPMAIL_PUBLIC=true` in Railway — gate passes all requests, OAuth is not blocked today. However, the structural risk remains: if `REPMAIL_PUBLIC` is ever unset or changed, `/api/auth/google`, `/api/auth/google/callback`, `/login`, and `/api/auth/logout` would all be blocked silently.
+
+**Fix applied (`server/index.js:503–513`):** Added four paths to `allowedPaths`:
+```javascript
+'/login',
+'/api/auth/google',
+'/api/auth/google/callback',
+'/api/auth/logout',
+```
+With `REPMAIL_PUBLIC=true`, this is inert. It becomes load-bearing if the platform ever returns to invite-only beta mode — OAuth and login will continue working for authorized users.
+
+### Task 5 — Final OAuth Path Verification
+
+| Check point | Status | Evidence |
+|-------------|--------|----------|
+| OAuth initiation (`/api/auth/google`) | PASS | Inside credential guard; `passport.authenticate("google", { scope: ["profile", "email"], session: false })` |
+| OAuth callback (`/api/auth/google/callback`) | PASS | Inside credential guard; `failureRedirect: "/login?error=google_failed"` |
+| New user login | PASS | `createUser` → `_isNewOAuthUser = true` → `?welcome=1` redirect → welcome banner |
+| Existing user login | PASS | `getUserByEmail` finds existing row → skips `createUser` → `/app/dashboard` redirect |
+| Failed login path | PASS | `done(null, false)` → Passport fires `failureRedirect` → Login.jsx shows dismissible alert |
+| Inactive user path | PASS | `!user.isActive` → audit-logged → `done(null, false)` → same failure path |
+| Logout flow | PASS | `POST /api/auth/logout` → `deleteSession(token)` + `clearCookie("token")` |
+| Session creation | PASS | `crypto.randomBytes(32).toString("hex")` → `sessions` table → 24h TTL |
+| Session deletion | PASS | `storage.deleteSession(token)` on logout and on deactivated-user detection |
+| Cookie: HttpOnly | PASS | `routes.js:697` |
+| Cookie: Secure | PASS | `process.env.NODE_ENV === "production"` — Railway sets `production` |
+| Cookie: SameSite=lax | PASS | Correct for OAuth cross-site redirect flows |
+| Production callback URL | PASS | `https://www.letszero.in/api/auth/google/callback` when `NODE_ENV=production` |
+| No localhost in production paths | PASS | Zero matches across server/, client/src/ for localhost callback refs |
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed. Bundle +0.89 KB (Login.jsx useEffect + alert code).
+
+### Commits
+
+- `58cbda7` — `[SECURITY] OAuth route hardening — H1 fix + C1 structural fix`
+- `926d6f7` — `[UX] OAuth failure handling — M1 fix`

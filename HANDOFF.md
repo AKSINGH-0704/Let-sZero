@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–046 applied through 2026-06-24  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–047 applied through 2026-06-24  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -597,11 +597,11 @@ See the Google OAuth Activation Runbook section below for the full step-by-step 
 
 ## Google OAuth Activation Runbook
 
-### Current status (verified 2026-06-24)
+### Current status (verified 2026-06-24, Audit 047)
 
-`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **NOT set** in Railway production. The Passport strategy is conditionally registered only when both variables are present — feature is fully dormant. **No code changes are needed for activation.**
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **set in Railway production**. The Passport strategy is conditionally registered — feature is ready to activate. Railway variables `REPMAIL_PUBLIC=true` and `APP_URL=https://www.letszero.in` are confirmed set.
 
-> The Google OAuth code is complete and production-hardened (Audit 046). Activation requires only GCP console configuration and two Railway environment variables.
+> The Google OAuth code is complete, production-hardened, and audited (Audits 046–047). Activation requires only GCP console configuration (see Steps 1–4 below) — Railway variables are already configured.
 
 **Code reference (`server/routes.js:638`):**
 ```js
@@ -611,6 +611,13 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       ? "https://www.letszero.in/api/auth/google/callback"
       : "/api/auth/google/callback",
   }, ...));
+
+  app.get("/api/auth/google", passport.authenticate("google", ...));
+  app.get("/api/auth/google/callback", passport.authenticate("google", ...), handler);
+} else {
+  // Graceful fallback — redirects to /login?error=oauth_unavailable with console.warn
+  app.get("/api/auth/google", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
+  app.get("/api/auth/google/callback", (_req, res) => res.redirect("/login?error=oauth_unavailable"));
 }
 ```
 

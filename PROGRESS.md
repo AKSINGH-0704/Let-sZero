@@ -1054,3 +1054,25 @@ Production hardening of Google OAuth configuration identified in Audit 046 read-
 **Decisions documented:** AUDIT_TRAIL.md Audit 046.
 
 **Milestone status: COMPLETE — Audit 046.**
+
+---
+
+### 43 · Google OAuth Production Hardening — Audit 047 Implementation (2026-06-24)
+
+Full production readiness audit (Audit 047) + implementation of approved findings.
+
+| Item | Status | Evidence |
+|------|--------|---------|
+| Railway production variables verified | **VERIFIED** | GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REPMAIL_PUBLIC=true, APP_URL set |
+| H1: OAuth routes moved inside credential guard | **COMPLETE** | `routes.js:638–720` — routes inside `if` block; else redirects to `oauth_unavailable` |
+| H1: Graceful fallback when creds missing | **COMPLETE** | `console.warn` + redirect to `/login?error=oauth_unavailable` — zero 500 errors |
+| C1: Auth paths added to beta gate allowedPaths | **COMPLETE** | `/login`, `/api/auth/google`, `/api/auth/google/callback`, `/api/auth/logout` added |
+| M1: `?error=google_failed` shown to user | **COMPLETE** | `Login.jsx` — `useEffect` reads param, sets `oauthError` state, dismissible alert |
+| M1: `?error=oauth_unavailable` shown to user | **COMPLETE** | Same handler — separate message for missing-credentials case |
+| URL parameter cleaned after reading | **COMPLETE** | `window.history.replaceState(null, "", window.location.pathname)` |
+| Full OAuth path re-verified | **VERIFIED** | All 13 check points PASS — see Audit 047 in AUDIT_TRAIL.md |
+| Build verified | **COMPLETE** | npm run build — 0 errors, 5047 modules |
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 047.
+
+**Milestone status: COMPLETE — Audit 047.**
