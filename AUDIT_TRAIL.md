@@ -3891,3 +3891,34 @@ With `REPMAIL_PUBLIC=true`, this is inert. It becomes load-bearing if the platfo
 
 - `58cbda7` — `[SECURITY] OAuth route hardening — H1 fix + C1 structural fix`
 - `926d6f7` — `[UX] OAuth failure handling — M1 fix`
+
+---
+
+## Audit 048 — Google Search Console Verification Meta Tag (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Add Google Search Console URL-prefix verification meta tag to production HTML
+**Method:** Located Vite entry point, inserted tag, built, verified in generated output
+
+### Change
+
+**File:** `client/index.html`
+
+Added inside `<head>` after the viewport meta tag:
+```html
+<meta name="google-site-verification" content="b1YaWyMGKu18MuO5Qb1QVCL2H732tGKO38WiqyVA3cQ" />
+```
+
+Tag is unconditional — present on every page render, every route, every environment.
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules. `dist/public/index.html` line 6 confirmed:
+```
+<meta name="google-site-verification" content="b1YaWyMGKu18MuO5Qb1QVCL2H732tGKO38WiqyVA3cQ" />
+```
+
+### Verification
+
+After Railway deploys: view-source `https://www.letszero.in` and search for `google-site-verification`. Then submit verification in Google Search Console.
