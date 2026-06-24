@@ -3565,6 +3565,57 @@ The registered legal entity is **LetsZero Solutions Private Limited**. All prior
 
 ---
 
+## Audit 044 — Growth & Activation Hardening: Priority 0 + Sender Profile Gate (2026-06-24)
+
+**Date:** 2026-06-24
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** 7-phase RepMail Growth & Activation Audit findings — Priority 0 implementation + early sender profile validation
+**Commit at time of audit:** `e8858c8`
+**Method:** Full read of shared/schema.js, server/routes.js, PublicPricing.jsx, Payments.jsx, Dashboard.jsx, Login.jsx, CampaignConfirmation.jsx; build verification
+
+### Context
+
+Following the RepMail Growth & Activation Audit (7-phase founder-grade review), Priority 0 issues were identified as objectively wrong and requiring immediate correction before any customer-facing deployment. Six changes were applied across 5 files.
+
+### Findings — Changes Applied
+
+| ID | File | Finding | Change |
+|----|------|---------|--------|
+| G01 | `PublicPricing.jsx:148` | Free plan displayed `teamMembers: "1"` — backend enforces `MAX_TEAM_MEMBERS.free = 0`. A free user attempting to invite anyone receives a PLAN_LIMIT error. | Changed to `"Solo"` |
+| G02 | `PublicPricing.jsx:2336` | Badge label rendered "1 team member" for free plan using numeric interpolation | Updated label rendering to handle `"Solo"` → displays "Solo account" |
+| G03 | `PublicPricing.jsx:1494` | Enterprise card: "Volume-based · Dedicated SLA" — Terms.jsx S7 disclaims uninterrupted service; no SLA exists | Changed to "Volume-based · Priority support" |
+| G04 | `PublicPricing.jsx:2498` | Enterprise card in comparison section: "Custom volume · Dedicated SLA" — same issue | Changed to "Custom volume · Priority support" |
+| G05 | `Payments.jsx:57` | Same `teamMembers: "1"` issue as G01 | Changed to `"Solo"` |
+| G06 | `Payments.jsx:248` | Same badge label rendering issue as G02 | Updated label rendering |
+| G07 | `Payments.jsx:436` | Enterprise plan badge: "Custom volume · Dedicated SLA" | Changed to "Custom volume · Priority support" |
+| G08 | `Payments.jsx:1736` | "Teams feature available on Growth plan and above." — contradicts backend `MAX_TEAM_MEMBERS.starter = 3` and the Starter card showing "3 team members". Starter buyers were denied team functionality they had paid for. | Changed to "Team seats are included in Starter (3), Growth (10), and Scale (25) plans." |
+| G09 | `Payments.jsx:1826` | Enterprise Teams card: "Volume-based · Dedicated SLA" | Changed to "Volume-based · Priority support" |
+| G10 | `Payments.jsx:1831` | Enterprise Teams feature list contained "99.9% uptime SLA" — specific %-uptime claim with no contractual backing. This was removed from PublicPricing.jsx in Audit 035 but survived in Payments.jsx (regression). | Replaced with "Priority support" |
+| G11 | `Login.jsx:388` | RequestAccessPanel: "5 free trial credits to get started" — legacy copy from the `isTrialUser` system. Free plan actually gives 500 monthly credits (`MONTHLY_CREDITS.free = 500`). | Changed to "500 free monthly credits to get started" |
+| G12 | `Dashboard.jsx:314` | No "1 credit = 1 email" explanation anywhere on the dashboard — new users cannot evaluate their credit balance without this mapping | Added `"1 credit = 1 email sent"` subtitle under credit balance heading |
+| G13 | `CampaignConfirmation.jsx` | No sender profile validation before campaign launch — users reach step 6 of 7 and can be silently blocked server-side if `senderName` is null. The email preview renders blank sender fields but no pre-launch warning existed. | Added `senderProfileComplete` gate: amber warning banner if `user.senderName` is not set, with link to `/app/profile`; Send Campaign button disabled until profile is complete |
+
+### Not Implemented — Referred to Team Plan Architecture Review
+
+The Team Plan (pricing calculator, "Most Popular" badge, "Choose Your Plan" CTA) is entirely cosmetic — no backend endpoint, no schema table, no Razorpay order creation exists for team subscriptions. The CTA calls `setPricingTab("individual")` and routes users to individual credit plans. This requires a product architecture decision before any UI change:
+- **Option A:** Subscription product (Razorpay recurring mandate, team_subscriptions table)
+- **Option B:** Included in credit plans (Growth/Scale seats = team plan entitlement, no separate billing)
+- **Option C:** Add-on product (one-time or recurring seat purchase on top of credit plan)
+
+See Team Plan Architecture Recommendation in the session output for the founder-grade analysis. No Team Plan code changes were made in this audit.
+
+### Build Verification
+
+`npm run build` — 0 errors. 5047 modules transformed.
+
+### Documentation Verification
+
+**AUDIT_TRAIL.md:** Audit 044 appended.
+**PROGRESS.md:** Milestone 40 added.
+**HANDOFF.md:** Updated — G08 Starter contradiction and sender profile gate noted.
+
+---
+
 ## Audit 045 — Team Plan Commercialization Removal: Option B (Bundled Entitlement) (2026-06-24)
 
 **Date:** 2026-06-24
@@ -3628,54 +3679,3 @@ Zero instances of: ₹129, ₹99/member, TEAM constant, teamBilling, teamUsers, 
 **AUDIT_TRAIL.md:** Audit 045 appended.
 **PROGRESS.md:** Milestone 41 added.
 **HANDOFF.md:** Updated with Option B decision, future revisit threshold, and surface changes.
-
----
-
-## Audit 044 — Growth & Activation Hardening: Priority 0 + Sender Profile Gate (2026-06-24)
-
-**Date:** 2026-06-24
-**Conducted by:** Claude Sonnet 4.6 + AK Singh
-**Scope:** 7-phase RepMail Growth & Activation Audit findings — Priority 0 implementation + early sender profile validation
-**Commit at time of audit:** `e8858c8`
-**Method:** Full read of shared/schema.js, server/routes.js, PublicPricing.jsx, Payments.jsx, Dashboard.jsx, Login.jsx, CampaignConfirmation.jsx; build verification
-
-### Context
-
-Following the RepMail Growth & Activation Audit (7-phase founder-grade review), Priority 0 issues were identified as objectively wrong and requiring immediate correction before any customer-facing deployment. Six changes were applied across 5 files.
-
-### Findings — Changes Applied
-
-| ID | File | Finding | Change |
-|----|------|---------|--------|
-| G01 | `PublicPricing.jsx:148` | Free plan displayed `teamMembers: "1"` — backend enforces `MAX_TEAM_MEMBERS.free = 0`. A free user attempting to invite anyone receives a PLAN_LIMIT error. | Changed to `"Solo"` |
-| G02 | `PublicPricing.jsx:2336` | Badge label rendered "1 team member" for free plan using numeric interpolation | Updated label rendering to handle `"Solo"` → displays "Solo account" |
-| G03 | `PublicPricing.jsx:1494` | Enterprise card: "Volume-based · Dedicated SLA" — Terms.jsx S7 disclaims uninterrupted service; no SLA exists | Changed to "Volume-based · Priority support" |
-| G04 | `PublicPricing.jsx:2498` | Enterprise card in comparison section: "Custom volume · Dedicated SLA" — same issue | Changed to "Custom volume · Priority support" |
-| G05 | `Payments.jsx:57` | Same `teamMembers: "1"` issue as G01 | Changed to `"Solo"` |
-| G06 | `Payments.jsx:248` | Same badge label rendering issue as G02 | Updated label rendering |
-| G07 | `Payments.jsx:436` | Enterprise plan badge: "Custom volume · Dedicated SLA" | Changed to "Custom volume · Priority support" |
-| G08 | `Payments.jsx:1736` | "Teams feature available on Growth plan and above." — contradicts backend `MAX_TEAM_MEMBERS.starter = 3` and the Starter card showing "3 team members". Starter buyers were denied team functionality they had paid for. | Changed to "Team seats are included in Starter (3), Growth (10), and Scale (25) plans." |
-| G09 | `Payments.jsx:1826` | Enterprise Teams card: "Volume-based · Dedicated SLA" | Changed to "Volume-based · Priority support" |
-| G10 | `Payments.jsx:1831` | Enterprise Teams feature list contained "99.9% uptime SLA" — specific %-uptime claim with no contractual backing. This was removed from PublicPricing.jsx in Audit 035 but survived in Payments.jsx (regression). | Replaced with "Priority support" |
-| G11 | `Login.jsx:388` | RequestAccessPanel: "5 free trial credits to get started" — legacy copy from the `isTrialUser` system. Free plan actually gives 500 monthly credits (`MONTHLY_CREDITS.free = 500`). | Changed to "500 free monthly credits to get started" |
-| G12 | `Dashboard.jsx:314` | No "1 credit = 1 email" explanation anywhere on the dashboard — new users cannot evaluate their credit balance without this mapping | Added `"1 credit = 1 email sent"` subtitle under credit balance heading |
-| G13 | `CampaignConfirmation.jsx` | No sender profile validation before campaign launch — users reach step 6 of 7 and can be silently blocked server-side if `senderName` is null. The email preview renders blank sender fields but no pre-launch warning existed. | Added `senderProfileComplete` gate: amber warning banner if `user.senderName` is not set, with link to `/app/profile`; Send Campaign button disabled until profile is complete |
-
-### Not Implemented — Referred to Team Plan Architecture Review
-
-The Team Plan (pricing calculator, "Most Popular" badge, "Choose Your Plan" CTA) is entirely cosmetic — no backend endpoint, no schema table, no Razorpay order creation exists for team subscriptions. The CTA calls `setPricingTab("individual")` and routes users to individual credit plans. This requires a product architecture decision before any UI change:
-- **Option A:** Subscription product (Razorpay recurring mandate, team_subscriptions table)
-- **Option B:** Included in credit plans (Growth/Scale seats = team plan entitlement, no separate billing)
-- **Option C:** Add-on product (one-time or recurring seat purchase on top of credit plan)
-
-See Team Plan Architecture Recommendation in the session output for the founder-grade analysis. No Team Plan code changes were made in this audit.
-
-### Build Verification
-
-`npm run build` — 0 errors. 5047 modules transformed.
-
-### Documentation Verification
-
-**AUDIT_TRAIL.md:** Audit 044 appended.
-**PROGRESS.md:** Milestone 40 added.
-**HANDOFF.md:** Updated — G08 Starter contradiction and sender profile gate noted.
