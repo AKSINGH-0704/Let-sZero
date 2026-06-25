@@ -2520,12 +2520,17 @@ export async function registerRoutes(httpServer, app) {
   app.post("/api/payments/:id/fail", authMiddleware, async (req, res) => {
     try {
       const { id } = req.params;
-      const { reason } = req.body;
+      const { reason, cancelled } = req.body;
       const payment = await storage.getPayment(id);
       if (!payment) return res.status(404).json({ message: "Payment not found" });
       if (payment.userId !== req.user.id) return res.status(403).json({ message: "Forbidden" });
-      await storage.failPayment(id, reason || "Payment failed");
-      res.json({ message: "Payment marked as failed" });
+      if (cancelled) {
+        await storage.cancelPayment(id);
+        res.json({ message: "Payment cancelled" });
+      } else {
+        await storage.failPayment(id, reason || "Payment failed");
+        res.json({ message: "Payment marked as failed" });
+      }
     } catch (error) {
       res.status(400).json({ message: error.message });
     }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
@@ -142,7 +143,7 @@ export default function Audit() {
               ) : (
                 <span className="text-xs text-muted-foreground">
                   Export available on Scale+.{" "}
-                  <a href="/app/payments" className="text-cyan-400 hover:text-cyan-300 underline">Upgrade</a>
+                  <Link href="/app/payments" className="text-cyan-400 hover:text-cyan-300 underline">Upgrade</Link>
                 </span>
               )}
             </div>

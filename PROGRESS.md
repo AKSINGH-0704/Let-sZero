@@ -1186,3 +1186,33 @@ Full code audit of the Razorpay payment lifecycle + implementation of all P0 and
 **Decisions documented:** AUDIT_TRAIL.md Audit 053.
 
 **Milestone status: COMPLETE — Audit 053.**
+
+---
+
+### 49 · Payment Flow Fix + First-Customer UX Audit — Audit 054 (2026-06-25)
+
+Root cause analysis and full remediation of the production payment 404 + comprehensive SPA navigation audit.
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| Payment process 404 — root cause identified | **COMPLETE** | `regexparam` wildcard bug: `:rest*` generates `[^/]+?`, cannot match multi-segment path |
+| `App.jsx` route fix — explicit `/app/payments/process/:id` | **COMPLETE** | Replaced broken wildcard route with explicit 2-segment route |
+| `Payments.jsx` param fix — `useParams()` instead of `useRoute()` | **COMPLETE** | Consumes route context params correctly |
+| Razorpay auto-open on redirect | **COMPLETE** | `useEffect` + `autoOpenedRef` guard — no extra click required |
+| Checkout dismiss → CANCELLED (not FAILED) | **COMPLETE** | `ondismiss` passes `{ cancelled: true }` → `cancelPayment()` |
+| `storage.cancelPayment()` added | **COMPLETE** | Sets status CANCELLED with audit log |
+| 7 native `<a href>` → `<Link>` (SPA nav) | **COMPLETE** | CampaignConfirmation (3), TemplateBuilder (2), Audit (1), Profile (1) |
+| Dead Download button removed from History | **COMPLETE** | No campaign export API — button was non-functional |
+| Build verified | **COMPLETE** | 0 errors, 5046 modules |
+
+**Pre-launch actions (unchanged):**
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
+□ Run 17-step browser OAuth test (Audit 051)
+```
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 054.
+
+**Milestone status: COMPLETE — Audit 054.**

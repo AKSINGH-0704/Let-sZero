@@ -208,7 +208,7 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/app/payments/:rest*">
+      <Route path="/app/payments/process/:id">
         <ProtectedRoute>
           <Payments />
         </ProtectedRoute>

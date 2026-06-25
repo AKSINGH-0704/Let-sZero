@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
@@ -359,11 +360,11 @@ export default function TemplateBuilder() {
           <AlertDescription className="text-red-800 dark:text-red-300 text-sm">
             <p>AI generation requires your sender name and company. Add them to enable template generation.</p>
             <div className="mt-3">
-              <a href="/app/profile">
+              <Link href="/app/profile">
                 <Button size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/30">
                   Complete Sender Profile
                 </Button>
-              </a>
+              </Link>
             </div>
           </AlertDescription>
         </Alert>
@@ -371,7 +372,7 @@ export default function TemplateBuilder() {
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
           <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
           <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
-            Your <a href="/app/profile" className="underline font-medium">sender profile</a> is incomplete.
+            Your <Link href="/app/profile" className="underline font-medium">sender profile</Link> is incomplete.
             Adding your title will improve AI-generated template quality.
           </AlertDescription>
         </Alert>

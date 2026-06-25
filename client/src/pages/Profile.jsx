@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Link } from "wouter";
 import {
   User,
   Mail,
@@ -346,9 +347,9 @@ export default function Profile() {
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-xl font-semibold">{limits.label}</span>
                   {plan !== "enterprise" && (
-                    <a href="/app/payments" className="inline-flex items-center gap-1 text-sm text-cyan-500 hover:text-cyan-400">
+                    <Link href="/app/payments" className="inline-flex items-center gap-1 text-sm text-cyan-500 hover:text-cyan-400">
                       Upgrade Plan <ArrowRight className="w-3 h-3" />
-                    </a>
+                    </Link>
                   )}
                 </div>
                 <div className="space-y-2 text-sm text-muted-foreground">

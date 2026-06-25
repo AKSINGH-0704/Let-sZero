@@ -34,7 +34,6 @@ import {
   Search,
   Filter,
   Eye,
-  Download,
   Send,
   CheckCircle,
   XCircle,
@@ -287,13 +286,6 @@ export default function History() {
                                 onClick={() => setViewCampaign(campaign)}
                               >
                                 <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                data-testid={`button-download-${campaign.id}`}
-                              >
-                                <Download className="h-4 w-4" />
                               </Button>
                             </div>
                           </TableCell>

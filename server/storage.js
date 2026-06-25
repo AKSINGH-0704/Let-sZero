@@ -1201,6 +1201,24 @@ const dbStorage = {
     return await this.getPayment(paymentId);
   },
 
+  async cancelPayment(paymentId) {
+    const payment = await this.getPayment(paymentId);
+    if (!payment) throw new Error("Payment not found");
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return;
+
+    await db.update(payments)
+      .set({ status: PAYMENT_STATUS.CANCELLED })
+      .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`));
+
+    await this.createAuditLog({
+      userId: payment.userId,
+      action: AUDIT_ACTIONS.PAYMENT_FAILED,
+      targetType: "payment",
+      targetId: paymentId,
+      details: { reason: "User cancelled" }
+    });
+  },
+
   async failPayment(paymentId, reason) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");

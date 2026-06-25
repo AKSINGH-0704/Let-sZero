@@ -4,9 +4,9 @@
  * Renders inside AppLayout — no separate nav/footer.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useRoute, useLocation } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -829,6 +829,7 @@ function ProcessPayment({ paymentId }) {
   const { toast } = useToast();
   const [checkoutOpened, setCheckoutOpened] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+  const autoOpenedRef = useRef(false);
 
   const { data: payment, isLoading } = useQuery({
     queryKey: ["/api/payments", paymentId],
@@ -868,8 +869,8 @@ function ProcessPayment({ paymentId }) {
   });
 
   const failMutation = useMutation({
-    mutationFn: async (reason) => {
-      const res = await apiRequest("POST", `/api/payments/${paymentId}/fail`, { reason });
+    mutationFn: async ({ reason, cancelled } = {}) => {
+      const res = await apiRequest("POST", `/api/payments/${paymentId}/fail`, { reason, cancelled });
       return res.json();
     },
     onSuccess: () => {
@@ -913,8 +914,7 @@ function ProcessPayment({ paymentId }) {
       modal: {
         ondismiss: () => {
           setCheckoutOpened(false);
-          // User dismissed the modal without paying — mark as failed so it's visible in history
-          failMutation.mutate("User dismissed Razorpay checkout");
+          failMutation.mutate({ cancelled: true });
         },
       },
       prefill: {},
@@ -925,10 +925,19 @@ function ProcessPayment({ paymentId }) {
     rzp.on("payment.failed", (response) => {
       setCheckoutOpened(false);
       const reason = response.error?.description || response.error?.code || "payment_failed";
-      failMutation.mutate(reason);
+      failMutation.mutate({ reason });
     });
     rzp.open();
   };
+
+  // Auto-launch Razorpay when payment data arrives — one-shot via ref guard
+  useEffect(() => {
+    if (payment && payment.status === "PENDING" && !autoOpenedRef.current && !checkoutOpened) {
+      autoOpenedRef.current = true;
+      openRazorpay();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payment]);
 
   const amountLocal = payment?.amountLocal || 0;
 
@@ -1086,7 +1095,9 @@ function ProcessPayment({ paymentId }) {
 
 // ─── Main Payments Component ───────────────────────────────────────────────────
 export default function Payments() {
-  const [matchProcess, paramsProcess] = useRoute("/app/payments/process/:id");
+  // useParams() receives :id from the outer <Route path="/app/payments/process/:id">
+  // when mounted on that route; empty object on the base /app/payments route.
+  const { id: processId } = useParams();
   const currency = "INR";
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedTier, setSelectedTier] = useState(null);
@@ -1170,8 +1181,8 @@ export default function Payments() {
   const lastSuccessful = payments?.find(p => p.status === "SUCCESS");
   const currentPlanId = lastSuccessful?.planId || null;
 
-  if (matchProcess && paramsProcess?.id) {
-    return <ProcessPayment paymentId={paramsProcess.id} />;
+  if (processId) {
+    return <ProcessPayment paymentId={processId} />;
   }
 
   const currentBalance = creditsInfo?.total || 0;

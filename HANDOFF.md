@@ -960,6 +960,34 @@ Two canonical logo assets: `repmail-logo-white.png` (light on dark) and `repmail
 
 ---
 
+### Phase 15.3 — Payment Flow Fix + First-Customer UX Audit (2026-06-25)
+
+Two commits: Audit 053 (`b3dda9c`) + Audit 054.
+
+**Payment 404 root cause (Audit 054):** `regexparam` (wouter v3's pattern parser) generates `[^/]+?` for `:name*` parameters — not `(.*)`. Route `<Route path="/app/payments/:rest*">` could only match one segment after `/app/payments/`, not multi-segment paths like `/app/payments/process/<uuid>`. Fixed by replacing the wildcard with an explicit `<Route path="/app/payments/process/:id">`. `Payments.jsx` now uses `useParams()` instead of `useRoute()` to consume the injected param.
+
+**Razorpay checkout UX:** `ProcessPayment` now auto-opens Razorpay checkout via `useEffect` + `autoOpenedRef` guard. No extra click required after redirect. User dismissing the checkout modal is correctly recorded as `CANCELLED` (not `FAILED`).
+
+**SPA navigation audit:** Comprehensive grep found 7 native `<a href="/app/...">` elements that caused full page reloads instead of SPA transitions. All converted to wouter `<Link>`:
+- `CampaignConfirmation.jsx` — 3 links (payments × 2, profile × 1)
+- `TemplateBuilder.jsx` — 2 links (profile × 2)
+- `Audit.jsx` — 1 link (payments)
+- `Profile.jsx` — 1 link (payments)
+
+**Dead UI element:** Download button in `History.jsx` had no `onClick` and no backing API. Removed.
+
+**Pre-launch checklist:**
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
+□ Run 17-step browser OAuth test (Audit 051)
+```
+
+**Audit:** AUDIT_TRAIL.md Audit 054. Milestone 49 in PROGRESS.md.
+
+---
+
 ## Related Documents
 
 | Document | Purpose |

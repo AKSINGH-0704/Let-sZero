@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -48,6 +48,7 @@ export default function CampaignConfirmation() {
   const [name, setName] = useState(campaignName || `Campaign ${new Date().toLocaleDateString()}`);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [upgradeNeeded, setUpgradeNeeded] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
@@ -152,7 +153,8 @@ export default function CampaignConfirmation() {
       try {
         const parsed = JSON.parse(err.message);
         if (parsed.error === "PLAN_LIMIT") {
-          setError(parsed.message + " Visit /app/payments to upgrade.");
+          setError(parsed.message);
+          setUpgradeNeeded(true);
           return;
         }
         if (Array.isArray(parsed.validationErrors) && parsed.validationErrors.length > 0) {
@@ -254,7 +256,7 @@ export default function CampaignConfirmation() {
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <p className="text-sm text-amber-400">
                     Campaign scheduling is available on Starter plan and above.{" "}
-                    <a href="/app/payments" className="underline">Upgrade now</a>
+                    <Link href="/app/payments" className="underline">Upgrade now</Link>
                   </p>
                 </div>
               ) : null}
@@ -336,22 +338,22 @@ export default function CampaignConfirmation() {
                           <Calendar className="w-3 h-3" />
                           Resets in {daysUntilReset} day{daysUntilReset !== 1 ? "s" : ""}
                         </span>
-                        <a
+                        <Link
                           href="/app/payments"
                           className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
                         >
                           Purchase credits to send now <ArrowRight className="w-3 h-3" />
-                        </a>
+                        </Link>
                       </>
                     ) : (
                       <>
                         You need {formatNumber(creditsRequired - creditsAvailable)} more credits to send this campaign.
-                        <a
+                        <Link
                           href="/app/payments"
                           className="inline-flex items-center gap-1 mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline block"
                         >
                           Buy more credits <ArrowRight className="w-3 h-3" />
-                        </a>
+                        </Link>
                       </>
                     )}
                   </AlertDescription>
@@ -477,9 +479,9 @@ export default function CampaignConfirmation() {
           <AlertTriangle className="h-4 w-4 text-amber-500" />
           <AlertDescription className="text-amber-400">
             <strong>Sender profile not set up.</strong> Your name and title appear in every email you send.{" "}
-            <a href="/app/profile" className="underline hover:text-amber-300">
+            <Link href="/app/profile" className="underline hover:text-amber-300">
               Set up your sender profile
-            </a>{" "}
+            </Link>{" "}
             before launching this campaign.
           </AlertDescription>
         </Alert>
@@ -490,6 +492,13 @@ export default function CampaignConfirmation() {
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+      {upgradeNeeded && (
+        <Link href="/app/payments">
+          <Button variant="outline" className="w-full">
+            Buy Credits →
+          </Button>
+        </Link>
       )}
 
       {validationErrors.length > 0 && (
