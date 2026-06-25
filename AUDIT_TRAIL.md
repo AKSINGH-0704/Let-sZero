@@ -4561,3 +4561,83 @@ Server: 2.8 MB
 □ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
 □ Run 17-step browser OAuth test (Audit 051)
 ```
+
+---
+
+## Audit 056 — Production Payment & Credit Delivery Hardening (2026-06-25)
+
+**Date:** 2026-06-25  
+**Conducted by:** Claude Sonnet 4.6 + AK Singh  
+**Scope:** Production-readiness audit of the full payment lifecycle, credit delivery, customer communication, idempotency, and security — from 10 stakeholder perspectives  
+**Commit at time of audit:** `ae45e29` (Audit 055)  
+**Method:** Full read of `server/routes.js` (payment endpoints), `server/razorpayWebhook.js`, `server/storage.js` (completePayment/cancelPayment/failPayment), `server/fulfillPayment.js`, `server/email.js`, `client/src/pages/Payments.jsx`
+
+### Findings
+
+| ID | Area | Finding | Severity | Resolution |
+|----|------|---------|----------|------------|
+| **P0-EMAIL** | Customer communication | No payment success email — `sendTransactionalEmail` was imported but never called after payment success. Real customers paid real money and received zero confirmation. | **CRITICAL** | Implemented `sendPaymentReceiptEmail` (HTML, invoice-style) in `email.js`; called fire-and-forget from verify endpoint and webhook handler, gated on `credited === true` |
+| **P1-BANNER** | Payment UX | No persistent success state after Razorpay redirects back — only a transient toast that may be missed | HIGH | Added `?paid=1` param + teal success banner on Payments page with dismiss; URL cleaned via `history.replaceState` |
+| **P2-AUDIT** | Audit integrity | `cancelPayment` wrote `AUDIT_ACTIONS.PAYMENT_FAILED` — incorrect action label for cancellations | MEDIUM | Added `PAYMENT_CANCELLED` to `AUDIT_ACTIONS`; fixed `cancelPayment` to use it |
+| **P2-DEDUPE** | Audit integrity | `completePayment` wrote audit log unconditionally — the losing caller of a concurrent verify/webhook race would write a duplicate `PAYMENT_SUCCESS` log entry | MEDIUM | Moved audit log inside `if (credited)` guard; only the winning caller logs |
+| **OK-IDEMPOTENT** | Credit delivery | Atomic `UPDATE WHERE status != 'SUCCESS' RETURNING id` correctly prevents double credit allocation in concurrent webhook + verify race | PASS | No change |
+| **OK-HMAC** | Security | Razorpay signature verification: HMAC-SHA256, timing-safe comparison, format validation (64-hex chars), correct payload (`order_id\|payment_id`) | PASS | No change |
+| **OK-WEBHOOK-HMAC** | Security | Webhook signature: raw body buffer, HMAC-SHA256, timing-safe equal, rejects on mismatch/missing secret | PASS | No change |
+| **OK-OWNERSHIP** | Security | All payment endpoints verify `payment.userId === req.user.id` before operating | PASS | No change |
+| **LOW-INDEX** | Performance | `getPaymentByRazorpayOrderId` uses JSONB path query with no index — full table scan on every webhook event | LOW | Deferred — acceptable at current scale; add `GIN` index on `metadata` when webhook volume justifies it |
+| **NOTE-PLAN** | fulfillPayment | `PLAN_MAP["developer test"]` is undefined — `upgradePlanIfHigher` falls back to "free" for dev_test payments. Rank 0 > 0 = false, so no plan mutation occurs. Benign for internal test plan. | INFO | No change required |
+
+### What Was Implemented
+
+**`server/email.js`**
+- Added `sendPaymentReceiptEmail(to, username, payment)` — full HTML receipt email matching RepMail brand (dark theme, teal accent). Shows plan name, credits added, amount paid (₹X), invoice number, "Create Campaign →" CTA.
+
+**`server/storage.js`**
+- `completePayment` now returns `{ payment, credited: boolean }` — `credited: true` only when THIS caller won the PENDING → SUCCESS atomic transition
+- Audit log (`PAYMENT_SUCCESS`) moved inside `if (credited)` — eliminates duplicate log entries on concurrent webhook + verify races
+- `cancelPayment` now uses `AUDIT_ACTIONS.PAYMENT_CANCELLED` (was incorrectly `PAYMENT_FAILED`)
+
+**`server/memoryStorage.js`**
+- `completePayment` updated to match new `{ payment, credited }` return interface
+
+**`shared/schema.js`**
+- Added `PAYMENT_CANCELLED: "PAYMENT_CANCELLED"` to `AUDIT_ACTIONS`
+
+**`server/routes.js`**
+- Verify endpoint: destructures `{ payment, credited }` from `completePayment`; fire-and-forget `sendPaymentReceiptEmail` when `credited === true`
+- Import updated to include `sendPaymentReceiptEmail`
+- Dev-complete endpoint: destructures `{ payment }` (no email in dev flow)
+
+**`server/razorpayWebhook.js`**
+- Imports `sendPaymentReceiptEmail`; fire-and-forget email when `credited === true` after `completePayment`
+
+**`client/src/pages/Payments.jsx`**
+- `verifyMutation.onSuccess` now redirects to `?paid=1` (non-team path)
+- `showSuccessBanner` state initialized from URL param; URL cleaned via `history.replaceState`
+- Teal success banner with dismiss `×` rendered before Team Activation Banner
+
+### Payment Flow (Post-Audit, Correct)
+
+```
+Customer → Razorpay modal → payment.captured
+  ├─ Client: POST /api/payments/razorpay/verify
+  │    ├─ HMAC verify ✓
+  │    ├─ completePayment() → { payment, credited: true }
+  │    ├─ upgradePlanIfHigher()
+  │    ├─ sendPaymentReceiptEmail() [fire-and-forget]  ← NEW
+  │    └─ redirect → /app/payments?paid=1  ← NEW (success banner)
+  │
+  └─ Razorpay server: POST /api/razorpay/webhook (order.paid)
+       ├─ HMAC verify ✓
+       ├─ completePayment() → { payment, credited: false }  ← race loser
+       └─ (no email — credited === false)  ← idempotent
+```
+
+### Pre-Launch Checklist (unchanged from Audit 053/054)
+
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN — verify receipt email arrives
+□ Run 17-step browser OAuth test (Audit 051)
+```

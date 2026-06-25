@@ -1246,3 +1246,34 @@ Root cause analysis and full remediation of the production payment 404 + compreh
 **Decisions documented:** AUDIT_TRAIL.md Audit 055.
 
 **Milestone status: COMPLETE — Audit 055.**
+
+---
+
+### 51 · Payment & Credit Delivery Hardening — Audit 056 (2026-06-25)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| **P0** Payment success email (receipt) implemented | **COMPLETE** | `server/email.js: sendPaymentReceiptEmail` — HTML email with plan, credits, amount, invoice, CTA |
+| Email called from Razorpay verify endpoint | **COMPLETE** | `routes.js:2491` — fire-and-forget after `credited === true` |
+| Email called from Razorpay webhook handler | **COMPLETE** | `razorpayWebhook.js:69` — fire-and-forget after `credited === true` |
+| Idempotency — only ONE email sent per payment | **COMPLETE** | `completePayment` returns `{ payment, credited }` — email gated on `credited: true` (only the winning caller) |
+| `completePayment` race-condition audit log deduplication | **COMPLETE** | Audit log now only written when `credited === true`; losing concurrent caller no longer writes duplicate |
+| **P1** Payment success banner on Payments page | **COMPLETE** | `?paid=1` param → teal banner with dismiss; URL cleaned via `history.replaceState` |
+| **P2** `cancelPayment` audit action label corrected | **COMPLETE** | `AUDIT_ACTIONS.PAYMENT_CANCELLED` (new constant) replacing incorrect `PAYMENT_FAILED` |
+| `PAYMENT_CANCELLED` added to `AUDIT_ACTIONS` | **COMPLETE** | `shared/schema.js:68` |
+| memoryStorage `completePayment` updated to new interface | **COMPLETE** | Returns `{ payment, credited }` — consistent with dbStorage |
+| Build verified | **COMPLETE** | 0 errors, 5047 modules |
+
+**Production impact:** Real customers now receive an HTML payment receipt email immediately after Razorpay payment confirmation. Email is delivered exactly once regardless of whether the verify endpoint or webhook fires first.
+
+**Pre-launch actions:**
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN — verify receipt email arrives
+□ Run 17-step browser OAuth test (Audit 051)
+```
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 056.
+
+**Milestone status: COMPLETE — Audit 056.**
