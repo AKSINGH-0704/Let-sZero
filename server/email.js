@@ -164,11 +164,13 @@ function buildUnsubscribeFooter(userId, email) {
   };
 }
 
-export async function sendPaymentReceiptEmail(to, username, payment) {
+export async function sendPaymentReceiptEmail(to, username, payment, creditsBalance) {
   const creditsAdded = (payment.credits || 0).toLocaleString("en-IN");
   const amountPaid = `₹${(payment.amountInr || payment.amountLocal || 0).toLocaleString("en-IN")}`;
   const planName = payment.planName || "Credits";
   const invoiceRef = payment.invoiceNumber || payment.id;
+  const paymentRef = payment.transactionId || null;
+  const balanceAfter = creditsBalance != null ? creditsBalance.toLocaleString("en-IN") : null;
   const appUrl = process.env.APP_URL || "https://repmail.in";
   const displayName = username || "there";
 
@@ -183,6 +185,7 @@ export async function sendPaymentReceiptEmail(to, username, payment) {
 <div style="max-width:520px;margin:0 auto;padding:40px 24px;">
   <div style="text-align:center;margin-bottom:28px;">
     <span style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:#00E5C8;">REPMAIL</span>
+    <span style="font-size:12px;color:#3A3A55;margin-left:6px;">by LetsZero</span>
   </div>
   <h1 style="color:#F0F0F5;font-size:22px;font-weight:700;margin:0 0 6px 0;text-align:center;">Payment confirmed ✓</h1>
   <p style="color:#7878A0;font-size:14px;text-align:center;margin:0 0 32px 0;">Hi ${displayName}, your credits are ready to use.</p>
@@ -195,40 +198,55 @@ export async function sendPaymentReceiptEmail(to, username, payment) {
       <span style="color:#7878A0;font-size:13px;">Credits added</span>
       <span style="color:#00E5C8;font-size:20px;font-weight:700;font-family:'Courier New',monospace;">${creditsAdded}</span>
     </div>
+    ${balanceAfter ? `
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #1A1A2E;">
+      <span style="color:#7878A0;font-size:13px;">Current balance</span>
+      <span style="color:#B8B8D0;font-size:13px;font-weight:600;">${balanceAfter} credits</span>
+    </div>` : ""}
     <div style="display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #1A1A2E;">
       <span style="color:#7878A0;font-size:13px;">Amount paid</span>
       <span style="color:#F0F0F5;font-size:13px;font-weight:600;">${amountPaid}</span>
     </div>
-    <div style="display:flex;justify-content:space-between;padding:14px 20px;">
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;${paymentRef ? "border-bottom:1px solid #1A1A2E;" : ""}">
       <span style="color:#7878A0;font-size:13px;">Invoice</span>
       <span style="color:#55556A;font-size:12px;font-family:'Courier New',monospace;">${invoiceRef}</span>
     </div>
+    ${paymentRef ? `
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;">
+      <span style="color:#7878A0;font-size:13px;">Payment ref</span>
+      <span style="color:#55556A;font-size:12px;font-family:'Courier New',monospace;">${paymentRef}</span>
+    </div>` : ""}
   </div>
-  <div style="text-align:center;margin-bottom:32px;">
+  <div style="text-align:center;margin-bottom:28px;">
     <a href="${appUrl}/app/campaigns/new"
        style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#00E5C8,#00B8A3);color:#06060B;font-weight:700;font-size:14px;text-decoration:none;border-radius:12px;">
       Create Campaign →
     </a>
   </div>
-  <p style="color:#3A3A55;font-size:12px;text-align:center;margin:0;">
+  <p style="color:#3A3A55;font-size:12px;text-align:center;margin:0 0 8px 0;">
+    Questions? Email <a href="mailto:support@letszero.in" style="color:#55556A;">support@letszero.in</a>
+  </p>
+  <p style="color:#2A2A40;font-size:12px;text-align:center;margin:0;">
     This is a receipt for your RepMail purchase. Keep it for your records.
   </p>
 </div>
 </body>
 </html>`;
 
-  const text = `Payment confirmed — RepMail
+  const text = `Payment confirmed — RepMail by LetsZero
 
 Hi ${displayName},
 
 Your ${planName} credits are ready.
 
-Plan: ${planName}
-Credits added: ${creditsAdded}
-Amount paid: ${amountPaid}
-Invoice: ${invoiceRef}
+Plan:           ${planName}
+Credits added:  ${creditsAdded}${balanceAfter ? `\nCurrent balance: ${balanceAfter} credits` : ""}
+Amount paid:    ${amountPaid}
+Invoice:        ${invoiceRef}${paymentRef ? `\nPayment ref:    ${paymentRef}` : ""}
 
 Create your first campaign: ${appUrl}/app/campaigns/new
+
+Questions? Email support@letszero.in
 
 This is a receipt for your RepMail purchase.`;
 

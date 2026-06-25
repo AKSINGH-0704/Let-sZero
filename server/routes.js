@@ -2492,7 +2492,7 @@ export async function registerRoutes(httpServer, app) {
       const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
       if (credited) {
         const emailUser = await storage.getUserById(payment.userId);
-        sendPaymentReceiptEmail(emailUser.email, emailUser.username, payment).catch(err =>
+        sendPaymentReceiptEmail(emailUser.email, emailUser.username, payment, emailUser.creditsRemaining).catch(err =>
           console.error("[EMAIL] Payment receipt failed:", err.message)
         );
       }

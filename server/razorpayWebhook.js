@@ -67,12 +67,12 @@ export async function razorpayWebhookHandler(req, res) {
       }
 
       const transactionId = payment?.id || order.id;
-      const { credited } = await storage.completePayment(repPayment.id, transactionId);
+      const { payment: completedPayment, credited } = await storage.completePayment(repPayment.id, transactionId);
       await upgradePlanIfHigher(repPayment.userId, repPayment.planName, repPayment.id);
       if (credited) {
         const user = await storage.getUserById(repPayment.userId);
         if (user) {
-          sendPaymentReceiptEmail(user.email, user.username, repPayment).catch(err =>
+          sendPaymentReceiptEmail(user.email, user.username, completedPayment, user.creditsRemaining).catch(err =>
             console.error("[EMAIL] Webhook payment receipt failed:", err.message)
           );
         }
