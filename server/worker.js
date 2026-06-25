@@ -244,8 +244,8 @@ async function processCampaign(campaignId, userId, job) {
   // ── Pre-loop: auto-pause check (7-day rolling bounce/complaint rate) ───────
   // Fetch health once before the loop — never per-contact.
   const senderHealth = await storage.getUserSenderHealth(userId);
-  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.15");
-  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.005");
+  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.08");
+  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.0005");
 
   if (senderHealth.sent >= 50 && (senderHealth.bounceRate > bounceThreshold || senderHealth.complaintRate > complaintThreshold)) {
     await storage.updateUser(userId, {

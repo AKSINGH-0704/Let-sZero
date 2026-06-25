@@ -1333,3 +1333,38 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 **Decisions documented:** AUDIT_TRAIL.md Audit 058.
 
 **Milestone status: COMPLETE — Audit 058 (Product Polish & Production UX).**
+
+---
+
+## Milestone 1: Correctness & Deliverability Consistency
+
+**Date:** 2026-06-26
+**Audit:** 059 — see AUDIT_TRAIL.md
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| `canStartCampaign` uses rolling-window SQL matching `deductCreditAtomic` | **COMPLETE** | `storage.js:596` — `(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')` |
+| No `DATE_TRUNC` calendar-month logic remains in `storage.js` | **COMPLETE** | `grep DATE_TRUNC server/storage.js` → No matches |
+| `memoryStorage.canStartCampaign` rolling-window JS logic | **COMPLETE** | Already correct; confirmed unchanged |
+| `BOUNCE_RATE_PAUSE_THRESHOLD` default `"0.08"` in `routes.js` | **COMPLETE** | `routes.js:251` |
+| `BOUNCE_RATE_PAUSE_THRESHOLD` default `"0.08"` in `worker.js` | **COMPLETE** | `worker.js:247` |
+| `COMPLAINT_RATE_PAUSE_THRESHOLD` default `"0.0005"` in `routes.js` | **COMPLETE** | `routes.js:252` |
+| `COMPLAINT_RATE_PAUSE_THRESHOLD` default `"0.0005"` in `worker.js` | **COMPLETE** | `worker.js:248` |
+| `getDeliveryHealthStats` status derived from env vars (not hardcoded) | **COMPLETE** | `storage.js:2093-2101` — `bouncePause`, `complaintPause`, `bounceWarn`, `complaintWarn` |
+| Warning threshold = 50% of pause threshold | **COMPLETE** | `bounceWarn = bouncePause * 0.5` |
+| `memoryStorage.getDeliveryHealthStats` derives thresholds from env vars | **COMPLETE** | `memoryStorage.js:1919-1928` |
+| `PLATFORM_SEND_PAUSED` constant added to `AUDIT_ACTIONS` | **COMPLETE** | `shared/schema.js:85` |
+| `PLATFORM_SEND_RESUMED` constant added to `AUDIT_ACTIONS` | **COMPLETE** | `shared/schema.js:86` |
+| All raw action strings replaced with constants in `routes.js` | **COMPLETE** | `routes.js:2689, 2720` |
+| Static verification (22 assertions) | **COMPLETE** | `tmp/verify-milestone1.mjs` — 22/22 passed |
+| Behavioral verification (35 assertions) | **COMPLETE** | `tmp/verify-milestone1-behavioral.mjs` — 35/35 passed |
+| Build clean | **COMPLETE** | 0 errors, 5047 modules |
+
+**Architectural decisions recorded:**
+- Warning threshold at 50% of pause threshold: produces round values (4% bounce, 0.025% complaint), gives "one doubling away from enforcement" advance signal, bounce rates can spike non-linearly so 75% would leave too little reaction time.
+- Complaint default (0.0005 = 0.05%): below AWS SES warning threshold (0.08%). Conservative by design — shared-IP multi-tenant platform; one user's complaints degrade inbox placement for all users sharing `letszero.in`.
+- Bounce default (0.08 = 8%): below SES suspension (10%), above SES warning (~5%). 50-send minimum before auto-pause fires prevents single-campaign spikes from pausing legitimate senders.
+
+**Required Railway manual action:** Update `BOUNCE_RATE_PAUSE_THRESHOLD=0.08` and `COMPLAINT_RATE_PAUSE_THRESHOLD=0.0005` in Railway dashboard if currently set to old values (`0.15`/`0.005`).
+
+**Milestone status: COMPLETE — Milestone 1 (Correctness & Deliverability Consistency — Audit 059).**

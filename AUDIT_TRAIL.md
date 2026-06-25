@@ -4904,3 +4904,119 @@ Full re-audit of the payment system after Audits 056 and 057 improvements. No ne
 â–¡ Run 17-step browser OAuth test (Audit 051)
 ```
 
+
+---
+
+## Audit 059 — Milestone 1: Correctness & Deliverability Consistency (2026-06-26)
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Phase 0 Verification Report follow-through — four correctness and deliverability fixes identified as P0 during independent architecture review
+**Commit at time of audit:** `5a604be` (pre-Milestone 1)
+
+---
+
+### Phase 0 Verification Gate (pre-work)
+
+Before implementation, a Phase 0 Verification Report was produced answering 10 areas with EXISTS / MISSING / IMPLEMENTED DIFFERENTLY / NOT APPLICABLE (file + function + line). Key findings that drove this milestone:
+
+- `canStartCampaign` still used `DATE_TRUNC('month', ...)` calendar-month WHERE clause while `deductCreditAtomic` had been updated to rolling window in Audit 058. The two functions disagreed at calendar month boundaries.
+- Auto-pause thresholds defaulted to `BOUNCE_RATE_PAUSE_THRESHOLD=0.15` / `COMPLAINT_RATE_PAUSE_THRESHOLD=0.005` — both above AWS SES suspension thresholds (10% / 0.1%), meaning SES could suspend the account before RepMail paused any sender.
+- `getDeliveryHealthStats` had hardcoded status thresholds independent of the auto-pause env vars. Dashboard showed "critical" at 10% bounce while enforcement did not fire until 15%.
+- `PLATFORM_SEND_PAUSED` / `PLATFORM_SEND_RESUMED` written as raw strings in `routes.js`, bypassing `AUDIT_ACTIONS`.
+
+---
+
+### Fix 1 — Credit Logic Consistency
+
+**Root cause:** `canStartCampaign` in `server/storage.js:596-598` used calendar-month `DATE_TRUNC` while `deductCreditAtomic` (fixed in Audit 058) used rolling-window `INTERVAL '1 month'`. A user signing up on January 31 would have their credits "reset" by the pre-flight check on February 1 (1 day later), but the per-email deduction would not reset until February 28.
+
+**Fix:** `canStartCampaign` WHERE clause changed to match `deductCreditAtomic`:
+```sql
+(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')
+```
+`memoryStorage.canStartCampaign` was already correct. No change needed.
+
+**Verification:** Rolling-window SQL now appears twice in `storage.js` (once per function). Behavioral test: Jan 31 user is NOT refresh-due on Feb 2 (`nextReset = Mar 3`). `canStartCampaign` and `deductCreditAtomic` agree at the 1-month + 1s boundary.
+
+---
+
+### Fix 2 — Production-Safe Auto-Pause Defaults
+
+**Root cause:** Code fallback defaults:
+- `routes.js:251-252`: `BOUNCE_RATE_PAUSE_THRESHOLD || "0.15"` / `COMPLAINT_RATE_PAUSE_THRESHOLD || "0.005"`
+- `worker.js:247-248`: identical
+
+AWS SES suspends at 10% bounce and warns at 0.08% complaint. Old defaults (15% / 0.5%) meant SES enforcement was reachable before RepMail's own pause fired.
+
+**Fix:** Defaults changed to `"0.08"` / `"0.0005"` in both `routes.js` and `worker.js`. Railway env vars still override.
+
+**Rationale:**
+- Bounce 8%: Below SES suspension (10%); above SES warning (5%). Well-managed lists never approach 8%. 50-send minimum prevents single-campaign spikes.
+- Complaint 0.05% (0.0005): Below SES warning threshold (0.08%). Conservative by design — on a shared-IP multi-tenant platform, one user's complaints degrade inbox placement for all users sharing the domain.
+
+**Required Railway action:** Set `BOUNCE_RATE_PAUSE_THRESHOLD=0.08` and `COMPLAINT_RATE_PAUSE_THRESHOLD=0.0005` in Railway if currently set to old values (0.15 / 0.005).
+
+---
+
+### Fix 3 — Delivery Health Consistency
+
+**Root cause:** `getDeliveryHealthStats` (`server/storage.js`) had hardcoded status thresholds (`critical` at 10% bounce, `warning` at 5%) independent of the auto-pause env vars. Operators saw "critical" status at 10% while enforcement did not fire until 15%.
+
+**Fix:** `getDeliveryHealthStats` now derives thresholds from the same env vars as auto-pause:
+```javascript
+const bouncePause = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.08");
+const complaintPause = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.0005");
+const bounceWarn = bouncePause * 0.5;   // 50% of pause threshold
+const complaintWarn = complaintPause * 0.5;
+```
+`memoryStorage.getDeliveryHealthStats` updated to match. The `thresholds` field in the API response now reflects live configured values.
+
+**Threshold values (defaults):** bounce warning 4%, critical 8%; complaint warning 0.025%, critical 0.05%.
+
+**Warning at 50%:** Produces round values; gives operators a "one doubling away from enforcement" signal; bounce rates can spike non-linearly so 75% would leave too little reaction time.
+
+---
+
+### Fix 4 — Audit Action Consistency
+
+**Root cause:** `routes.js:2689` and `routes.js:2720` wrote raw strings `"PLATFORM_SEND_PAUSED"` / `"PLATFORM_SEND_RESUMED"` directly. Bypassed the `AUDIT_ACTIONS` constant system.
+
+**Fix:** Added to `AUDIT_ACTIONS` in `shared/schema.js`:
+```javascript
+PLATFORM_SEND_PAUSED: "PLATFORM_SEND_PAUSED",
+PLATFORM_SEND_RESUMED: "PLATFORM_SEND_RESUMED",
+```
+Both usages updated to `AUDIT_ACTIONS.PLATFORM_SEND_PAUSED` / `AUDIT_ACTIONS.PLATFORM_SEND_RESUMED`. No raw strings remain in server code.
+
+---
+
+### Verification Results
+
+| Suite | Type | Result |
+|-------|------|--------|
+| `tmp/verify-milestone1.mjs` | Static source inspection | 22/22 passed |
+| `tmp/verify-milestone1-behavioral.mjs` | Logic unit tests (JS runtime) | 35/35 passed |
+| Build | Client + server | Clean — 0 errors |
+
+---
+
+### Classification Summary
+
+| ID | Finding | Severity | Status |
+|----|---------|----------|--------|
+| F1 | `canStartCampaign` calendar-month SQL disagreed with `deductCreditAtomic` rolling window | HIGH | Fixed |
+| F2 | Auto-pause defaults (0.15 / 0.005) exceeded AWS SES suspension thresholds | HIGH | Fixed |
+| F3 | Delivery health hardcoded thresholds independent of auto-pause env vars | MEDIUM | Fixed |
+| F4 | Raw audit action strings bypassed `AUDIT_ACTIONS` constants | LOW | Fixed |
+
+---
+
+### Future Engineering Findings (recorded, not implemented)
+
+**P1:** `getUserSenderHealth` uses campaign creation date (not email send date) for 7-day window; `topBouncers` minimum 10 sends vs auto-pause minimum 50 creates admin/enforcement mismatch; `canStartCampaign` lazy refresh writes no audit log.
+
+**P2:** JS and PostgreSQL month-end arithmetic differ for `INTERVAL '1 month'` on 31st-of-month dates (display glitch only); auto-pause logic duplicated in `routes.js` + `worker.js`; `stripe` package present but unused.
+
+**P3:** `sns_events` 7-day retention hardcoded; `_isNewOAuthUser` flag stored only in-memory (safe now, risky at scale).
+

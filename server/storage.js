@@ -593,8 +593,7 @@ const dbStorage = {
           .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
           .where(and(
             eq(users.id, userId),
-            sql`DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01'::timestamp) AT TIME ZONE 'UTC')
-                < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')`
+            sql`(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`
           ))
           .returning({ id: users.id });
 
@@ -2089,9 +2088,16 @@ const dbStorage = {
     const bounceRate = sent > 0 ? bounced / sent : 0;
     const complaintRate = sent > 0 ? complained / sent : 0;
 
+    // Thresholds derive from the same env vars the auto-pause logic reads.
+    // Warning fires at 50% of the pause threshold so operators see degradation before enforcement.
+    const bouncePause = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.08");
+    const complaintPause = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.0005");
+    const bounceWarn = bouncePause * 0.5;
+    const complaintWarn = complaintPause * 0.5;
+
     let status = 'healthy';
-    if (bounceRate > 0.10 || complaintRate > 0.005) status = 'critical';
-    else if (bounceRate > 0.05 || complaintRate > 0.001) status = 'warning';
+    if (bounceRate > bouncePause || complaintRate > complaintPause) status = 'critical';
+    else if (bounceRate > bounceWarn || complaintRate > complaintWarn) status = 'warning';
 
     const topBouncers = await db
       .select({
@@ -2127,8 +2133,8 @@ const dbStorage = {
         complaintRate: parseFloat((complaintRate * 100).toFixed(4)),
       },
       thresholds: {
-        bounce: { warning: 5, critical: 10, unit: '%' },
-        complaint: { warning: 0.1, critical: 0.5, unit: '%' },
+        bounce: { warning: parseFloat((bounceWarn * 100).toFixed(2)), critical: parseFloat((bouncePause * 100).toFixed(2)), unit: '%' },
+        complaint: { warning: parseFloat((complaintWarn * 100).toFixed(4)), critical: parseFloat((complaintPause * 100).toFixed(4)), unit: '%' },
       },
       topBouncers: topBouncers.map(u => ({
         userId: u.userId,

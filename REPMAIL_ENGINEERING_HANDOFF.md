@@ -97,7 +97,9 @@
   The backend is production-hardened for the following subsystems: auth, sessions, campaign execution, BullMQ queuing, SNS webhook processing
   (bounce/complaint/open/click), suppression system, credit system, rate limiting, inactivity governance, emergency recovery, and data cleanup jobs.
 
-  Not yet production-ready: no queue observability API, no SES delivery health dashboard, no admin intervention tooling for stuck campaigns, no time-series AI cost analytics. GET /api/health is implemented (postgres, redis, worker, smtp, sendPaused, sesTracking, ai fields). openedEmails and clickedEmails are surfaced in the History.jsx campaign detail view. Inline executor (routes.js executeCampaign) is missing senderHealth auto-pause — this path only runs when Redis is unavailable.
+  Now implemented since original handoff: queue observability API (`GET /api/admin/queue/status`), SES delivery health dashboard (`GET /api/admin/delivery-health` with env-derived thresholds), admin campaign cancel (`POST /api/admin/campaigns/:id/cancel`), worker heartbeat (`repmail:worker:heartbeat`, 30s interval), sixth cleanup job (`pruneAiUsageLogs`), platform send pause/resume endpoints, per-campaign audit log endpoint. Inline executor (`routes.js executeCampaign`) now has full parity with the worker path including `sendPaused` pre-check and `getUserSenderHealth` auto-pause (commit `826aa25`).
+
+  Still not production-ready: no time-series AI cost analytics, no per-user daily AI cost breakdown, no dead-letter queue management API, no horizontal scaling (single process).
 
   ---
   Section 2 — Infrastructure Overview
@@ -1155,17 +1157,19 @@
 
   Priority 3 — Deliverability + Security (inline path parity)
 
-  6. executeCampaign sender health checks — routes.js inline fallback (Redis-unavailable path) is missing owner.sendPaused mid-loop check and getUserSenderHealth auto-pause. Mirror worker.js:231-269 into executeCampaign.
-  7. Delivery health endpoint — GET /api/admin/delivery-health: platform-wide bounce + complaint rate aggregates for proactive SES reputation monitoring.
+  6. [DONE — commit 826aa25] executeCampaign sender health checks — routes.js inline fallback now mirrors worker.js with sendPaused pre-check and getUserSenderHealth auto-pause.
+  7. [DONE — routes.js:2674] Delivery health endpoint — GET /api/admin/delivery-health implemented. Thresholds now derive from BOUNCE_RATE_PAUSE_THRESHOLD / COMPLAINT_RATE_PAUSE_THRESHOLD env vars (Milestone 1). Warning at 50% of pause threshold. Dashboard and enforcement share the same env vars.
+
+  Note on auto-pause thresholds (Milestone 1 — Audit 059): Default values corrected from 0.15/0.005 to 0.08/0.0005. Old defaults exceeded AWS SES suspension thresholds.
 
   Priority 4 — Infrastructure / Operations
 
-  8. GET /api/admin/queue/status — Queue depth visibility using already-exported getCampaignQueue(). No new dependencies.
-  9. POST /api/admin/campaigns/:id/cancel — Force-cancel stuck RUNNING campaigns atomically. Replaces dangerous manual PATCH pattern.
-  10. ai_usage_logs cleanup job — Sixth cleanup job in server/index.js, weekly, AI_USAGE_LOG_RETENTION_DAYS env var (default 90). Table grows indefinitely without this.
-  11. Worker heartbeat — Worker writes repmail:worker:heartbeat to Redis every 30s; health endpoint reads it; reports "stalled" if key absent or older than 60s.
-  12. getAuditLogs targetId filter — Required for per-campaign audit trail queries via API.
-  13. Time-series AI cost trend — Daily bucketing in getDashboardStats for ROOT_ADMIN cost spike detection.
+  8. [DONE — routes.js:2649] GET /api/admin/queue/status — Implemented.
+  9. [DONE — routes.js:2611] POST /api/admin/campaigns/:id/cancel — Implemented.
+  10. [DONE — index.js:714-733] ai_usage_logs cleanup job — Sixth cleanup job, AI_USAGE_LOG_RETENTION_DAYS env var (default 90d).
+  11. [DONE — worker.js:77-88] Worker heartbeat — repmail:worker:heartbeat, 30s write interval, 60s TTL; health endpoint stalled threshold = 70s.
+  12. [DONE — routes.js:1691] getAuditLogs targetId filter — GET /api/campaigns/:id/audit returns up to 50 entries per campaign.
+  13. Time-series AI cost trend — Still pending. Daily bucketing not yet implemented.
 
   Nice-to-Have
 

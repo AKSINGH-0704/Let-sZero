@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–053 applied through 2026-06-25  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -133,6 +133,13 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - Free plan credit renewal changed from calendar-month (`DATE_TRUNC`) to rolling 30-day window from signup date — `COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month'` in SQL; equivalent JS in memoryStorage; `freeResetDate` now shows correct anniversary date
 - WelcomeModal: "FREE Trial Credits Added" → "Free Credits Added"; "Maybe Later" → "Skip for now" (old text implied modal would reappear)
 - Dashboard: "Free Trial" → "Free Plan" in plan badge, banner, and fallback (accurate — free plan is permanent with `FREE_PLAN_ENABLED=true`, not time-limited)
+
+**Correctness & Deliverability Consistency (Milestone 1 — Audit 059 — 2026-06-26):**
+- `canStartCampaign` (`storage.js`) credit pre-flight check now uses identical rolling-window SQL as `deductCreditAtomic`: `(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`. Previously used `DATE_TRUNC('month', ...)` calendar-month comparison. At calendar month boundaries, the pre-flight check could report credits as available when the per-email deduction would fail with "Insufficient credits".
+- Auto-pause default thresholds changed: `BOUNCE_RATE_PAUSE_THRESHOLD` from `0.15` → `0.08`; `COMPLAINT_RATE_PAUSE_THRESHOLD` from `0.005` → `0.0005`. Old defaults exceeded AWS SES's own suspension thresholds (10% bounce, 0.1% complaint), meaning SES could suspend the entire account before RepMail paused any individual sender. New defaults keep RepMail enforcement below SES enforcement at the account level.
+- `getDeliveryHealthStats` status thresholds (`healthy`/`warning`/`critical`) now derived from the same `BOUNCE_RATE_PAUSE_THRESHOLD`/`COMPLAINT_RATE_PAUSE_THRESHOLD` env vars as auto-pause. Warning fires at 50% of pause threshold. Previously hardcoded (critical at 10% bounce) while enforcement fired at 15%.
+- `PLATFORM_SEND_PAUSED` and `PLATFORM_SEND_RESUMED` added to `AUDIT_ACTIONS` in `shared/schema.js`. Both usages in `routes.js` updated from raw strings to constant references.
+- All `memoryStorage.js` implementations updated to maintain storage parity.
 
 ---
 

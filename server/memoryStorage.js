@@ -1916,12 +1916,19 @@ export const memoryStorage = {
   },
 
   async getDeliveryHealthStats() {
+    const bouncePause = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.08");
+    const complaintPause = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.0005");
+    const bounceWarn = bouncePause * 0.5;
+    const complaintWarn = complaintPause * 0.5;
     return {
       status: 'healthy',
       period: '30d',
       totals: { sent: 0, bounced: 0, complained: 0 },
       rates: { bounceRate: 0, complaintRate: 0 },
-      thresholds: { bounce: { warning: 5, critical: 10, unit: '%' }, complaint: { warning: 0.1, critical: 0.5, unit: '%' } },
+      thresholds: {
+        bounce: { warning: parseFloat((bounceWarn * 100).toFixed(2)), critical: parseFloat((bouncePause * 100).toFixed(2)), unit: '%' },
+        complaint: { warning: parseFloat((complaintWarn * 100).toFixed(4)), critical: parseFloat((complaintPause * 100).toFixed(4)), unit: '%' },
+      },
       topBouncers: [],
       suppression: { addedLast7d: 0, addedLast30d: 0 },
     };

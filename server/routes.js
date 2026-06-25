@@ -248,8 +248,8 @@ export async function executeCampaign(campaignId, userId) {
 
   // ── Pre-loop: auto-pause check (7-day rolling bounce/complaint rate) ───────
   const senderHealth = await storage.getUserSenderHealth(userId);
-  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.15");
-  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.005");
+  const bounceThreshold = parseFloat(process.env.BOUNCE_RATE_PAUSE_THRESHOLD || "0.08");
+  const complaintThreshold = parseFloat(process.env.COMPLAINT_RATE_PAUSE_THRESHOLD || "0.0005");
 
   if (senderHealth.sent >= 50 && (senderHealth.bounceRate > bounceThreshold || senderHealth.complaintRate > complaintThreshold)) {
     await storage.updateUser(userId, {
@@ -2686,7 +2686,7 @@ export async function registerRoutes(httpServer, app) {
       await storage.setPlatformSetting("send_pause_enabled", "true", req.user.id);
       await storage.createAuditLog({
         userId: req.user.id,
-        action: "PLATFORM_SEND_PAUSED",
+        action: AUDIT_ACTIONS.PLATFORM_SEND_PAUSED,
         targetType: "platform",
         targetId: "global",
         details: { reason: req.body.reason || "manual_admin_pause" },
@@ -2717,7 +2717,7 @@ export async function registerRoutes(httpServer, app) {
 
       await storage.createAuditLog({
         userId: req.user.id,
-        action: "PLATFORM_SEND_RESUMED",
+        action: AUDIT_ACTIONS.PLATFORM_SEND_RESUMED,
         targetType: "platform",
         targetId: "global",
         details: { requeuedCampaigns: requeuedCount },
