@@ -1151,11 +1151,12 @@ const dbStorage = {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
     // Fast path: already completed — no writes needed.
-    if (payment.status === PAYMENT_STATUS.SUCCESS) return payment;
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false };
 
     const user = await this.getUserById(payment.userId);
     const balanceBefore = user?.creditsRemaining ?? 0;
 
+    let credited = false;
     await db.transaction(async (tx) => {
       // Atomic state transition. .returning() exposes whether the WHERE clause
       // matched — i.e., whether THIS caller won the PENDING → SUCCESS race.
@@ -1188,17 +1189,20 @@ const dbStorage = {
         balanceAfter: balanceBefore + payment.credits,
         description: `Purchased ${payment.credits} credits - ${payment.planName}`
       });
+      credited = true;
     });
-    
-    await this.createAuditLog({
-      userId: payment.userId,
-      action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
-      targetType: "payment",
-      targetId: paymentId,
-      details: { credits: payment.credits, transactionId }
-    });
-    
-    return await this.getPayment(paymentId);
+
+    if (credited) {
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { credits: payment.credits, transactionId }
+      });
+    }
+
+    return { payment: await this.getPayment(paymentId), credited };
   },
 
   async cancelPayment(paymentId) {
@@ -1212,7 +1216,7 @@ const dbStorage = {
 
     await this.createAuditLog({
       userId: payment.userId,
-      action: AUDIT_ACTIONS.PAYMENT_FAILED,
+      action: AUDIT_ACTIONS.PAYMENT_CANCELLED,
       targetType: "payment",
       targetId: paymentId,
       details: { reason: "User cancelled" }

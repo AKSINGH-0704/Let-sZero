@@ -164,6 +164,83 @@ function buildUnsubscribeFooter(userId, email) {
   };
 }
 
+export async function sendPaymentReceiptEmail(to, username, payment) {
+  const creditsAdded = (payment.credits || 0).toLocaleString("en-IN");
+  const amountPaid = `₹${(payment.amountInr || payment.amountLocal || 0).toLocaleString("en-IN")}`;
+  const planName = payment.planName || "Credits";
+  const invoiceRef = payment.invoiceNumber || payment.id;
+  const appUrl = process.env.APP_URL || "https://repmail.in";
+  const displayName = username || "there";
+
+  const subject = `Your ${planName} credits are ready — RepMail`;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#06060B;font-family:Arial,Helvetica,sans-serif;">
+<div style="max-width:520px;margin:0 auto;padding:40px 24px;">
+  <div style="text-align:center;margin-bottom:28px;">
+    <span style="font-size:12px;font-weight:700;letter-spacing:0.1em;color:#00E5C8;">REPMAIL</span>
+  </div>
+  <h1 style="color:#F0F0F5;font-size:22px;font-weight:700;margin:0 0 6px 0;text-align:center;">Payment confirmed ✓</h1>
+  <p style="color:#7878A0;font-size:14px;text-align:center;margin:0 0 32px 0;">Hi ${displayName}, your credits are ready to use.</p>
+  <div style="background:#0C0C14;border:1px solid #1A1A2E;border-radius:16px;overflow:hidden;margin-bottom:28px;">
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #1A1A2E;">
+      <span style="color:#7878A0;font-size:13px;">Plan</span>
+      <span style="color:#F0F0F5;font-size:13px;font-weight:600;">${planName}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #1A1A2E;background:rgba(0,229,200,0.03);">
+      <span style="color:#7878A0;font-size:13px;">Credits added</span>
+      <span style="color:#00E5C8;font-size:20px;font-weight:700;font-family:'Courier New',monospace;">${creditsAdded}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #1A1A2E;">
+      <span style="color:#7878A0;font-size:13px;">Amount paid</span>
+      <span style="color:#F0F0F5;font-size:13px;font-weight:600;">${amountPaid}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:14px 20px;">
+      <span style="color:#7878A0;font-size:13px;">Invoice</span>
+      <span style="color:#55556A;font-size:12px;font-family:'Courier New',monospace;">${invoiceRef}</span>
+    </div>
+  </div>
+  <div style="text-align:center;margin-bottom:32px;">
+    <a href="${appUrl}/app/campaigns/new"
+       style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#00E5C8,#00B8A3);color:#06060B;font-weight:700;font-size:14px;text-decoration:none;border-radius:12px;">
+      Create Campaign →
+    </a>
+  </div>
+  <p style="color:#3A3A55;font-size:12px;text-align:center;margin:0;">
+    This is a receipt for your RepMail purchase. Keep it for your records.
+  </p>
+</div>
+</body>
+</html>`;
+
+  const text = `Payment confirmed — RepMail
+
+Hi ${displayName},
+
+Your ${planName} credits are ready.
+
+Plan: ${planName}
+Credits added: ${creditsAdded}
+Amount paid: ${amountPaid}
+Invoice: ${invoiceRef}
+
+Create your first campaign: ${appUrl}/app/campaigns/new
+
+This is a receipt for your RepMail purchase.`;
+
+  await transport.sendMail({
+    from: `"RepMail" <${process.env.SES_FROM_EMAIL}>`,
+    to,
+    subject,
+    html,
+    text,
+  });
+}
+
 export async function sendTransactionalEmail(to, subject, text) {
   await transport.sendMail({
     from: `"${process.env.SES_FROM_NAME || "RepMail"}" <${process.env.SES_FROM_EMAIL}>`,

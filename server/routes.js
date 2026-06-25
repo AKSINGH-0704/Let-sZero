@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { sendCampaignEmail, sendTransactionalEmail, verifySesConnection } from "./email.js";
+import { sendCampaignEmail, sendTransactionalEmail, sendPaymentReceiptEmail, verifySesConnection } from "./email.js";
 import { uploadFile } from "./s3.js";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -2488,8 +2488,14 @@ export async function registerRoutes(httpServer, app) {
         return res.json({ payment: existing, message: "Already completed" });
       }
 
-      const payment = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
+      const { payment, credited } = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
       const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
+      if (credited) {
+        const emailUser = await storage.getUserById(payment.userId);
+        sendPaymentReceiptEmail(emailUser.email, emailUser.username, payment).catch(err =>
+          console.error("[EMAIL] Payment receipt failed:", err.message)
+        );
+      }
       console.log(`[RAZORPAY] Payment ${repmail_payment_id} verified — ${payment.credits} credits → user ${payment.userId}`);
 
       res.json({ payment, user: storage.sanitizeUser(user) });
@@ -2508,7 +2514,7 @@ export async function registerRoutes(httpServer, app) {
       const { id } = req.params;
       const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
-      const payment = await storage.completePayment(id, transactionId);
+      const { payment } = await storage.completePayment(id, transactionId);
       const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
 
       res.json({ payment, user: storage.sanitizeUser(user) });

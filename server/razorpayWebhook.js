@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { storage } from "./storage.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
+import { sendPaymentReceiptEmail } from "./email.js";
 import { PAYMENT_STATUS } from "../shared/schema.js";
 
 export async function razorpayWebhookHandler(req, res) {
@@ -66,8 +67,16 @@ export async function razorpayWebhookHandler(req, res) {
       }
 
       const transactionId = payment?.id || order.id;
-      await storage.completePayment(repPayment.id, transactionId);
+      const { credited } = await storage.completePayment(repPayment.id, transactionId);
       await upgradePlanIfHigher(repPayment.userId, repPayment.planName, repPayment.id);
+      if (credited) {
+        const user = await storage.getUserById(repPayment.userId);
+        if (user) {
+          sendPaymentReceiptEmail(user.email, user.username, repPayment).catch(err =>
+            console.error("[EMAIL] Webhook payment receipt failed:", err.message)
+          );
+        }
+      }
       console.log(`[RZP-WEBHOOK] order.paid — ${repPayment.id} completed, plan upgraded for user ${repPayment.userId}`);
 
     } else if (eventType === "payment.failed") {

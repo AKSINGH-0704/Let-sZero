@@ -1129,13 +1129,13 @@ export const memoryStorage = {
   async completePayment(paymentId, transactionId) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
-    if (payment.status === PAYMENT_STATUS.SUCCESS) return payment;
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false };
 
     // Update payment status
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.transactionId = transactionId;
     payment.completedAt = new Date();
-    
+
     // Credit user account
     const user = store.users.get(payment.userId);
     const balanceBefore = user
@@ -1159,7 +1159,7 @@ export const memoryStorage = {
       description: `Purchased ${payment.credits} credits - ${payment.planName}`,
       createdAt: new Date()
     });
-    
+
     await this.createAuditLog({
       userId: payment.userId,
       action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
@@ -1167,8 +1167,8 @@ export const memoryStorage = {
       targetId: paymentId,
       details: { credits: payment.credits, transactionId }
     });
-    
-    return payment;
+
+    return { payment, credited: true };
   },
 
   async failPayment(paymentId, reason) {
