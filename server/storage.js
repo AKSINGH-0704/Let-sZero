@@ -2055,7 +2055,7 @@ const dbStorage = {
         totalComplained: sql`COALESCE(SUM(complained_emails), 0)`,
       })
       .from(campaigns)
-      .where(and(eq(campaigns.userId, userId), gte(campaigns.createdAt, sevenDaysAgo)));
+      .where(and(eq(campaigns.userId, userId), gte(campaigns.startedAt, sevenDaysAgo)));
 
     const sent = Number(totals?.totalSent || 0);
     const bounced = Number(totals?.totalBounced || 0);
@@ -2080,7 +2080,7 @@ const dbStorage = {
         totalComplained: sql`COALESCE(SUM(complained_emails), 0)`,
       })
       .from(campaigns)
-      .where(gte(campaigns.createdAt, thirtyDaysAgo));
+      .where(gte(campaigns.startedAt, thirtyDaysAgo));
 
     const sent = Number(totals?.totalSent || 0);
     const bounced = Number(totals?.totalBounced || 0);
@@ -2108,7 +2108,7 @@ const dbStorage = {
       })
       .from(campaigns)
       .innerJoin(users, eq(campaigns.userId, users.id))
-      .where(gte(campaigns.createdAt, thirtyDaysAgo))
+      .where(gte(campaigns.startedAt, thirtyDaysAgo))
       .groupBy(campaigns.userId, users.email)
       .having(sql`SUM(sent_emails) >= 10`)
       .orderBy(sql`SUM(bounced_emails)::float / NULLIF(SUM(sent_emails), 0) DESC`)

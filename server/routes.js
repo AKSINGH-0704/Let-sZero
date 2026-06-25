@@ -1463,6 +1463,17 @@ export async function registerRoutes(httpServer, app) {
       const rawContacts = contacts || [];
       const validationErrors = [];
 
+      // ── Sender profile gate ───────────────────────────────────────────────────
+      // senderName is stored on the user record, not in the request body.
+      // Without it, campaign emails fall back to "RepMail" as the From display name,
+      // allowing senders to masquerade as the platform.
+      if (!req.user.senderName?.trim()) {
+        return res.status(400).json({
+          error: "SENDER_PROFILE_REQUIRED",
+          message: "Add your sender name in Profile settings before creating a campaign.",
+        });
+      }
+
       // ── Plan limit check ──────────────────────────────────────────────────────
       const userCampaigns = await storage.getCampaigns(req.user.id, false);
       const activeCampaigns = userCampaigns.filter(c => ["RUNNING", "PENDING", "DRAFT"].includes(c.status));

@@ -82,7 +82,6 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.2",
     "sanitize-html": "^2.17.3",
-    "stripe": "^22.1.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.2.5",

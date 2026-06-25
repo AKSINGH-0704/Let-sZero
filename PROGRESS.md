@@ -239,6 +239,23 @@ Only **V** is treated as proven.
 
 ---
 
+---
+
+### 12 · Milestone 2: Server-Side Hardening (Audit 060 — 2026-06-26)
+
+Design Review → Implementation → Verification (47/47) → Audit 060.
+
+| Fix | Description | File(s) | Status |
+|---|---|---|---|
+| F1 | senderName enforcement at `POST /api/campaigns` — returns `SENDER_PROFILE_REQUIRED` if profile not set | server/routes.js | **D** |
+| F2 | Numeric env var startup validation — exit(1) on NaN or operationally dangerous values for BOUNCE_RATE_PAUSE_THRESHOLD, COMPLAINT_RATE_PAUSE_THRESHOLD, SES_SEND_RATE_MS, CAMPAIGN_QUEUE_CONCURRENCY | server/validateEnv.js (new), server/index.js | **D** |
+| F3 | Delivery health window uses `startedAt` (3 locations: getUserSenderHealth + getDeliveryHealthStats totals + topBouncers) | server/storage.js | **D** |
+| F4 | Stripe package removed — unused dead dependency | package.json | **D** |
+
+**Milestone status: D** — all items code-complete, verified 47/47 assertions in tmp/verify-milestone2.mjs
+
+---
+
 ## Launch blockers (ranked)
 
 | # | Blocker | Severity | Current status |

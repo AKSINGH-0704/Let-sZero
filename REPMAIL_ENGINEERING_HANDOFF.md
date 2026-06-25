@@ -1148,7 +1148,7 @@
 
   1. AI validation layer — Server-side post-generation validation in server/ai.js: subject length, unclosed {{placeholders}}, bracket artifacts [Name], campaign-type rule violations. Currently only checks presence of subject + body.
   2. Structured campaign intake — Replace free-text prompt with 4-field structured intake: recipient description, value proposition, objective, relevance signal. Files: server/routes.js AI endpoint, client campaign wizard.
-  3. Sender profile gate at campaign creation — Block template generation when no sender profile is configured; blank profiles silently emit {{sender_name}} / {{sender_title}} / {{sender_company}} literals in sent email sign-offs.
+  3. [DONE — M2 (Audit 060)] Sender profile gate at campaign creation — `POST /api/campaigns` now returns `400 SENDER_PROFILE_REQUIRED` if `req.user.senderName` is null or whitespace. Template generation gate was pre-existing at routes.js:2246. Both gates now enforce the same validation.
 
   Priority 2 — Scale Hardening (required before high-volume campaigns)
 
@@ -1161,6 +1161,11 @@
   7. [DONE — routes.js:2674] Delivery health endpoint — GET /api/admin/delivery-health implemented. Thresholds now derive from BOUNCE_RATE_PAUSE_THRESHOLD / COMPLAINT_RATE_PAUSE_THRESHOLD env vars (Milestone 1). Warning at 50% of pause threshold. Dashboard and enforcement share the same env vars.
 
   Note on auto-pause thresholds (Milestone 1 — Audit 059): Default values corrected from 0.15/0.005 to 0.08/0.0005. Old defaults exceeded AWS SES suspension thresholds.
+
+  Milestone 2 additions (Audit 060 — 2026-06-26):
+  - [DONE] server/validateEnv.js (new) — startup validation of numeric env vars; exit(1) on NaN or out-of-range values for BOUNCE_RATE_PAUSE_THRESHOLD, COMPLAINT_RATE_PAUSE_THRESHOLD, SES_SEND_RATE_MS, CAMPAIGN_QUEUE_CONCURRENCY.
+  - [DONE] getUserSenderHealth + getDeliveryHealthStats (3 locations) — delivery health window now filters on campaigns.startedAt instead of campaigns.createdAt; unstarted (scheduled) campaigns now correctly excluded from health metrics.
+  - [DONE] stripe package removed — was listed in package.json dependencies but never imported anywhere in the codebase.
 
   Priority 4 — Infrastructure / Operations
 

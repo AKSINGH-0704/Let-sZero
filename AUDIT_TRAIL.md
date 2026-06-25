@@ -5020,3 +5020,136 @@ Both usages updated to `AUDIT_ACTIONS.PLATFORM_SEND_PAUSED` / `AUDIT_ACTIONS.PLA
 
 **P3:** `sns_events` 7-day retention hardcoded; `_isNewOAuthUser` flag stored only in-memory (safe now, risky at scale).
 
+
+---
+
+## Audit 060 — Milestone 2: Server-Side Hardening (2026-06-26)
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Milestone 2 of the Engineering Execution Plan — four low-risk, high-confidence server hardening fixes
+**Commit at time of audit:** `61cef48` (Milestone 1)
+
+---
+
+### Design Review Summary
+
+Before implementation, a full Milestone 2 Design Review was conducted across 11 engineering perspectives. Key findings that refined the roadmap:
+
+- `senderName` enforcement location corrected: the field lives on `users.sender_name`, not in the campaign request body. Enforcement point is `req.user.senderName?.trim()`, not the parsed body.
+- Env var validation scope narrowed to numeric vars that silently produce NaN or out-of-range values — optional integration vars (OAuth, Razorpay, S3, OpenAI) excluded to avoid breaking development environments.
+- `startedAt` fix expanded to include `getDeliveryHealthStats` (two WHERE clauses), not just `getUserSenderHealth`. Both functions had the same `createdAt` bug.
+- `integerRequired` flag removed from `validateEnv.js` CAMPAIGN_QUEUE_CONCURRENCY spec — `parseInt` always returns integers, making the flag redundant.
+- Status code for senderName enforcement: `400` (not `422`) to match the existing `PLAN_LIMIT` error pattern in the same route.
+
+---
+
+### Fix 1 — senderName Enforcement at API Level
+
+**Root cause:** `POST /api/campaigns` accepted campaign creation without requiring the user to have a sender name configured on their profile. If `senderName` was null, the campaign send loop fell back to `process.env.SES_FROM_NAME || "RepMail"` as the From display name, allowing any user to send emails appearing to originate from the platform itself.
+
+**Fix:** Added early return at the top of `POST /api/campaigns` (before the plan limit check):
+```javascript
+if (!req.user.senderName?.trim()) {
+  return res.status(400).json({
+    error: "SENDER_PROFILE_REQUIRED",
+    message: "Add your sender name in Profile settings before creating a campaign.",
+  });
+}
+```
+
+**File:** `server/routes.js`
+**Consistency:** Matches the pattern of the AI template generation gate at `routes.js:2246` (same `SENDER_PROFILE_REQUIRED` code, same `400` status).
+
+**Accepted limitation:** A user who sets their senderName after campaign creation then clears it before a scheduled campaign executes will still send with "RepMail" as the From name. The send loop already logs a warning in this case (`[CAMPAIGN] sender profile incomplete`). Full defense-in-depth enforcement at execution time is deferred to a future milestone.
+
+---
+
+### Fix 2 — Numeric Env Var Validation at Startup
+
+**Root cause:** Numeric env vars read with `parseFloat(process.env.X || "default")` would silently produce `NaN` if an operator set the var to a non-numeric string (e.g., `BOUNCE_RATE_PAUSE_THRESHOLD=disabled`). `NaN > threshold` evaluates to `false` in JavaScript — auto-pause would never fire.
+
+Additionally, technically valid numeric values outside the operationally meaningful range (e.g., `BOUNCE_RATE_PAUSE_THRESHOLD=0.5`) would cause auto-pause to fire only after AWS SES suspends the account — making the feature useless.
+
+**Fix:** Created `server/validateEnv.js`, called inside the startup async IIFE before `runSchemaCheck()`.
+
+| Env Var | Valid Range | Exit(1) Condition | Rationale |
+|---|---|---|---|
+| `BOUNCE_RATE_PAUSE_THRESHOLD` | `(0, 0.20]` | NaN, ≤ 0, or > 0.20 | AWS SES suspends at 10%; >20% means auto-pause never fires before account suspension |
+| `COMPLAINT_RATE_PAUSE_THRESHOLD` | `(0, 0.005]` | NaN, ≤ 0, or > 0.005 | AWS SES suspends at 0.1%; >0.5% means auto-pause never fires |
+| `SES_SEND_RATE_MS` | `[0, 30000]` | NaN, < 0, or > 30000 | >30s/email = 1000-contact campaign takes 8+ hours; operationally impractical |
+| `CAMPAIGN_QUEUE_CONCURRENCY` | `[1, 10]` | NaN, < 1, or > 10 | >10 concurrent campaigns saturates the PostgreSQL connection pool |
+
+Vars not set use in-code defaults — no validation needed for unset vars.
+
+**Files:** `server/validateEnv.js` (new), `server/index.js` (import + call)
+
+**Timing note:** All ES module imports are hoisted before top-level code runs. `routes.js` reads `SES_SEND_RATE_MS` at module evaluation time. `validateEnv()` fires after all imports complete but before HTTP server setup or request handling — the process exits before serving any traffic if validation fails.
+
+---
+
+### Fix 3 — Delivery Health Window Uses startedAt
+
+**Root cause:** `getUserSenderHealth` and `getDeliveryHealthStats` both filtered campaigns by `createdAt` (creation date) rather than `startedAt` (when sending actually began). This caused:
+- Campaigns created outside the window but started inside it to be excluded (under-counting)
+- Scheduled campaigns (created but not yet started) to be included in active health windows with zero sends
+
+**Fix:** Changed `gte(campaigns.createdAt, ...)` to `gte(campaigns.startedAt, ...)` in three locations:
+
+| Function | Location | Scope |
+|---|---|---|
+| `getUserSenderHealth` | storage.js:2058 | 7-day per-user health window |
+| `getDeliveryHealthStats` — totals | storage.js:2083 | 30-day platform health window |
+| `getDeliveryHealthStats` — topBouncers | storage.js:2111 | 30-day top bouncers query |
+
+**NULL handling:** `startedAt` is nullable. `WHERE started_at >= timestamp` with a NULL value evaluates to NULL (falsy) in SQL — campaigns that have not started are correctly excluded.
+
+**memoryStorage:** No changes needed. `getUserSenderHealth` in memoryStorage returns hardcoded zeros with no date filtering. `getDeliveryHealthStats` was already updated in Milestone 1 with no date filtering to maintain.
+
+---
+
+### Fix 4 — Stripe Package Removal
+
+**Root cause:** `stripe: "^22.1.1"` was listed in `package.json` dependencies but was never imported or used in any server or client code. It represented dead attack surface and created false documentation (implying billing integration via Stripe).
+
+**Fix:** `npm uninstall stripe`. Confirmed by: zero references in server/**/*.js after removal; `package.json` does not list it in dependencies or devDependencies.
+
+**Note:** Pre-existing npm audit flags 17 vulnerabilities in unrelated packages (drizzle-orm, nodemailer, lodash, etc.). These are not introduced by this milestone. Key findings recorded as F-M2-7 and F-M2-8 for future milestones.
+
+---
+
+### Verification Results
+
+| Suite | Type | Result |
+|-------|------|--------|
+| `tmp/verify-milestone2.mjs` | Static + logic unit tests | 47/47 passed |
+| Build | Client + server | Clean — 0 errors |
+
+---
+
+### Classification Summary
+
+| ID | Finding | Severity | Status |
+|----|---------|----------|--------|
+| F1 | `senderName` not enforced at API level — campaigns sent as "RepMail" | HIGH | Fixed |
+| F2 | Numeric env vars silently produce NaN on misconfiguration — auto-pause disabled | HIGH | Fixed |
+| F3 | `getUserSenderHealth` used `createdAt` instead of `startedAt` for health window | MEDIUM | Fixed |
+| F3b | `getDeliveryHealthStats` same `createdAt` bug (3 queries) — same fix applied | MEDIUM | Fixed |
+| F4 | `stripe` package installed but unused — dead attack surface | LOW | Fixed |
+
+---
+
+### Future Engineering Findings (recorded, not implemented)
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M2-1 | Security / UX | `senderName` cleared after campaign creation sends scheduled campaign as "RepMail". Warn in `PUT /api/profile` if active/pending campaigns exist. | Medium | M5 |
+| F-M2-2 | Deliverability | `topBouncers` minimum is 10 sent emails; auto-pause minimum is 50. Admin health dashboard and enforcement thresholds misaligned. | Medium | M3 |
+| F-M2-3 | Performance | No index on `campaigns.started_at`. Three queries now filter on this column; `getDeliveryHealthStats` (full-table) may be slow at scale. | Low-Medium | P2 performance milestone |
+| F-M2-4 | Security / Maintainability | `PUT /api/profile` writes no audit log. Sender identity changes not recorded. | Medium | M7 |
+| F-M2-5 | Technical Debt | CORS `allowedOrigins` hardcoded to localhost. Safe today (same-origin deployment) but fragile if architecture changes. | Low | P3 |
+| F-M2-6 | Deliverability / Reliability | `SNS_TOPIC_ARN` absence is logged but not exit(1). If SNS is unconfigured, bounce/complaint events are silently lost and auto-pause never fires. | High | M5 |
+| F-M2-7 | Security | nodemailer <= 9.0.0 has confirmed CRLF injection in `List-*` header comments. Directly relevant to M5 (Unsubscribe Compliance) which adds `List-Unsubscribe` headers. Sanitize the unsubscribe URL before injecting into headers. | High | M5 (must fix before implementing List-Unsubscribe header) |
+| F-M2-8 | Security | drizzle-orm < 0.45.2 has SQL injection via improperly escaped SQL identifiers. Risk is low in this codebase (typed column references used, not user-controlled identifiers), but dependency update is warranted. | Medium | P2 dependency update |
+| F-M2-9 | Technical Debt | AI endpoint uses `code: "SENDER_PROFILE_REQUIRED"` while campaign endpoint uses `error: "SENDER_PROFILE_REQUIRED"`. Inconsistent error field naming across the same logical validation. | Low | P3 |
+

@@ -1,4 +1,5 @@
 import "./env.js"; // must be first — loads .env before any other module reads process.env
+import { validateEnv } from "./validateEnv.js";
 import express from "express";
 import crypto from "crypto";
 import { createConnection } from "net";
@@ -526,6 +527,7 @@ async function diagnoseSMTPPath() {
     return res.redirect('/early-access');
   });
 
+  validateEnv();
   await runSchemaCheck();
   await registerRoutes(httpServer, app);
 
