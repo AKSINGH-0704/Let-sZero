@@ -4767,3 +4767,140 @@ Customer → Razorpay modal → payment.captured
 â–¡ Verify Cancel on ProcessPayment page shows CANCELLED in payment history
 â–¡ Run 17-step browser OAuth test (Audit 051)
 ```
+
+---
+
+## Audit 058 â€” Product Polish & Production UX (2026-06-25)
+
+**Date:** 2026-06-25  
+**Conducted by:** Claude Sonnet 4.6 + AK Singh  
+**Scope:** Free trial renewal logic, onboarding UX review, complete payment lifecycle re-validation, product readiness assessment  
+**Commit at time of audit:** `363fcb3` (Audit 057)
+
+---
+
+### Phase 1 â€” Free Trial Renewal Logic
+
+**Bug confirmed and fixed.**
+
+**Root cause:** The refresh WHERE clause used `DATE_TRUNC('month', ...)` to compare UTC calendar months. A user who signed up on January 15 had their credits reset on February 1 (first day of next calendar month), not February 15. They effectively received only ~17 days of credits in their first period instead of 30.
+
+The same calendar-month comparison appeared in 5 places:
+- `storage.js:deductCreditAtomic` â€” SQL WHERE clause (the actual DB reset)
+- `storage.js:getTotalCreditsAvailable` â€” JavaScript stale check for display
+- `memoryStorage.js:deductCreditAtomic` â€” dev-mode stale check + reset
+- `memoryStorage.js:canStartCampaign` â€” stale check for campaign eligibility
+- `memoryStorage.js:getTotalCreditsAvailable` â€” stale check + freeResetDate display
+
+**Fix applied:** Changed all 5 sites to use rolling 1-month window from signup date:
+
+```sql
+-- DB (storage.js)
+(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')
+```
+
+```javascript
+// JS (memoryStorage.js + getTotalCreditsAvailable)
+const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+const nextReset = new Date(refDate);
+nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
+const isStale = new Date() >= nextReset;
+```
+
+`freeResetDate` (shown as "Credits refresh: X" in the dashboard banner) now correctly shows the signup-relative renewal date instead of the 1st of next month.
+
+Also added `createdAt` to the select in `deductCreditAtomic` so the SQL `COALESCE(free_credits_reset_at, created_at)` can reference the column.
+
+Updated `shared/schema.js` comment to document the rolling-window semantics.
+
+**Existing user impact:** Minimal. Users who have already had their credits reset at least once have a `freeCreditsResetAt` set â€” their next reset is `freeCreditsResetAt + 1 month`, which is essentially the same as the old calendar-month behavior (reset dates were always near the 1st). Only new users benefit from the fix: their first reset now fires exactly 30 days from signup.
+
+---
+
+### Phase 2 â€” Onboarding UX Review
+
+| Finding | Classification | Fix Applied |
+|---------|---------------|-------------|
+| WelcomeModal secondary CTA says "Maybe Later" â€” implies the modal will re-appear; it doesn't (localStorage is cleared on dismiss) | MEDIUM | Changed to "Skip for now" â€” accurate about the action without false promise of return |
+| Dashboard banner and plan badge say "Free Trial" â€” factually inaccurate when `FREE_PLAN_ENABLED=true`. With that flag, credits renew monthly indefinitely. Calling it a "trial" sets false urgency and incorrect expectations. | MEDIUM | Changed all dashboard instances to "Free Plan" (`PLAN_LABELS`, banner label, fallback label) |
+| `freeResetDate` in dashboard banner showed first of next calendar month | HIGH | Fixed by Phase 1 renewal fix â€” now shows correct rolling date |
+
+**Unchanged (intentional):**
+- WelcomeModal "ðŸš€ Create My First Campaign" primary CTA â€” clear and effective
+- WelcomeModal "500 credits" highlight â€” correct for free plan
+- Empty state copy in dashboard â€” adequate, not misleading
+- Confirmation modal "Confirm Purchase" wording â€” clear
+
+---
+
+### Phase 3 â€” Payment Lifecycle Re-Validation
+
+Full re-audit of the payment system after Audits 056 and 057 improvements. No new issues found.
+
+| Area | Finding |
+|------|---------|
+| Credit allocation idempotency | PASS â€” atomic SQL transition, `credited` flag prevents duplicate emails/logs |
+| HMAC signature verification | PASS â€” both verify endpoint and webhook |
+| Ownership checks | PASS â€” all endpoints check `payment.userId === req.user.id` |
+| FAILED/CANCELLED state screens | PASS â€” added in Audit 057 |
+| Cancel button calls `failMutation` | PASS â€” fixed in Audit 057 |
+| Receipt email content | PASS â€” plan, credits, balance, invoice, transactionId, support, LetsZero branding |
+| Invoice download includes transactionId | PASS â€” fixed in Audit 057 |
+| Webhook idempotency | PASS â€” `if (credited === false)` skips email; DB guard prevents double credits |
+| Duplicate webhook from Razorpay | PASS â€” early return on `status === SUCCESS` check |
+| Audit log deduplication | PASS â€” only written when `credited: true` |
+
+---
+
+### Phase 4 â€” Product Readiness Assessment
+
+#### P0 â€” Launch Blockers
+*None remaining.*
+
+#### P1 â€” Should Fix Before First Paying Customer
+*None remaining â€” all P1 issues addressed in Audits 054â€“057.*
+
+#### P2 â€” Post-Launch Quick Wins (not implemented, low effort)
+| Item | Effort | Impact |
+|------|--------|--------|
+| PDF invoice generation (currently `.txt`) | Medium | Medium â€” professional but `.txt` works |
+| JSONB GIN index on `payments.metadata` for `getPaymentByRazorpayOrderId` | Low | Low â€” full table scan fine at current scale |
+| Payment retry UX when verify fails after Razorpay capture | Medium | Low â€” webhook resolves automatically |
+
+#### Future Enhancements
+| Item | Notes |
+|------|-------|
+| Multi-currency support | Stripe/USD route not configured â€” INR-only at launch |
+| Annual plan pricing | Not implemented â€” commented out as out of scope |
+| Team plan subscriptions | Not implemented â€” out of scope per iron rules |
+
+---
+
+### Classification Summary
+
+| ID | Finding | Severity | Status |
+|----|---------|----------|--------|
+| F1 | Free trial renewal used calendar month instead of signup-relative 30-day window | **HIGH** | Fixed |
+| F2 | "Maybe Later" WelcomeModal CTA implied re-display; modal never re-appears | MEDIUM | Fixed |
+| F3 | Dashboard showed "Free Trial" for permanent free plan â€” factually inaccurate | MEDIUM | Fixed |
+| F4 | `freeResetDate` displayed wrong renewal date (calendar 1st vs signup anniversary) | HIGH | Fixed (by F1) |
+| OK | Payment idempotency, duplicate prevention, security â€” all verified | PASS | No change |
+| OK | Cancel/FAILED/CANCELLED states â€” all correctly handled after Audit 057 | PASS | No change |
+| OK | Receipt email completeness â€” all required fields present after Audit 056+057 | PASS | No change |
+
+---
+
+### Pre-Launch Checklist (Final)
+
+```
+â–¡ Confirm FREE_PLAN_ENABLED=true in Railway env
+â–¡ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET set in Railway
+â–¡ Test â‚¹11 dev_test plan end-to-end as ROOT_ADMIN
+    â†’ Verify receipt email: balance, transactionId, support@letszero.in
+â–¡ Verify free plan user sees "Free Plan" (not "Free Trial") in dashboard
+â–¡ Verify dashboard "Credits refresh" date matches signup anniversary (not 1st of month)
+â–¡ Verify FAILED state screen using Razorpay test card
+â–¡ Verify CANCELLED state: click Cancel on ProcessPayment before opening Razorpay
+â–¡ Run 17-step browser OAuth test (Audit 051)
+```
+

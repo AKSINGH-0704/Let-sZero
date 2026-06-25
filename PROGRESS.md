@@ -1302,3 +1302,34 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 **Decisions documented:** AUDIT_TRAIL.md Audit 057.
 
 **Milestone status: COMPLETE â€” Audit 057 (Final Payment Validation).**
+
+
+---
+
+### 53 · Product Polish & Production UX — Audit 058 (2026-06-25)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| **HIGH** Free plan credit renewal uses signup-relative 30-day window | **COMPLETE** | `storage.js:deductCreditAtomic` SQL WHERE uses `COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month'`; `getTotalCreditsAvailable` JS stale check uses same rolling window |
+| `memoryStorage.js` rolling window parity | **COMPLETE** | `deductCreditAtomic`, `canStartCampaign`, `getTotalCreditsAvailable` all updated |
+| `freeResetDate` displays signup-relative date | **COMPLETE** | Dashboard "Credits refresh:" banner now shows correct anniversary date |
+| `shared/schema.js` comment updated | **COMPLETE** | `freeCreditsResetAt` comment now documents rolling-window semantics |
+| WelcomeModal CTA accuracy — "Maybe Later" → "Skip for now" | **COMPLETE** | `WelcomeModal.jsx:142` — old text falsely implied modal would reappear |
+| WelcomeModal body text — "FREE Trial Credits" → "Free Credits" | **COMPLETE** | `WelcomeModal.jsx:85,90` — removed "Trial" from credit highlight + description |
+| Dashboard plan badge — "Free Trial" → "Free Plan" | **COMPLETE** | `Dashboard.jsx:PLAN_LABELS.free` + banner label + fallback label |
+| Payment lifecycle re-validation | **COMPLETE** | 10/10 checks PASS — see Audit 058 Phase 3 table |
+| Build verified | **COMPLETE** | 0 errors, 5047 modules |
+
+**Classification:**
+- F1 (HIGH): Free credit renewal calendar-month → rolling 30-day window — **FIXED**
+- F2 (MEDIUM): WelcomeModal "Maybe Later" misleading — **FIXED**
+- F3 (MEDIUM): "Free Trial" label inaccurate for permanent free plan — **FIXED**
+- F4 (HIGH): `freeResetDate` showed wrong date — **FIXED** (by F1)
+- Payment lifecycle: All checks PASS from Audits 056+057
+
+**P0 launch blockers:** None remaining.  
+**P1 pre-customer items:** None remaining.
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 058.
+
+**Milestone status: COMPLETE — Audit 058 (Product Polish & Production UX).**

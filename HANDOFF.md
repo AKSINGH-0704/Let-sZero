@@ -40,7 +40,7 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 
 ---
 
-## Current State (commits through `cd04db8` — 2026-06-17)
+## Current State (commits through Audit 058 — 2026-06-25)
 
 **Financial integrity (commit `ecb1331` — FIN-1/FIN-2):**
 - `completePayment` race eliminated: `.returning({ id })` on the payment UPDATE gates credit allocation on whether THIS caller transitioned `PENDING → SUCCESS`. Concurrent webhook + /verify callers cannot both allocate credits.
@@ -119,6 +119,20 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
   - "did not complete all contacts" replaces "account ran out of credits" for unprocessed-contacts message
 - `CampaignConfirmation.jsx`: suppression helper text + "After Campaign (est.)" label
 - `Profile.jsx`: sender identity format guide with good example and naming warnings
+
+**Payment hardening (Audits 056–057 — 2026-06-25):**
+- `sendPaymentReceiptEmail` — HTML receipt with plan, credits, balance, invoice, transactionId, support@letszero.in, LetsZero branding; plain-text fallback
+- `completePayment` returns `{ payment, credited }` — `credited: true` only for the atomic UPDATE winner; email + audit log gated on `credited: true` → exactly one receipt email per payment, no duplicate audit log
+- `PAYMENT_CANCELLED` audit action added; `cancelPayment` now uses it (was incorrectly `PAYMENT_FAILED`)
+- Cancel button on ProcessPayment now calls `failMutation({ cancelled: true })` — orphaned PENDING records eliminated
+- Explicit FAILED / CANCELLED state screens added to ProcessPayment
+- Webhook passes `completedPayment` (post-completion, has transactionId) instead of pre-completion `repPayment`
+- Invoice download includes transactionId; uses `completedAt` date
+
+**Product polish & UX accuracy (Audit 058 — 2026-06-25):**
+- Free plan credit renewal changed from calendar-month (`DATE_TRUNC`) to rolling 30-day window from signup date — `COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month'` in SQL; equivalent JS in memoryStorage; `freeResetDate` now shows correct anniversary date
+- WelcomeModal: "FREE Trial Credits Added" → "Free Credits Added"; "Maybe Later" → "Skip for now" (old text implied modal would reappear)
+- Dashboard: "Free Trial" → "Free Plan" in plan badge, banner, and fallback (accurate — free plan is permanent with `FREE_PLAN_ENABLED=true`, not time-limited)
 
 ---
 
