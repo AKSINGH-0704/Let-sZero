@@ -1216,3 +1216,33 @@ Root cause analysis and full remediation of the production payment 404 + compreh
 **Decisions documented:** AUDIT_TRAIL.md Audit 054.
 
 **Milestone status: COMPLETE — Audit 054.**
+
+---
+
+### 50 · First-Customer Welcome Experience — Audit 055 (2026-06-25)
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| WelcomeModal component created | **COMPLETE** | `client/src/components/WelcomeModal.jsx` — dark design, 500 credit info, one-time localStorage guard |
+| Modal shows on first login only | **COMPLETE** | Triggered by `?welcome=1` → `repmail_new_user` localStorage key → dismissed clears key |
+| Modal "Create My First Campaign" navigates correctly | **COMPLETE** | Calls `onDismiss()` then `setLocation("/app/campaigns/new")` via wouter |
+| Modal "Maybe Later" dismisses correctly | **COMPLETE** | Calls `onDismiss()` → clears localStorage → never shown again |
+| Free Trial banner in Dashboard | **COMPLETE** | Shown when `creditsInfo.isFreePlan === true`; displays credits count + reset date + Upgrade link |
+| Trial banner hidden during welcome modal | **COMPLETE** | `!showWelcomeBanner` guard prevents both from showing simultaneously |
+| dev_test credits 10 → 100 | **COMPLETE** | `shared/schema.js:dev_test.credits` and `totalCredits` |
+| dev_test hidden from public plan grid | **COMPLETE** | `PLANS.filter(p => !p.isAdminOnly)` in Payments.jsx |
+| Admin dev_test section in Payments | **COMPLETE** | Amber-bordered section, visible only to ROOT_ADMIN / SUB_ADMIN |
+| Post-launch backlog documented | **COMPLETE** | 15 deferred features in `HANDOFF.md: Post Launch Product Improvements` |
+| Build verified | **COMPLETE** | 0 errors, 5047 modules |
+
+**Pre-launch actions (unchanged):**
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
+□ Run 17-step browser OAuth test (Audit 051)
+```
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 055.
+
+**Milestone status: COMPLETE — Audit 055.**

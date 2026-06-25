@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
+import WelcomeModal from "@/components/WelcomeModal";
 
 // Animation variants
 const containerVariants = {
@@ -210,38 +211,49 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
 
-        {/* Welcome banner — shown once to new users who joined via invite */}
-        <AnimatePresence>
-          {showWelcomeBanner && (
-            <motion.div
-              key="welcome-banner"
-              initial={{ opacity: 0, y: -16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex items-center justify-between gap-4 rounded-xl bg-primary/10 border border-primary/20 px-5 py-4"
-            >
-              <p className="text-sm font-medium text-foreground">
-                Welcome to RepMail. Ready to send your first campaign?
-              </p>
-              <div className="flex items-center gap-2 shrink-0">
-                <Link href="/app/campaigns/new">
-                  <Button size="sm" className="gap-1.5 h-8 text-xs">
-                    New Campaign
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Button>
-                </Link>
-                <button
-                  onClick={dismissBanner}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Welcome modal — shown once to brand new users (OAuth ?welcome=1 flow) */}
+        {showWelcomeBanner && <WelcomeModal onDismiss={dismissBanner} />}
+
+        {/* Free Trial banner — compact persistent reminder for trial users */}
+        {creditsInfo?.isFreePlan && !showWelcomeBanner && (
+          <motion.div
+            variants={itemVariants}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-4 py-3 text-sm"
+            style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.14)" }}
+          >
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
+              style={{ background: "#00E5C8", boxShadow: "0 0 6px rgba(0,229,200,0.6)" }}
+            />
+            <span className="font-semibold" style={{ color: "#00E5C8" }}>Free Trial</span>
+            <span style={{ color: "#55556A" }}>·</span>
+            <span style={{ color: "#D1D5DB" }}>
+              {formatNumber(creditsInfo.total ?? 0)} credits available
+            </span>
+            {creditsInfo.freeResetDate && (
+              <>
+                <span style={{ color: "#55556A" }}>·</span>
+                <span style={{ color: "#7878A0" }}>
+                  Credits refresh:{" "}
+                  {new Date(creditsInfo.freeResetDate).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </span>
+              </>
+            )}
+            <div className="flex-1" />
+            <Link href="/app/payments">
+              <span
+                className="text-xs font-semibold cursor-pointer flex-shrink-0"
+                style={{ color: "#00E5C8" }}
+              >
+                Upgrade →
+              </span>
+            </Link>
+          </motion.div>
+        )}
 
         {/* Admin inactivity warning — derived from /api/users cache, no extra fetch */}
         {isAdmin && inactivityStats && (

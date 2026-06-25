@@ -4459,3 +4459,105 @@ The critical P0 (payment 404) and all P1 issues (auto-open, dismiss cancel, 7 st
 □ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
 □ Run 17-step browser OAuth test (Audit 051)
 ```
+
+---
+
+## Audit 055 — First-Customer Welcome Experience + Launch Backlog (2026-06-25)
+
+**Date:** 2026-06-25
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Part A: First login welcome modal. Part B: Free trial dashboard banner. Part C: Developer Test plan verification. Part D: Post-launch product backlog documentation.
+**Method:** Read Dashboard.jsx, Payments.jsx, AuthContext.jsx, storage.js:getTotalCreditsAvailable, schema.js:dev_test. Traced first-login flow (OAuth callback → ?welcome=1 → Dashboard). Verified creditsInfo API shape.
+
+---
+
+### Part A — Welcome Modal
+
+**What was built:** `client/src/components/WelcomeModal.jsx` — standalone component mounted inside Dashboard.
+
+**Trigger mechanism:** Google OAuth callback sets `?welcome=1` URL param for new users → Dashboard `useEffect` reads it → sets `localStorage.setItem("repmail_new_user", ...)` + `setShowWelcomeBanner(true)` → WelcomeModal renders as a fixed overlay.
+
+**Dismiss behaviour:**
+- "Create My First Campaign" CTA → calls `onDismiss()` (clears localStorage + hides modal) → navigates to `/app/campaigns/new`
+- "Maybe Later" → calls `onDismiss()` (clears localStorage + hides modal)
+
+**Single-show guarantee:** `dismissBanner()` removes `repmail_new_user` from localStorage. On all subsequent page loads / logins, neither `?welcome=1` nor the localStorage key is present → modal never re-appears.
+
+**Content:**
+- 🎉 emoji + "Welcome to RepMail!"
+- Credit highlight box: 500 credits, description of monthly refresh
+- Primary CTA: "🚀 Create My First Campaign"
+- Secondary: "Maybe Later"
+- Design matches Payments.jsx dark aesthetic (`#0C0C14`, `#00E5C8` accent)
+
+**UX note:** Credits are granted automatically — modal is informational only. No "claim" button. No API call from modal.
+
+---
+
+### Part B — Free Trial Dashboard Banner
+
+**What was built:** Compact inline banner in Dashboard.jsx, rendered inside the `motion.div` stagger group.
+
+**Condition:** `creditsInfo?.isFreePlan === true` (from `/api/credits/info` — `isFreePlan` is `true` when `FREE_PLAN_ENABLED=true && !isTrialUser && monthlyGrant > 0`).
+
+**Not shown when:** Welcome modal is open (`!showWelcomeBanner` guard).
+
+**Content:**
+- Pulsing green dot + "Free Trial" label
+- Credits remaining count (from `creditsInfo.total`)
+- Reset date formatted as "25 June 2026" (from `creditsInfo.freeResetDate`)
+- "Upgrade →" link to `/app/payments` using wouter `<Link>`
+
+**Design:** Subtle — `rgba(0,229,200,0.04)` background, `rgba(0,229,200,0.14)` border. Not a call to action. Not dismissible.
+
+---
+
+### Part C — Developer Test Plan
+
+| Check | Status | Finding |
+|-------|--------|---------|
+| `dev_test` credits: 10 → 100 | **COMPLETE** | `shared/schema.js:dev_test.credits` and `totalCredits` updated |
+| Plan name | **COMPLETE** | "Dev Test (Admin Only)" → "Developer Test" |
+| Admin-only server guard | **VERIFIED** | `server/routes.js`: `if (plan.isAdminOnly && !["ROOT_ADMIN","SUB_ADMIN"].includes(req.user.role)) return 403` |
+| Hidden from public plan grid | **COMPLETE** | `Payments.jsx`: `publicPlans = PLANS.filter(p => !p.isAdminOnly)` — dev_test excluded from card grid |
+| Admin section rendered | **COMPLETE** | Amber-bordered section below Payment History, visible only when `user.role === "ROOT_ADMIN" \|\| "SUB_ADMIN"` |
+| Uses full Razorpay flow | **VERIFIED** | `handlePurchase("dev_test")` → confirm modal → `initiateMutation` → `/api/payments/initiate` → `rzp.open()` — same path as all paid plans |
+| Test plan verifies: order, checkout, webhook, credits, invoice | **DESIGN** | All 5 stages use the same server-side code path as real purchases |
+
+**How to use:**
+1. Log in as ROOT_ADMIN or SUB_ADMIN
+2. Go to `/app/payments`
+3. Scroll to bottom — amber "Developer Test · Internal Use Only" section
+4. Click "Test Payment →" → confirm modal appears showing ₹11 / 100 credits
+5. Complete Razorpay checkout → credits added + invoice downloadable
+
+---
+
+### Part D — Post-Launch Backlog
+
+All features documented in `HANDOFF.md: Post Launch Product Improvements`. None implemented.
+
+Deferred features (15 items total):
+- Guided onboarding tour, interactive walkthrough, first campaign wizard, progress tracker, AI onboarding assistant, product tours
+- Achievement badges, campaign milestones, celebration animations, credit usage progress bar
+- Referral system, upgrade nudges, email success celebrations
+- Empty-state illustrations, team onboarding
+
+---
+
+### Build Verification
+
+```
+✓ 5047 modules transformed — 0 errors
+Client: 1,708.51 kB (gzip: 474.80 kB)
+Server: 2.8 MB
+```
+
+### Pre-Launch Checklist (unchanged from Audit 053/054)
+
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
+□ Run 17-step browser OAuth test (Audit 051)
+```

@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
+import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -146,6 +147,18 @@ const PLANS = [
       contactUpload: true,
       templateBuilder: true,
     },
+  },
+  {
+    id: "dev_test",
+    name: "Developer Test",
+    credits: 100,
+    bonusCredits: 0,
+    totalCredits: 100,
+    priceINR: 11,
+    priceUSD: null,
+    isAdminOnly: true,
+    cta: "Test Payment",
+    features: {},
   },
 ];
 
@@ -1095,6 +1108,9 @@ function ProcessPayment({ paymentId }) {
 
 // ─── Main Payments Component ───────────────────────────────────────────────────
 export default function Payments() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ROOT_ADMIN" || user?.role === "SUB_ADMIN";
+
   // useParams() receives :id from the outer <Route path="/app/payments/process/:id">
   // when mounted on that route; empty object on the base /app/payments route.
   const { id: processId } = useParams();
@@ -1187,14 +1203,17 @@ export default function Payments() {
 
   const currentBalance = creditsInfo?.total || 0;
 
+  // Public plans only — admin-only plans are rendered separately below
+  const publicPlans = PLANS.filter(p => !p.isAdminOnly);
+
   // Mobile plan order: Growth first
   const mobilePlans = [
-    PLANS.find(p => p.id === "growth"),
-    PLANS.find(p => p.id === "starter"),
-    PLANS.find(p => p.id === "scale"),
-    PLANS.find(p => p.id === "trial"),
-    PLANS.find(p => p.id === "enterprise"),
-  ];
+    publicPlans.find(p => p.id === "growth"),
+    publicPlans.find(p => p.id === "starter"),
+    publicPlans.find(p => p.id === "scale"),
+    publicPlans.find(p => p.id === "trial"),
+    publicPlans.find(p => p.id === "enterprise"),
+  ].filter(Boolean);
 
   return (
     <AppLayout>
@@ -1449,7 +1468,7 @@ export default function Payments() {
                   animate="visible"
                   variants={staggerContainer}
                 >
-                  {PLANS.map(plan => (
+                  {publicPlans.map(plan => (
                     <PlanCard
                       key={plan.id}
                       plan={plan}
@@ -1777,6 +1796,84 @@ export default function Payments() {
               </div>
             </div>
           </motion.div>
+
+          {/* ── Developer Test Plan (Admin Only) ────────────────────────── */}
+          {isAdmin && (
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={fadeUp}
+            >
+              <div
+                className="rounded-2xl p-6"
+                style={{ background: "#0C0C14", border: "1px dashed rgba(245,158,11,0.35)" }}
+              >
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-2">
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: "#F59E0B" }}
+                  />
+                  <span
+                    className="text-xs font-bold uppercase tracking-widest"
+                    style={{ color: "#F59E0B", letterSpacing: "0.15em" }}
+                  >
+                    Developer Test · Internal Use Only
+                  </span>
+                </div>
+                <p className="text-xs mb-5 pl-5" style={{ color: "#7878A0" }}>
+                  Runs the complete Razorpay production flow — order creation, checkout, webhook, credit
+                  allocation, invoice — at minimal cost. Visible only to ROOT_ADMIN and SUB_ADMIN.
+                </p>
+
+                {/* Plan row */}
+                <div
+                  className="flex items-center justify-between rounded-xl p-4"
+                  style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}
+                >
+                  <div>
+                    <div className="text-sm font-semibold" style={{ color: "#F0F0F5" }}>
+                      Developer Test
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: "#7878A0" }}>
+                      100 credits · ₹11 · Admin only
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="text-xl font-bold"
+                      style={{
+                        color: "#F0F0F5",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      ₹11
+                    </div>
+                    <button
+                      onClick={() => handlePurchase("dev_test")}
+                      disabled={initiateMutation.isPending}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+                      style={{
+                        background: "rgba(245,158,11,0.1)",
+                        border: "1px solid rgba(245,158,11,0.35)",
+                        color: "#F59E0B",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(245,158,11,0.2)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "rgba(245,158,11,0.1)")}
+                      data-testid="button-dev-test-plan"
+                    >
+                      {initiateMutation.isPending
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : "Test Payment →"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
         </div>
 

@@ -582,8 +582,8 @@ export const PRICING_PLANS = {
     isCustom: true, type: "custom",
   },
   dev_test: {
-    id: "dev_test", name: "Dev Test (Admin Only)",
-    credits: 10, bonusCredits: 0, totalCredits: 10,
+    id: "dev_test", name: "Developer Test",
+    credits: 100, bonusCredits: 0, totalCredits: 100,
     priceUsd: 0.13, priceInr: 11,
     isAdminOnly: true, isHidden: true, type: "test",
   },

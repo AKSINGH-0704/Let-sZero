@@ -988,6 +988,63 @@ Two commits: Audit 053 (`b3dda9c`) + Audit 054.
 
 ---
 
+### Phase 15.4 — First-Customer Welcome Experience (2026-06-25)
+
+Commit: see Audit 055 in AUDIT_TRAIL.md.
+
+**Welcome modal (`client/src/components/WelcomeModal.jsx`):** Brand new component. Shown exactly once to new Google OAuth users (triggered by `?welcome=1` URL param set in the OAuth callback). Uses localStorage key `repmail_new_user` — dismissed on "Create My First Campaign" CTA (navigates to `/app/campaigns/new`) or "Maybe Later". On second login the key is gone and the modal never re-appears.
+
+**Free Trial dashboard banner:** Compact top-of-dashboard info strip shown only when `creditsInfo.isFreePlan === true`. Shows pulsing green dot, credits remaining, next refresh date. Has "Upgrade →" link to `/app/payments`. Does not appear when welcome modal is open. Implemented inline in `Dashboard.jsx`.
+
+**Developer Test plan:** `shared/schema.js dev_test.credits` updated from 10 → 100. `Payments.jsx` now shows an amber-bordered "Developer Test · Internal Use Only" section below Payment History, visible only to ROOT_ADMIN and SUB_ADMIN. The plan is filtered out of the public plan card grid. Clicking "Test Payment →" uses the same `handlePurchase("dev_test")` → confirm modal → `initiateMutation` → Razorpay flow as all paid plans.
+
+**Audit:** AUDIT_TRAIL.md Audit 055. Milestone 50 in PROGRESS.md.
+
+---
+
+## Post Launch Product Improvements
+
+The following features are **intentionally deferred** until after the initial launch. They are product enhancements, not launch blockers. Do not implement these before launch.
+
+### Onboarding & First-Run Experience
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Guided onboarding tour | Step-by-step interactive walkthrough of all dashboard features | P1 |
+| Interactive dashboard walkthrough | Tooltip-based feature discovery for new users | P1 |
+| First campaign wizard | Simplified 3-step wizard for first-time campaign creation | P1 |
+| Progress tracker | Visual checklist: "Set up profile → Create template → Upload contacts → Send campaign" | P2 |
+| AI onboarding assistant | Conversational onboarding that collects sender info and creates first template | P2 |
+| Product tours | Page-specific tours for Payments, Templates, History | P3 |
+
+### Engagement & Gamification
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Achievement badges | Milestones: First Campaign Sent, 100 Emails Sent, First Reply, First Click, etc. | P2 |
+| Campaign milestones | In-app celebrations at 500, 1000, 5000 emails sent | P2 |
+| Celebration animations | Confetti/fireworks on first successful send completion | P2 |
+| Credit usage progress bar | Visual bar on Dashboard showing credits used vs available this month | P3 |
+
+### Growth & Monetisation
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Referral system | "Give 250 credits, get 250 credits" referral loop with tracking | P1 |
+| Upgrade nudges | Contextual prompts when user approaches plan limits | P2 |
+| Email success celebrations | Post-campaign email summary: "Your campaign reached X people" | P2 |
+
+### UI Polish
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Empty-state illustrations | Illustrated empty states for History, Templates, Suppressions | P2 |
+| Team onboarding | Guided flow after purchasing a plan: "Invite your first team member" | P2 |
+
+**Rule:** None of these features should be shipped as part of a payment/infrastructure fix or hotfix deployment. Ship them only in dedicated product sprints.
+
+---
+
 ## Related Documents
 
 | Document | Purpose |
