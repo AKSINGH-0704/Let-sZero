@@ -743,13 +743,14 @@ function PaymentHistory() {
               const lines = [
                 `REPMAIL INVOICE`,
                 `===============`,
-                `Invoice #: ${payment.invoiceNumber}`,
-                `Date:      ${new Date(payment.createdAt).toLocaleDateString("en-IN")}`,
+                `Invoice #:   ${payment.invoiceNumber}`,
+                `Date:        ${new Date(payment.completedAt || payment.createdAt).toLocaleDateString("en-IN")}`,
                 ``,
-                `Plan:      ${payment.planName}`,
-                `Credits:   ${payment.credits?.toLocaleString("en-IN")}`,
-                `Amount:    ₹${amountInr.toLocaleString("en-IN")}`,
-                `Status:    ${status.label}`,
+                `Plan:        ${payment.planName}`,
+                `Credits:     ${payment.credits?.toLocaleString("en-IN")}`,
+                `Amount:      ₹${amountInr.toLocaleString("en-IN")}`,
+                `Status:      ${status.label}`,
+                ...(payment.transactionId ? [`Payment ref: ${payment.transactionId}`] : []),
                 ``,
                 `Thank you for your purchase!`,
                 `Support: support@letszero.in`,
@@ -886,9 +887,13 @@ function ProcessPayment({ paymentId }) {
       const res = await apiRequest("POST", `/api/payments/${paymentId}/fail`, { reason, cancelled });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-      toast({ title: "Payment cancelled" });
+      if (variables?.cancelled) {
+        toast({ title: "Payment cancelled" });
+      } else {
+        toast({ title: "Payment failed", description: "Please return to the payments page to try again.", variant: "destructive" });
+      }
       setLocation("/app/payments");
     },
   });
@@ -983,7 +988,7 @@ function ProcessPayment({ paymentId }) {
     );
   }
 
-  // Already completed — show success and redirect
+  // Terminal states — don't show checkout UI for dead sessions
   if (payment.status === "SUCCESS") {
     return (
       <AppLayout>
@@ -994,12 +999,31 @@ function ProcessPayment({ paymentId }) {
             <p className="text-sm mb-6" style={{ color: "#7878A0" }}>
               {formatNumber(payment.credits)} credits were added to your account.
             </p>
-            <button
-              className="text-sm underline"
-              style={{ color: "#00E5C8" }}
-              onClick={() => setLocation("/app/payments")}
-            >
+            <button className="text-sm underline" style={{ color: "#00E5C8" }} onClick={() => setLocation("/app/payments")}>
               Back to Payments
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (payment.status === "FAILED" || payment.status === "CANCELLED") {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#06060B" }}>
+          <div className="text-center w-full max-w-md">
+            <XCircle className="h-12 w-12 mx-auto mb-4" style={{ color: "#F87171" }} />
+            <p className="text-lg font-semibold mb-1" style={{ color: "#F0F0F5" }}>
+              {payment.status === "FAILED" ? "Payment failed" : "Payment cancelled"}
+            </p>
+            <p className="text-sm mb-6" style={{ color: "#7878A0" }}>
+              {payment.status === "FAILED"
+                ? "Your payment could not be processed. No charges were made."
+                : "You cancelled this payment session. No charges were made."}
+            </p>
+            <button className="text-sm underline" style={{ color: "#00E5C8" }} onClick={() => setLocation("/app/payments")}>
+              Return to Payments to try again
             </button>
           </div>
         </div>
@@ -1088,12 +1112,18 @@ function ProcessPayment({ paymentId }) {
             <button
               className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
               style={{ background: "#16162A", border: "1px solid #2A2A45", color: "#E5E7EB" }}
-              onClick={() => setLocation("/app/payments")}
-              disabled={checkoutOpened || verifyMutation.isPending}
+              onClick={() => failMutation.mutate({ cancelled: true })}
+              disabled={checkoutOpened || verifyMutation.isPending || failMutation.isPending}
               data-testid="button-cancel-payment"
             >
-              <XCircle className="h-4 w-4" />
-              Cancel
+              {failMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4" />
+                  Cancel
+                </>
+              )}
             </button>
           </div>
 
