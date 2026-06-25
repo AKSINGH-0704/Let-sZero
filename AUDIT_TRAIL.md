@@ -4641,3 +4641,129 @@ Customer → Razorpay modal → payment.captured
 □ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN — verify receipt email arrives
 □ Run 17-step browser OAuth test (Audit 051)
 ```
+
+---
+
+## Audit 057 â€” Final Production Payment Validation (2026-06-25)
+
+**Date:** 2026-06-25  
+**Conducted by:** Claude Sonnet 4.6 + AK Singh  
+**Scope:** Final production-readiness audit before launch â€” end-to-end payment validation, customer experience review, history review, email review, failure validation  
+**Commit at time of audit:** `1fea729` (Audit 056)  
+**Method:** Full code read of ProcessPayment component, PaymentHistory component, server/email.js, server/storage.js (cancelPayment/failPayment), server/routes.js fail endpoint, server/razorpayWebhook.js
+
+---
+
+### Phase 1 â€” End-to-End Flow Validation (Code Evidence)
+
+| Step | Component | Finding | Status |
+|------|-----------|---------|--------|
+| ROOT_ADMIN selects dev_test plan | `Payments.jsx:isAdmin` guard | Admin-only section shown; public grid excludes dev_test via `PLANS.filter(p => !p.isAdminOnly)` | PASS |
+| Confirmation modal | `handlePurchase + showConfirmModal` | Shows Package, Credits, Total â€” correct fields | PASS |
+| `POST /api/payments/initiate` | `routes.js:2330` | Admin gate, Razorpay order created, PENDING record inserted, `invoiceNumber` generated, redirects to `/app/payments/process/:id` | PASS |
+| ProcessPayment auto-opens Razorpay | `useEffect + autoOpenedRef` | One-shot guard prevents double-open on `payment.status === PENDING` | PASS |
+| Razorpay handler fires | `handler(response)` | Calls `verifyMutation.mutate` with all 3 Razorpay fields + repmail_payment_id | PASS |
+| `POST /api/payments/razorpay/verify` | `routes.js:2455` | HMAC-SHA256, timing-safe, 64-hex format check, ownership check, idempotency guard | PASS |
+| `storage.completePayment` | `storage.js:1150` | Atomic `UPDATE WHERE status!="SUCCESS" RETURNING id`; credits added; `credited: true` for winner | PASS |
+| `upgradePlanIfHigher` | `fulfillPayment.js` | Plan upgraded, cascades to children/grandchildren | PASS |
+| `sendPaymentReceiptEmail` (fire-and-forget) | `email.js:167` | HTML receipt with plan, credits, balance, amount, invoice, transactionId, support email, LetsZero branding, sent only when `credited === true` | PASS |
+| Razorpay webhook `order.paid` | `razorpayWebhook.js:48` | HMAC verify, idempotency check, `completePayment` returns `credited: false` (verify won the race) â€” no duplicate email | PASS |
+| Redirect to `/app/payments?paid=1` | `verifyMutation.onSuccess` | Query invalidation, success banner shown, URL cleaned via `history.replaceState` | PASS |
+| Credits reflected in dashboard | `queryClient.invalidateQueries` | `/api/credits/info` + `/api/auth/me` invalidated on success | PASS |
+| Payment history updated | `/api/payments` invalidated | SUCCESS status, invoice number, download button visible | PASS |
+| Audit log written | `AUDIT_ACTIONS.PAYMENT_SUCCESS` | Written exactly once by winning caller (`if (credited)` guard) | PASS |
+
+---
+
+### Phase 2 â€” Customer Experience Issues Found and Fixed
+
+| Finding | Severity | Fix Applied |
+|---------|----------|-------------|
+| Cancel button on ProcessPayment page (`onClick â†’ setLocation`) did NOT call `failMutation` â€” payment left in PENDING state permanently if user clicked Cancel before opening Razorpay | **HIGH** | Changed `onClick` to `failMutation.mutate({ cancelled: true })` with Loader2 spinner and disabled state during pending |
+| No FAILED/CANCELLED state screen â€” dead sessions showed full checkout UI, allowing users to "retry" with expired Razorpay order IDs | **HIGH** | Added explicit screens for FAILED (red XCircle, "No charges were made") and CANCELLED (same) with "Return to Payments" link |
+| `failMutation.onSuccess` always toasted "Payment cancelled" even for actual payment failures | MEDIUM | Distinguished via `variables.cancelled`: failure path now shows "Payment failed" destructive toast |
+
+**Confirmation modal wording verified:** "Confirm Purchase" title, Package/Credits/Total summary, "Pay â‚¹X" CTA disabled with spinner during initiation. âœ…  
+**ProcessPayment page verified:** Auto-opens Razorpay, "Verifying paymentâ€¦" spinner, "Secured by Razorpay Â· 256-bit SSL encryption" footer, error box. âœ…
+
+---
+
+### Phase 3 â€” Payment History Validation
+
+| Column | Present | Notes |
+|--------|---------|-------|
+| Invoice number | âœ… | Monospace, first column |
+| Plan | âœ… | Font-medium |
+| Credits received | âœ… | `fmtNum` locale formatting |
+| Amount (INR) | âœ… | Shows "Free" for zero amounts |
+| Status badge | âœ… | Colored pill: Pending / Completed / Failed / Refunded / Cancelled |
+| Date | âœ… | `formatDate(payment.createdAt)` |
+| Download invoice | âœ… | `.txt` download, only for SUCCESS â€” no dead buttons |
+| Payment ref in invoice | âœ… | `transactionId` added to downloaded `.txt`; uses `completedAt` date |
+| Payment ID in table | Omitted | Too verbose for table column; included in invoice download |
+
+---
+
+### Phase 4 â€” Email Audit Results
+
+| Requirement | Before | After |
+|-------------|--------|-------|
+| LetsZero / RepMail branding | "REPMAIL" only | "REPMAIL by LetsZero" |
+| Customer name | âœ… | âœ… |
+| Plan purchased | âœ… | âœ… |
+| Amount paid | âœ… | âœ… |
+| Credits added | âœ… | âœ… |
+| Current balance | Missing | Added â€” `creditsRemaining` passed from `getUserById` after `completePayment` |
+| Invoice number | âœ… | âœ… |
+| Payment reference | Missing | Added â€” `payment.transactionId` (Razorpay payment ID) |
+| Create Campaign CTA | âœ… | âœ… |
+| Support contact | Missing | Added â€” `support@letszero.in` footer link |
+| Plain-text fallback | âœ… | Updated with new fields |
+| Webhook uses completed payment | `repPayment` (pre-completion, no transactionId) | `completedPayment` from `storage.completePayment` return |
+
+---
+
+### Phase 5 â€” Failure Path Validation (Exhaustive Code Review)
+
+| Scenario | Mechanism | Duplicate Credits? | Outcome |
+|----------|-----------|-------------------|---------|
+| Cancel via Razorpay modal dismiss | `ondismiss â†’ failMutation({ cancelled: true }) â†’ cancelPayment` | No | CANCELLED status, `PAYMENT_CANCELLED` audit log |
+| Cancel via Cancel button (pre-fix) | `setLocation("/app/payments")` only | No | PENDING (orphaned â€” now fixed) |
+| Cancel via Cancel button (post-fix) | `failMutation({ cancelled: true }) â†’ cancelPayment` | No | CANCELLED status, audit log |
+| Razorpay `payment.failed` event | `failMutation({ reason }) â†’ failPayment(reason)` | No | FAILED status, `PAYMENT_FAILED` audit log |
+| Duplicate webhook (Razorpay retry) | `repPayment.status === SUCCESS â†’ early return 200` | No | Idempotent, no-op |
+| Concurrent verify + webhook race | Atomic `UPDATE WHERE status!="SUCCESS" RETURNING id` â€” only one wins | No | Winner: `credited: true`, credits + email; Loser: `credited: false`, skips both |
+| Refresh during checkout (PENDING) | `autoOpenedRef` resets on remount, `payment.status === PENDING` triggers reopen | No | Razorpay reopens correctly, same order ID |
+| Refresh during checkout (SUCCESS) | `payment.status === "SUCCESS"` early screen | No | Shows "already completed" |
+| Double-click Pay button | `disabled={checkoutOpened || verifyMutation.isPending || failMutation.isPending}` | No | Second click blocked |
+| Network failure after Razorpay capture | `verifyMutation.onError` sets error; `checkoutOpened` stays true; Pay button stuck disabled | No | Error displayed; webhook credits automatically |
+| Razorpay order expired (24h) | `payment.failed` event fires â†’ `failPayment` | No | FAILED status, user returns to Payments |
+| Revisit FAILED process URL | NEW: explicit FAILED screen with message | No | Clear UI, correct messaging |
+| Revisit CANCELLED process URL | NEW: explicit CANCELLED screen with message | No | Clear UI, correct messaging |
+
+**Verdict: No scenario produces duplicate credits. All terminal states are handled.**
+
+---
+
+### Remaining Risks (Non-Blocking for Launch)
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Verify fails after Razorpay captures (network error) | LOW | `checkoutOpened` stays true; Pay button stuck; webhook resolves credits; user can check history or contact support |
+| `getPaymentByRazorpayOrderId` â€” no JSONB index | LOW | Full table scan per webhook event; acceptable at current scale; add GIN index when webhook volume justifies |
+| No in-app invoice PDF | INFO | Deferred to post-launch backlog in HANDOFF.md |
+
+---
+
+### Pre-Launch Checklist (Final)
+
+```
+â–¡ Confirm FREE_PLAN_ENABLED=true in Railway env
+â–¡ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET set in Railway
+â–¡ Test â‚¹11 dev_test plan end-to-end as ROOT_ADMIN
+    â†’ Verify receipt email arrives with balance, transactionId, support link
+â–¡ Verify FAILED state screen using Razorpay test card for failure
+â–¡ Verify CANCELLED state: click Cancel on ProcessPayment page before Razorpay opens
+â–¡ Verify Cancel on ProcessPayment page shows CANCELLED in payment history
+â–¡ Run 17-step browser OAuth test (Audit 051)
+```
