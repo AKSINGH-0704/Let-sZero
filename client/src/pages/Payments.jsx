@@ -873,7 +873,7 @@ function ProcessPayment({ paymentId }) {
       });
       const planKey = (data.payment?.planId || data.payment?.planName || "").toLowerCase();
       const isTeamCapable = ["starter", "growth", "scale"].some(id => planKey.includes(id));
-      setLocation(isTeamCapable ? "/app/payments?activate=team" : "/app/payments");
+      setLocation(isTeamCapable ? "/app/payments?activate=team" : "/app/payments?paid=1");
     },
     onError: (err) => {
       setCheckoutError(err.message || "Payment verification failed. Contact support.");
@@ -1121,6 +1121,9 @@ export default function Payments() {
   const [showTeamActivation, setShowTeamActivation] = useState(
     () => new URLSearchParams(window.location.search).get("activate") === "team"
   );
+  const [showSuccessBanner, setShowSuccessBanner] = useState(
+    () => new URLSearchParams(window.location.search).get("paid") === "1"
+  );
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -1132,8 +1135,11 @@ export default function Payments() {
       if (plan && !plan.isCustom) {
         setSelectedTier(plan);
         setShowConfirmModal(true);
-        window.history.replaceState({}, "", "/app/payments");
       }
+    }
+    // Clean up ?paid=1 and ?plan=... from the URL without navigation
+    if (params.has("paid") || params.has("plan")) {
+      window.history.replaceState({}, "", "/app/payments");
     }
   }, []);
 
@@ -1309,6 +1315,40 @@ export default function Payments() {
 
         {/* Main content */}
         <div className="relative z-10 px-4 sm:px-6 py-10 max-w-7xl mx-auto space-y-14">
+
+          {/* ── Payment Success Banner ──────────────────────────────────── */}
+          <AnimatePresence>
+            {showSuccessBanner && (
+              <motion.div
+                initial={{ opacity: 0, y: -16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.35 }}
+                className="rounded-xl p-4 flex items-center gap-4 flex-wrap sm:flex-nowrap"
+                style={{ background: "rgba(0,229,200,0.06)", border: "1px solid rgba(0,229,200,0.25)" }}
+              >
+                <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: "#00E5C8" }} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm" style={{ color: "#F0F0F5" }}>
+                    Payment successful — your credits are ready!
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "#7878A0" }}>
+                    A receipt has been sent to your email. You can start a campaign right now.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowSuccessBanner(false)}
+                  className="flex-shrink-0 p-1 rounded transition-colors"
+                  style={{ color: "#55556A" }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "#9898B8")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "#55556A")}
+                  aria-label="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── Team Activation Banner ───────────────────────────────────── */}
           <AnimatePresence>
