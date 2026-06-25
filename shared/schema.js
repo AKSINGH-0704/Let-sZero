@@ -114,11 +114,12 @@ export const users = pgTable("users", {
   isTrialUser: boolean("is_trial_user").notNull().default(true),
 
   // ── Free Plan monthly credits ─────────────────────────────────────────────
-  // Tracks usage within the current calendar month (UTC). Reset to 0 lazily
-  // on the first credit-touching request after a month boundary.
-  // freeCreditsResetAt = NULL means "never refreshed" — triggers first grant on
-  // next action. Grant amount is MONTHLY_CREDITS[plan] from schema.js constants,
-  // not stored per-user, so changing the constant takes effect on next refresh.
+  // Tracks usage within the current 30-day renewal window. Reset to 0 lazily
+  // on the first credit-touching request after the renewal date passes.
+  // Renewal is rolling from signup: COALESCE(free_credits_reset_at, created_at) + 1 month.
+  // freeCreditsResetAt = NULL means "never reset" — created_at used as baseline,
+  // so the first renewal fires on the user's signup anniversary, not the 1st of the month.
+  // Grant amount is MONTHLY_CREDITS[plan] from schema.js constants, not stored per-user.
   freeCreditsUsed: integer("free_credits_used").notNull().default(0),
   freeCreditsResetAt: timestamp("free_credits_reset_at"),
   mustResetPassword: boolean("must_reset_password").notNull().default(true),

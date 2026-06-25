@@ -431,6 +431,7 @@ const dbStorage = {
           isTrialUser: users.isTrialUser,
           freeCreditsUsed: users.freeCreditsUsed,
           freeCreditsResetAt: users.freeCreditsResetAt,
+          createdAt: users.createdAt,
         }).from(users).where(eq(users.id, userId)).then(r => r[0]);
 
         if (!user || user.isTrialUser) return; // fall through to legacy trial path
@@ -438,13 +439,14 @@ const dbStorage = {
         const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
         if (monthlyGrant === 0) return; // paid PAYG plan — no free credits
 
-        // Step A: refresh if stale (this month in UTC)
+        // Step A: refresh if stale — 1 month rolling from signup date (or last reset)
+        // COALESCE uses created_at so a brand-new user's first refresh fires on their
+        // signup anniversary, not on the first of the next calendar month.
         const refreshed = await tx.update(users)
           .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
           .where(and(
             eq(users.id, userId),
-            sql`DATE_TRUNC('month', COALESCE(free_credits_reset_at, '1970-01-01'::timestamp) AT TIME ZONE 'UTC')
-                < DATE_TRUNC('month', NOW() AT TIME ZONE 'UTC')`
+            sql`(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`
           ))
           .returning({ id: users.id });
 
@@ -1354,13 +1356,14 @@ const dbStorage = {
 
     if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
       isFreePlan = true;
-      // Lazy refresh: if the current period has expired, treat used as 0 for display purposes.
+      // Lazy refresh: if the renewal period has expired, treat used as 0 for display.
       // The actual DB reset happens in deductCreditAtomic on the next send.
+      // Use createdAt as the baseline when never reset — matches the DB WHERE clause.
       const resetAt = user.freeCreditsResetAt;
-      const isStale = !resetAt || (
-        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
-        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
-      );
+      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const nextResetDate = new Date(refDate);
+      nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
+      const isStale = new Date() >= nextResetDate;
       const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
@@ -1370,9 +1373,11 @@ const dbStorage = {
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
-    // Compute next reset date: first UTC instant of next calendar month
-    const now = new Date();
-    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    // Next reset date: 1 month after last reset (or signup if never reset)
+    const resetAt = user.freeCreditsResetAt;
+    const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+    const nextResetDate = new Date(refDate);
+    nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
 
     return {
       paid: paidRemaining,
@@ -1381,7 +1386,7 @@ const dbStorage = {
       total: paidRemaining + freeRemaining + trialRemaining,
       isTrialUser: user.isTrialUser,   // kept for backward compat
       isFreePlan,
-      freeResetDate: isFreePlan ? nextMonth.toISOString() : null,
+      freeResetDate: isFreePlan ? nextResetDate.toISOString() : null,
       monthlyFreeCredits: isFreePlan ? monthlyGrant : 0,
     };
   },

@@ -464,14 +464,13 @@ export const memoryStorage = {
     // Compute balances at moment of write (single-threaded, no TOCTOU in memory)
     const paidRemaining = Math.max(0, (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0));
 
-    // Lazy refresh: reset free pool if we've crossed a month boundary
+    // Lazy refresh: reset free pool if the 1-month renewal window from signup has passed
     if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
       const resetAt = user.freeCreditsResetAt;
-      const isStale = !resetAt || (
-        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
-        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
-      );
-      if (isStale) {
+      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const nextReset = new Date(refDate);
+      nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
+      if (new Date() >= nextReset) {
         user.freeCreditsUsed = 0;
         user.freeCreditsResetAt = new Date();
       }
@@ -551,11 +550,10 @@ export const memoryStorage = {
     if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
       // Treat stale pool as reset for availability check (same as getTotalCreditsAvailable)
       const resetAt = user.freeCreditsResetAt;
-      const isStale = !resetAt || (
-        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
-        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
-      );
-      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const nextReset = new Date(refDate);
+      nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
+      const effectiveUsed = new Date() >= nextReset ? 0 : (user.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
 
@@ -1305,11 +1303,10 @@ export const memoryStorage = {
     if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
       isFreePlan = true;
       const resetAt = user.freeCreditsResetAt;
-      const isStale = !resetAt || (
-        new Date(resetAt).getUTCFullYear() * 100 + new Date(resetAt).getUTCMonth()
-        < new Date().getUTCFullYear() * 100 + new Date().getUTCMonth()
-      );
-      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const nextReset = new Date(refDate);
+      nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
+      const effectiveUsed = new Date() >= nextReset ? 0 : (user.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
 
@@ -1317,8 +1314,11 @@ export const memoryStorage = {
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
-    const now = new Date();
-    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    // Next reset: 1 month rolling from signup date (or last reset)
+    const resetAt = user.freeCreditsResetAt;
+    const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+    const nextResetDate = new Date(refDate);
+    nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
 
     return {
       paid: paidRemaining,
@@ -1327,7 +1327,7 @@ export const memoryStorage = {
       total: paidRemaining + freeRemaining + trialRemaining,
       isTrialUser: user.isTrialUser,
       isFreePlan,
-      freeResetDate: isFreePlan ? nextMonth.toISOString() : null,
+      freeResetDate: isFreePlan ? nextResetDate.toISOString() : null,
       monthlyFreeCredits: isFreePlan ? monthlyGrant : 0,
     };
   },
