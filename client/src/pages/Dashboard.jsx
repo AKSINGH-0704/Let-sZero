@@ -96,7 +96,7 @@ const PLAN_BADGE_STYLES = {
 };
 
 const PLAN_LABELS = {
-  free: "Free Trial", starter: "Starter", growth: "Growth",
+  free: "Free Plan", starter: "Starter", growth: "Growth",
   scale: "Scale", enterprise: "Enterprise",
 };
 
@@ -214,7 +214,7 @@ export default function Dashboard() {
         {/* Welcome modal — shown once to brand new users (OAuth ?welcome=1 flow) */}
         {showWelcomeBanner && <WelcomeModal onDismiss={dismissBanner} />}
 
-        {/* Free Trial banner — compact persistent reminder for trial users */}
+        {/* Free Plan banner — compact persistent reminder for free plan users */}
         {creditsInfo?.isFreePlan && !showWelcomeBanner && (
           <motion.div
             variants={itemVariants}
@@ -225,7 +225,7 @@ export default function Dashboard() {
               className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
               style={{ background: "#00E5C8", boxShadow: "0 0 6px rgba(0,229,200,0.6)" }}
             />
-            <span className="font-semibold" style={{ color: "#00E5C8" }}>Free Trial</span>
+            <span className="font-semibold" style={{ color: "#00E5C8" }}>Free Plan</span>
             <span style={{ color: "#55556A" }}>·</span>
             <span style={{ color: "#D1D5DB" }}>
               {formatNumber(creditsInfo.total ?? 0)} credits available
@@ -286,7 +286,7 @@ export default function Dashboard() {
               <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Dashboard</h1>
               {user?.plan && (
                 <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
-                  {PLAN_LABELS[user.plan] || "Free Trial"}
+                  {PLAN_LABELS[user.plan] || "Free Plan"}
                 </span>
               )}
             </div>

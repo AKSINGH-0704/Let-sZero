@@ -81,13 +81,13 @@ export default function WelcomeModal({ onDismiss }) {
               marginBottom: "10px",
             }}
           >
-            FREE Trial Credits Added
+            Free Credits Added
           </div>
           <p style={{ color: "#7878A0", fontSize: "12px", lineHeight: "1.65", margin: 0 }}>
             That's enough to send your first{" "}
             <strong style={{ color: "#D1D5DB" }}>500 emails</strong> using RepMail.
             <br />
-            Your free trial credits automatically refresh every month while your trial is active.
+            Your free credits automatically refresh every month.
           </p>
         </div>
 
@@ -138,7 +138,7 @@ export default function WelcomeModal({ onDismiss }) {
           onMouseEnter={e => (e.currentTarget.style.color = "#9898B8")}
           onMouseLeave={e => (e.currentTarget.style.color = "#55556A")}
         >
-          Maybe Later
+          Skip for now
         </button>
       </div>
     </div>
