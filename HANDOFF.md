@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–052 applied through 2026-06-25  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–053 applied through 2026-06-25  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -597,17 +597,19 @@ See the Google OAuth Activation Runbook section below for the full step-by-step 
 
 ## Google OAuth Activation Runbook
 
-### Current status (verified 2026-06-25, Audits 051–052)
+### Current status (verified 2026-06-25, Audits 051–053)
 
 `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are **set in Railway production**. The Passport strategy is conditionally registered — feature is ready to activate. Railway variables `REPMAIL_PUBLIC=true` and `APP_URL=https://www.letszero.in` are confirmed set.
 
-> The Google OAuth code is complete, production-hardened, and audited (Audits 046–047, 051–052). End-to-end code verification: all checks PASS. **One configuration precondition remaining:** `FREE_PLAN_ENABLED=true` must be confirmed in Railway (see Audit 052 in AUDIT_TRAIL.md). Without it, new OAuth users get 5 trial credits instead of 500/month. Activation also requires GCP console configuration (see Steps 1–4 below) and a live browser test (see the 17-step checklist in Audit 051).
+> The Google OAuth and payment pipeline are complete, production-hardened, and audited (Audits 046–047, 051–053). All P0 and P1 payment defects fixed (see Audit 053 in AUDIT_TRAIL.md): bonus credits now granted, "Get Started" routes correctly, Stripe dead code removed, currency is INR-only throughout.
 >
 > **Pre-launch checklist:**
 > ```
 > □ Confirm FREE_PLAN_ENABLED=true in Railway
+> □ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
 > □ Complete GCP Console steps 1–4 below
 > □ Run 17-step browser test (Audit 051)
+> □ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN (Audit 053)
 > ```
 
 **Code reference (`server/routes.js:638`):**

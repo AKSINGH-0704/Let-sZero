@@ -4,7 +4,7 @@
  * Renders inside AppLayout — no separate nav/footer.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,10 +18,6 @@ import {
   Smartphone, Gift,
 } from "lucide-react";
 import { formatDate, formatNumber, cn } from "@/lib/utils";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const USD_RATE = 83.5;
-
 
 function fmtNum(n) {
   return n == null ? "—" : n.toLocaleString("en-IN");
@@ -64,7 +60,7 @@ const PLANS = [
     bonusCredits: 0,
     totalCredits: 3000,
     priceINR: 390,
-    priceUSD: +(390 / USD_RATE).toFixed(2),
+    priceUSD: null,
     cta: "Get Started",
     features: {
       campaigns: "5",
@@ -87,7 +83,7 @@ const PLANS = [
     bonusCredits: 1250,
     totalCredits: 16250,
     priceINR: 1800,
-    priceUSD: +(1800 / USD_RATE).toFixed(2),
+    priceUSD: null,
     isPopular: true,
     cta: "Get Started",
     features: {
@@ -111,7 +107,7 @@ const PLANS = [
     bonusCredits: 4545,
     totalCredits: 54545,
     priceINR: 5500,
-    priceUSD: +(5500 / USD_RATE).toFixed(2),
+    priceUSD: null,
     cta: "Get Started",
     features: {
       campaigns: "20",
@@ -205,9 +201,7 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
 
   const perCreditRate = plan.isCustom || plan.isTrial
     ? null
-    : currency === "INR"
-    ? `₹${(plan.priceINR / plan.credits).toFixed(2)}`
-    : `$${(plan.priceUSD / plan.credits).toFixed(4)}`;
+    : `₹${(plan.priceINR / plan.credits).toFixed(2)}`;
 
   const features = [
     {
@@ -452,9 +446,7 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
                   ...(plan.isPopular ? { textShadow: "0 0 40px rgba(0,229,200,0.2)" } : {}),
                 }}
               >
-                {currency === "INR"
-                  ? `₹${fmtNum(plan.priceINR)}`
-                  : `$${plan.priceUSD?.toFixed(2)}`}
+                {`₹${fmtNum(plan.priceINR)}`}
               </motion.span>
             </AnimatePresence>
           )}
@@ -681,6 +673,13 @@ function PaymentHistory() {
       border: "rgba(156,163,175,0.2)",
       label: "Refunded",
     },
+    CANCELLED: {
+      icon: XCircle,
+      color: "#9CA3AF",
+      bg: "rgba(156,163,175,0.08)",
+      border: "rgba(156,163,175,0.15)",
+      label: "Cancelled",
+    },
   };
 
   if (isLoading) {
@@ -710,7 +709,7 @@ function PaymentHistory() {
       <table className="w-full text-sm">
         <thead>
           <tr style={{ borderBottom: "1px solid #1A1A2E" }}>
-            {["Invoice", "Plan", "Credits", "Amount (USD)", "Local Amount", "Status", "Date", ""].map(h => (
+            {["Invoice", "Plan", "Credits", "Amount (INR)", "Status", "Date", ""].map(h => (
               <th
                 key={h}
                 className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-widest"
@@ -725,9 +724,31 @@ function PaymentHistory() {
           {payments.map(payment => {
             const status = statusConfig[payment.status] || statusConfig.PENDING;
             const StatusIcon = status.icon;
-            const currency = payment.currency || "USD";
-            const amountUsd = payment.amountUsd || payment.amountInr || 0;
-            const amountLocal = payment.amountLocal || payment.amountInr || amountUsd;
+            const amountInr = payment.amountInr || payment.amountLocal || 0;
+
+            const downloadInvoice = () => {
+              const lines = [
+                `REPMAIL INVOICE`,
+                `===============`,
+                `Invoice #: ${payment.invoiceNumber}`,
+                `Date:      ${new Date(payment.createdAt).toLocaleDateString("en-IN")}`,
+                ``,
+                `Plan:      ${payment.planName}`,
+                `Credits:   ${payment.credits?.toLocaleString("en-IN")}`,
+                `Amount:    ₹${amountInr.toLocaleString("en-IN")}`,
+                `Status:    ${status.label}`,
+                ``,
+                `Thank you for your purchase!`,
+                `Support: support@letszero.in`,
+              ].join("\n");
+              const blob = new Blob([lines], { type: "text/plain" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${payment.invoiceNumber}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+            };
 
             return (
               <tr
@@ -748,10 +769,7 @@ function PaymentHistory() {
                   {fmtNum(payment.credits)}
                 </td>
                 <td className="px-4 py-3 text-right font-medium" style={{ color: "#F0F0F5" }}>
-                  {formatCurrency(amountUsd, "USD")}
-                </td>
-                <td className="px-4 py-3 text-right" style={{ color: "#7878A0" }}>
-                  {currency !== "USD" ? formatCurrency(amountLocal, currency) : "—"}
+                  {amountInr > 0 ? formatCurrency(amountInr, "INR") : "Free"}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -772,11 +790,13 @@ function PaymentHistory() {
                 <td className="px-4 py-3 text-right">
                   {payment.status === "SUCCESS" && (
                     <button
+                      onClick={downloadInvoice}
                       className="p-1.5 rounded-lg transition-colors"
                       style={{ color: "#7878A0" }}
                       onMouseEnter={e => (e.currentTarget.style.color = "#F0F0F5")}
                       onMouseLeave={e => (e.currentTarget.style.color = "#7878A0")}
                       data-testid={`button-download-${payment.id}`}
+                      title="Download invoice"
                     >
                       <Download className="w-4 h-4" />
                     </button>
@@ -813,8 +833,9 @@ function ProcessPayment({ paymentId }) {
   const { data: payment, isLoading } = useQuery({
     queryKey: ["/api/payments", paymentId],
     queryFn: async () => {
-      const list = await fetch("/api/payments").then(r => r.json());
-      return list.find(p => p.id === paymentId) || null;
+      const res = await fetch(`/api/payments/${paymentId}`);
+      if (!res.ok) return null;
+      return res.json();
     },
   });
 
@@ -1066,7 +1087,7 @@ function ProcessPayment({ paymentId }) {
 // ─── Main Payments Component ───────────────────────────────────────────────────
 export default function Payments() {
   const [matchProcess, paramsProcess] = useRoute("/app/payments/process/:id");
-  const [currency, setCurrency] = useState("INR");
+  const currency = "INR";
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedTier, setSelectedTier] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
@@ -1075,6 +1096,19 @@ export default function Payments() {
   );
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const planParam = params.get("plan");
+    if (planParam) {
+      const plan = PLANS.find(p => p.id === planParam);
+      if (plan && !plan.isCustom) {
+        setSelectedTier(plan);
+        setShowConfirmModal(true);
+        window.history.replaceState({}, "", "/app/payments");
+      }
+    }
+  }, []);
 
   const { data: creditsInfo, isLoading: creditsLoading } = useQuery({
     queryKey: ["/api/credits/info"],
@@ -1129,7 +1163,6 @@ export default function Payments() {
   const formatPrice = (plan) => {
     if (plan.isCustom) return "Custom pricing";
     if (plan.isTrial) return "Free";
-    if (currency === "USD") return `$${(plan.priceINR / USD_RATE).toFixed(2)}`;
     return `₹${fmtNum(plan.priceINR)}`;
   };
 
@@ -1358,36 +1391,6 @@ export default function Payments() {
               One-time purchases. No subscriptions. Credits never expire early.
             </p>
 
-            {/* Currency toggle */}
-            <div className="flex justify-center">
-              <div
-                className="relative inline-flex rounded-xl p-1"
-                style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
-                role="group"
-                aria-label="Currency selector"
-              >
-                <motion.div
-                  className="absolute inset-y-1 rounded-lg"
-                  style={{ background: "#00E5C8", width: "calc(50% - 4px)" }}
-                  animate={{ x: currency === "INR" ? "calc(100% + 8px)" : 0 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                />
-                {[
-                  { id: "USD", label: "$ USD" },
-                  { id: "INR", label: "₹ INR" },
-                ].map(({ id, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => setCurrency(id)}
-                    className="relative z-10 px-6 py-2 text-sm font-semibold rounded-lg transition-colors duration-200"
-                    style={{ color: currency === id ? "#06060B" : "#8888A0", minWidth: "80px" }}
-                    aria-pressed={currency === id}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </motion.div>
 
           {/* ── Individual / Teams Tab Toggle ───────────────────────────── */}

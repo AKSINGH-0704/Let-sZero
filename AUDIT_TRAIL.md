@@ -4295,3 +4295,76 @@ app.get("/api/auth/google", oauthLimiter,
 ```
 
 All 15 code-level checks from Audit 051 remain PASS. No new code defects found.
+
+---
+
+## Audit 053 — Production Payment Pipeline Audit + Full Remediation (2026-06-25)
+
+**Date:** 2026-06-25
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** End-to-end payment lifecycle — "Get Started" flow, Razorpay integration, credit allocation, bonus credits, invoice, UX, dead code, independent weakness search
+**Method:** Full code read of `server/routes.js:2330–2534`, `server/storage.js:1126–1236`, `shared/schema.js:85–583`, `client/src/pages/Payments.jsx`, `client/src/pages/PublicPricing.jsx`, `client/src/App.jsx`, `server/stripeWebhook.js`, `client/src/pages/Pricing.jsx`
+
+---
+
+### P0 Findings (Launch-Blocking — Fixed)
+
+| ID | File | Line | Finding | Fix |
+|----|------|------|---------|-----|
+| P0-1 | `PublicPricing.jsx` | 143,167,192,216 | **"Get Started" 404**: All plan CTAs hardcoded to `/login`. Authenticated users redirect to `/app/dashboard`, never reaching payments. | Added `useAuth()` to `PlanCard` and `PublicPricing`. Authenticated users route to `/app/payments?plan=<id>`. Unauthenticated to `/login`. `Payments.jsx` auto-opens confirm modal when `?plan=` param is present. |
+| P0-2 | `server/storage.js` | 1177 | **Bonus credits never granted**: `completePayment` credits `payment.credits` (15,000) not `payment.totalCredits` (16,250 for Growth). 1,250 bonus credits silently lost. | Changed all payment creation in `routes.js` to store `plan.totalCredits` in the `credits` field. |
+| P0-3 | `server/routes.js` | 2356,2396 | **Invalid PAYMENT_STATUS**: Trial plan and dev-mode simulation both set `status: "COMPLETED"` — not a valid `PAYMENT_STATUS` value (valid: PENDING, SUCCESS, FAILED, REFUNDED). | Changed to `PAYMENT_STATUS.SUCCESS`. |
+| P0-4 | `server/routes.js` | 2332 | **Wrong currency default**: `const { currency = "USD" }` — defaults to USD even though INR is the only supported currency. A client omitting `currency` would hit the USD → 503 path. | Changed default to `"INR"`. |
+
+### P1 Findings (High Priority — Fixed)
+
+| ID | File | Line | Finding | Fix |
+|----|------|------|---------|-----|
+| P1-1 | `client/src/pages/Payments.jsx` | 713 | USD/Local Amount dual columns in payment history table. `currency` toggle showed USD prices for an INR-only product. | Removed currency toggle entirely (`currency` is now a const `"INR"`). Replaced "Amount (USD)" + "Local Amount" columns with single "Amount (INR)" column. |
+| P1-2 | `client/src/pages/Payments.jsx` | 773–783 | Download button had no `onClick` — completely dead. | Implemented client-side invoice download: generates a formatted `.txt` blob with invoice number, plan, credits, amount, date. |
+| P1-3 | `server/stripeWebhook.js` | entire file | Dead code: imports `stripe` from `gateways.js` which doesn't export it (`stripe = undefined`). Not imported in `server/index.js`. Zero live code paths touch it. | Deleted file. |
+| P1-4 | `client/src/pages/Pricing.jsx` | entire file | Dead file: imported in `App.jsx` but no route renders it. Duplicated payment logic (`purchaseMutation`) with no user. | Deleted file + removed import from `App.jsx`. |
+| P1-5 | `client/src/pages/Payments.jsx` | 813–818 | `ProcessPayment` fetched all payments (`GET /api/payments`) then `.find()`d client-side. O(n) per checkout open. | Added `GET /api/payments/:id` endpoint with ownership check. `ProcessPayment` now calls `GET /api/payments/${paymentId}`. |
+| P1-6 | `server/routes.js` | 2515–2525 | `POST /api/payments/:id/fail` had no ownership check — any authenticated user could fail another user's payment. | Added ownership guard: fetch payment, compare `payment.userId !== req.user.id`, return 403 if mismatch. |
+| P1-7 | `server/storage.js` | 1208–1210 | `failPayment` could overwrite SUCCESS status — a race between a Razorpay webhook completing and a fail call arriving could corrupt a paid payment. | Added guard: early return if `payment.status === PAYMENT_STATUS.SUCCESS`. DB update wrapped with `status != 'SUCCESS'` guard. |
+| P1-8 | `shared/schema.js` | 85–90 | `PAYMENT_STATUS` missing `CANCELLED` — user dismissing checkout and actual payment failure both mapped to `FAILED`, destroying diagnostic clarity. | Added `CANCELLED: "CANCELLED"` to enum. Added `CANCELLED` to Payments.jsx `statusConfig`. |
+| P1-9 | `shared/schema.js` | PRICING_PLANS | No admin test plan — no way to do a real Razorpay end-to-end transaction cheaply in production without polluting real user data. | Added `dev_test` plan: ₹11, 10 credits, `isAdminOnly: true`, `isHidden: true`. Route guards with `ROOT_ADMIN`/`SUB_ADMIN` role check. |
+| P1-10 | `server/routes.js` | 2373 | Admin-only plans had no gate — `dev_test` would be purchasable by any user if they knew the plan ID. | Added `if (plan.isAdminOnly && !["ROOT_ADMIN","SUB_ADMIN"].includes(req.user.role)) return 403`. |
+| P1-11 | `client/src/pages/Payments.jsx` | 23 | `USD_RATE = 83.5` dead constant. `priceUSD` fields in PLANS array computed from it. | Removed `USD_RATE`, set `priceUSD: null` in PLANS, removed USD branch from `formatPrice`. |
+
+### Independent Weaknesses Found
+
+| ID | Finding | Severity | Disposition |
+|----|---------|----------|-------------|
+| IW-1 | `invoiceUrl` column exists in DB schema but is never populated. Invoice PDF generation is entirely absent. | MEDIUM | Mitigated: client-side text invoice download now implemented. Backend PDF generation deferred post-launch. |
+| IW-2 | Invoice numbers are `INV-{Date.now()}-{random}` — not sequential, not gap-proof. | LOW | Accepted. Non-sequential but unique. Sequential numbering is P2. |
+| IW-3 | `payments.currency` defaults to `"USD"` at DB schema level (`schema.js:329`) — legacy column default. Historic rows may show `currency="USD"`. | LOW | No impact on new rows (server always writes `"INR"`). Historic rows display correctly — UI now shows `amountInr` regardless of `currency` field. |
+| IW-4 | `shared/schema.js:SUPPORTED_CURRENCIES` still lists `USD` as a supported currency, which is misleading. | LOW | Accepted for now — removing it would break the `SUPPORTED_CURRENCIES[currency]` check on a valid INR input. Defer cleanup. |
+
+### Razorpay Integration — All PASS
+
+| Check | Status |
+|-------|--------|
+| Order creation (Razorpay SDK, paise unit) | PASS |
+| HMAC-SHA256 signature verification in `/verify` | PASS |
+| `crypto.timingSafeEqual` timing-safe comparison | PASS |
+| Idempotency guard (`status != 'SUCCESS'` in UPDATE) | PASS |
+| Webhook `order.paid` as second idempotent path | PASS |
+| Webhook raw body (`express.raw()`) before `express.json()` | PASS |
+| `upgradePlanIfHigher` cascades to children/grandchildren | PASS |
+| `rzp = null` guard when keys missing → 503 (not crash) | PASS |
+
+### Production Readiness Verdict
+
+**APPROVED WITH CONDITIONS.**
+
+All P0 and P1 defects fixed. Build passes — 0 errors. Remaining P2 items:
+- Sequential invoice numbering
+- Backend PDF invoice generation
+- OAuth rate limiting (documented in Audit 052)
+
+```
+□ Verify RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are set in Railway
+□ Test ₹11 dev_test plan (ROOT_ADMIN only) for end-to-end Razorpay flow
+□ Confirm FREE_PLAN_ENABLED=true in Railway (from Audit 052)
+```

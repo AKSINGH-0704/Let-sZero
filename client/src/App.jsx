@@ -58,7 +58,6 @@ import Users from "@/pages/Users";
 import Audit from "@/pages/Audit";
 import Profile from "@/pages/Profile";
 import ResetPassword from "@/pages/ResetPassword";
-import Pricing from "@/pages/Pricing";
 import PublicPricing from "@/pages/PublicPricing";
 import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";

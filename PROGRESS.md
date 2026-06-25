@@ -1152,3 +1152,37 @@ Full production readiness audit (Audit 047) + implementation of approved finding
 **Decisions documented:** AUDIT_TRAIL.md Audit 052.
 
 **Milestone status: COMPLETE — Audit 052.**
+
+---
+
+### 48 · Production Payment Pipeline — Audit 053 Full Remediation (2026-06-25)
+
+Full code audit of the Razorpay payment lifecycle + implementation of all P0 and P1 defects.
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| "Get Started" 404 fixed | **COMPLETE** | `PublicPricing.jsx` + `Payments.jsx`: authenticated users routed to `/app/payments?plan=<id>`, modal auto-opens |
+| Bonus credits now granted | **COMPLETE** | `routes.js`: all payment creation switched to `plan.totalCredits`. Growth: 15,000 → 16,250 |
+| Invalid PAYMENT_STATUS "COMPLETED" | **COMPLETE** | `routes.js`: trial plan + dev sim changed to `PAYMENT_STATUS.SUCCESS` |
+| Currency default "USD" → "INR" | **COMPLETE** | `routes.js:2332` |
+| USD toggle removed from Payments.jsx | **COMPLETE** | Currency is now const `"INR"`. Table shows single "Amount (INR)" column |
+| Invoice download button wired | **COMPLETE** | Client-side `.txt` blob download with invoice details |
+| Dead code deleted | **COMPLETE** | `server/stripeWebhook.js` + `client/src/pages/Pricing.jsx` deleted |
+| `GET /api/payments/:id` endpoint added | **COMPLETE** | ProcessPayment now uses single-payment fetch, not O(n) list |
+| `POST /api/payments/:id/fail` ownership check | **COMPLETE** | 403 if userId mismatch |
+| `failPayment` SUCCESS guard | **COMPLETE** | Cannot overwrite a completed payment |
+| CANCELLED status added | **COMPLETE** | `shared/schema.js` + Payments.jsx statusConfig |
+| Admin ₹11 test plan | **COMPLETE** | `dev_test` plan in PRICING_PLANS, ROOT_ADMIN/SUB_ADMIN only |
+| Build verified | **COMPLETE** | 0 errors, 5046 modules |
+
+**Pre-launch actions (updated):**
+```
+□ Confirm FREE_PLAN_ENABLED=true in Railway
+□ Confirm RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Railway
+□ Test ₹11 dev_test plan end-to-end as ROOT_ADMIN
+□ Run 17-step browser OAuth test (Audit 051)
+```
+
+**Decisions documented:** AUDIT_TRAIL.md Audit 053.
+
+**Milestone status: COMPLETE — Audit 053.**

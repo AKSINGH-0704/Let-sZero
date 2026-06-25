@@ -2329,7 +2329,7 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/payments/initiate", authMiddleware, async (req, res) => {
     try {
-      const { planId, paymentMethod, currency = "USD" } = req.body;
+      const { planId, paymentMethod, currency = "INR" } = req.body;
       
       const plan = PRICING_PLANS[planId];
       if (!plan) {
@@ -2346,14 +2346,14 @@ export async function registerRoutes(httpServer, app) {
         const payment = await storage.createPayment({
           userId: req.user.id,
           planName: plan.name,
-          credits: plan.credits,
+          credits: plan.totalCredits,
           amountUsd: 0,
           amountInr: 0,
           amountLocal: 0,
           currency: "INR",
           exchangeRate: "1",
           paymentMethod: "FREE",
-          status: "COMPLETED"
+          status: PAYMENT_STATUS.SUCCESS,
         });
 
         await storage.createAuditLog({
@@ -2368,6 +2368,11 @@ export async function registerRoutes(httpServer, app) {
           currency: "INR"
         });
         return;
+      }
+
+      // Admin-only plans (dev_test) are blocked for regular users
+      if (plan.isAdminOnly && !["ROOT_ADMIN", "SUB_ADMIN"].includes(req.user.role)) {
+        return res.status(403).json({ message: "Admin access required for this plan" });
       }
 
       if (!SUPPORTED_CURRENCIES[currency]) {
@@ -2386,16 +2391,16 @@ export async function registerRoutes(httpServer, app) {
         const payment = await storage.createPayment({
           userId: req.user.id,
           planName: plan.name,
-          credits: plan.credits,
+          credits: plan.totalCredits,
           amountUsd,
           amountInr,
           amountLocal,
           currency,
           exchangeRate: exchangeRate.toString(),
           paymentMethod: "SIMULATED",
-          status: "COMPLETED"
+          status: PAYMENT_STATUS.SUCCESS,
         });
-        await storage.addCredits(req.user.id, plan.credits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
+        await storage.addCredits(req.user.id, plan.totalCredits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
           paymentId: payment.id,
           planName: plan.name
         });
@@ -2416,7 +2421,7 @@ export async function registerRoutes(httpServer, app) {
         const payment = await storage.createPayment({
           userId: req.user.id,
           planName: plan.name,
-          credits: plan.credits,
+          credits: plan.totalCredits,
           amountUsd,
           amountInr,
           amountLocal,
@@ -2516,11 +2521,24 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { id } = req.params;
       const { reason } = req.body;
-      
+      const payment = await storage.getPayment(id);
+      if (!payment) return res.status(404).json({ message: "Payment not found" });
+      if (payment.userId !== req.user.id) return res.status(403).json({ message: "Forbidden" });
       await storage.failPayment(id, reason || "Payment failed");
       res.json({ message: "Payment marked as failed" });
     } catch (error) {
       res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/payments/:id", authMiddleware, async (req, res) => {
+    try {
+      const payment = await storage.getPayment(req.params.id);
+      if (!payment) return res.status(404).json({ message: "Payment not found" });
+      if (payment.userId !== req.user.id) return res.status(403).json({ message: "Forbidden" });
+      res.json(payment);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
   });
 

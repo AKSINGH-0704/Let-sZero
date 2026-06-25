@@ -1204,10 +1204,11 @@ const dbStorage = {
   async failPayment(paymentId, reason) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
-    
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return; // never downgrade a completed payment
+
     await db.update(payments)
       .set({ status: PAYMENT_STATUS.FAILED })
-      .where(eq(payments.id, paymentId));
+      .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`));
     
     await this.createAuditLog({
       userId: payment.userId,

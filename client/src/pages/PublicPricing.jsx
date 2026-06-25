@@ -6,6 +6,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link } from "wouter";
+import { useAuth } from "@/context/AuthContext";
 import {
   motion,
   AnimatePresence,
@@ -437,6 +438,7 @@ function FeatureIcon({ value, special }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PublicPricing() {
+  const { user } = useAuth();
   const currency = "INR";
   const [credits, setCredits] = useState(15000);
   const [inputVal, setInputVal] = useState("15000");
@@ -1124,7 +1126,10 @@ export default function PublicPricing() {
                         </div>
                       </div>
 
-                      <Link href="/login" className="block mt-6">
+                      <Link
+                        href={user && purchase ? `/app/payments?plan=${purchase.id}` : "/login"}
+                        className="block mt-6"
+                      >
                         <button
                           className="w-full py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2"
                           style={{
@@ -1659,7 +1664,7 @@ export default function PublicPricing() {
                 Experience the full platform. Every feature unlocked, zero restrictions.
                 No credit card required.
               </p>
-              <Link href="/login">
+              <Link href={user ? "/app/payments" : "/login"}>
                 <motion.button
                   whileHover={{ y: -2 }}
                   whileTap={{ scale: 0.97 }}
@@ -2284,6 +2289,12 @@ export default function PublicPricing() {
 
 // ─── Plan Card Component ──────────────────────────────────────────────────────
 function PlanCard({ plan, currency }) {
+  const { user } = useAuth();
+  const ctaHref = plan.isCustom
+    ? plan.ctaHref
+    : user
+      ? (plan.isTrial ? "/app/payments" : `/app/payments?plan=${plan.id}`)
+      : "/login";
   const displayPrice = plan.isCustom
     ? null
     : plan.isTrial
@@ -2576,7 +2587,7 @@ function PlanCard({ plan, currency }) {
       </ul>
 
       {/* CTA */}
-      <Link href={plan.ctaHref}>
+      <Link href={ctaHref}>
         <button
           className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
           style={

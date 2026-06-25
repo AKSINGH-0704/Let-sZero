@@ -86,7 +86,8 @@ export const PAYMENT_STATUS = {
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   FAILED: "FAILED",
-  REFUNDED: "REFUNDED"
+  REFUNDED: "REFUNDED",
+  CANCELLED: "CANCELLED",
 };
 
 export const CONTACT_REASONS = {
@@ -579,6 +580,12 @@ export const PRICING_PLANS = {
     credits: null, bonusCredits: null, totalCredits: null,
     priceUsd: null, priceInr: null,
     isCustom: true, type: "custom",
+  },
+  dev_test: {
+    id: "dev_test", name: "Dev Test (Admin Only)",
+    credits: 10, bonusCredits: 0, totalCredits: 10,
+    priceUsd: 0.13, priceInr: 11,
+    isAdminOnly: true, isHidden: true, type: "test",
   },
 };
 
