@@ -2307,3 +2307,38 @@
     client/src/components/campaign/CampaignConfirmation.jsx
                             Added validationErrors state; updated onError; structured
                             error panel; Fix Column Mapping button via setStep(2)
+
+
+  ---
+  Section 15 — Engineering Process
+
+  Engineering Backlog
+
+  All deferred engineering findings are tracked in ENGINEERING_BACKLOG.md. This is the single
+  authoritative source for work that was identified but not implemented in the originating milestone.
+
+  Format: each item has an ID (e.g., MAINT-001), category, severity, description, rationale,
+  and recommended milestone. Items are marked DONE when implemented and never deleted.
+
+  When a future audit records a finding that is not implemented in that milestone, add it to
+  ENGINEERING_BACKLOG.md (not just to the audit's inline table). The audit table may still
+  reference the backlog ID for traceability.
+
+  Architecture Decision Records (ADRs)
+
+  Starting from Milestone 4 (Audit 063), each implementation report in AUDIT_TRAIL.md includes
+  an Architecture Decisions section immediately after the Design Review Summary.
+
+  Format for each significant decision:
+
+    ADR-[audit]-[n]: [Short title]
+    Decision: What was chosen.
+    Why: The primary reason this option was selected over alternatives.
+    Alternatives considered: What else was evaluated and briefly why it was rejected.
+    Trade-offs: What this decision costs or constrains.
+    Future impact: How this decision enables or constrains future work.
+
+  ADRs are written for decisions where the reasoning would not be obvious from the code — not
+  for every implementation choice. A decision to use an existing pattern is not an ADR. A
+  decision to deviate from an existing pattern, introduce a new abstraction, or accept a known
+  trade-off is.

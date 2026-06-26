@@ -1096,6 +1096,7 @@ The following features are **intentionally deferred** until after the initial la
 | [README.md](./README.md) | Architecture overview, system design, engineering principles |
 | [CLIENT_DELIVERABLE.md](./CLIENT_DELIVERABLE.md) | Complete client-facing deliverable — plain-English account of everything built, tested, and deployed (Audit 061, 2026-06-26) |
 | [SENDER_DOMAIN_PHASE2_SCOPE.md](./SENDER_DOMAIN_PHASE2_SCOPE.md) | Engineering scope for customer-managed sender domains — full phase plan, industry comparison, architecture review (Audit 061, 2026-06-26) |
+| [ENGINEERING_BACKLOG.md](./ENGINEERING_BACKLOG.md) | Structured backlog of all deferred engineering findings — single source of truth for unimplemented work, organized by category with severity and rationale |
 
 ## Detailed Reference
 
