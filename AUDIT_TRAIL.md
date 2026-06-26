@@ -5153,3 +5153,134 @@ Vars not set use in-code defaults — no validation needed for unset vars.
 | F-M2-8 | Security | drizzle-orm < 0.45.2 has SQL injection via improperly escaped SQL identifiers. Risk is low in this codebase (typed column references used, not user-controlled identifiers), but dependency update is warranted. | Medium | P2 dependency update |
 | F-M2-9 | Technical Debt | AI endpoint uses `code: "SENDER_PROFILE_REQUIRED"` while campaign endpoint uses `error: "SENDER_PROFILE_REQUIRED"`. Inconsistent error field naming across the same logical validation. | Low | P3 |
 
+---
+
+## Audit 061 — Documentation Deliverables (2026-06-26)
+
+**Date:** 2026-06-26  
+**Conducted by:** Claude Sonnet 4.6 + AK Singh  
+**Scope:** Full repository audit followed by creation of two external-grade documentation deliverables  
+**Commit at time of audit:** `85e3e4e` (Milestone 2)  
+**Method:** Complete read of HANDOFF.md, PROGRESS.md, AUDIT_TRAIL.md, REPMAIL_ENGINEERING_HANDOFF.md, LAUNCH_READINESS_REPORT.md, BASELINE_METRICS.md, PHASE15_OPERATIONAL_VALIDATION_REPORT.md, server/, shared/schema.js, and client/src/pages/ cross-referenced against all prior audit findings
+
+---
+
+### Phase 0 — Repository Audit Findings
+
+Before writing any documentation, a complete repository audit was conducted. Key findings:
+
+**Documentation vs. Code parity — CLEAN**
+
+| Area | Documentation Claim | Code Reality | Status |
+|------|-------------------|-------------|--------|
+| Stripe removed | Fully removed | `server/gateways.js` — no Stripe imports; `package.json` — not listed (removed in Milestone 2) | CONFIRMED |
+| Razorpay HMAC-SHA256 webhook | Implemented | `server/razorpayWebhook.js` — HMAC-SHA256 verification present | CONFIRMED |
+| BullMQ queue + inline fallback parity | Both paths have identical behavior | `server/worker.js` + `server/routes.js executeCampaign` — parity confirmed | CONFIRMED |
+| SNS fail-closed enforcement | Two explicit guards | `server/sns.js` + `server/routes.js` — 503 and 403 guard confirmed | CONFIRMED |
+| DKIM + SPF + DMARC pass | Verified in production | Gmail Show Original: `spf=pass dkim=pass dmarc=pass` — HANDOFF.md evidence 2026-06-16 | CONFIRMED |
+| List-Unsubscribe / List-Unsubscribe-Post headers | On every campaign email | `server/email.js:127–132` — headers confirmed | CONFIRMED |
+| Rolling 30-day free credit window | `deductCreditAtomic` + `canStartCampaign` | Both use `COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month'` (Milestone 1) | CONFIRMED |
+| Auto-pause thresholds below SES limits | 8% bounce / 0.05% complaint | `server/routes.js:251–252` + `server/worker.js:247–248` | CONFIRMED |
+| Google OAuth implemented, pending GCP setup | Code exists, env vars not all set | `server/routes.js:638` conditional strategy registration | CONFIRMED |
+| senderName gate at campaign creation | Server-enforced | `server/routes.js` — `400 SENDER_PROFILE_REQUIRED` check confirmed (Milestone 2) | CONFIRMED |
+| Sender domain fields on user records | Three columns on users table | `shared/schema.js:171–173` — `sender_name`, `sender_title`, `sender_company` | CONFIRMED |
+| No custom sender domain (bring your own) | Not implemented | Zero references to `sender_domain` table or AWS SES domain verification API | CONFIRMED |
+| S3 dependencies present, not actively used | In package.json | `server/s3.js` exists; no campaign send path uses it | CONFIRMED |
+| 5 cleanup jobs registered | All present | `server/index.js` — 5 job registrations confirmed | CONFIRMED |
+| Schema integrity check on startup | Present | `server/schemaCheck.js` + `server/index.js:runSchemaCheck()` | CONFIRMED |
+| validateEnv at startup | New (Milestone 2) | `server/validateEnv.js` imported in `server/index.js` | CONFIRMED |
+
+**No undocumented features found.** Every significant code pattern is covered in HANDOFF.md or REPMAIL_ENGINEERING_HANDOFF.md.
+
+**No documented-but-unimplemented features found.** All claims in prior documentation match the codebase.
+
+---
+
+### Deliverable 1 — CLIENT_DELIVERABLE.md
+
+**File:** `CLIENT_DELIVERABLE.md` (created this session)  
+**Audience:** Client / technical founder  
+**Length:** ~3,200 words across 25 sections
+
+**Sections documented:**
+
+| Section | Topic |
+|---------|-------|
+| 1 | What RepMail Is |
+| 2 | Platform Architecture |
+| 3 | Authentication (password + Google OAuth) |
+| 4 | Authorization / RBAC (ROOT_ADMIN / SUB_ADMIN / USER) |
+| 5 | Team Management |
+| 6 | Credits and Billing |
+| 7 | Email Campaigns (full lifecycle) |
+| 8 | AI-Powered Email Templates |
+| 9 | History and Analytics |
+| 10 | Audit Logs |
+| 11 | Payment Processing (Razorpay) |
+| 12 | Suppression Management |
+| 13 | Email Delivery Infrastructure (SES, SNS, DKIM, SPF, DMARC) |
+| 14 | Background Processing and Reliability (BullMQ) |
+| 15 | Cleanup and Maintenance Jobs |
+| 16 | Health Monitoring |
+| 17 | Security |
+| 18 | Deliverability |
+| 19 | Customer-Facing Experience |
+| 20 | Admin Capabilities |
+| 21 | Profile and Settings |
+| 22 | Production Readiness |
+| 23 | Testing and Validation |
+| 24 | What Is Not Yet Built (honest documentation of deferred items) |
+| 25 | Summary |
+
+**Coverage assessment:** All major subsystems are documented. No marketing language used. Every claim is backed by code or production evidence.
+
+---
+
+### Deliverable 2 — SENDER_DOMAIN_PHASE2_SCOPE.md
+
+**File:** `SENDER_DOMAIN_PHASE2_SCOPE.md` (created this session)  
+**Audience:** Engineering team, client review  
+**Length:** ~4,500 words across 9 parts
+
+**Parts documented:**
+
+| Part | Topic |
+|------|-------|
+| 1 | Already Implemented (11 items verified against source code) |
+| 2 | Industry Comparison (Zoho, Brevo, Mailchimp, Customer.io, Postmark, SendGrid) |
+| 3 | Architecture Design and Independent Review (10 gaps identified and addressed) |
+| 4 — Phase 1 | Database and Domain Management Foundation |
+| 4 — Phase 2 | DNS Verification and AWS SES Integration |
+| 4 — Phase 3 | Campaign Engine Integration |
+| 4 — Phase 4 | Security, Abuse Prevention, and Operational Readiness |
+| 5 | Security Review and Threat Model (8 threats) |
+| 6 | Migration and Rollout Plan |
+| 7 | Prioritized Roadmap (P0: 15 items, P1: 9 items, P2: 6 items, P3: 6 items) |
+| 8 | Estimated Engineering Effort (33–47 working days, 2 engineers) |
+| 9 | Why This Is a Separate Milestone |
+
+**Architecture review finding count:** 10 gaps identified during independent review; all addressed in phase design.
+
+**Industry comparison findings:** 6 platforms reviewed; best-practice gap analysis table produced; RepMail's Phase 2 target compared against all identified best practices.
+
+---
+
+### Documentation Changes to Existing Files
+
+| File | Change |
+|------|--------|
+| `HANDOFF.md` | Added `CLIENT_DELIVERABLE.md` and `SENDER_DOMAIN_PHASE2_SCOPE.md` to Related Documents table |
+| `PROGRESS.md` | Added Milestone 2 entry (Server-Side Hardening — Audit 060) + Documentation Deliverables entry (Audit 061) |
+| `AUDIT_TRAIL.md` | This entry (Audit 061) |
+
+---
+
+### Inconsistencies Discovered
+
+| Area | Finding | Disposition |
+|------|---------|-------------|
+| PROGRESS.md was missing Milestone 2 (Audit 060) entry | The Milestone 2 code was committed in commit `85e3e4e` and documented in AUDIT_TRAIL.md Audit 060, but PROGRESS.md had not been updated with the corresponding milestone section | **Fixed** — Milestone 2 PROGRESS.md entry added in this audit |
+| HANDOFF.md Related Documents table had no reference to the new deliverable files | Not applicable before this session — both files were created this session | **Fixed** — both files added to Related Documents table |
+
+No other inconsistencies found between documentation and code.
+

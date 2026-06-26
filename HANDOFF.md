@@ -1074,6 +1074,8 @@ The following features are **intentionally deferred** until after the initial la
 | [PROGRESS.md](./PROGRESS.md) | Launch readiness tracker — milestone status (D/I/O/V evidence), launch blockers, verification log |
 | [AUDIT_TRAIL.md](./AUDIT_TRAIL.md) | Append-only audit log — all code reviews, security audits, documentation sync sessions with findings |
 | [README.md](./README.md) | Architecture overview, system design, engineering principles |
+| [CLIENT_DELIVERABLE.md](./CLIENT_DELIVERABLE.md) | Complete client-facing deliverable — plain-English account of everything built, tested, and deployed (Audit 061, 2026-06-26) |
+| [SENDER_DOMAIN_PHASE2_SCOPE.md](./SENDER_DOMAIN_PHASE2_SCOPE.md) | Engineering scope for customer-managed sender domains — full phase plan, industry comparison, architecture review (Audit 061, 2026-06-26) |
 
 ## Detailed Reference
 

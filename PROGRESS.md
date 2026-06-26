@@ -1385,3 +1385,42 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 **Required Railway manual action:** Update `BOUNCE_RATE_PAUSE_THRESHOLD=0.08` and `COMPLAINT_RATE_PAUSE_THRESHOLD=0.0005` in Railway dashboard if currently set to old values (`0.15`/`0.005`).
 
 **Milestone status: COMPLETE — Milestone 1 (Correctness & Deliverability Consistency — Audit 059).**
+
+---
+
+## Milestone 2: Server-Side Hardening
+
+**Date:** 2026-06-26
+**Audit:** 060 — see AUDIT_TRAIL.md
+
+| Item | Status | Evidence |
+|------|--------|----------|
+| `senderName` enforcement at `POST /api/campaigns` | **COMPLETE** | `server/routes.js` — `400 SENDER_PROFILE_REQUIRED` if `req.user.senderName?.trim()` is falsy |
+| Numeric env var startup validation (`server/validateEnv.js`) | **COMPLETE** | New file — validates BOUNCE_RATE_PAUSE_THRESHOLD, COMPLAINT_RATE_PAUSE_THRESHOLD, SES_SEND_RATE_MS, CAMPAIGN_QUEUE_CONCURRENCY |
+| `validateEnv()` wired to `server/index.js` startup | **COMPLETE** | Called inside startup IIFE before `runSchemaCheck()` |
+| Delivery health window uses `startedAt` (getUserSenderHealth) | **COMPLETE** | `storage.js:2058` — `gte(campaigns.startedAt, ...)` |
+| Delivery health window uses `startedAt` (getDeliveryHealthStats totals) | **COMPLETE** | `storage.js:2083` |
+| Delivery health window uses `startedAt` (getDeliveryHealthStats topBouncers) | **COMPLETE** | `storage.js:2111` |
+| Stripe package removed from `package.json` | **COMPLETE** | `npm uninstall stripe` — zero imports remain |
+| Static + logic verification (47 assertions) | **COMPLETE** | `tmp/verify-milestone2.mjs` — 47/47 passed |
+| Build clean | **COMPLETE** | 0 errors |
+
+**Milestone status: COMPLETE — Milestone 2 (Server-Side Hardening — Audit 060).**
+
+---
+
+## Documentation Deliverables (2026-06-26)
+
+**Date:** 2026-06-26
+**Audit:** 061 — see AUDIT_TRAIL.md
+
+| Deliverable | Status | Description |
+|-------------|--------|-------------|
+| `CLIENT_DELIVERABLE.md` created | **COMPLETE** | 25-section client-facing deliverable covering every implemented feature, integration, security measure, and production validation result |
+| `SENDER_DOMAIN_PHASE2_SCOPE.md` created | **COMPLETE** | Full engineering scope for customer-managed sender domains: 4 phases, industry comparison (5 platforms), independent architecture review, 15 P0 items, prioritized P0–P3 roadmap |
+| HANDOFF.md updated | **COMPLETE** | Related Documents table updated with both new files |
+| PROGRESS.md updated | **COMPLETE** | This entry |
+| AUDIT_TRAIL.md updated | **COMPLETE** | Audit 061 appended |
+| Repository audit findings | **COMPLETE** | Full cross-reference of code vs. documentation; no undocumented gaps found; no documented-but-unimplemented features claimed |
+
+**Milestone status: COMPLETE — Documentation Deliverables (Audit 061).**
