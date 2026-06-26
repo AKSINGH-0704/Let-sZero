@@ -5676,3 +5676,130 @@ The idempotency guard (`if (campaign.status !== CAMPAIGN_STATUS.RUNNING) return`
 |---|---|---|---|---|
 | F-M4-1 | Performance | `onProgress` try/catch in loop adds overhead if Redis errors are frequent (rare in practice) | Low | Monitor only |
 | F-M4-2 | Operations | `sendWithRetry` re-export from worker.js creates a re-export chain; consider direct import from campaignLoop.js in any new callers | Low | Housekeeping |
+
+---
+
+## Audit 064 — Milestone 5: Production Safety, Security & Correctness
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** DEL-001 (SNS startup enforcement), SEC-001 (CRLF header injection), DEBT-002 (Dashboard CANCELLED regression), DEBT-003 (suppression delete), DEBT-006 (audit constant), UX-001 (senderName warning)
+**Milestone:** 5
+**Method:** Design Review → Implementation → Build verification → Code review → Documentation
+
+### Context
+
+M5 addresses production safety gaps and correctness issues identified in the M5 Capability Review. All six items implement zero database schema changes — `AUDIT_ACTIONS` additions in `shared/schema.js` are plain JavaScript object properties (not Drizzle table definitions).
+
+### DEL-001 — SNS_TOPIC_ARN Startup Enforcement
+
+**Root cause:** `server/index.js` issued a `console.error` when `SNS_TOPIC_ARN` was absent but did not exit. The server would start successfully, the SNS webhook handler (already fail-closed) would reject all events with 503, auto-pause would never fire, and the operator would have no immediate indication.
+
+**Fix:** Replaced with `validateProductionConfig()` function. Production (`NODE_ENV=production`): collects missing mandatory vars into `missing[]`, logs each, calls `process.exit(1)`. Dev: `console.warn` only — no exit. `SNS_TOPIC_ARN` is the only mandatory SNS var. `SES_CONFIGURATION_SET` intentionally excluded — some SES setups deliver events via notification-level subscriptions; absence already surfaced via `/api/health sesTracking`. The `missing[]` array design makes future additions O(1).
+
+**Files:** `server/index.js`
+
+### SEC-001 — nodemailer CRLF Header Injection Defense
+
+**Root cause:** nodemailer `^8.0.7` is affected by a CRLF header injection vulnerability (nodemailer ≤ 9.0.0). Custom headers in `server/email.js` used unsanitized values: `unsubscribeFooter.url` (composed from `APP_URL`), `SES_CONFIGURATION_SET` (env var). Contact-supplied inputs are `encodeURIComponent`-ed, but operator env vars are not.
+
+**Fix:** Added private `sanitizeHeaderValue(str)` function stripping `\r\n`. Applied to all four computed header values. Static literal `"List-Unsubscribe=One-Click"` correctly excluded. Comment documents the CVE rationale. Nodemailer upgrade to 9.x deferred to P3 dependency maintenance (avoids breaking changes risk).
+
+**Files:** `server/email.js`
+
+### DEBT-002 — Dashboard CANCELLED Status Regression
+
+**Root cause:** `Dashboard.jsx` used a local `STATUS_DISPLAY` map with only 5 statuses (no CANCELLED/DRAFT). M3B introduced `campaignStatus.js` but only updated `History.jsx` and `ProgressTracker.jsx`. CANCELLED campaigns displayed as "Queued" — a correctness regression.
+
+**Fix:** Imported `getStatusConfig` from `@/lib/campaignStatus`. Removed local `STATUS_DISPLAY` and four local getter functions. Removed unused `CheckCircle`, `XCircle`, `Clock` imports from lucide-react; kept `Activity` (used in stats panel). Added local `STATUS_ICON_COLOR` map — badge color classes and icon tint classes are distinct concerns.
+
+**Files:** `client/src/pages/Dashboard.jsx`
+
+### DEBT-003 — Suppression Delete Endpoint + UI
+
+**Root cause:** No `DELETE /api/suppressions/:id`, no `deleteSuppression` storage method, no delete button in `Suppressions.jsx`.
+
+**Fix:** `deleteSuppression(id, userId)` in both storage.js (Drizzle WHERE id AND userId) and memoryStorage.js (ownership check then delete). `DELETE /api/suppressions/:id` route with 404 on miss and `AUDIT_ACTIONS.SUPPRESSION_DELETED` audit log. `Suppressions.jsx`: `deleteMutation` + Actions column + inline `AlertDialog` per row with source-specific warning copy (unsubscribe: anti-spam regulation; complaint: sender reputation; bounce: delivery failure note).
+
+**Files:** `server/storage.js`, `server/memoryStorage.js`, `server/routes.js`, `client/src/pages/Suppressions.jsx`
+
+### DEBT-006 — MANUAL_SUPPRESSION_ADDED Audit Constant
+
+**Root cause:** `routes.js` line 1088 used raw `"MANUAL_SUPPRESSION_ADDED"` — the only audit action not using `AUDIT_ACTIONS.*`.
+
+**Fix:** Added `MANUAL_SUPPRESSION_ADDED: "MANUAL_SUPPRESSION_ADDED"` and `SUPPRESSION_DELETED: "SUPPRESSION_DELETED"` to `AUDIT_ACTIONS`. Value unchanged — backward compatible with existing DB rows. `routes.js` updated to reference constant.
+
+**Files:** `shared/schema.js`, `server/routes.js`
+
+### UX-001 — senderName Clear Warning During Active Campaigns
+
+**Root cause:** `senderName` is read at send-time (not snapshotted at campaign creation). Clearing it mid-campaign silently changes the From name to "RepMail" for remaining sends.
+
+**Fix:** Frontend-only warning in `Profile.jsx`. Uses already-queried `/api/campaigns` — zero extra API calls. Warning triggers when: field is empty, user previously had a name, and ≥1 RUNNING/PENDING/PAUSED campaign exists. Non-blocking amber Alert inline below the field. Long-term fix (sender identity snapshot at campaign creation) tracked in ENGINEERING_BACKLOG as F-M5-1.
+
+**Files:** `client/src/pages/Profile.jsx`
+
+### Files Modified
+
+| File | Change | Type |
+|---|---|---|
+| `server/index.js` | DEL-001: `validateProductionConfig()` replaces bare console.error | Modified |
+| `server/email.js` | SEC-001: `sanitizeHeaderValue()` added; applied to 4 custom header values | Modified |
+| `shared/schema.js` | DEBT-006 + DEBT-003: `MANUAL_SUPPRESSION_ADDED` + `SUPPRESSION_DELETED` added to AUDIT_ACTIONS | Modified |
+| `server/routes.js` | DEBT-006: raw string → constant; DEBT-003: DELETE /api/suppressions/:id | Modified |
+| `server/storage.js` | DEBT-003: `deleteSuppression(id, userId)` added | Modified |
+| `server/memoryStorage.js` | DEBT-003: `deleteSuppression(id, userId)` added | Modified |
+| `client/src/pages/Dashboard.jsx` | DEBT-002: local STATUS_DISPLAY + 4 getters replaced with `getStatusConfig` | Modified |
+| `client/src/pages/Suppressions.jsx` | DEBT-003: deleteMutation + Actions column + AlertDialog | Modified |
+| `client/src/pages/Profile.jsx` | UX-001: active campaign warning when senderName cleared | Modified |
+
+### Behavioral Verification
+
+| Suite | Dimension | Result |
+|---|---|---|
+| DEL-001 | validateProductionConfig() defined and called in startup sequence | Pass |
+| DEL-001 | Dev mode: console.warn only, no exit | Pass |
+| DEL-001 | Production mode: exit(1) on missing SNS_TOPIC_ARN | Pass |
+| DEL-001 | SES_CONFIGURATION_SET excluded with documented rationale | Pass |
+| SEC-001 | sanitizeHeaderValue() strips \r\n from string inputs | Pass |
+| SEC-001 | sanitizeHeaderValue(null) returns null (early return preserved) | Pass |
+| SEC-001 | Applied to List-Unsubscribe URL, Feedback-ID, X-SES-CONFIGURATION-SET, X-SES-MESSAGE-TAGS | Pass |
+| SEC-001 | Static "List-Unsubscribe=One-Click" literal excluded (correct) | Pass |
+| DEBT-002 | getStatusConfig imported from @/lib/campaignStatus | Pass |
+| DEBT-002 | Local STATUS_DISPLAY and 4 getter functions removed | Pass |
+| DEBT-002 | CANCELLED: Ban icon (text-slate-500), "Cancelled" label, slate badge | Pass |
+| DEBT-002 | CheckCircle, XCircle, Clock removed from lucide imports; Activity retained | Pass |
+| DEBT-002 | Build: 5049 modules, zero errors | Pass |
+| DEBT-003 | deleteSuppression(id, userId) in storage.js: WHERE id AND userId, returning() | Pass |
+| DEBT-003 | deleteSuppression(id, userId) in memoryStorage.js: ownership check then delete | Pass |
+| DEBT-003 | DELETE /api/suppressions/:id: 404 if not found, audit log on success | Pass |
+| DEBT-003 | AUDIT_ACTIONS.SUPPRESSION_DELETED used in route | Pass |
+| DEBT-003 | deleteMutation: credentials include; query invalidated on success | Pass |
+| DEBT-003 | Unsubscribe warning: anti-spam regulation language | Pass |
+| DEBT-003 | Complaint warning: sender reputation language | Pass |
+| DEBT-006 | AUDIT_ACTIONS.MANUAL_SUPPRESSION_ADDED value matches prior raw string | Pass |
+| DEBT-006 | routes.js uses constant not raw string | Pass |
+| UX-001 | Warning uses already-fetched /api/campaigns (zero extra API calls) | Pass |
+| UX-001 | Triggers when: field empty + user had prior name + >=1 active campaign | Pass |
+| UX-001 | Does not trigger when user never had a senderName (correct) | Pass |
+| UX-001 | Warning is non-blocking; profile save proceeds normally | Pass |
+
+**Total: 26/26 assertions passed**
+
+### Classification Summary
+
+| ID | Area | Finding | Severity | Status |
+|---|---|---|---|---|
+| DEL-001 | Deliverability | SNS_TOPIC_ARN absence now exits production via validateProductionConfig() | HIGH | Fixed |
+| SEC-001 | Security | CRLF injection defense via sanitizeHeaderValue() on all custom email headers | HIGH | Fixed |
+| DEBT-002 | Correctness | Dashboard CANCELLED regression — getStatusConfig from shared module | MEDIUM | Fixed |
+| DEBT-003 | Feature | Suppression delete: storage + endpoint + UI with source-specific warnings | HIGH | Fixed |
+| DEBT-006 | Maintainability | MANUAL_SUPPRESSION_ADDED + SUPPRESSION_DELETED added to AUDIT_ACTIONS | LOW | Fixed |
+| UX-001 | UX | senderName clear warning during active campaigns — frontend-only | MEDIUM | Fixed |
+
+### Future Engineering Findings
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M5-1 | Architecture | senderName read at send-time, not snapshotted at campaign creation. Clearing mid-campaign silently changes From name. Long-term fix: add senderProfileSnapshot JSONB to campaigns table at creation — requires schema migration. | Medium | M7+ |
+| F-M5-2 | Security | Nodemailer ^8.0.7 remains at a CVE-affected version. sanitizeHeaderValue provides defense-in-depth but upgrading to 9.x eliminates root cause. | Medium | P3 |

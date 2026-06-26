@@ -19,9 +19,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   AlertCircle,
-  CheckCircle,
-  XCircle,
-  Clock,
   Activity,
   Mail,
   Users,
@@ -37,6 +34,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
+import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 import WelcomeModal from "@/components/WelcomeModal";
 
@@ -54,38 +52,18 @@ const itemVariants = {
   show: { opacity: 1, y: 0 }
 };
 
-function getStatusIcon(status) {
-  switch (status) {
-    case "COMPLETED":
-      return <CheckCircle className="h-4 w-4 text-green-600" />;
-    case "FAILED":
-      return <XCircle className="h-4 w-4 text-red-600" />;
-    case "RUNNING":
-      return <Activity className="h-4 w-4 text-blue-600" />;
-    default:
-      return <Clock className="h-4 w-4 text-yellow-600" />;
-  }
-}
-
-const STATUS_DISPLAY = {
-  COMPLETED: { label: "Completed", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400", tooltip: "All emails were processed and sent." },
-  FAILED:    { label: "Failed",    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",         tooltip: "Campaign encountered an error and could not complete." },
-  RUNNING:   { label: "In Progress", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",   tooltip: "Campaign is actively sending emails right now." },
-  PAUSED:    { label: "Paused",    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400", tooltip: "Campaign is on hold. Resume it to continue sending." },
-  PENDING:   { label: "Queued",   color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",     tooltip: "Campaign is waiting to start. It will begin shortly." },
+// Icon tint classes for the campaign table status column.
+// Badge color (from campaignStatus.js) uses bg+text classes for pill styling;
+// the table icon needs a standalone text color — kept local to this component.
+const STATUS_ICON_COLOR = {
+  RUNNING:   "text-blue-600",
+  PAUSED:    "text-yellow-600",
+  COMPLETED: "text-green-600",
+  FAILED:    "text-red-600",
+  CANCELLED: "text-slate-500",
+  PENDING:   "text-gray-500",
+  DRAFT:     "text-slate-500",
 };
-
-function getStatusBadge(status) {
-  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).color;
-}
-
-function getStatusLabel(status) {
-  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).label;
-}
-
-function getStatusTooltip(status) {
-  return (STATUS_DISPLAY[status] || STATUS_DISPLAY.PENDING).tooltip;
-}
 
 const PLAN_BADGE_STYLES = {
   free:       "bg-gray-500/20 text-gray-400 border border-gray-500/30",
@@ -730,7 +708,7 @@ export default function Dashboard() {
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          {getStatusIcon(campaign.status)}
+                          {(() => { const Ic = getStatusConfig(campaign.status).icon; return <Ic className={`h-4 w-4 ${STATUS_ICON_COLOR[campaign.status] ?? "text-gray-500"}`} />; })()}
                           <div className="text-sm font-medium text-foreground group-hover:text-cyan-300 transition-colors">{campaign.name}</div>
                         </div>
                       </td>
@@ -743,10 +721,10 @@ export default function Dashboard() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <Badge
                           variant="secondary"
-                          className={`text-xs shadow-sm ${getStatusBadge(campaign.status)}`}
-                          title={getStatusTooltip(campaign.status)}
+                          className={`text-xs shadow-sm ${getStatusConfig(campaign.status).color}`}
+                          title={getStatusConfig(campaign.status).tooltip}
                         >
-                          {getStatusLabel(campaign.status)}
+                          {getStatusConfig(campaign.status).label}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

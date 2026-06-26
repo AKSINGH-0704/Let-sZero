@@ -2,11 +2,14 @@
 
 **Document type:** Engineering Scope Document  
 **Date:** 2026-06-26  
-**Author:** Claude Sonnet 4.6 + AK Singh  
+**Author:** AK Singh  
 **Status:** Pre-implementation — scope definition only  
 **Repository:** AKSINGH-0704/Let-sZero
 
 ---
+Executive Summary
+
+RepMail already supports secure production email delivery using its existing infrastructure. The requested enhancement extends the platform to support customer-managed sender domains, allowing each customer to authenticate and send mail from their own verified domain. This requires coordinated changes across architecture, backend services, frontend onboarding, AWS SES integration, DNS verification, security, deliverability, testing, and operations. As a result, this work is treated as a separate engineering milestone rather than an incremental feature.
 
 ## What This Document Is
 

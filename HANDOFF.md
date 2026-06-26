@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -147,6 +147,17 @@ When Redis is unavailable, campaigns execute via `executeCampaign()` in `routes.
 - Conditional final status transition: `updateCampaignIfRunning()` uses WHERE status='RUNNING' atomic UPDATE, preventing TOCTOU race between currentState read and COMPLETED write.
 - Orphaned PENDING campaign_emails bulk-updated to FAILED during crash recovery — prevents History from showing permanent "Pending" records for FAILED campaigns.
 
+**Production Safety & Correctness (Milestone 5 — Audit 064 — 2026-06-26):**
+- `server/index.js`: DEL-001 — `validateProductionConfig()` function centralizes mandatory production env var checks. `SNS_TOPIC_ARN` absence now triggers `process.exit(1)` in production (`NODE_ENV=production`); issues `console.warn` in dev mode. Documented as the home for future SNS-related startup validations. `SES_CONFIGURATION_SET` intentionally excluded — already surfaced via `/api/health sesTracking` field; some SES setups deliver events via notification-level subscriptions without a configuration set.
+- `server/email.js`: SEC-001 — `sanitizeHeaderValue()` added as private module-level function with CRLF injection rationale comment. Applied to all four custom email header values: `List-Unsubscribe` URL, `Feedback-ID`, `X-SES-CONFIGURATION-SET`, `X-SES-MESSAGE-TAGS`. `List-Unsubscribe-Post` is a static literal and correctly excluded. Defense-in-depth against nodemailer ≤ 9.0.0 CVE; nodemailer upgrade deferred to P3 dependency maintenance pass.
+- `shared/schema.js`: DEBT-006 + DEBT-003 — `MANUAL_SUPPRESSION_ADDED` and `SUPPRESSION_DELETED` added to `AUDIT_ACTIONS`. String values are identical to what `MANUAL_SUPPRESSION_ADDED` was writing to the DB — zero backward-compatibility concern.
+- `server/routes.js`: DEBT-006 — raw `"MANUAL_SUPPRESSION_ADDED"` string replaced with `AUDIT_ACTIONS.MANUAL_SUPPRESSION_ADDED`. DEBT-003 — `DELETE /api/suppressions/:id` endpoint added. Ownership enforced at storage layer (userId in WHERE clause). 404 if not found, audit log on success with email + source.
+- `server/storage.js` + `server/memoryStorage.js`: DEBT-003 — `deleteSuppression(id, userId)` added to both storage implementations. DB implementation uses Drizzle `.delete().where(and(id, userId)).returning()`. Memory implementation checks ownership before `store.suppressions.delete(id)`.
+- `client/src/pages/Dashboard.jsx`: DEBT-002 — local `STATUS_DISPLAY` map (5 statuses, missing CANCELLED/DRAFT) and four local status getter functions replaced with `getStatusConfig()` from `@/lib/campaignStatus`. CANCELLED campaigns now render correctly as "Cancelled" (Ban icon, slate badge) instead of "Queued" (Clock icon, gray badge). A local `STATUS_ICON_COLOR` map provides per-status icon tint classes — badge color and icon color are distinct concerns.
+- `client/src/pages/Suppressions.jsx`: DEBT-003 — `deleteMutation` for `DELETE /api/suppressions/:id` added. Actions column added to suppression table with `Trash2` trash icon trigger. Inline `AlertDialog` with source-specific warning copy: unsubscribe suppressions warn about anti-spam regulation violations; complaint suppressions warn about sender reputation; bounce suppressions note potential delivery failure. Query invalidated on success.
+- `client/src/pages/Profile.jsx`: UX-001 — Inline warning shown when senderName field is cleared while active campaigns (RUNNING/PENDING/PAUSED) exist. Uses already-queried `/api/campaigns` data — zero extra API calls. Warning is non-blocking (user can override). Long-term fix (snapshot sender identity at campaign creation) tracked in ENGINEERING_BACKLOG.
+- Zero schema migrations across all 6 items. `AUDIT_ACTIONS` additions are plain JS object properties, not Drizzle table definitions.
+
 **Campaign Architecture Extraction (Milestone 4 — Audit 063 — 2026-06-26):**
 - `server/campaignConfig.js` (NEW): single source of truth for all campaign runtime constants — `SEND_RATE_MS`, `BOUNCE_RATE_PAUSE_THRESHOLD`, `COMPLAINT_RATE_PAUSE_THRESHOLD`, `MIN_SENDER_HEALTH_SENT`, `CHECKPOINT_INTERVAL`, `PAUSE_CHECK_INTERVAL`, `sleep`. Configuration drift between execution paths is now structurally impossible.
 - `server/campaignLoop.js` (NEW): shared `runCampaignLoop(campaignId, userId, { logTag, onProgress })` — eliminates the 400-line duplication between `processCampaign` and `executeCampaign`. Both execution paths call the shared module. `isThrottleError` and `sendWithRetry` moved here from worker.js.
@@ -265,6 +276,14 @@ All five items must pass before RepMail is considered externally validated.
 10. ~~Milestone 4 — Campaign Architecture Extraction~~ *(DONE — 2026-06-26 — Audit 063)*
     - `campaignConfig.js` + `campaignLoop.js` extracted; 400-line duplication eliminated
     - REL-001 startup warning; DEL-002 threshold alignment; UX-002/UX-004 History cancel
+
+11. ~~Milestone 5 — Production Safety & Correctness~~ *(DONE — 2026-06-26 — Audit 064)*
+    - DEL-001: `validateProductionConfig()` — SNS_TOPIC_ARN exit(1) in production
+    - SEC-001: `sanitizeHeaderValue()` — CRLF injection defense in email headers
+    - DEBT-002: Dashboard CANCELLED regression fixed — uses shared `getStatusConfig`
+    - DEBT-003: Suppression delete endpoint + UI — `DELETE /api/suppressions/:id` + AlertDialog
+    - DEBT-006: `MANUAL_SUPPRESSION_ADDED` raw string → `AUDIT_ACTIONS` constant
+    - UX-001: senderName clear warning when active campaigns exist (frontend-only, zero extra API calls)
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

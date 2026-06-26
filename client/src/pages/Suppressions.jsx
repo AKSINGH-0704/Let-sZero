@@ -27,9 +27,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ShieldOff, Search, Plus, AlertTriangle, Info } from "lucide-react";
+import { ShieldOff, Search, Plus, AlertTriangle, Info, Trash2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const SOURCE_CONFIG = {
   bounce: {
@@ -109,6 +120,24 @@ export default function Suppressions() {
     },
     onError: (err) => {
       toast({ title: "Failed to suppress", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      const res = await fetch(`/api/suppressions/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to remove suppression");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppressions"] });
+      toast({ title: "Suppression removed", description: `${data.email} will be eligible for future campaigns.` });
+    },
+    onError: (err) => {
+      toast({ title: "Failed to remove", description: err.message, variant: "destructive" });
     },
   });
 
@@ -246,6 +275,7 @@ export default function Suppressions() {
                     <TableHead>Source</TableHead>
                     <TableHead>Reason</TableHead>
                     <TableHead className="whitespace-nowrap">Suppressed At</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -267,6 +297,55 @@ export default function Suppressions() {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {formatDate(s.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <button
+                              className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              title="Remove suppression"
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Remove suppression?</AlertDialogTitle>
+                              <AlertDialogDescription asChild>
+                                <div className="space-y-2">
+                                  <p>
+                                    <span className="font-mono font-medium">{s.email}</span> will be eligible to receive future campaigns.
+                                  </p>
+                                  {s.source === "unsubscribe" && (
+                                    <p className="text-amber-600 dark:text-amber-400 font-medium">
+                                      This recipient explicitly unsubscribed. Sending to them again without new consent may violate CAN-SPAM and GDPR.
+                                    </p>
+                                  )}
+                                  {s.source === "complaint" && (
+                                    <p className="text-amber-600 dark:text-amber-400 font-medium">
+                                      This recipient marked your email as spam. Further sends risk additional complaints and may harm your sender reputation.
+                                    </p>
+                                  )}
+                                  {s.source === "bounce" && (
+                                    <p className="text-muted-foreground">
+                                      This email previously bounced. Sending again may fail and could affect your deliverability.
+                                    </p>
+                                  )}
+                                </div>
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteMutation.mutate(s.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Remove
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}

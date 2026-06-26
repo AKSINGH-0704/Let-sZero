@@ -71,6 +71,15 @@ const EMAIL_SANITIZE_OPTIONS = {
   allowedSchemesByTag: { img: ["http","https","data"] },
 };
 
+// Defense-in-depth against CRLF header injection (nodemailer ≤ 9.0.0 CVE).
+// Must be applied to every operator-controlled value set in custom email headers.
+// encodeURIComponent already encodes \r\n in URL components, but APP_URL and
+// SES_CONFIGURATION_SET come from env vars and are not otherwise sanitized.
+function sanitizeHeaderValue(str) {
+  if (!str) return str;
+  return String(str).replace(/[\r\n]/g, "");
+}
+
 // senderProfile: { name, title, company, phone, replyToEmail } — from user.sender* fields
 export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}) {
   const subject = sanitizeHtml(
@@ -128,20 +137,20 @@ ${unsubscribeFooter.html}
   // RFC 8058 List-Unsubscribe-Post — enables Gmail's native one-click unsubscribe button.
   // Reuses the URL already computed by buildUnsubscribeFooter — no second token generation.
   if (unsubscribeFooter.url) {
-    headers["List-Unsubscribe"]      = `<${unsubscribeFooter.url}>`;
+    headers["List-Unsubscribe"]      = `<${sanitizeHeaderValue(unsubscribeFooter.url)}>`;
     headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   }
 
   // Feedback-ID: ties complaint feedback to a specific send for Gmail Postmaster Tools.
   if (campaignEmailId) {
-    headers["Feedback-ID"] = `${campaignEmailId}:repmail`;
+    headers["Feedback-ID"] = sanitizeHeaderValue(`${campaignEmailId}:repmail`);
   }
 
   // SES configuration set and per-message tag so SNS receives Open/Click events
   // keyed on the campaign_emails.id UUID — only when the env var is configured.
   if (process.env.SES_CONFIGURATION_SET && campaignEmailId) {
-    headers["X-SES-CONFIGURATION-SET"] = process.env.SES_CONFIGURATION_SET;
-    headers["X-SES-MESSAGE-TAGS"]      = `campaign-email-id=${campaignEmailId}`;
+    headers["X-SES-CONFIGURATION-SET"] = sanitizeHeaderValue(process.env.SES_CONFIGURATION_SET);
+    headers["X-SES-MESSAGE-TAGS"]      = sanitizeHeaderValue(`campaign-email-id=${campaignEmailId}`);
   }
 
   if (Object.keys(headers).length > 0) {

@@ -1085,11 +1085,30 @@ export async function registerRoutes(httpServer, app) {
       await storage.addSuppression(req.user.id, normalized, "manual", reason?.trim() || null);
       await storage.createAuditLog({
         userId: req.user.id,
-        action: "MANUAL_SUPPRESSION_ADDED",
+        action: AUDIT_ACTIONS.MANUAL_SUPPRESSION_ADDED,
         targetType: "suppression",
         details: { email: normalized, reason: reason?.trim() || null },
       });
       res.status(201).json({ message: "Email suppressed" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/suppressions/:id", authMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteSuppression(id, req.user.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Suppression not found" });
+      }
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.SUPPRESSION_DELETED,
+        targetType: "suppression",
+        details: { email: deleted.email, source: deleted.source },
+      });
+      res.json({ message: "Suppression removed", email: deleted.email });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

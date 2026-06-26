@@ -60,6 +60,18 @@ export default function Profile() {
   const [saveError,      setSaveError]      = useState("");
   const [senderWarnings, setSenderWarnings] = useState([]);
 
+  // Warn when senderName is being cleared while campaigns are still active.
+  // senderName is read at send-time from the user profile (not snapshotted at campaign
+  // creation), so clearing it mid-campaign causes emails to use the "RepMail" fallback.
+  // Long-term fix: snapshot sender identity at campaign creation (tracked in ENGINEERING_BACKLOG).
+  const activeCampaigns = (campaigns || []).filter(c =>
+    ["RUNNING", "PENDING", "PAUSED"].includes(c.status)
+  );
+  const showSenderNameClearWarning =
+    activeCampaigns.length > 0 &&
+    !senderForm.senderName.trim() &&
+    !!(user?.senderName);
+
   const updateProfileMutation = useMutation({
     mutationFn: async (fields) => {
       const res = await apiRequest("PUT", "/api/profile", fields);
@@ -182,6 +194,15 @@ export default function Profile() {
                   onChange={e => handleSenderChange("senderName", e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">Shown as the From name recipients see</p>
+                {showSenderNameClearWarning && (
+                  <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
+                    <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                    <AlertDescription className="text-amber-800 dark:text-amber-300 text-sm">
+                      You have {activeCampaigns.length} active campaign{activeCampaigns.length !== 1 ? "s" : ""}.
+                      Emails sent after saving will use the platform default name ("RepMail").
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
 
               <div className="space-y-1.5">

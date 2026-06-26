@@ -1570,6 +1570,16 @@ const dbStorage = {
       .orderBy(desc(suppressions.createdAt));
   },
 
+  async deleteSuppression(id, userId) {
+    const [deleted] = await db.delete(suppressions)
+      .where(and(
+        eq(suppressions.id, id),
+        eq(suppressions.userId, userId)
+      ))
+      .returning();
+    return deleted || null;
+  },
+
   // Platform-wide suppression check — covers bounce, complaint, and unsubscribe across all users.
   // A contact suppressed by any user on the platform is unsafe to email from any campaign.
   async isGloballySuppressed(email) {

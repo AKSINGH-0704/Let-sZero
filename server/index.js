@@ -447,6 +447,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Validates mandatory production environment variables and exits if any are missing.
+// SNS_TOPIC_ARN is the only mandatory SNS var today — it is the ARN used by the webhook
+// handler to verify that incoming events come from the expected topic. Without it, every
+// SNS delivery (bounce, complaint) is rejected with 503 and auto-pause never fires.
+// SES_CONFIGURATION_SET is strongly recommended but not fatal here — some SES setups
+// deliver bounce/complaint events via notification-level subscriptions that bypass
+// configuration sets. Its absence is surfaced via the /api/health sesTracking field.
+function validateProductionConfig() {
+  if (process.env.NODE_ENV !== "production") {
+    if (!process.env.SNS_TOPIC_ARN) {
+      console.warn("[STARTUP] SNS_TOPIC_ARN not set — bounce/complaint processing disabled in dev mode.");
+    }
+    return;
+  }
+  const missing = [];
+  if (!process.env.SNS_TOPIC_ARN) {
+    missing.push("SNS_TOPIC_ARN — required for bounce/complaint processing; auto-pause will never fire without it");
+  }
+  if (missing.length > 0) {
+    console.error("[STARTUP] FATAL: Missing required production environment variables:");
+    for (const m of missing) console.error(`  • ${m}`);
+    console.error("[STARTUP] Set the above variables and restart.");
+    process.exit(1);
+  }
+}
+
 // Temporary SMTP path diagnostic — remove after SMTP connectivity is confirmed.
 // Runs once at startup; logs DNS and TCP results without modifying credentials or config.
 async function diagnoseSMTPPath() {
@@ -595,9 +621,7 @@ async function diagnoseSMTPPath() {
     console.warn("[STARTUP] Redis unavailable — campaigns running on inline path. SIGTERM will abandon in-progress campaigns.");
   }
 
-  if (!process.env.SNS_TOPIC_ARN) {
-    console.error("[STARTUP] SNS_TOPIC_ARN not set — SNS webhook will reject all messages until this is configured. Set this env var to enable bounce/complaint processing.");
-  }
+  validateProductionConfig();
 
   // SMTP path diagnostic — temporary, runs once at startup.
   await diagnoseSMTPPath();

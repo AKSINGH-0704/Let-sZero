@@ -1486,6 +1486,13 @@ export const memoryStorage = {
     return toSortedArray(store.suppressions).filter(r => r.userId === userId);
   },
 
+  async deleteSuppression(id, userId) {
+    const record = store.suppressions.get(id);
+    if (!record || record.userId !== userId) return null;
+    store.suppressions.delete(id);
+    return record;
+  },
+
   async isGloballySuppressed(email) {
     const normalizedEmail = email.toLowerCase().trim();
     for (const record of store.suppressions.values()) {
