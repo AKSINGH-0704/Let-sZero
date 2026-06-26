@@ -43,14 +43,16 @@ import {
   AlertTriangle,
   Info,
   X,
+  Copy,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { getStatusConfig } from "@/lib/campaignStatus";
 import CancelCampaignDialog from "@/components/campaign/CancelCampaignDialog";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 export default function History() {
-  const { isRootAdmin } = useAuth();
+  const { isRootAdmin, user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
@@ -382,6 +384,12 @@ export default function History() {
               - (viewCampaign.failedEmails ?? 0)
               - (viewCampaign.skippedEmails ?? 0);
 
+            const statusConfig = getStatusConfig(viewCampaign.status);
+            // Hide Duplicate for non-owned campaigns — admin view may show other users' campaigns.
+            // Backend enforces ownership on POST /api/campaigns and GET /api/campaigns/:id,
+            // but showing the button for unowned campaigns produces a confusing UX.
+            const canDuplicate = statusConfig.canDuplicate && viewCampaign.userId === user?.id;
+
             return (
               <div className="space-y-4 pt-2">
                 {/* Stats row */}
@@ -431,6 +439,20 @@ export default function History() {
                     <Info className="h-4 w-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Campaign was cancelled before any emails were sent. No credits were used.
+                    </p>
+                  </div>
+                )}
+
+                {/* FAILED — partial send context before the Duplicate action */}
+                {viewCampaign.status === "FAILED" && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                    <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm text-red-800 dark:text-red-300">
+                      Campaign failed —{" "}
+                      {formatNumber(viewCampaign.sentEmails ?? 0)} of{" "}
+                      {formatNumber(viewCampaign.totalEmails ?? 0)} emails were sent before the failure.
+                      {notReached > 0 && ` ${formatNumber(notReached)} ${notReached === 1 ? "contact was" : "contacts were"} not reached.`}
+                      {" "}Duplicating will start a new campaign from the beginning.
                     </p>
                   </div>
                 )}
@@ -612,6 +634,28 @@ export default function History() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground italic">Template snapshot not available for this campaign.</p>
+                )}
+
+                {/* Duplicate Campaign action */}
+                {canDuplicate && (
+                  <div className="flex justify-end pt-2 border-t">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {/* Button asChild + Link: renders as <a> with button styles — no nested interactive elements */}
+                          <Button variant="outline" className="gap-2" asChild>
+                            <Link href={`/app/campaigns/new?duplicate=${viewCampaign.id}`}>
+                              <Copy className="h-4 w-4" aria-hidden="true" />
+                              Duplicate Campaign
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Create a new campaign using this campaign&apos;s content and selected list.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 )}
               </div>
             );

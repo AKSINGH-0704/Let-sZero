@@ -79,7 +79,7 @@ export default function TemplateBuilder() {
   const {
     template, setTemplate, setTemplateIsAiGenerated, setCampaignType, setAiAnalysis,
     setAcceptedSuggestions, setAcceptedDetails, templateIsAiGenerated,
-    columnMapping, contacts, goNext, goBack,
+    columnMapping, contacts, goNext, goBack, isDuplicate,
   } = useCampaign();
   const { user } = useAuth();
 
@@ -351,6 +351,11 @@ export default function TemplateBuilder() {
           Write your email. Use the variables on the right to personalize each
           message for its recipient.
         </p>
+        {isDuplicate && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Pre-filled from the original campaign. You can make changes below.
+          </p>
+        )}
       </div>
 
       {/* ── Sender profile warnings ──────────────────────────────────────────── */}

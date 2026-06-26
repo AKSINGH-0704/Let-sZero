@@ -16,6 +16,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
     isTerminal: false,
     canCancel: true,
+    canDuplicate: false,
   },
   PAUSED: {
     icon: Pause,
@@ -24,6 +25,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
     isTerminal: false,
     canCancel: true,
+    canDuplicate: false,
   },
   COMPLETED: {
     icon: CheckCircle,
@@ -32,6 +34,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
     isTerminal: true,
     canCancel: false,
+    canDuplicate: true,
   },
   FAILED: {
     icon: XCircle,
@@ -40,6 +43,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
     isTerminal: true,
     canCancel: false,
+    canDuplicate: true,
   },
   CANCELLED: {
     icon: Ban,
@@ -48,6 +52,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-slate-100 text-slate-700 dark:bg-slate-800/40 dark:text-slate-400",
     isTerminal: true,
     canCancel: false,
+    canDuplicate: true,
   },
   PENDING: {
     icon: Clock,
@@ -56,6 +61,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
     isTerminal: false,
     canCancel: true,
+    canDuplicate: false,
   },
   DRAFT: {
     icon: FileText,
@@ -64,6 +70,7 @@ export const CAMPAIGN_STATUS_CONFIG = {
     color: "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400",
     isTerminal: false,
     canCancel: false,
+    canDuplicate: false,
   },
 };
 

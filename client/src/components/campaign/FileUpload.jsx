@@ -16,13 +16,13 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, BookUser, Users } from "lucide-react";
+import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, BookUser, Users, Info } from "lucide-react";
 import { parseCSV, cn } from "@/lib/utils";
 
 export default function FileUpload() {
-  const { setContacts, goNext, contacts, setListId, setSaveToLibraryAs, setStep } = useCampaign();
-  const [tab, setTab] = useState("upload"); // "upload" | "library"
-  const [selectedListId, setSelectedListId] = useState(null);
+  const { setContacts, goNext, contacts, setListId, setSaveToLibraryAs, setStep, listId: contextListId, listSnapshot: contextListSnapshot, isDuplicate } = useCampaign();
+  const [tab, setTab] = useState(contextListId ? "library" : "upload");
+  const [selectedListId, setSelectedListId] = useState(contextListId || null);
   const [saveAs, setSaveAs] = useState("");
   const [saveAsEnabled, setSaveAsEnabled] = useState(false);
 
@@ -34,11 +34,26 @@ export default function FileUpload() {
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef(null);
 
-  const { data: contactLists = [] } = useQuery({
+  const { data: contactLists = [], isLoading: contactListsLoading } = useQuery({
     queryKey: ["/api/contact-lists"],
     queryFn: () => apiRequest("GET", "/api/contact-lists").then(r => r.json()),
     enabled: tab === "library",
   });
+
+  const selectedList = contactLists.find(l => l.id === selectedListId);
+  const canContinueLibrary = !!selectedListId && !!selectedList;
+
+  const showCountComparison = isDuplicate
+    && selectedListId === contextListId
+    && !!selectedList
+    && contextListSnapshot?.contactCount !== undefined
+    && selectedList.contactCount !== contextListSnapshot.contactCount;
+
+  const originalListMissing = isDuplicate
+    && !!contextListId
+    && tab === "library"
+    && !contactListsLoading
+    && !contactLists.find(l => l.id === contextListId);
 
   const handleBrowseClick = () => {
     fileInputRef.current?.click();
@@ -217,6 +232,14 @@ export default function FileUpload() {
       {/* Library tab */}
       {tab === "library" && (
         <div className="space-y-4">
+          {originalListMissing && (
+            <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+              <AlertDescription className="text-amber-800 dark:text-amber-300">
+                The original contact list is no longer available. Select another list or upload contacts to continue creating this campaign.
+              </AlertDescription>
+            </Alert>
+          )}
           {contactLists.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Users className="w-8 h-8 mx-auto mb-3 opacity-40" />
@@ -244,10 +267,22 @@ export default function FileUpload() {
                   </div>
                 </button>
               ))}
+              {showCountComparison && (
+                <Alert className="border-blue-200 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/20">
+                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <AlertDescription className="text-blue-800 dark:text-blue-300 text-sm">
+                    <span className="font-medium">
+                      Original campaign reached {contextListSnapshot.contactCount.toLocaleString()} contacts.
+                      This list now has {selectedList.contactCount.toLocaleString()}.
+                    </span>{" "}
+                    This new campaign will use the list as it exists today. Contacts added since the original campaign will be included, and contacts removed since then will not receive this campaign.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
           <div className="flex justify-end pt-2">
-            <Button onClick={handleLibraryContinue} disabled={!selectedListId}>
+            <Button onClick={handleLibraryContinue} disabled={!canContinueLibrary}>
               Continue to Template
             </Button>
           </div>

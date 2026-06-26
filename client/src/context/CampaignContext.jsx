@@ -2,7 +2,10 @@ import { createContext, useContext, useState } from "react";
 
 const CampaignContext = createContext(null);
 
-const INITIAL_STATE = {
+// Exported so consumers can reference canonical defaults without duplicating them.
+// resetCampaign() restores this state — including isDuplicate: false and listSnapshot: null,
+// which guarantees duplicate-specific fields are fully cleared on reset.
+export const INITIAL_STATE = {
   step: 1,
   contacts: [],
   columnMapping: {},
@@ -23,10 +26,19 @@ const INITIAL_STATE = {
   campaignData: null,
   listId: null,
   saveToLibraryAs: null,
+  // Wizard initialization state — set once from a ?duplicate= deep-link; never mutated mid-wizard.
+  // isDuplicate: signals to FileUpload and TemplateBuilder that content was pre-filled.
+  // listSnapshot: the source campaign's list snapshot, used only for count comparison at step 1.
+  // Both are cleared by resetCampaign(). Do not add setters or repurpose these for general state.
+  isDuplicate: false,
+  listSnapshot: null,
 };
 
-export function CampaignProvider({ children }) {
-  const [campaignState, setCampaignState] = useState(INITIAL_STATE);
+export function CampaignProvider({ children, initialState: overrideState }) {
+  const [campaignState, setCampaignState] = useState(() => ({
+    ...INITIAL_STATE,
+    ...(overrideState || {}),
+  }));
 
   const setStep = (step) => {
     setCampaignState(prev => ({ ...prev, step }));

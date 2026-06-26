@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26; Milestone 7 Duplicate Campaign (Audit 066) applied 2026-06-27  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -295,6 +295,17 @@ All five items must pass before RepMail is considered externally validated.
     - Campaign wizard extended: library tab in FileUpload, `saveToLibraryAs` option, CampaignConfirmation library mode
     - Navbar BookUser item; App.jsx routes with correct wouter ordering
     - All 12 API behavioral verification tests PASS (Audit 065)
+
+13. ~~Milestone 7 (Partial) — Duplicate Campaign~~ *(DONE — 2026-06-27 — Audit 066)*
+    - Zero backend changes; zero schema migrations
+    - `useSearchParam` helper: routing abstraction for `?duplicate=<id>` deep-link pattern
+    - `CampaignContext`: exports `INITIAL_STATE`; adds `isDuplicate` + `listSnapshot`; `CampaignProvider` accepts `initialState` prop
+    - `campaignStatus.js`: `canDuplicate` field on all 7 statuses
+    - `NewCampaign.jsx`: deep-link pattern — fetch gate + `initialState` override; first URL-driven wizard pre-fill in the platform
+    - `FileUpload.jsx`: auto-tab to library + list pre-selection; count comparison note; deleted-list warning; `canContinueLibrary` guard
+    - `TemplateBuilder.jsx`: "Pre-filled from original campaign" note
+    - `History.jsx`: Duplicate Campaign button (COMPLETED/FAILED/CANCELLED; ownership-guarded); FAILED status note; `Button asChild`+`Link` pattern
+    - Remaining M7 scope: CSV Export, saveToLibraryAs confirmation, Contact Edit UI, Empty list error
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

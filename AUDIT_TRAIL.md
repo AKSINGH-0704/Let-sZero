@@ -5867,3 +5867,93 @@ All 12 API test cases passed:
 | F-M6-2 | Reliability | `saveToLibraryAs` list creation is fire-and-forget. If the DB write fails silently, user thinks list was saved but it wasn't. Consider a background retry or at minimum a response field indicating save status. | Low | M7 |
 | F-M6-3 | Feature | Contact list export (`GET /api/contact-lists/:id/export`) returns 501. CSV export is a common user expectation. | Low | M7 |
 | F-M6-4 | Documentation | Large imports (50K rows) can take significant DB time with no progress signal. Document expected timing; consider progress webhooks for future. | Info | M8+ |
+
+---
+
+## Audit 066 — Milestone 7: Duplicate Campaign
+
+**Date:** 2026-06-27
+**Conducted by:** Claude Sonnet 4.6 (implementation + audit) + AK Singh
+**Scope:** M7 Duplicate Campaign — complete implementation, behavioral verification, and independent production audit
+**Method:** Engineering Design Review (approved) → Implementation → Behavioral Verification (40 assertions) → Independent Audit → Documentation
+
+---
+
+### What Was Implemented
+
+| Layer | Changes |
+|:------|:--------|
+| **New file** | `client/src/lib/useSearchParam.js` — routing abstraction over wouter `useSearch()` |
+| **CampaignContext** | `INITIAL_STATE` exported; `isDuplicate: false`, `listSnapshot: null` added; `CampaignProvider` accepts `initialState` prop (lazy initializer merge with `INITIAL_STATE`) |
+| **campaignStatus.js** | `canDuplicate` field added to all 7 status configs (true for COMPLETED/FAILED/CANCELLED, false for others) |
+| **NewCampaign.jsx** | Deep-link pattern: reads `?duplicate=<campaignId>`, fetches source campaign, gates `CampaignProvider` render, passes partial `initialState` override |
+| **FileUpload.jsx** | Auto-switches to library tab on mount when `contextListId` is set; pre-selects original list; count comparison note when current ≠ snapshot count; deleted list amber warning; `canContinueLibrary` guards the Continue button |
+| **TemplateBuilder.jsx** | "Pre-filled from the original campaign." note when `isDuplicate` is true |
+| **History.jsx** | Duplicate Campaign button with tooltip (COMPLETED/FAILED/CANCELLED only; hidden for non-owned campaigns in admin view); FAILED status explanatory note (gap fix); `Button asChild` + `Link` pattern avoids nested interactive elements |
+
+Zero backend changes. Zero schema migrations.
+
+---
+
+### Deep-Link Architecture
+
+The `?duplicate=<campaignId>` pattern is the platform's first deep-link workflow. It establishes the architectural precedent:
+
+1. Read URL param via routing abstraction (`useSearchParam`)
+2. Fetch resource, gate wizard render until resolved
+3. Derive partial `initialState`, pass to `CampaignProvider` via prop
+4. `CampaignProvider` lazy-merges override with `INITIAL_STATE`
+5. `resetCampaign()` clears all derived state (verified explicitly)
+
+The global `staleTime: Infinity` in `queryClient.js` means the `GET /api/campaigns/:id` fetch hits the TanStack Query cache instantly when the History detail dialog was already open. For cold-start deep-links (bookmarks, shared URLs), a normal server fetch runs.
+
+---
+
+### Behavioral Verification Results
+
+40/40 assertions pass. Two bugs discovered and fixed during verification:
+
+| # | Category | Assertion | Result |
+|---|----------|-----------|--------|
+| 1–6 | (Copy) chain stripping | Correct name generation across all edge cases | 38/40 initial → 2 fixed |
+| 7–13 | `canDuplicate` by status | COMPLETED/FAILED/CANCELLED = true; others = false | PASS |
+| 14–25 | `initialState` construction | All 12 fields verified from source campaign data | PASS |
+| 26–31 | `resetCampaign()` | All 6 duplicate-specific fields cleared | PASS |
+| 32–37 | Count comparison logic | 6 conditional scenarios verified | PASS |
+| 38–40 | `canContinueLibrary` | 3 scenarios (valid/null/deleted) verified | PASS |
+
+**Bug 1 — Regex quantifier scope:** `/\s*\(Copy\)+\s*$/i` had `+` applying to `\)` only (literal paren), not to the entire `\(Copy\)` token. `"Name (Copy)(Copy)"` stripped only the last `(Copy)`. Fixed to `/(\s*\(Copy\))+\s*$/i`.
+
+**Bug 2 — Leading space on empty basename:** `${baseName} (Copy)` with `baseName=""` produces `" (Copy)"`. Fixed by adding `.trim()` to the template literal result.
+
+---
+
+### Independent Production Audit Findings
+
+| ID | Area | Finding | Severity |
+|----|------|---------|---------|
+| OK | React lifecycle | `useState(lazy initializer)` guarantees `CampaignProvider` only reads `initialState` once; load-gate ensures the prop is populated before first render | PASS |
+| OK | Cache semantics | Global `staleTime: Infinity` makes cached campaign data authoritative — no background refetch overwrites wizard state after mount | PASS |
+| OK | Routing abstraction | `useSearchParam` wraps `useSearch()` from wouter v3; no direct `window.location` access in business logic | PASS |
+| OK | Admin ownership guard | `canDuplicate` checks `viewCampaign.userId === user?.id` — root admin cannot see Duplicate button for other users' campaigns | PASS |
+| OK | Backend ownership preserved | `GET /api/campaigns/:id` line 1575 returns 403 for non-admin cross-user access; defense-in-depth behind the UI guard | PASS |
+| OK | Reset completeness | `resetCampaign()` sets `INITIAL_STATE` which includes `isDuplicate: false`, `listSnapshot: null`, `campaignName: ""`, `template: {name:"",subject:"",body:""}` | PASS |
+| OK | HTML validity | `Button asChild` + `Link` pattern renders as `<a>` — avoids `<button>` inside `<a>` which is invalid HTML | PASS |
+| OK | `(Copy)` chain | Regex `/(\s*\(Copy\))+\s*$/i` with `.trim()` handles all edge cases including empty name | PASS |
+| OK | Count comparison guards | `showCountComparison` requires: `isDuplicate`, same list as original, list exists in library, snapshot count defined, count differs | PASS |
+| OK | Deleted list guard | `canContinueLibrary = !!selectedListId && !!selectedList` — disabled when selected ID resolves to no entry in `contactLists` | PASS |
+| OK | Field boundary | `isDuplicate` and `listSnapshot` have no setters; cleared by `resetCampaign()`; comment in `INITIAL_STATE` prohibits repurposing | PASS |
+| INFO | `viewCampaign.userId` | `userId` is available from `getCampaigns` (all columns selected via `db.select().from(campaigns)`); confirmed from schema | PASS |
+
+No regressions identified. No new backend changes required.
+
+---
+
+### Out of Scope (M7 — remaining capabilities)
+
+| Capability | Status |
+|-----------|--------|
+| CSV Export | Not yet implemented |
+| saveToLibraryAs confirmation | Not yet implemented |
+| Contact Edit UI | Not yet implemented |
+| Empty list error (F-M6-1) | Not yet implemented |

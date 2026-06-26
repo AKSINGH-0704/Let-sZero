@@ -312,6 +312,45 @@ Design Review → Engineering Design Review → Implementation → Behavioral Ve
 
 ---
 
+### 15 · Milestone 7 (Partial): Duplicate Campaign (Audit 066 — 2026-06-27)
+
+Product Semantics Review → Engineering Design Review → Implementation → Behavioral Verification (40/40) → Audit 066.
+
+Zero backend changes. Zero schema migrations. Five files modified, one helper created.
+
+| Component | Description | File(s) | Status |
+|---|---|---|---|
+| `useSearchParam` helper | Routing abstraction: wraps wouter `useSearch()` so URL param reading is never coupled to `window.location` | client/src/lib/useSearchParam.js | **D** |
+| `campaignStatus.js` | `canDuplicate` field added to all 7 status configs | client/src/lib/campaignStatus.js | **D** |
+| `CampaignContext` | `INITIAL_STATE` exported; `isDuplicate: false` + `listSnapshot: null` added; `CampaignProvider` accepts `initialState` prop via lazy-initializer merge | client/src/context/CampaignContext.jsx | **D** |
+| `NewCampaign.jsx` | Deep-link pattern: reads `?duplicate=<id>`, fetches source campaign (cached via global `staleTime: Infinity`), gates render, derives partial `initialState` override | client/src/pages/NewCampaign.jsx | **D** |
+| `FileUpload.jsx` | Auto-tabs to library on mount when `contextListId` set; pre-selects original list; count comparison note (original vs. current count); deleted-list amber warning; `canContinueLibrary` guard | client/src/components/campaign/FileUpload.jsx | **D** |
+| `TemplateBuilder.jsx` | "Pre-filled from the original campaign." note when `isDuplicate` is true | client/src/components/campaign/TemplateBuilder.jsx | **D** |
+| `History.jsx` | Duplicate Campaign button (COMPLETED/FAILED/CANCELLED only; hidden for non-owned in admin view); FAILED status context note (gap fix); `Button asChild` + `Link` avoids invalid HTML nesting; tooltip | client/src/pages/History.jsx | **D** |
+
+**Behavioral verification:** 40/40 assertions PASS (2026-06-27):
+- `(Copy)` chain stripping (6 edge cases including empty name and back-to-back copies) ✓
+- `canDuplicate` by status (7 statuses) ✓
+- `initialState` construction from source campaign (12 fields) ✓
+- `resetCampaign()` clears all duplicate state (6 fields verified) ✓
+- Count comparison conditional logic (6 scenarios) ✓
+- `canContinueLibrary` disabled for deleted/null lists (3 scenarios) ✓
+
+**Bugs found and fixed during verification:**
+- Regex `/\s*\(Copy\)+\s*$/i` had wrong quantifier scope; fixed to `/(\s*\(Copy\))+\s*$/i`
+- Empty basename produced leading space; fixed with `.trim()` on template literal
+
+**Bug found during independent audit:**
+- `Link` containing `Button` inside `TooltipTrigger asChild` produced `<button>` inside `<a>` (invalid HTML); fixed to `Button asChild` + `Link` pattern rendering as `<a>`
+
+**Architecture note:** `?duplicate=` is the platform's first deep-link workflow. Establishes precedent for future pre-initialized wizard flows (templates, sequences, re-engagement).
+
+**Milestone 7 remaining scope:** CSV Export, saveToLibraryAs confirmation, Contact Edit UI, Empty list error.
+
+**Milestone status: D** — Implementation complete; UI browser testing deferred to full M7 delivery
+
+---
+
 ## Launch blockers (ranked)
 
 | # | Blocker | Severity | Current status |
