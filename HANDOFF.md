@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -146,6 +146,13 @@ When Redis is unavailable, campaigns execute via `executeCampaign()` in `routes.
 - Checkpoint frequency reduced from per-email to every 25 emails (96% fewer DB writes, imperceptible UI lag at 14/sec). creditsUsed now flushed on ALL exit paths (cancel, pause, FAILED, COMPLETED), fixing pre-existing creditsUsed=0 bug for non-COMPLETED campaigns.
 - Conditional final status transition: `updateCampaignIfRunning()` uses WHERE status='RUNNING' atomic UPDATE, preventing TOCTOU race between currentState read and COMPLETED write.
 - Orphaned PENDING campaign_emails bulk-updated to FAILED during crash recovery — prevents History from showing permanent "Pending" records for FAILED campaigns.
+
+**Campaign Cancellation UX (Milestone 3B — 2026-06-26):**
+- `client/src/lib/campaignStatus.js` introduced as shared STATUS_CONFIG module. All 7 statuses (RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED, PENDING, DRAFT) with icon, label, tooltip, color, isTerminal, canCancel. Eliminates status config drift between ProgressTracker and History.
+- `CancelCampaignDialog` extracted as dedicated component: confirmation stats (sent so far, credits used), credits-not-refunded notice, autoFocus on safe action, destructive Cancel button, loading state, inline error handling for all API responses.
+- ProgressTracker: cancel button visible for PENDING/RUNNING/PAUSED; CANCELLED polling termination added; CANCELLED stat tile renamed "Not Reached"; post-cancel summary (Ban icon, sent/not-reached/credits); "New Campaign" + "View History" post-cancel CTAs; `aria-live` on status badge; progress bar slate-colored when cancelled.
+- ProgressTracker cancel mutation handles all responses: 200 (toast + close), 200+alreadyCancelled (informational toast), 409 (close dialog, toast with reason, re-fetch state), 403/404/5xx (inline error in dialog with retry for 5xx).
+- History: CANCELLED badge/filter/label all fixed; getStatusConfig replaces local STATUS_CONFIG; detail dialog shows "X contacts not reached" for CANCELLED; dialog description uses human label not raw status string; stale icon imports removed.
 
 **Correctness & Deliverability Consistency (Milestone 1 — Audit 059 — 2026-06-26):**
 - `canStartCampaign` (`storage.js`) credit pre-flight check now uses identical rolling-window SQL as `deductCreditAtomic`: `(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`. Previously used `DATE_TRUNC('month', ...)` calendar-month comparison. At calendar month boundaries, the pre-flight check could report credits as available when the per-email deduction would fail with "Insufficient credits".

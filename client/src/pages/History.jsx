@@ -36,58 +36,15 @@ import {
   Eye,
   Send,
   CheckCircle,
-  XCircle,
-  Clock,
-  Activity,
-  Pause,
   Mail,
   MousePointerClick,
   TrendingUp,
   AlertTriangle,
   Info,
-  FileText,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { Link } from "wouter";
-
-const STATUS_CONFIG = {
-  COMPLETED: {
-    icon: CheckCircle,
-    label: "Completed",
-    tooltip: "All emails were processed and sent.",
-    color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-  },
-  RUNNING: {
-    icon: Activity,
-    label: "In Progress",
-    tooltip: "Campaign is actively sending emails right now.",
-    color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-  },
-  PAUSED: {
-    icon: Pause,
-    label: "Paused",
-    tooltip: "Campaign is on hold. Resume it to continue sending.",
-    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-  },
-  FAILED: {
-    icon: XCircle,
-    label: "Failed",
-    tooltip: "Campaign encountered an error and could not complete.",
-    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-  },
-  PENDING: {
-    icon: Clock,
-    label: "Queued",
-    tooltip: "Campaign is waiting to start. It will begin shortly.",
-    color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
-  },
-  DRAFT: {
-    icon: FileText,
-    label: "Draft",
-    tooltip: "Campaign has not been submitted yet.",
-    color: "bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400"
-  }
-};
+import { getStatusConfig } from "@/lib/campaignStatus";
 
 export default function History() {
   const { isRootAdmin } = useAuth();
@@ -117,7 +74,7 @@ export default function History() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-              <HistoryIcon className="h-6 w-6" />
+              <HistoryIcon className="h-6 w-6" aria-hidden="true" />
               Campaign History
             </h1>
             <p className="text-muted-foreground">
@@ -126,7 +83,7 @@ export default function History() {
           </div>
           <Link href="/app/campaigns/new">
             <Button className="gap-2" data-testid="button-new-campaign">
-              <Send className="h-4 w-4" />
+              <Send className="h-4 w-4" aria-hidden="true" />
               New Campaign
             </Button>
           </Link>
@@ -136,7 +93,7 @@ export default function History() {
           <CardHeader className="pb-4">
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   placeholder="Search campaigns..."
                   value={searchQuery}
@@ -146,17 +103,18 @@ export default function History() {
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-40" data-testid="select-status">
-                  <Filter className="h-4 w-4 mr-2" />
+                <SelectTrigger className="w-full sm:w-44" data-testid="select-status">
+                  <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="COMPLETED">Completed</SelectItem>
-                  <SelectItem value="RUNNING">Running</SelectItem>
+                  <SelectItem value="RUNNING">In Progress</SelectItem>
                   <SelectItem value="PAUSED">Paused</SelectItem>
                   <SelectItem value="FAILED">Failed</SelectItem>
-                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  <SelectItem value="PENDING">Queued</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -198,7 +156,7 @@ export default function History() {
                   </TableHeader>
                   <TableBody>
                     {filteredCampaigns.map((campaign) => {
-                      const config = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.PENDING;
+                      const config = getStatusConfig(campaign.status);
                       const StatusIcon = config.icon;
                       const reachRate = (campaign.totalEmails ?? 0) > 0
                         ? (((campaign.sentEmails + (campaign.skippedEmails ?? 0)) / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
@@ -216,15 +174,15 @@ export default function History() {
                             <div className="font-medium">{campaign.name}</div>
                             {campaign.templateSnapshot?.subject && (
                               <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground truncate max-w-[220px]">
-                                <Mail className="h-3 w-3 shrink-0" />
+                                <Mail className="h-3 w-3 shrink-0" aria-hidden="true" />
                                 <span className="truncate">{campaign.templateSnapshot.subject}</span>
                               </div>
                             )}
                           </TableCell>
                           <TableCell>
                             <Badge className={cn("gap-1", config.color)} title={config.tooltip}>
-                              <StatusIcon className="h-3 w-3" />
-                              {config.label || campaign.status}
+                              <StatusIcon className="h-3 w-3" aria-hidden="true" />
+                              {config.label}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right text-green-600 font-medium">
@@ -242,7 +200,7 @@ export default function History() {
                                   ? "text-emerald-600 dark:text-emerald-400"
                                   : "text-amber-600 dark:text-amber-400"
                               }`}>
-                                <Send className="h-3 w-3" />
+                                <Send className="h-3 w-3" aria-hidden="true" />
                                 {reachRate}%
                               </span>
                             ) : (
@@ -252,7 +210,7 @@ export default function History() {
                           <TableCell className="text-right">
                             {openRate !== null ? (
                               <span className="font-medium text-violet-600 dark:text-violet-400 flex items-center justify-end gap-1">
-                                <TrendingUp className="h-3 w-3" />
+                                <TrendingUp className="h-3 w-3" aria-hidden="true" />
                                 {openRate}%
                               </span>
                             ) : (
@@ -262,7 +220,7 @@ export default function History() {
                           <TableCell className="text-right">
                             {clickRate !== null ? (
                               <span className="font-medium text-blue-600 dark:text-blue-400 flex items-center justify-end gap-1">
-                                <MousePointerClick className="h-3 w-3" />
+                                <MousePointerClick className="h-3 w-3" aria-hidden="true" />
                                 {clickRate}%
                               </span>
                             ) : (
@@ -282,10 +240,11 @@ export default function History() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                aria-label={`View details for ${campaign.name}`}
                                 data-testid={`button-view-${campaign.id}`}
                                 onClick={() => setViewCampaign(campaign)}
                               >
-                                <Eye className="h-4 w-4" />
+                                <Eye className="h-4 w-4" aria-hidden="true" />
                               </Button>
                             </div>
                           </TableCell>
@@ -301,11 +260,11 @@ export default function History() {
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-24 w-24 rounded-full bg-primary/5" />
                   </div>
-                  <HistoryIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
+                  <HistoryIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" aria-hidden="true" />
                 </div>
                 <p className="text-lg font-medium mb-2">
-                  {searchQuery || statusFilter !== "all" 
-                    ? "No matching campaigns" 
+                  {searchQuery || statusFilter !== "all"
+                    ? "No matching campaigns"
                     : "No campaigns yet"}
                 </p>
                 <p className="text-muted-foreground mb-6 max-w-md mx-auto">
@@ -316,7 +275,7 @@ export default function History() {
                 {!(searchQuery || statusFilter !== "all") && (
                   <Link href="/app/campaigns/new">
                     <Button data-testid="button-create-first-campaign">
-                      <Send className="mr-2 h-4 w-4" />
+                      <Send className="mr-2 h-4 w-4" aria-hidden="true" />
                       Create Your First Campaign
                     </Button>
                   </Link>
@@ -326,226 +285,258 @@ export default function History() {
           </CardContent>
         </Card>
       </div>
+
       {/* Campaign detail dialog */}
       <Dialog open={!!viewCampaign} onOpenChange={(open) => !open && setViewCampaign(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewCampaign?.name}</DialogTitle>
             <DialogDescription>
-              {formatDate(viewCampaign?.createdAt)} &middot; {viewCampaign?.status}
+              {formatDate(viewCampaign?.createdAt)} &middot;{" "}
+              {getStatusConfig(viewCampaign?.status).label}
             </DialogDescription>
           </DialogHeader>
 
-          {viewCampaign && (
-            <div className="space-y-4 pt-2">
-              {/* Stats row */}
-              <div className="grid grid-cols-4 gap-3 text-center">
-                <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold text-green-600">{formatNumber(viewCampaign.sentEmails)}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Sent</div>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold text-red-600">{formatNumber(viewCampaign.failedEmails)}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Failed</div>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatNumber(viewCampaign.skippedEmails ?? 0)}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Skipped</div>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <div className="text-2xl font-semibold">{formatNumber(viewCampaign.totalEmails ?? 0)}</div>
-                  <div className="text-xs text-muted-foreground mt-1">Total</div>
-                </div>
-              </div>
+          {viewCampaign && (() => {
+            const notReached = (viewCampaign.totalEmails ?? 0)
+              - (viewCampaign.sentEmails ?? 0)
+              - (viewCampaign.failedEmails ?? 0)
+              - (viewCampaign.skippedEmails ?? 0);
 
-              {/* Credits consumed */}
-              {(viewCampaign.creditsUsed ?? 0) > 0 && (
-                <div className="flex items-center justify-between text-sm px-1">
-                  <span className="text-muted-foreground">Credits consumed</span>
-                  <span className="font-medium">{formatNumber(viewCampaign.creditsUsed)}</span>
-                </div>
-              )}
-
-              {/* Incomplete — contacts the loop never reached (credit exhaustion / crash) */}
-              {viewCampaign.status === "COMPLETED" &&
-                (viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0) > 0 && (
-                <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                    Campaign did not complete all contacts —{" "}
-                    {formatNumber((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0))}{" "}
-                    {((viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0)) === 1 ? "contact was" : "contacts were"} not reached.
-                    This may be due to insufficient credits or an early stop.
-                    Top up credits and retry to reach the remaining contacts.
-                  </p>
-                </div>
-              )}
-
-              {/* Suppression skips — all contacts processed, some skipped (expected, healthy behaviour) */}
-              {viewCampaign.status === "COMPLETED" &&
-                (viewCampaign.skippedEmails ?? 0) > 0 &&
-                (viewCampaign.totalEmails ?? 0) - (viewCampaign.sentEmails ?? 0) - (viewCampaign.failedEmails ?? 0) - (viewCampaign.skippedEmails ?? 0) === 0 && (
-                <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-blue-800 dark:text-blue-300">
-                    {formatNumber(viewCampaign.skippedEmails)} contact{viewCampaign.skippedEmails === 1 ? " was" : "s were"} skipped — already in your suppression list.{" "}
-                    {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email.
-                  </p>
-                </div>
-              )}
-
-              {/* Engagement metrics — populated by SNS events after send */}
-              {viewCampaign.sentEmails > 0 && (
+            return (
+              <div className="space-y-4 pt-2">
+                {/* Stats row */}
                 <div className="grid grid-cols-4 gap-3 text-center">
                   <div className="rounded-lg border p-3">
-                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                      <Send className="h-4 w-4 text-blue-500" />
-                      <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                        {(viewCampaign.totalEmails ?? 0) > 0
-                          ? (((viewCampaign.sentEmails + (viewCampaign.skippedEmails ?? 0)) / (viewCampaign.totalEmails ?? 1)) * 100).toFixed(1)
-                          : "0.0"}%
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Reach Rate &middot; {formatNumber(viewCampaign.totalEmails ?? 0)} total
-                    </div>
+                    <div className="text-2xl font-semibold text-green-600">{formatNumber(viewCampaign.sentEmails)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Sent</div>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                      <CheckCircle className="h-4 w-4 text-emerald-500" />
-                      <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-                        {((viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Delivery Rate &middot; {formatNumber(viewCampaign.deliveredEmails ?? 0)} delivered
-                    </div>
+                    <div className="text-2xl font-semibold text-red-600">{formatNumber(viewCampaign.failedEmails)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Failed</div>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                      <TrendingUp className="h-4 w-4 text-violet-500" />
-                      <div className="text-2xl font-semibold text-violet-600 dark:text-violet-400">
-                        {((viewCampaign.openedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Open Rate &middot; {formatNumber(viewCampaign.openedEmails)} opens
-                    </div>
+                    <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatNumber(viewCampaign.skippedEmails ?? 0)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Skipped</div>
                   </div>
                   <div className="rounded-lg border p-3">
-                    <div className="flex items-center justify-center gap-1.5 mb-0.5">
-                      <MousePointerClick className="h-4 w-4 text-blue-500" />
-                      <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                        {((viewCampaign.clickedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Click Rate &middot; {formatNumber(viewCampaign.clickedEmails)} clicks
-                    </div>
+                    <div className="text-2xl font-semibold">{formatNumber(viewCampaign.totalEmails ?? 0)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">Total</div>
                   </div>
                 </div>
-              )}
 
-              {/* Per-contact email records */}
-              {detailLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-24 w-full" />
-                </div>
-              ) : campaignDetail?.campaignEmails?.length > 0 ? (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recipients</p>
-                  <div className="rounded-md border overflow-auto max-h-48">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Email</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                          <TableHead className="text-xs">Suppression</TableHead>
-                          <TableHead className="text-xs">Opened At</TableHead>
-                          <TableHead className="text-xs">Clicked At</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {campaignDetail.campaignEmails.map((r) => (
-                          <TableRow key={r.id}>
-                            <TableCell className="text-xs font-mono truncate max-w-[160px]">{r.recipientEmail}</TableCell>
-                            <TableCell className="text-xs">{r.status}</TableCell>
-                            <TableCell className="text-xs">
-                              {r.status === "SUPPRESSED" ? (
-                                r.suppressionDetail ? (
-                                  <div className="flex flex-col gap-0.5">
-                                    <div className="flex items-center gap-1">
-                                      <Badge variant="outline" className="text-[10px] h-4 px-1 capitalize shrink-0">
-                                        {r.suppressionDetail.source}
-                                      </Badge>
-                                      {r.suppressionDetail.scope === "global" && (
-                                        <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0 text-muted-foreground">
-                                          global
+                {/* Credits consumed */}
+                {(viewCampaign.creditsUsed ?? 0) > 0 && (
+                  <div className="flex items-center justify-between text-sm px-1">
+                    <span className="text-muted-foreground">Credits consumed</span>
+                    <span className="font-medium">{formatNumber(viewCampaign.creditsUsed)}</span>
+                  </div>
+                )}
+
+                {/* CANCELLED — contacts not reached */}
+                {viewCampaign.status === "CANCELLED" && notReached > 0 && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800">
+                    <AlertTriangle className="h-4 w-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Campaign was cancelled —{" "}
+                      {formatNumber(notReached)}{" "}
+                      {notReached === 1 ? "contact was" : "contacts were"} not reached.
+                      {(viewCampaign.sentEmails ?? 0) === 0 && " No emails were sent and no credits were used."}
+                    </p>
+                  </div>
+                )}
+
+                {/* CANCELLED — sent nothing, zero list (edge: totalEmails=0) */}
+                {viewCampaign.status === "CANCELLED" && (viewCampaign.sentEmails ?? 0) === 0 && notReached === 0 && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800">
+                    <Info className="h-4 w-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Campaign was cancelled before any emails were sent. No credits were used.
+                    </p>
+                  </div>
+                )}
+
+                {/* COMPLETED — incomplete due to credit exhaustion or early stop */}
+                {viewCampaign.status === "COMPLETED" && notReached > 0 && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                      Campaign did not complete all contacts —{" "}
+                      {formatNumber(notReached)}{" "}
+                      {notReached === 1 ? "contact was" : "contacts were"} not reached.
+                      This may be due to insufficient credits or an early stop.
+                      Top up credits and retry to reach the remaining contacts.
+                    </p>
+                  </div>
+                )}
+
+                {/* COMPLETED — suppression skips (healthy, all contacts processed) */}
+                {viewCampaign.status === "COMPLETED" &&
+                  (viewCampaign.skippedEmails ?? 0) > 0 &&
+                  notReached === 0 && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                    <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-sm text-blue-800 dark:text-blue-300">
+                      {formatNumber(viewCampaign.skippedEmails)}{" "}
+                      {viewCampaign.skippedEmails === 1 ? "contact was" : "contacts were"} skipped — already in your suppression list.{" "}
+                      {formatNumber(viewCampaign.sentEmails)} of {formatNumber(viewCampaign.totalEmails)} contacts received this email.
+                    </p>
+                  </div>
+                )}
+
+                {/* Engagement metrics — populated by SNS events after send */}
+                {viewCampaign.sentEmails > 0 && (
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                        <Send className="h-4 w-4 text-blue-500" aria-hidden="true" />
+                        <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+                          {(viewCampaign.totalEmails ?? 0) > 0
+                            ? (((viewCampaign.sentEmails + (viewCampaign.skippedEmails ?? 0)) / (viewCampaign.totalEmails ?? 1)) * 100).toFixed(1)
+                            : "0.0"}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Reach Rate &middot; {formatNumber(viewCampaign.totalEmails ?? 0)} total
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                        <CheckCircle className="h-4 w-4 text-emerald-500" aria-hidden="true" />
+                        <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
+                          {((viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Delivery Rate &middot; {formatNumber(viewCampaign.deliveredEmails ?? 0)} delivered
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                        <TrendingUp className="h-4 w-4 text-violet-500" aria-hidden="true" />
+                        <div className="text-2xl font-semibold text-violet-600 dark:text-violet-400">
+                          {((viewCampaign.openedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Open Rate &middot; {formatNumber(viewCampaign.openedEmails)} opens
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                        <MousePointerClick className="h-4 w-4 text-blue-500" aria-hidden="true" />
+                        <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+                          {((viewCampaign.clickedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Click Rate &middot; {formatNumber(viewCampaign.clickedEmails)} clicks
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-contact email records */}
+                {detailLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-24 w-full" />
+                  </div>
+                ) : campaignDetail?.campaignEmails?.length > 0 ? (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recipients</p>
+                    <div className="rounded-md border overflow-auto max-h-48">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Email</TableHead>
+                            <TableHead className="text-xs">Status</TableHead>
+                            <TableHead className="text-xs">Suppression</TableHead>
+                            <TableHead className="text-xs">Opened At</TableHead>
+                            <TableHead className="text-xs">Clicked At</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {campaignDetail.campaignEmails.map((r) => (
+                            <TableRow key={r.id}>
+                              <TableCell className="text-xs font-mono truncate max-w-[160px]">{r.recipientEmail}</TableCell>
+                              <TableCell className="text-xs">{r.status}</TableCell>
+                              <TableCell className="text-xs">
+                                {r.status === "SUPPRESSED" ? (
+                                  r.suppressionDetail ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <div className="flex items-center gap-1">
+                                        <Badge variant="outline" className="text-[10px] h-4 px-1 capitalize shrink-0">
+                                          {r.suppressionDetail.source}
                                         </Badge>
+                                        {r.suppressionDetail.scope === "global" && (
+                                          <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0 text-muted-foreground">
+                                            global
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <span
+                                        className="text-muted-foreground truncate max-w-[160px]"
+                                        title={r.suppressionDetail.reason || undefined}
+                                      >
+                                        {r.suppressionDetail.reason || "—"}
+                                      </span>
+                                      {r.suppressionDetail.suppressedAt && (
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {formatDate(r.suppressionDetail.suppressedAt)}
+                                        </span>
                                       )}
                                     </div>
-                                    <span
-                                      className="text-muted-foreground truncate max-w-[160px]"
-                                      title={r.suppressionDetail.reason || undefined}
-                                    >
-                                      {r.suppressionDetail.reason || "—"}
-                                    </span>
-                                    {r.suppressionDetail.suppressedAt && (
-                                      <span className="text-[10px] text-muted-foreground">
-                                        {formatDate(r.suppressionDetail.suppressedAt)}
-                                      </span>
-                                    )}
-                                  </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">Unknown suppression source</span>
+                                  )
                                 ) : (
-                                  <span className="text-muted-foreground">Unknown suppression source</span>
-                                )
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {r.openedAt ? formatDate(r.openedAt) : "—"}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {r.clickedAt ? formatDate(r.clickedAt) : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {r.openedAt ? formatDate(r.openedAt) : "—"}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {r.clickedAt ? formatDate(r.clickedAt) : "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {/* Template details */}
-              {viewCampaign.templateSnapshot ? (
-                <div className="space-y-3">
-                  {viewCampaign.templateSnapshot.name && (
+                {/* Template details */}
+                {viewCampaign.templateSnapshot ? (
+                  <div className="space-y-3">
+                    {viewCampaign.templateSnapshot.name && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Template</p>
+                        <p className="text-sm">{viewCampaign.templateSnapshot.name}</p>
+                      </div>
+                    )}
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Template</p>
-                      <p className="text-sm">{viewCampaign.templateSnapshot.name}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Subject</p>
+                      <p className="text-sm font-medium">{viewCampaign.templateSnapshot.subject || "—"}</p>
                     </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Subject</p>
-                    <p className="text-sm font-medium">{viewCampaign.templateSnapshot.subject || "—"}</p>
+                    {viewCampaign.templateSnapshot.body && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Body Preview</p>
+                        <div
+                          className="rounded-lg border bg-white dark:bg-zinc-950 p-4 text-sm overflow-auto max-h-64 prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: viewCampaign.templateSnapshot.body }}
+                        />
+                      </div>
+                    )}
                   </div>
-                  {viewCampaign.templateSnapshot.body && (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Body Preview</p>
-                      <div
-                        className="rounded-lg border bg-white dark:bg-zinc-950 p-4 text-sm overflow-auto max-h-64 prose prose-sm dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{ __html: viewCampaign.templateSnapshot.body }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">Template snapshot not available for this campaign.</p>
-              )}
-            </div>
-          )}
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">Template snapshot not available for this campaign.</p>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </AppLayout>

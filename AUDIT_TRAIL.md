@@ -5463,3 +5463,115 @@ startedAt is written only on first execution. The spread produces an empty objec
 | F-M3A-4 | Reliability | Inline path campaigns interrupted by SIGTERM (Redis unavailable) result in permanent FAILED. BullMQ is a hard dependency for correct campaign lifecycle. Add startup warning when Redis is unavailable. | Medium | M4 |
 | F-M3A-5 | UX | CANCELLED campaigns show 0 for creditsUsed if cancelled before i=25 (first checkpoint never fired). The cancel flush writes creditsUsed=sentCount, but sentCount could be 0 for very early cancellation. This is correct â€” 0 credits were consumed. No fix needed. | N/A | N/A â€” not a bug |
 
+
+---
+
+## Audit 062 — Milestone 3B: Campaign Cancellation UX (2026-06-26)
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Milestone 3B — Campaign Cancellation UX. Frontend parity for the M3A cancellation backend.
+**Preceding context:** M3A (Audit 061) delivered the complete cancellation backend. M3B surfaces it in the UI.
+**Commit at time of audit:** `189aa2c` (Milestone 3A)
+
+---
+
+### Design Review Summary
+
+Full Product & UX Review conducted across 10 perspectives before implementation. Key decisions approved by product owner:
+
+- Shared `campaignStatus.js` module as single source of truth for STATUS_CONFIG — eliminates status drift across ProgressTracker and History.
+- `CancelCampaignDialog` extracted as a focused, dedicated component — ProgressTracker remains maintainable.
+- Complete API response coverage: 200 (success), 200+alreadyCancelled (idempotent), 409 (terminal state conflict), 403 (forbidden), 404 (not found), 5xx/network (retryable).
+- Accessibility: `aria-live` on status badge, `autoFocus` on safe action, `role="alert"` on errors, `aria-label` on action buttons.
+- 4th stat tile semantics: "Pending" (RUNNING) → "Not Reached" (CANCELLED) → "Skipped" (COMPLETED).
+- CANCELLED progress bar: slate-colored indicator, communicating stopped-not-completed.
+
+---
+
+### Change 1 — Shared Campaign Status Configuration (`client/src/lib/campaignStatus.js`)
+
+**Problem:** `STATUS_CONFIG` duplicated in `ProgressTracker.jsx` and `History.jsx` with diverging labels (RUNNING: "Running" vs "In Progress"; PENDING: "Pending" vs "Queued"). Neither had a `CANCELLED` entry.
+
+**Fix:** New module with `CAMPAIGN_STATUS_CONFIG` (7 statuses: RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED, PENDING, DRAFT) and `getStatusConfig(status)` helper with PENDING fallback. Each entry has: `icon`, `label`, `tooltip`, `color`, `isTerminal`, `canCancel`. Local STATUS_CONFIG deleted from both consuming files.
+
+**CANCELLED entry:** icon=Ban, label="Cancelled", color=slate (visually distinct from FAILED/red and PENDING/gray), isTerminal=true, canCancel=false.
+
+---
+
+### Change 2 — CancelCampaignDialog Component (`client/src/components/campaign/CancelCampaignDialog.jsx`)
+
+**Problem:** No cancel dialog existed.
+
+**Fix:** New dedicated component. Renders: AlertTriangle header, campaign name, stats grid (emails sent so far / credits used), credits-not-refunded notice, inline error panel (role="alert"), "Keep Sending" (autoFocus — safe default) + "Cancel Campaign" (variant="destructive"). Loading state: spinner + "Cancelling..." Both buttons disabled during API call. onOpenChange blocked during pending to prevent accidental close. Non-retryable errors (403/404) disable Cancel button; 5xx/network errors allow retry.
+
+---
+
+### Change 3 — ProgressTracker Cancellation Support (`client/src/components/campaign/ProgressTracker.jsx`)
+
+**Seven defects fixed:**
+1. CANCELLED fell through to PENDING (wrong badge, wrong icon) — fixed via `getStatusConfig`
+2. Infinite polling on CANCELLED — `refetchInterval` now includes `status === "CANCELLED"` as stop condition
+3. No cancel button — added to card header (red-tinted outline), visible when `statusConfig.canCancel && !!campaignId`
+4. No confirmation dialog — `CancelCampaignDialog` wired to `useMutation`
+5. 4th stat tile showed "Pending" for CANCELLED — now "Not Reached" (slate) for CANCELLED, "Skipped" (amber) for COMPLETED, "Pending" (blue) for RUNNING
+6. No post-cancel summary — slate panel with Ban icon, sent count, not-reached count, credits consumed
+7. No post-cancel CTAs — "New Campaign" + "View History" (distinct from completion's "Go to Dashboard" + "View Campaign History")
+
+**Full API response handling:**
+- 200: close dialog, invalidate queries, success toast
+- 200+alreadyCancelled: close dialog, invalidate queries, informational toast
+- 409: close dialog, invalidate campaign query (polling updates UI), destructive toast with reason
+- 403/404/5xx: setCancelError(err), shown inside dialog; mutation.reset() on close
+
+**Accessibility:** `aria-live="polite" aria-atomic="true"` on status badge for screen reader status announcements. Progress bar indicator color: slate when cancelled via `[&>div]:bg-slate-400`.
+
+---
+
+### Change 4 — History Page CANCELLED Support (`client/src/pages/History.jsx`)
+
+**Five defects fixed:**
+1. CANCELLED rendered as "Queued" (Clock icon, wrong tooltip) — fixed via `getStatusConfig`
+2. No "Cancelled" filter option — `<SelectItem value="CANCELLED">Cancelled</SelectItem>` added; RUNNING/PENDING items now show "In Progress"/"Queued" matching badge labels
+3. DialogDescription showed raw "CANCELLED" string — now `getStatusConfig(viewCampaign?.status).label`
+4. No contacts-not-reached panel for CANCELLED — slate warning box with count; "No emails were sent and no credits were used" appended when sentEmails=0
+5. Stale icon imports removed: XCircle, Clock, Activity, Pause, FileText (all accessed via config.icon now); CheckCircle retained (used directly in engagement metrics)
+
+Eye button gets `aria-label` for screen reader accessibility.
+
+---
+
+### Verification Results
+
+| Suite | Type | Result |
+|---|---|---|
+| `tmp/verify-milestone3b.mjs` | 6 suites, static assertions | 50/50 passed |
+| Build | Client + server | Clean — 0 errors |
+
+---
+
+### Classification Summary
+
+| ID | Finding | Severity | Status |
+|---|---|---|---|
+| M3B-P0-1 | No cancel button — wrong-list campaign cannot be stopped by user | CRITICAL | Fixed |
+| M3B-P0-2 | CANCELLED renders as "Queued" in both ProgressTracker and History | CRITICAL | Fixed |
+| M3B-P0-3 | Infinite polling on CANCELLED — tracker never stops after cancellation | HIGH | Fixed |
+| M3B-P1-1 | No confirmation dialog — destructive action with no intent verification | HIGH | Fixed |
+| M3B-P1-2 | 4th stat tile shows "Pending" for CANCELLED — misleading | HIGH | Fixed |
+| M3B-P1-3 | No post-cancel state or navigation CTAs | HIGH | Fixed |
+| M3B-P1-4 | No CANCELLED filter option in History | MEDIUM | Fixed |
+| M3B-P1-5 | History dialog description shows raw status string "CANCELLED" | LOW | Fixed |
+| M3B-P1-6 | Stale icon imports in History (XCircle, Clock, Activity, Pause, FileText) | LOW | Fixed |
+| M3B-P1-7 | STATUS_CONFIG duplicated with diverging labels across ProgressTracker + History | MEDIUM | Fixed (architectural) |
+
+---
+
+### Future Engineering Findings (recorded, not implemented)
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M3B-1 | Housekeeping | `Play` and `Loader2` imported in ProgressTracker but unused in that file. Pre-existing for `Play`; `Loader2` used in CancelCampaignDialog. No runtime impact. | Low | Housekeeping pass |
+| F-M3B-2 | UX | Cancel action in History table row — power users want inline cancel from the list without opening the tracker. Requires per-row cancel mutation + dialog. | Low | M4 |
+| F-M3B-3 | UX | "Export remaining contacts" CTA after CANCELLED — contacts not reached cannot be re-targeted from the UI. Requires contact-level state tracking beyond current schema. | Medium | M4+ |
+| F-M3B-4 | UX | Admin cancel UI — cancel endpoint supports req.isRootAdmin but History admin view has no cancel button for other users' campaigns. | Low | M4 |

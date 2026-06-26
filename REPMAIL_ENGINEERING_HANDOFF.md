@@ -1180,6 +1180,20 @@
   - [DONE] Orphaned PENDING campaign_emails bulk-updated to FAILED during startup crash recovery — prevents permanent "Pending" records in History for FAILED campaigns.
   - [DONE] Inline path SIGTERM behavior documented in HANDOFF.md — campaigns running inline (Redis unavailable) cannot survive Railway redeployment; result in FAILED after restart.
 
+  Milestone 3B additions (Audit 062 — 2026-06-26):
+  - [DONE] client/src/lib/campaignStatus.js (new) — shared STATUS_CONFIG module. All 7 statuses with icon, label, tooltip, color, isTerminal, canCancel. Single source of truth; getStatusConfig(status) with PENDING fallback. ProgressTracker and History local STATUS_CONFIG deleted.
+  - [DONE] client/src/components/campaign/CancelCampaignDialog.jsx (new) — confirmation dialog for campaign cancel. Shows sent-so-far, credits-used, credits-not-refunded notice. autoFocus on safe action (Keep Sending). Full error handling: 403/404 non-retryable (button disabled), 5xx retryable (button enabled), role="alert" on error panel.
+  - [DONE] ProgressTracker: CANCELLED polling stop — status === "CANCELLED" added to refetchInterval stop condition; no more infinite polling on cancelled campaigns.
+  - [DONE] ProgressTracker: cancel button — visible when statusConfig.canCancel && !!campaignId (PENDING/RUNNING/PAUSED states). Red-tinted outline button.
+  - [DONE] ProgressTracker: useMutation for cancel — POST /api/campaigns/:id/cancel. Handles: 200 (close+toast), 200+alreadyCancelled (informational toast), 409 (close+destructive toast+invalidate), 403/404/5xx (inline dialog error).
+  - [DONE] ProgressTracker: CANCELLED state UI — "Campaign Cancelled" heading, Ban icon, 4th tile "Not Reached" (slate), post-cancel summary (sent/not-reached/credits), "New Campaign" + "View History" CTAs.
+  - [DONE] ProgressTracker: accessibility — aria-live="polite" aria-atomic="true" on status badge; progress bar slate-colored via [&>div]:bg-slate-400 when cancelled.
+  - [DONE] History: getStatusConfig replaces local STATUS_CONFIG — CANCELLED badge (Ban icon, "Cancelled", slate color) renders correctly.
+  - [DONE] History: CANCELLED filter option in Select dropdown; RUNNING/PENDING items display "In Progress"/"Queued" consistent with badge labels.
+  - [DONE] History: detail dialog shows "contacts not reached" panel for CANCELLED campaigns (slate box, count, zero-send edge case handled).
+  - [DONE] History: dialog description uses getStatusConfig(status).label (human label, not raw machine string).
+  - [DONE] History: stale icon imports removed — XCircle, Clock, Activity, Pause, FileText were only used via STATUS_CONFIG lookup; now accessed through config.icon.
+
   Priority 4 — Infrastructure / Operations
 
   8. [DONE — routes.js:2649] GET /api/admin/queue/status — Implemented.

@@ -1445,3 +1445,28 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 | Repository audit findings | **COMPLETE** | Full cross-reference of code vs. documentation; no undocumented gaps found; no documented-but-unimplemented features claimed |
 
 **Milestone status: COMPLETE — Documentation Deliverables (Audit 061).**
+
+---
+
+### 14 · Milestone 3B — Campaign Cancellation UX (2026-06-26)
+
+**Audit:** 062 — see AUDIT_TRAIL.md
+
+| Deliverable | Status | Evidence |
+|-------------|--------|----------|
+| `client/src/lib/campaignStatus.js` — shared STATUS_CONFIG (7 statuses) | **COMPLETE** | getStatusConfig(status) with PENDING fallback; isTerminal + canCancel flags |
+| `CancelCampaignDialog` component | **COMPLETE** | Confirmation stats, credits notice, autoFocus safe action, all API error states |
+| ProgressTracker: CANCELLED polling stop | **COMPLETE** | `status === "CANCELLED"` added to refetchInterval stop condition |
+| ProgressTracker: cancel button (PENDING/RUNNING/PAUSED) | **COMPLETE** | Visible when `statusConfig.canCancel && !!campaignId` |
+| ProgressTracker: 4th tile "Not Reached" for CANCELLED | **COMPLETE** | Distinct from "Pending" (RUNNING) and "Skipped" (COMPLETED) |
+| ProgressTracker: post-cancel summary + CTAs | **COMPLETE** | Ban icon, sent/not-reached/credits, "New Campaign" + "View History" |
+| ProgressTracker: full API response coverage (200/alreadyCancelled/409/403/404/5xx) | **COMPLETE** | Per-response handling with toast, dialog error, or silent close |
+| ProgressTracker: accessibility (aria-live, aria-hidden, progress bar slate) | **COMPLETE** | aria-live="polite" aria-atomic="true" on status badge |
+| History: CANCELLED badge/filter/label | **COMPLETE** | getStatusConfig; filter dropdown; "Cancelled" label in table + dialog |
+| History: contacts-not-reached panel for CANCELLED | **COMPLETE** | Slate warning box with count; zero-send edge case covered |
+| History: dialog description uses human label | **COMPLETE** | getStatusConfig(status).label replaces raw status string |
+| Stale icon imports removed from History | **COMPLETE** | XCircle, Clock, Activity, Pause, FileText removed |
+| Behavioral verification (50 assertions) | **COMPLETE** | `tmp/verify-milestone3b.mjs` — 50/50 passed |
+| Build clean | **COMPLETE** | 0 errors |
+
+**Milestone status: COMPLETE — Milestone 3B (Campaign Cancellation UX — Audit 062).**
