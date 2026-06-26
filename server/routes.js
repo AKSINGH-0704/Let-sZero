@@ -1264,6 +1264,8 @@ export async function registerRoutes(httpServer, app) {
   app.delete("/api/contact-lists/:listId/contacts/:contactId", authMiddleware, async (req, res) => {
     try {
       const { listId, contactId } = req.params;
+      const list = await storage.getContactList(listId, req.user.id);
+      if (!list) return res.status(404).json({ message: "List not found" });
       const removed = await storage.removeContactFromList(listId, contactId, req.user.id);
       if (!removed) return res.status(404).json({ message: "Contact not found in list" });
       res.json({ message: "Contact removed from list" });
@@ -1278,6 +1280,8 @@ export async function registerRoutes(httpServer, app) {
       if (!Array.isArray(contactIds) || contactIds.length === 0) {
         return res.status(400).json({ message: "contactIds array is required" });
       }
+      const list = await storage.getContactList(req.params.id, req.user.id);
+      if (!list) return res.status(404).json({ message: "List not found" });
       const count = await storage.bulkRemoveContactsFromList(req.params.id, contactIds, req.user.id);
       res.json({ removed: count });
     } catch (error) {

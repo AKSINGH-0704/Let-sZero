@@ -839,6 +839,8 @@ export const memoryStorage = {
   },
 
   async removeContactFromList(listId, contactId, userId) {
+    const list = Array.from(store.contactLists.values()).find(l => l.id === listId && l.userId === userId);
+    if (!list) return null;
     const entry = Array.from(store.contactListMembers.entries()).find(([, m]) => m.listId === listId && m.contactId === contactId);
     if (!entry) return null;
     store.contactListMembers.delete(entry[0]);
@@ -848,6 +850,8 @@ export const memoryStorage = {
 
   async bulkRemoveContactsFromList(listId, contactIds, userId) {
     if (!contactIds || contactIds.length === 0) return 0;
+    const list = Array.from(store.contactLists.values()).find(l => l.id === listId && l.userId === userId);
+    if (!list) return 0;
     const idSet = new Set(contactIds);
     for (const [mid, m] of store.contactListMembers.entries()) {
       if (m.listId === listId && idSet.has(m.contactId)) store.contactListMembers.delete(mid);
