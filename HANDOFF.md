@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -133,6 +133,19 @@ No database, Redis, or AWS credentials needed. An in-memory storage shim handles
 - Free plan credit renewal changed from calendar-month (`DATE_TRUNC`) to rolling 30-day window from signup date — `COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month'` in SQL; equivalent JS in memoryStorage; `freeResetDate` now shows correct anniversary date
 - WelcomeModal: "FREE Trial Credits Added" → "Free Credits Added"; "Maybe Later" → "Skip for now" (old text implied modal would reappear)
 - Dashboard: "Free Trial" → "Free Plan" in plan badge, banner, and fallback (accurate — free plan is permanent with `FREE_PLAN_ENABLED=true`, not time-limited)
+
+**Campaign Reliability Core (Milestone 3A — 2026-06-26):**
+
+**INLINE EXECUTION PATH — SIGTERM BEHAVIOUR (known limitation, documented here for operators):**
+When Redis is unavailable, campaigns execute via `executeCampaign()` in `routes.js` (inline fallback). This path runs as a fire-and-forget promise. On Railway redeploy (SIGTERM), `worker.close()` is not called (worker is null), and `process.exit(0)` fires immediately. The inline promise is abandoned mid-loop. The campaign stays RUNNING in the DB. On next boot, `recoverStaleCampaigns()` finds no live BullMQ job and marks it FAILED. **There is no automatic recovery for inline-path campaigns interrupted by SIGTERM.** Consequence: if Redis is down during a redeployment while a campaign is running, the campaign will FAIL and contacts not yet reached are permanently skipped. Mitigation: ensure Redis is configured in production (`REDIS_URL` set). The BullMQ path correctly survives SIGTERM via BullMQ stall detection and per-contact idempotency on retry.
+
+- CANCELLED status added to campaign lifecycle — terminal, not resumable. POST /api/campaigns/:id/cancel endpoint cancels PENDING/RUNNING/PAUSED campaigns atomically.
+- Global pause resume bug fixed: sender-health-paused campaigns (sendPaused=true) are no longer re-queued when global pause lifts, preventing PAUSED→FAILED flips.
+- Sender auto-pause mid-loop now sets status=FAILED (not PAUSED) — PAUSED implies resumable by global action; sender health pause is not resumable without admin action on the sender.
+- startedAt no longer overwritten on BullMQ retry — delivery health window anchors from original campaign start, not the retry timestamp.
+- Checkpoint frequency reduced from per-email to every 25 emails (96% fewer DB writes, imperceptible UI lag at 14/sec). creditsUsed now flushed on ALL exit paths (cancel, pause, FAILED, COMPLETED), fixing pre-existing creditsUsed=0 bug for non-COMPLETED campaigns.
+- Conditional final status transition: `updateCampaignIfRunning()` uses WHERE status='RUNNING' atomic UPDATE, preventing TOCTOU race between currentState read and COMPLETED write.
+- Orphaned PENDING campaign_emails bulk-updated to FAILED during crash recovery — prevents History from showing permanent "Pending" records for FAILED campaigns.
 
 **Correctness & Deliverability Consistency (Milestone 1 — Audit 059 — 2026-06-26):**
 - `canStartCampaign` (`storage.js`) credit pre-flight check now uses identical rolling-window SQL as `deductCreditAtomic`: `(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`. Previously used `DATE_TRUNC('month', ...)` calendar-month comparison. At calendar month boundaries, the pre-flight check could report credits as available when the per-email deduction would fail with "Insufficient credits".

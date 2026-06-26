@@ -13,7 +13,7 @@ import { Worker } from "bullmq";
 import { getRedisConnection } from "./queue.js";
 import { storage } from "./storage.js";
 import { sendCampaignEmail } from "./email.js";
-import { AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, USER_ROLES } from "../shared/schema.js";
+import { AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, USER_ROLES } from "../shared/schema.js";
 import { getRateLimiter } from "./rateLimiter.js";
 
 const SEND_RATE_MS = parseInt(process.env.SES_SEND_RATE_MS || "0", 10);
@@ -149,9 +149,9 @@ async function processCampaign(campaignId, userId, job) {
   const campaign = await storage.getCampaign(campaignId);
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
 
-  // Idempotency guard — skip if already finished
-  if (campaign.status === "COMPLETED") {
-    console.log(`[WORKER] Campaign ${campaignId} already completed — skipping`);
+  // Idempotency guard — skip if already in a terminal state
+  if (campaign.status === CAMPAIGN_STATUS.COMPLETED || campaign.status === CAMPAIGN_STATUS.CANCELLED) {
+    console.log(`[WORKER] Campaign ${campaignId} already ${campaign.status} — skipping`);
     return;
   }
 
@@ -197,8 +197,11 @@ async function processCampaign(campaignId, userId, job) {
     }
   }
 
-  // Transition to RUNNING
-  await storage.updateCampaign(campaignId, { status: "RUNNING", startedAt: new Date() });
+  // Transition to RUNNING — only write startedAt on first execution, not on BullMQ retries.
+  // Overwriting startedAt on retry would shift the delivery health window anchor and exclude
+  // bounce/complaint events from the initial run.
+  const startedAtUpdate = campaign.startedAt ? {} : { startedAt: new Date() };
+  await storage.updateCampaign(campaignId, { status: "RUNNING", ...startedAtUpdate });
   await storage.createAuditLog({
     userId,
     action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
@@ -292,6 +295,8 @@ async function processCampaign(campaignId, userId, job) {
   let skippedCount = 0;
   let outOfCredits = false;
   let globalPausedMidLoop = false;
+  let senderPausedMidLoop = false;
+  let cancelledMidLoop = false;
 
   console.log(`[WORKER] Campaign ${campaignId} — ${contactIds.length} contacts`);
 
@@ -306,8 +311,22 @@ async function processCampaign(campaignId, userId, job) {
     // or auto-pause (fired by a concurrent campaign start) to take effect mid-campaign
     // without a DB query on every single contact. Skip i=0 (already checked pre-loop).
     if (i > 0 && i % 50 === 0) {
+      // Check for user-initiated cancellation first — highest priority
+      const midLoopStatus = await storage.getCampaignStatus(campaignId);
+      if (midLoopStatus === CAMPAIGN_STATUS.CANCELLED) {
+        await storage.updateCampaign(campaignId, {
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
+        console.warn(`[WORKER] Campaign ${campaignId} cancelled at contact ${i} — stopping`);
+        cancelledMidLoop = true;
+        break;
+      }
+
       if (await isGlobalSendPaused()) {
-        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.updateCampaign(campaignId, {
+          status: "PAUSED",
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
         await storage.createAuditLog({
           userId,
           action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
@@ -319,19 +338,24 @@ async function processCampaign(campaignId, userId, job) {
         globalPausedMidLoop = true;
         break;
       }
-      // Re-check per-user sendPaused — auto-pause may have fired from a concurrent campaign start
+
+      // Re-check per-user sendPaused — auto-pause may have fired from a concurrent campaign start.
+      // Sender-health pause is not resumable by global action — use FAILED (not PAUSED).
       const freshOwner = await storage.getUserById(userId);
       if (freshOwner?.sendPaused) {
-        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.updateCampaign(campaignId, {
+          status: "FAILED",
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
         await storage.createAuditLog({
           userId,
-          action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
           targetType: "campaign",
           targetId: campaignId,
           details: { reason: "sender_paused_mid_loop", pausedAtContact: i },
         });
-        console.warn(`[WORKER] Campaign ${campaignId} paused at contact ${i} — sender paused mid-loop`);
-        globalPausedMidLoop = true;
+        console.warn(`[WORKER] Campaign ${campaignId} failed at contact ${i} — sender paused mid-loop`);
+        senderPausedMidLoop = true;
         break;
       }
     }
@@ -454,12 +478,16 @@ async function processCampaign(campaignId, userId, job) {
       console.error(`[WORKER] [${campaignId}] contact ${i + 1} failed:`, err.message);
     }
 
-    // Checkpoint after every email so GET /api/campaigns/:id shows live progress
-    await storage.updateCampaign(campaignId, {
-      sentEmails: sentCount,
-      failedEmails: failedCount,
-      skippedEmails: skippedCount,
-    });
+    // Checkpoint every 25 emails (≈ 2s at 14 emails/sec, matching the UI poll interval).
+    // Reduces DB write amplification by 96% vs per-email writes with imperceptible UI lag.
+    // Terminal exits (cancel, pause, credit exhaustion, COMPLETED) always flush final counts.
+    if ((i + 1) % 25 === 0) {
+      await storage.updateCampaign(campaignId, {
+        sentEmails: sentCount,
+        failedEmails: failedCount,
+        skippedEmails: skippedCount,
+      });
+    }
 
     // Report 0–100% progress to BullMQ dashboard / monitoring.
     // Wrapped in try/catch: Redis disconnect throws here and would otherwise propagate
@@ -474,6 +502,8 @@ async function processCampaign(campaignId, userId, job) {
     if (SEND_RATE_MS > 0 && attemptedSend && !usedRateLimiter) await sleep(SEND_RATE_MS);
   }
 
+  // Counts and creditsUsed are flushed here for mid-loop breaks (cancel/pause/sender-pause
+  // already wrote them). For credit exhaustion the final updateCampaignIfRunning handles it.
   if (outOfCredits) {
     await storage.createAuditLog({
       userId,
@@ -485,25 +515,39 @@ async function processCampaign(campaignId, userId, job) {
     console.warn(`[WORKER] Campaign ${campaignId} stopped early — insufficient credits`);
   }
 
-  // If global pause triggered mid-loop, status is already PAUSED — do not overwrite to COMPLETED.
   if (globalPausedMidLoop) {
-    console.warn(`[WORKER] Campaign ${campaignId} paused mid-loop — not overwriting to COMPLETED`);
+    console.warn(`[WORKER] Campaign ${campaignId} paused mid-loop — status already PAUSED`);
+    return;
+  }
+  if (senderPausedMidLoop) {
+    console.warn(`[WORKER] Campaign ${campaignId} failed mid-loop — sender paused`);
+    return;
+  }
+  if (cancelledMidLoop) {
+    console.warn(`[WORKER] Campaign ${campaignId} cancelled mid-loop — counts flushed`);
     return;
   }
 
-  // Re-read status to detect external termination (e.g., user deactivated mid-run, force-cancel)
+  // Re-read status to catch any external state change (e.g., admin action during the loop's
+  // last batch of contacts that didn't land on an i%50 boundary).
   const currentState = await storage.getCampaign(campaignId);
   if (currentState?.status === "FAILED") {
-    console.warn(`[WORKER] Campaign ${campaignId} externally terminated (status=FAILED) — not overwriting to COMPLETED`);
+    console.warn(`[WORKER] Campaign ${campaignId} externally terminated (FAILED) — not overwriting to COMPLETED`);
     return;
   }
   if (currentState?.status === "PAUSED") {
     console.warn(`[WORKER] Campaign ${campaignId} externally paused — not overwriting to COMPLETED`);
     return;
   }
+  if (currentState?.status === CAMPAIGN_STATUS.CANCELLED) {
+    console.warn(`[WORKER] Campaign ${campaignId} cancelled — not overwriting to COMPLETED`);
+    return;
+  }
 
-  // Final state
-  await storage.updateCampaign(campaignId, {
+  // Atomic terminal transition: only writes COMPLETED if status is still RUNNING.
+  // Prevents a TOCTOU race where status was changed between the currentState read above
+  // and this write (e.g., two concurrent processCampaign calls on the inline fallback path).
+  const completed = await storage.updateCampaignIfRunning(campaignId, {
     sentEmails: sentCount,
     failedEmails: failedCount,
     skippedEmails: skippedCount,
@@ -511,6 +555,11 @@ async function processCampaign(campaignId, userId, job) {
     status: "COMPLETED",
     completedAt: new Date(),
   });
+
+  if (!completed) {
+    console.warn(`[WORKER] Campaign ${campaignId} status changed before COMPLETED write — skipping`);
+    return;
+  }
 
   await storage.createAuditLog({
     userId,

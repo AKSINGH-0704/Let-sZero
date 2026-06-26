@@ -1167,6 +1167,19 @@
   - [DONE] getUserSenderHealth + getDeliveryHealthStats (3 locations) — delivery health window now filters on campaigns.startedAt instead of campaigns.createdAt; unstarted (scheduled) campaigns now correctly excluded from health metrics.
   - [DONE] stripe package removed — was listed in package.json dependencies but never imported anywhere in the codebase.
 
+  Milestone 3A additions (Audit 061 — 2026-06-26):
+  - [DONE] CANCELLED campaign status — terminal, not resumable. CAMPAIGN_CANCELLED audit action added to AUDIT_ACTIONS.
+  - [DONE] POST /api/campaigns/:id/cancel — user-facing cancel endpoint. Atomic WHERE status IN ('PENDING','RUNNING','PAUSED'). Idempotent 200 for already-cancelled. 409 for COMPLETED/FAILED. CAMPAIGN_CANCELLED audit log written by API (not worker).
+  - [DONE] Worker/inline idempotency guard expanded to include CANCELLED — prevents re-execution of cancelled campaigns from queued BullMQ jobs.
+  - [DONE] i%50 cancellation check in both execution paths — detects CANCELLED status mid-loop; flushes counts+creditsUsed and breaks.
+  - [DONE] Conditional final status transition — updateCampaignIfRunning() uses WHERE status='RUNNING'; prevents TOCTOU race on COMPLETED write.
+  - [DONE] Global pause resume bug fixed — sender-health-paused campaigns (sendPaused=true) skipped when global pause lifts; they were previously re-queued and flipped PAUSED→FAILED.
+  - [DONE] Sender auto-pause mid-loop now sets FAILED (not PAUSED) — PAUSED implies resumable; sender health pause requires admin action on the sender.
+  - [DONE] startedAt not overwritten on BullMQ retry — delivery health window anchor preserved.
+  - [DONE] Checkpoint every 25 emails (96% fewer DB writes, imperceptible UI lag); creditsUsed flushed on all exit paths (cancel, pause, FAILED, COMPLETED). Fixes pre-existing creditsUsed=0 bug for non-COMPLETED campaigns.
+  - [DONE] Orphaned PENDING campaign_emails bulk-updated to FAILED during startup crash recovery — prevents permanent "Pending" records in History for FAILED campaigns.
+  - [DONE] Inline path SIGTERM behavior documented in HANDOFF.md — campaigns running inline (Redis unavailable) cannot survive Railway redeployment; result in FAILED after restart.
+
   Priority 4 — Infrastructure / Operations
 
   8. [DONE — routes.js:2649] GET /api/admin/queue/status — Implemented.

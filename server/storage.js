@@ -787,6 +787,45 @@ const dbStorage = {
     return campaign || null;
   },
 
+  // Atomic: only updates if campaign is currently RUNNING.
+  // Used for the terminal COMPLETED write to prevent TOCTOU races.
+  async updateCampaignIfRunning(id, updates) {
+    const [campaign] = await db.update(campaigns)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(campaigns.id, id), eq(campaigns.status, "RUNNING")))
+      .returning();
+    return campaign || null;
+  },
+
+  // Lightweight status-only read — avoids fetching the full campaign row (35+ columns)
+  // for the mid-loop cancellation check.
+  async getCampaignStatus(id) {
+    const [row] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, id));
+    return row?.status || null;
+  },
+
+  // Atomic cancellation: transitions PENDING/RUNNING/PAUSED → CANCELLED in one statement.
+  // Returns the updated campaign row, or null if no eligible campaign matched
+  // (already CANCELLED, COMPLETED, FAILED, or not found).
+  async cancelCampaign(id, allowedStatuses) {
+    const [campaign] = await db.update(campaigns)
+      .set({ status: "CANCELLED", updatedAt: new Date() })
+      .where(and(eq(campaigns.id, id), drizzleOps.inArray(campaigns.status, allowedStatuses)))
+      .returning();
+    return campaign || null;
+  },
+
+  // Bulk-update orphaned PENDING campaign_emails to FAILED during crash recovery.
+  // Prevents History from showing permanent "Pending" records for FAILED campaigns.
+  async bulkFailOrphanedCampaignEmails(campaignId) {
+    await db.update(campaignEmails)
+      .set({ status: CAMPAIGN_EMAIL_STATUS.FAILED, failureReason: "campaign_recovery_failed" })
+      .where(and(
+        eq(campaignEmails.campaignId, campaignId),
+        eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.PENDING)
+      ));
+  },
+
   async startCampaign(campaignId, userId) {
     const campaign = await this.getCampaign(campaignId);
     if (!campaign) throw new Error("Campaign not found");

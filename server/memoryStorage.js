@@ -781,9 +781,37 @@ export const memoryStorage = {
   async updateCampaign(id, updates) {
     const campaign = store.campaigns.get(id);
     if (!campaign) return null;
-    
+
     Object.assign(campaign, updates, { updatedAt: new Date() });
     return campaign;
+  },
+
+  async updateCampaignIfRunning(id, updates) {
+    const campaign = store.campaigns.get(id);
+    if (!campaign || campaign.status !== "RUNNING") return null;
+    Object.assign(campaign, updates, { updatedAt: new Date() });
+    return campaign;
+  },
+
+  async getCampaignStatus(id) {
+    return store.campaigns.get(id)?.status || null;
+  },
+
+  async cancelCampaign(id, allowedStatuses) {
+    const campaign = store.campaigns.get(id);
+    if (!campaign || !allowedStatuses.includes(campaign.status)) return null;
+    campaign.status = "CANCELLED";
+    campaign.updatedAt = new Date();
+    return campaign;
+  },
+
+  async bulkFailOrphanedCampaignEmails(campaignId) {
+    for (const [, email] of store.campaignEmails || new Map()) {
+      if (email.campaignId === campaignId && email.status === CAMPAIGN_EMAIL_STATUS.PENDING) {
+        email.status = CAMPAIGN_EMAIL_STATUS.FAILED;
+        email.failureReason = "campaign_recovery_failed";
+      }
+    }
   },
 
   async startCampaign(campaignId, userId) {

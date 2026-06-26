@@ -5284,3 +5284,182 @@ Before writing any documentation, a complete repository audit was conducted. Key
 
 No other inconsistencies found between documentation and code.
 
+
+---
+
+## Audit 061 â€” Milestone 3A: Campaign Reliability Core (2026-06-26)
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** Milestone 3A of the Engineering Execution Plan â€” backend correctness, reliability, and operational safety for campaign lifecycle management
+**Preceding context:** M3 Design Review + focused cancellation design clarification conducted in prior session (not committed â€” embedded in this audit as design basis)
+**Commit at time of audit:** `85e3e4e` (Milestone 2)
+
+---
+
+### Design Review Summary
+
+Full M3 Design Review and focused cancellation clarification were conducted before implementation. Key decisions:
+
+- CANCELLED is a terminal state with no resume path. PAUSED implies resumable; FAILED implies system-caused; CANCELLED implies user-caused.
+- Atomic cancellation via single SQL UPDATE WHERE status IN ('PENDING', 'RUNNING', 'PAUSED') â€” no read-then-write race.
+- Cancel API is idempotent: already-CANCELLED returns 200 with `alreadyCancelled: true`. COMPLETED/FAILED returns 409.
+- Audit log written at API authorization time (not worker detection time). Worker detection is silent.
+- Sender pause mid-loop changed from PAUSED â†’ FAILED: PAUSED implies resumable by global action; sender health pause is not resumable without admin action on the sender.
+- Global pause resume bug: ALL PAUSED campaigns were being re-queued, including sender-health-paused ones. Worker then set them FAILED. Fixed by checking `owner.sendPaused` before re-queuing.
+- Checkpoint frequency: every 25 emails (vs per-email). At 14/sec this matches the 2s UI poll interval, reducing DB writes by 96%.
+- creditsUsed must be flushed on ALL exit paths (not just COMPLETED). Pre-existing bug: PAUSED and FAILED campaigns had creditsUsed=0 indefinitely. Fixed as a side effect.
+- startedAt overwrite on retry corrupted the delivery health window anchor (Milestone 2 had fixed the window to use startedAt â€” M3A prevents it from shifting on retry).
+- Conditional final transition (updateCampaignIfRunning): atomic WHERE status='RUNNING' prevents TOCTOU race on the COMPLETED write.
+
+Milestone 3 split into 3A (backend) and 3B (frontend UX) for independent reviewability and rollback safety.
+
+---
+
+### Fix 1 â€” CANCELLED Campaign Status (schema, storage, endpoint)
+
+**Problem:** No user-initiated way to stop a running campaign. The only stop control was admin-only global send pause, which stops ALL campaigns for ALL users. A wrong-list mistake has no self-service recovery.
+
+**Changes:**
+- `shared/schema.js`: Added `CANCELLED: "CANCELLED"` to `CAMPAIGN_STATUS` and `CAMPAIGN_CANCELLED: "CAMPAIGN_CANCELLED"` to `AUDIT_ACTIONS`.
+- `server/storage.js`: Added four new methods:
+  - `cancelCampaign(id, allowedStatuses)` â€” atomic UPDATE WHERE status IN (allowedStatuses), returns updated campaign or null
+  - `updateCampaignIfRunning(id, updates)` â€” atomic UPDATE WHERE status='RUNNING', used for terminal COMPLETED transition
+  - `getCampaignStatus(id)` â€” lightweight SELECT status only (1 column vs 35+), for mid-loop cancellation check
+  - `bulkFailOrphanedCampaignEmails(campaignId)` â€” bulk UPDATE campaign_emails PENDINGâ†’FAILED for crash recovery
+- `server/memoryStorage.js`: All four methods mirrored.
+- `server/routes.js`: `POST /api/campaigns/:id/cancel` endpoint added. Atomic, idempotent, with CAMPAIGN_CANCELLED audit log and best-effort BullMQ job removal for PENDING campaigns.
+
+**API response table:**
+
+| Current campaign state | Response | Status code |
+|---|---|---|
+| PENDING / RUNNING / PAUSED | Cancelled | 200 |
+| CANCELLED (already) | Already cancelled | 200 (idempotent) |
+| COMPLETED | Cannot cancel completed campaign | 409 |
+| FAILED | Campaign already stopped with error | 409 |
+| Not found | â€” | 404 |
+| Not owned by caller | â€” | 403 |
+
+---
+
+### Fix 2 â€” Worker and Inline Path: CANCELLED Lifecycle Guards
+
+**Problem:** If a campaign was cancelled via API while the BullMQ job was in flight or queued, the worker would still execute it (no CANCELLED idempotency guard) and could overwrite CANCELLED with COMPLETED (no terminal-state check for CANCELLED).
+
+**Changes (both `server/worker.js` and `server/routes.js` executeCampaign):**
+- **Idempotency guard**: Expanded from `status === "COMPLETED"` to also guard `status === "CANCELLED"`.
+- **i%50 cancellation check**: New `getCampaignStatus(campaignId)` call at the top of the i%50 block (checked before global pause and sender pause). If CANCELLED: flush final counts + creditsUsed, set `cancelledMidLoop = true`, break.
+- **Post-loop CANCELLED guard**: `currentState?.status === CAMPAIGN_STATUS.CANCELLED` added to the pre-COMPLETED check block.
+- **Final write**: Changed from `updateCampaign({ status: "COMPLETED" })` to `updateCampaignIfRunning({ status: "COMPLETED" })`. If the update returns null (status was changed externally), return without error.
+
+---
+
+### Fix 3 â€” Global Pause Resume Bug
+
+**Problem:** `POST /api/admin/platform/resume-sending` queried all PAUSED campaigns and re-queued all of them. Campaigns paused by sender health auto-pause (status=PAUSED, `sendPaused=true` on owner) would be picked up by the worker, fail the pre-loop sender check, and flip from PAUSEDâ†’FAILED incorrectly.
+
+**Fix:** `server/routes.js` resume route now calls `storage.getUserById(campaign.userId)` for each paused campaign before re-queuing. If `owner.sendPaused === true`, the campaign is skipped with a log message.
+
+**Note:** This introduces N getUserById queries for N paused campaigns (O(N) vs O(1) before). At current scale (rarely more than a handful of paused campaigns), this is fine. Recorded as F-M3A-1 for future batching.
+
+---
+
+### Fix 4 â€” Sender Auto-Pause Mid-Loop: PAUSED â†’ FAILED
+
+**Problem:** When a sender's bounce rate exceeded thresholds mid-loop (detected at i%50 via `freshOwner.sendPaused`), the campaign was set to PAUSED. PAUSED implies the campaign can be resumed by lifting the global send pause. Sender health pause is not resumable by global action â€” it requires admin action on the sender account. The semantic was wrong.
+
+**Fix (both execution paths):** The sender-paused mid-loop branch now writes `status: "FAILED"` (not `"PAUSED"`). The audit log action is `CAMPAIGN_FAILED` with `reason: "sender_paused_mid_loop"`. A new `senderPausedMidLoop` flag causes early return after the loop.
+
+---
+
+### Fix 5 â€” startedAt Not Overwritten on Retry
+
+**Problem:** On BullMQ retry (after crash), both execution paths unconditionally wrote `startedAt: new Date()`. This shifted the delivery health window anchor (Milestone 2 fixed the window to use startedAt) to the retry timestamp. Bounce/complaint events from the original send attempt that fell before the retry timestamp were excluded from the 7-day health window.
+
+**Fix (both execution paths):**
+```javascript
+const startedAtUpdate = campaign.startedAt ? {} : { startedAt: new Date() };
+await storage.updateCampaign(campaignId, { status: "RUNNING", ...startedAtUpdate });
+```
+startedAt is written only on first execution. The spread produces an empty object on retry, leaving startedAt unchanged.
+
+---
+
+### Fix 6 â€” Checkpoint Every 25 Emails + creditsUsed on All Exit Paths
+
+**Problem (checkpoint):** Both execution paths wrote `updateCampaign({ sentEmails, failedEmails, skippedEmails })` after every single email. At 14 emails/second with 3 concurrent campaigns: 42 PostgreSQL UPDATE queries/second to the campaigns table. The UI polls every 2 seconds â€” checkpointing 28Ã— more frequently than the UI's resolution was pure waste.
+
+**Problem (creditsUsed):** `creditsUsed` was only written in the final COMPLETED write. PAUSED and FAILED campaigns had `creditsUsed = 0` in the DB permanently despite having consumed credits.
+
+**Fix (both execution paths):**
+- Per-email checkpoint changed to `if ((i + 1) % 25 === 0)` â€” 96% fewer writes, imperceptible UI lag at 14/sec.
+- All mid-loop break paths (global pause, sender pause, cancellation) now include `creditsUsed: sentCount` in their forced flush write.
+- Terminal COMPLETED transition includes `creditsUsed: sentCount` (unchanged from original).
+- Pre-existing PAUSED creditsUsed=0 bug is fixed as a side effect: future paused campaigns will show correct creditsUsed in the DB.
+
+---
+
+### Fix 7 â€” Conditional Final Status Transition (TOCTOU)
+
+**Problem:** The final COMPLETED write used `updateCampaign()` (unconditional). A status change between the `currentState` read and this write (e.g., concurrent cancellation during the last batch) would silently overwrite the new status with COMPLETED.
+
+**Fix:** Final write changed to `updateCampaignIfRunning()` â€” `WHERE id = :id AND status = 'RUNNING'`. Returns null if the campaign was changed externally; the caller returns without error.
+
+---
+
+### Fix 8 â€” Orphaned PENDING Campaign Emails on Recovery
+
+**Problem:** If a process crashed after `createCampaignEmail(PENDING)` but before the send attempt completed (or before `updateCampaignEmail(SENT/FAILED)` ran), the campaign_emails record stayed PENDING forever. Startup recovery marked the campaign FAILED but did not update the orphaned records. History.jsx showed permanent "Pending" records for FAILED campaigns.
+
+**Fix:** `server/index.js` `recoverStaleCampaigns()` now calls `storage.bulkFailOrphanedCampaignEmails(c.id)` after marking a campaign FAILED via Rule 3. All PENDING campaign_emails for the campaign are bulk-updated to FAILED with `failureReason: "campaign_recovery_failed"`.
+
+---
+
+### Fix 9 â€” Inline Path SIGTERM Behavior Documented
+
+**Problem:** The inline execution path (Redis unavailable) silently abandons mid-loop campaigns on Railway redeployment (SIGTERM). An operator unfamiliar with this behavior would not know that inline-path campaigns cannot survive redeployments, and would be confused when campaigns appear as FAILED after a deploy.
+
+**Fix:** Added prominent operator warning to `HANDOFF.md` explaining:
+- When the inline path is active (Redis unavailable)
+- What happens on SIGTERM (process exits immediately, campaign abandoned mid-loop)
+- What recovery looks like (startup marks FAILED, no retry)
+- Mitigation (ensure REDIS_URL is set in production)
+
+---
+
+### Verification Results
+
+| Suite | Type | Result |
+|---|---|---|
+| `tmp/verify-milestone3a.mjs` | 9 suites, static + logic assertions | 40/40 passed |
+| Build | Client + server | Clean â€” 0 errors |
+
+---
+
+### Classification Summary
+
+| ID | Finding | Severity | Status |
+|---|---|---|---|
+| M3-P0-1 | No campaign cancellation â€” wrong-list has no self-service recovery | HIGH | Fixed |
+| M3-P0-2 | Global pause resume re-queues sender-health-paused campaigns â†’ PAUSEDâ†’FAILED | HIGH | Fixed (Bug) |
+| M3-P0-3 | Sender auto-pause mid-loop sets PAUSED (should be FAILED) | MEDIUM | Fixed |
+| M3-P1-1 | startedAt overwritten on retry â€” delivery health window anchor corrupted | MEDIUM | Fixed |
+| M3-P1-2 | Per-email checkpoint: 42 DB writes/sec at 3 concurrent campaigns | MEDIUM | Fixed |
+| M3-P1-2b | creditsUsed=0 for all non-COMPLETED campaigns (pre-existing bug) | MEDIUM | Fixed (side effect) |
+| M3-P1-3 | TOCTOU race on COMPLETED write â€” non-atomic read-then-write | LOW | Fixed |
+| M3-P1-4 | Orphaned PENDING campaign_emails for FAILED campaigns | LOW | Fixed |
+| M3-P1-5 | Inline path SIGTERM behavior not documented | LOW | Fixed (doc) |
+
+---
+
+### Future Engineering Findings (recorded, not implemented)
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M3A-1 | Performance | Global pause resume now does N getUserById queries for N paused campaigns. Acceptable at current scale; should batch via getUsersByIds or a campaign JOIN at M4. | Low | M4 |
+| F-M3A-2 | Performance | getCampaignStatus() in i%50 loop adds 1 DB query per 50 contacts. Each is lightweight (1 col); at 14/sec = 1 query per 3.5s. Fine now; reconsider if contact lists routinely exceed 50K. | Low | M5+ |
+| F-M3A-3 | Maintainability | processCampaign (worker.js) and executeCampaign (routes.js) remain two 400-line parallel functions. All M3A fixes were applied twice. Drift risk is structural. Extract shared runCampaignLoop() module. | High | M4 |
+| F-M3A-4 | Reliability | Inline path campaigns interrupted by SIGTERM (Redis unavailable) result in permanent FAILED. BullMQ is a hard dependency for correct campaign lifecycle. Add startup warning when Redis is unavailable. | Medium | M4 |
+| F-M3A-5 | UX | CANCELLED campaigns show 0 for creditsUsed if cancelled before i=25 (first checkpoint never fired). The cancel flush writes creditsUsed=sentCount, but sentCount could be 0 for very early cancellation. This is correct â€” 0 credits were consumed. No fix needed. | N/A | N/A â€” not a bug |
+

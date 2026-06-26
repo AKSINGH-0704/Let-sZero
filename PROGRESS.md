@@ -256,6 +256,27 @@ Design Review → Implementation → Verification (47/47) → Audit 060.
 
 ---
 
+---
+
+### 13 · Milestone 3A: Campaign Reliability Core (Audit 061 — 2026-06-26)
+
+Design Review + Cancellation Design Clarification → Implementation → Verification (40/40) → Audit 061.
+
+| Fix | Description | File(s) | Status |
+|---|---|---|---|
+| M3-P0-1 | Campaign cancellation: CANCELLED status + `cancelCampaign()` + `POST /api/campaigns/:id/cancel` + worker/inline idempotency guards + final-state overwrite protection + creditsUsed on all exits | shared/schema.js, server/storage.js, server/memoryStorage.js, server/routes.js, server/worker.js | **D** |
+| M3-P0-2 | Global pause resume bug: sender-health-paused campaigns no longer re-queued when global pause lifts | server/routes.js | **D** |
+| M3-P0-3 | Sender auto-pause mid-loop: PAUSED → FAILED (PAUSED implies resumable; sender health pause is not) | server/worker.js, server/routes.js | **D** |
+| M3-P1-1 | startedAt not overwritten on BullMQ retry — delivery health window anchor preserved | server/worker.js, server/routes.js | **D** |
+| M3-P1-2 | Checkpoint every 25 emails (96% fewer DB writes) + forced flush with creditsUsed on all exits | server/worker.js, server/routes.js | **D** |
+| M3-P1-3 | Conditional final status transition (`updateCampaignIfRunning` — atomic WHERE status='RUNNING') | server/storage.js, server/memoryStorage.js, server/worker.js, server/routes.js | **D** |
+| M3-P1-4 | Orphaned PENDING campaign_emails bulk-updated to FAILED during crash recovery | server/index.js, server/storage.js, server/memoryStorage.js | **D** |
+| M3-P1-5 | Inline path SIGTERM behavior documented in HANDOFF.md | HANDOFF.md | **D** |
+
+**Milestone status: D** — all items code-complete, verified 40/40 assertions in tmp/verify-milestone3a.mjs
+
+---
+
 ## Launch blockers (ranked)
 
 | # | Blocker | Severity | Current status |

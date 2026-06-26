@@ -1,6 +1,6 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import * as XLSX from "xlsx";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
@@ -204,7 +204,9 @@ export async function executeCampaign(campaignId, userId) {
     }
   }
 
-  await storage.updateCampaign(campaignId, { status: "RUNNING", startedAt: new Date() });
+  // Only write startedAt on first execution — never overwrite on retry (mirrors worker.js).
+  const startedAtUpdate = campaign.startedAt ? {} : { startedAt: new Date() };
+  await storage.updateCampaign(campaignId, { status: "RUNNING", ...startedAtUpdate });
   await storage.createAuditLog({
     userId,
     action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
@@ -296,6 +298,9 @@ export async function executeCampaign(campaignId, userId) {
   let failedCount = 0;
   let skippedCount = 0;
   let outOfCredits = false;
+  let globalPausedMidLoop = false;
+  let senderPausedMidLoop = false;
+  let cancelledMidLoop = false;
 
   const creditsBefore = await storage.getTotalCreditsAvailable(userId);
   console.log(`[CAMPAIGN START] id=${campaignId} contacts=${contactIds.length} credits_paid=${creditsBefore.paid} credits_free=${creditsBefore.free ?? 0} credits_trial=${creditsBefore.trial} credits_total=${creditsBefore.total}`);
@@ -311,8 +316,21 @@ export async function executeCampaign(campaignId, userId) {
     // or auto-pause (fired by a concurrent campaign start) to take effect mid-campaign
     // without a DB query on every single email. Skip i=0 (already checked pre-loop).
     if (i > 0 && i % 50 === 0) {
+      const midLoopStatus = await storage.getCampaignStatus(campaignId);
+      if (midLoopStatus === CAMPAIGN_STATUS.CANCELLED) {
+        await storage.updateCampaign(campaignId, {
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
+        console.warn(`[CAMPAIGN] ${campaignId} cancelled at contact ${i} — stopping`);
+        cancelledMidLoop = true;
+        break;
+      }
+
       if (await isGlobalSendPaused()) {
-        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.updateCampaign(campaignId, {
+          status: "PAUSED",
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
         await storage.createAuditLog({
           userId,
           action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
@@ -321,21 +339,26 @@ export async function executeCampaign(campaignId, userId) {
           details: { reason: "global_send_pause_active", pausedAtContact: i },
         });
         console.warn(`[CAMPAIGN] ${campaignId} paused at contact ${i} — global send pause activated`);
-        return;
+        globalPausedMidLoop = true;
+        break;
       }
-      // Re-check per-user sendPaused — auto-pause may have fired from a concurrent campaign start
+
       const freshOwner = await storage.getUserById(userId);
       if (freshOwner?.sendPaused) {
-        await storage.updateCampaign(campaignId, { status: "PAUSED" });
+        await storage.updateCampaign(campaignId, {
+          status: "FAILED",
+          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+        });
         await storage.createAuditLog({
           userId,
-          action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
+          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
           targetType: "campaign",
           targetId: campaignId,
           details: { reason: "sender_paused_mid_loop", pausedAtContact: i },
         });
-        console.warn(`[CAMPAIGN] ${campaignId} paused at contact ${i} — sender paused mid-loop`);
-        return;
+        console.warn(`[CAMPAIGN] ${campaignId} failed at contact ${i} — sender paused mid-loop`);
+        senderPausedMidLoop = true;
+        break;
       }
     }
 
@@ -454,12 +477,14 @@ export async function executeCampaign(campaignId, userId) {
       });
     }
 
-    // Checkpoint after every email (mirrors BullMQ worker behaviour)
-    await storage.updateCampaign(campaignId, {
-      sentEmails: sentCount,
-      failedEmails: failedCount,
-      skippedEmails: skippedCount,
-    });
+    // Checkpoint every 25 emails — matches UI poll cadence, reduces DB writes by 96%.
+    if ((i + 1) % 25 === 0) {
+      await storage.updateCampaign(campaignId, {
+        sentEmails: sentCount,
+        failedEmails: failedCount,
+        skippedEmails: skippedCount,
+      });
+    }
 
     // Fallback throttle when Redis rate limiter is unavailable — per-worker sleep
     if (SEND_RATE_MS > 0 && attemptedSend && !usedRateLimiter) await sleep(SEND_RATE_MS);
@@ -476,25 +501,46 @@ export async function executeCampaign(campaignId, userId) {
     console.warn(`[CAMPAIGN ${campaignId}] stopped early — insufficient credits`);
   }
 
-  // Re-read status to detect external termination (e.g., user deactivated mid-run)
+  if (globalPausedMidLoop) {
+    console.warn(`[CAMPAIGN ${campaignId}] paused mid-loop — status already PAUSED`);
+    return;
+  }
+  if (senderPausedMidLoop) {
+    console.warn(`[CAMPAIGN ${campaignId}] failed mid-loop — sender paused`);
+    return;
+  }
+  if (cancelledMidLoop) {
+    console.warn(`[CAMPAIGN ${campaignId}] cancelled mid-loop — counts flushed`);
+    return;
+  }
+
   const currentState = await storage.getCampaign(campaignId);
   if (currentState?.status === "FAILED") {
-    console.warn(`[CAMPAIGN ${campaignId}] externally terminated (status=FAILED) — not overwriting to COMPLETED`);
-    return currentState;
+    console.warn(`[CAMPAIGN ${campaignId}] externally terminated (FAILED) — not overwriting to COMPLETED`);
+    return;
   }
   if (currentState?.status === "PAUSED") {
     console.warn(`[CAMPAIGN ${campaignId}] externally paused — not overwriting to COMPLETED`);
-    return currentState;
+    return;
+  }
+  if (currentState?.status === CAMPAIGN_STATUS.CANCELLED) {
+    console.warn(`[CAMPAIGN ${campaignId}] cancelled — not overwriting to COMPLETED`);
+    return;
   }
 
-  await storage.updateCampaign(campaignId, {
+  const completed = await storage.updateCampaignIfRunning(campaignId, {
     sentEmails: sentCount,
     failedEmails: failedCount,
     skippedEmails: skippedCount,
     creditsUsed: sentCount,
     status: "COMPLETED",
-    completedAt: new Date()
+    completedAt: new Date(),
   });
+
+  if (!completed) {
+    console.warn(`[CAMPAIGN ${campaignId}] status changed before COMPLETED write — skipping`);
+    return;
+  }
 
   await storage.createAuditLog({
     userId,
@@ -1698,6 +1744,74 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // ── Campaign cancellation ─────────────────────────────────────────────────────
+  app.post("/api/campaigns/:id/cancel", authMiddleware, async (req, res) => {
+    try {
+      const campaign = await storage.getCampaign(req.params.id);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+      const isOwner = campaign.userId === req.user.id;
+      const isAdmin = req.isRootAdmin;
+      if (!isOwner && !isAdmin) return res.status(403).json({ message: "Forbidden" });
+
+      const CANCELLABLE = [
+        CAMPAIGN_STATUS.PENDING,
+        CAMPAIGN_STATUS.RUNNING,
+        CAMPAIGN_STATUS.PAUSED,
+      ];
+      const updated = await storage.cancelCampaign(campaign.id, CANCELLABLE);
+
+      if (!updated) {
+        // 0 rows matched — re-read to surface the reason
+        const current = await storage.getCampaign(campaign.id);
+        if (current?.status === CAMPAIGN_STATUS.CANCELLED) {
+          return res.json({ message: "Campaign already cancelled", status: "CANCELLED", alreadyCancelled: true });
+        }
+        return res.status(409).json({
+          error: "CANNOT_CANCEL",
+          message: current?.status === CAMPAIGN_STATUS.COMPLETED
+            ? "Campaign already completed — emails have been sent"
+            : "Campaign already stopped with an error",
+          status: current?.status,
+        });
+      }
+
+      // Audit — written by the API at the moment of authorization, not when the worker detects it.
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.CAMPAIGN_CANCELLED,
+        targetType: "campaign",
+        targetId: campaign.id,
+        details: {
+          name: campaign.name,
+          cancelledFromStatus: campaign.status,
+          sentEmailsAtCancel: campaign.sentEmails,
+          totalEmails: campaign.totalEmails,
+          contactsNotReached: campaign.totalEmails - campaign.sentEmails - campaign.failedEmails - (campaign.skippedEmails || 0),
+          cancelledBy: isAdmin && !isOwner ? "admin" : "user",
+          ...(isAdmin && !isOwner ? { campaignOwnerId: campaign.userId } : {}),
+        },
+      });
+
+      // Best-effort BullMQ removal for PENDING campaigns — worker's CANCELLED guard is the safety net.
+      if (campaign.status === CAMPAIGN_STATUS.PENDING) {
+        const queue = getCampaignQueue();
+        if (queue) {
+          try {
+            const job = await queue.getJob(campaign.id);
+            if (job) await job.remove();
+          } catch {
+            // Silent — BullMQ removal is an optimization, not a requirement
+          }
+        }
+      }
+
+      return res.json({ message: "Campaign cancelled", status: "CANCELLED" });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── Campaign audit trail ─────────────────────────────────────────────────────
   app.get("/api/campaigns/:id/audit", authMiddleware, async (req, res) => {
     try {
@@ -2712,13 +2826,19 @@ export async function registerRoutes(httpServer, app) {
     try {
       await storage.setPlatformSetting("send_pause_enabled", "false", req.user.id);
 
-      // Re-queue all campaigns that were paused by the global pause.
-      // addCampaignJob uses jobId=campaignId for deduplication — safe to call even if a job
-      // already exists for a campaign (no-op in that case, no duplicate jobs created).
+      // Re-queue campaigns paused by the global pause — but skip campaigns paused by sender
+      // health (sendPaused=true). Those campaigns are legitimately blocked; re-queuing them
+      // would cause the worker to pick them up, fail the pre-loop sender check, and flip them
+      // from PAUSED to FAILED incorrectly.
       const pausedCampaigns = await storage.getCampaignsByStatus("PAUSED");
       let requeuedCount = 0;
       for (const campaign of pausedCampaigns) {
         try {
+          const owner = await storage.getUserById(campaign.userId);
+          if (owner?.sendPaused) {
+            console.log(`[ADMIN] Skipping re-queue for campaign ${campaign.id} — sender ${campaign.userId} is still paused`);
+            continue;
+          }
           await addCampaignJob(campaign.id, campaign.userId);
           requeuedCount++;
         } catch (qErr) {

@@ -574,6 +574,11 @@ async function diagnoseSMTPPath() {
 
         // Rule 3: No completedAt, no live BullMQ job → mark FAILED so the UI unblocks.
         await storage.updateCampaign(c.id, { status: "FAILED" });
+        // Bulk-update any PENDING campaign_emails to FAILED — prevents History from showing
+        // permanent "Pending" records for campaigns that crashed before the send completed.
+        await storage.bulkFailOrphanedCampaignEmails(c.id).catch(err =>
+          console.warn(`[RECOVERY] bulkFailOrphanedCampaignEmails failed for ${c.id}:`, err.message)
+        );
         console.log(`[RECOVERY] Campaign ${c.id} → FAILED (no live job found)`);
       }
     } catch (err) {
