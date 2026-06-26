@@ -27,6 +27,7 @@ import {
   Settings,
   CreditCard,
   ShieldOff,
+  BookUser,
   Menu,
   X,
   Shield
@@ -43,6 +44,7 @@ export default function Navbar() {
     { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/app/campaigns/new", label: "New Campaign", icon: Send },
     { href: "/app/history", label: "History", icon: History },
+    { href: "/app/contacts", label: "Contacts", icon: BookUser },
     { href: "/app/templates", label: "Templates", icon: FileText },
     { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
     { href: "/app/payments", label: "Payments", icon: CreditCard },

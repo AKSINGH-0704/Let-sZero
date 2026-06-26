@@ -90,6 +90,14 @@ export const AUDIT_ACTIONS = {
   // Suppression management
   MANUAL_SUPPRESSION_ADDED: "MANUAL_SUPPRESSION_ADDED",
   SUPPRESSION_DELETED: "SUPPRESSION_DELETED",
+  // Contact Library
+  CONTACT_LIST_CREATED:            "CONTACT_LIST_CREATED",
+  CONTACT_LIST_RENAMED:            "CONTACT_LIST_RENAMED",
+  CONTACT_LIST_DELETED:            "CONTACT_LIST_DELETED",
+  CONTACTS_IMPORTED_TO_LIST:       "CONTACTS_IMPORTED_TO_LIST",
+  CONTACT_REMOVED_FROM_LIST:       "CONTACT_REMOVED_FROM_LIST",
+  CONTACTS_BULK_REMOVED_FROM_LIST: "CONTACTS_BULK_REMOVED_FROM_LIST",
+  CONTACT_UPDATED:                 "CONTACT_UPDATED",
 };
 
 export const PAYMENT_STATUS = {
@@ -218,9 +226,52 @@ export const contacts = pgTable("contacts", {
   company: text("company"),
   category: text("category"),
   customFields: jsonb("custom_fields"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   userEmailUnique: uniqueIndex("contacts_user_email_unique").on(table.userId, table.email),
+}));
+
+// ── Contact Library ───────────────────────────────────────────────────────────
+
+export const contactLists = pgTable("contact_lists", {
+  id:          uuid("id").defaultRandom().primaryKey(),
+  userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name:        text("name").notNull(),
+  description: text("description"),
+  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index("contact_lists_user_id_idx").on(table.userId),
+}));
+
+export const contactListMembers = pgTable("contact_list_members", {
+  id:        uuid("id").defaultRandom().primaryKey(),
+  listId:    uuid("list_id").notNull().references(() => contactLists.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  addedAt:   timestamp("added_at").defaultNow().notNull(),
+}, (table) => ({
+  listContactUnique: uniqueIndex("contact_list_members_list_contact_unique").on(table.listId, table.contactId),
+  listIdIdx:         index("contact_list_members_list_id_idx").on(table.listId),
+  contactIdIdx:      index("contact_list_members_contact_id_idx").on(table.contactId),
+}));
+
+export const contactImports = pgTable("contact_imports", {
+  id:              uuid("id").defaultRandom().primaryKey(),
+  userId:          uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  listId:          uuid("list_id").notNull().references(() => contactLists.id, { onDelete: "cascade" }),
+  source:          text("source").notNull().default("library_import"),
+  fileName:        text("file_name"),
+  totalRows:       integer("total_rows").notNull().default(0),
+  failedRows:      integer("failed_rows").notNull().default(0),
+  newContacts:     integer("new_contacts").notNull().default(0),
+  updatedContacts: integer("updated_contacts").notNull().default(0),
+  addedToList:     integer("added_to_list").notNull().default(0),
+  alreadyInList:   integer("already_in_list").notNull().default(0),
+  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  completedAt:     timestamp("completed_at"),
+}, (table) => ({
+  listIdIdx: index("contact_imports_list_id_idx").on(table.listId),
 }));
 
 export const campaigns = pgTable("campaigns", {
@@ -245,12 +296,15 @@ export const campaigns = pgTable("campaigns", {
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  listId:       uuid("list_id").references(() => contactLists.id, { onDelete: "set null" }),
+  listSnapshot: jsonb("list_snapshot"),
 }, (table) => ({
   // Supports getCampaigns(userId) — called on every campaign page load and dashboard stats
   userIdIdx: index("campaigns_user_id_idx").on(table.userId),
   // Supports scheduler query for pending scheduled campaigns
   statusScheduledIdx: index("campaigns_status_scheduled_idx").on(table.status, table.scheduledAt),
+  listIdIdx: index("campaigns_list_id_idx").on(table.listId),
 }));
 
 export const campaignEmails = pgTable("campaign_emails", {

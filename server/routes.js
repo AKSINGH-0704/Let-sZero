@@ -160,6 +160,13 @@ export async function executeCampaign(campaignId, userId) {
   await runCampaignLoop(campaignId, userId, { logTag: "[CAMPAIGN][INLINE]" });
 }
 
+// ── Shared field sanitizer for contact text fields ────────────────────────────
+function sanitizeContactTextField(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  return value.trim().slice(0, 500) || null;
+}
+
 // ── Campaign validation constants and helpers ─────────────────────────────────
 const CAMPAIGN_MAX_CONTACTS = 10_000;
 const CAMPAIGN_MAX_SUBJECT_LENGTH = 200;
@@ -1114,6 +1121,196 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // ── Contact Library routes ────────────────────────────────────────────────────
+
+  app.get("/api/contact-lists", authMiddleware, async (req, res) => {
+    try {
+      const lists = await storage.getContactLists(req.user.id);
+      res.json(lists);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/contact-lists", authMiddleware, async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "List name is required" });
+      }
+      const list = await storage.createContactList({
+        userId: req.user.id,
+        name: name.trim().slice(0, 200),
+        description: sanitizeContactTextField(description),
+      });
+      res.status(201).json(list);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/contact-lists/:id", authMiddleware, async (req, res) => {
+    try {
+      const list = await storage.getContactList(req.params.id, req.user.id);
+      if (!list) return res.status(404).json({ message: "List not found" });
+      res.json(list);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/contact-lists/:id", authMiddleware, async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+        return res.status(400).json({ message: "List name cannot be empty" });
+      }
+      const updates = {};
+      if (name !== undefined) updates.name = name.trim().slice(0, 200);
+      if (description !== undefined) updates.description = sanitizeContactTextField(description);
+      const list = await storage.updateContactList(req.params.id, req.user.id, updates);
+      if (!list) return res.status(404).json({ message: "List not found" });
+      res.json(list);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/contact-lists/:id", authMiddleware, async (req, res) => {
+    try {
+      const deleted = await storage.deleteContactList(req.params.id, req.user.id);
+      if (!deleted) return res.status(404).json({ message: "List not found" });
+      res.json({ message: "List deleted" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/contact-lists/:id/contacts", authMiddleware, async (req, res) => {
+    try {
+      const { search, page, limit } = req.query;
+      const result = await storage.getContactListContacts(req.params.id, req.user.id, {
+        search: search || null,
+        page: parseInt(page, 10) || 1,
+        limit: Math.min(parseInt(limit, 10) || 50, 200),
+      });
+      if (!result) return res.status(404).json({ message: "List not found" });
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // 15 MB body limit for CSV imports
+  app.post("/api/contact-lists/:id/import", authMiddleware, express.json({ limit: "15mb" }), async (req, res) => {
+    try {
+      const { rows, source, fileName } = req.body;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ message: "rows array is required and must be non-empty" });
+      }
+      if (rows.length > 50_000) {
+        return res.status(400).json({ message: "Maximum 50,000 rows per import" });
+      }
+      const list = await storage.getContactList(req.params.id, req.user.id);
+      if (!list) return res.status(404).json({ message: "List not found" });
+
+      const validRows = [];
+      let failedRows = 0;
+      for (const row of rows) {
+        const email = normalizeContactEmail(row.email || "");
+        if (!email || !isValidEmailFormat(email)) { failedRows++; continue; }
+        validRows.push({
+          email,
+          name: sanitizeContactTextField(row.name),
+          company: sanitizeContactTextField(row.company),
+          category: sanitizeContactTextField(row.category),
+          customFields: row.customFields && typeof row.customFields === "object" ? row.customFields : null,
+        });
+      }
+      if (validRows.length === 0) {
+        return res.status(400).json({ message: "No valid email rows found in import data" });
+      }
+
+      const importRecord = await storage.importContactsToList(
+        req.user.id,
+        req.params.id,
+        validRows,
+        source || "library_import",
+        fileName ? String(fileName).slice(0, 500) : null
+      );
+      // Patch failedRows to include pre-validation rejects (storage only counts insert-level failures)
+      importRecord.failedRows = (importRecord.failedRows || 0) + failedRows;
+      importRecord.totalRows = rows.length;
+      res.status(201).json(importRecord);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/contact-lists/:id/imports", authMiddleware, async (req, res) => {
+    try {
+      const imports = await storage.getContactListImports(req.params.id, req.user.id);
+      if (imports === null) return res.status(404).json({ message: "List not found" });
+      res.json(imports);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/contact-lists/:id/export", authMiddleware, async (_req, res) => {
+    res.status(501).json({ message: "Export is coming soon" });
+  });
+
+  app.delete("/api/contact-lists/:listId/contacts/:contactId", authMiddleware, async (req, res) => {
+    try {
+      const { listId, contactId } = req.params;
+      const removed = await storage.removeContactFromList(listId, contactId, req.user.id);
+      if (!removed) return res.status(404).json({ message: "Contact not found in list" });
+      res.json({ message: "Contact removed from list" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/contact-lists/:id/bulk-remove", authMiddleware, async (req, res) => {
+    try {
+      const { contactIds } = req.body;
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        return res.status(400).json({ message: "contactIds array is required" });
+      }
+      const count = await storage.bulkRemoveContactsFromList(req.params.id, contactIds, req.user.id);
+      res.json({ removed: count });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/contacts/:id", authMiddleware, async (req, res) => {
+    try {
+      const { email, ...rest } = req.body;
+      if (email !== undefined) {
+        return res.status(400).json({ message: "Contact email cannot be changed" });
+      }
+      const fields = {};
+      if (rest.name !== undefined) fields.name = sanitizeContactTextField(rest.name);
+      if (rest.company !== undefined) fields.company = sanitizeContactTextField(rest.company);
+      if (rest.category !== undefined) fields.category = sanitizeContactTextField(rest.category);
+      if (rest.customFields !== undefined && typeof rest.customFields === "object") {
+        fields.customFields = rest.customFields;
+      }
+      if (Object.keys(fields).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+      const updated = await storage.updateContact(req.params.id, req.user.id, fields);
+      if (!updated) return res.status(404).json({ message: "Contact not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── End Contact Library routes ────────────────────────────────────────────────
+
   app.get("/api/campaigns", authMiddleware, async (req, res) => {
     try {
       const campaignsList = await storage.getCampaigns(req.user.id, req.isRootAdmin);
@@ -1125,9 +1322,11 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/campaigns", authMiddleware, async (req, res) => {
     try {
-      const { name, template, contacts, scheduledAt } = req.body;
-      const rawContacts = contacts || [];
+      const { name, template, contacts, scheduledAt, listId, saveToLibraryAs } = req.body;
+      const rawContacts = listId ? [] : (contacts || []);
       const validationErrors = [];
+      let campaignListId = null;
+      let campaignListSnapshot = null;
 
       // ── Sender profile gate ───────────────────────────────────────────────────
       // senderName is stored on the user record, not in the request body.
@@ -1233,14 +1432,30 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ validationErrors });
       }
 
-      const validContacts = notRole;
+      // ── Resolve final contact set ─────────────────────────────────────────────
+      let validContacts = notRole;
+      let resolvedTotalOriginal = totalOriginal;
+
+      if (listId) {
+        const list = await storage.getContactList(listId, req.user.id);
+        if (!list) {
+          return res.status(404).json({ error: "LIST_NOT_FOUND", message: "Contact list not found" });
+        }
+        const listContactIds = await storage.resolveListContactIds(listId, req.user.id);
+        if (listContactIds.length > CAMPAIGN_MAX_CONTACTS) {
+          return res.status(400).json({ validationErrors: [`Contact list exceeds the maximum of ${CAMPAIGN_MAX_CONTACTS.toLocaleString()} contacts`] });
+        }
+        validContacts = await storage.getContactsByIds(listContactIds);
+        resolvedTotalOriginal = validContacts.length;
+        campaignListId = listId;
+        campaignListSnapshot = { name: list.name, contactCount: list.contactCount };
+      }
 
       if (validContacts.length === 0) {
         return res.status(400).json({ validationErrors: ["No valid contacts remain after filtering"] });
       }
 
       // ── Pre-campaign suppression count ────────────────────────────────────────
-      // Runs last — after normalization, dedup, format validation, and role filtering.
       const suppressedContactCount = await storage.getPreCampaignSuppressionCount(
         validContacts.map(c => c.email)
       );
@@ -1260,23 +1475,34 @@ export async function registerRoutes(httpServer, app) {
       }
 
       // ── Persist contacts and campaign ─────────────────────────────────────────
-      const savedContacts = await storage.createContacts(
-        validContacts.map(c => ({
-          userId: req.user.id,
-          email: c.email,
-          name: c.name || null,
-          company: c.company || null,
-          category: c.category || null,
-        }))
-      );
-      const savedContactIds = savedContacts.map(c => c.id);
+      let savedContactIds;
+      if (listId) {
+        savedContactIds = validContacts.map(c => c.id);
+      } else {
+        const savedContacts = await storage.createContacts(
+          validContacts.map(c => ({
+            userId: req.user.id,
+            email: c.email,
+            name: c.name || null,
+            company: c.company || null,
+            category: c.category || null,
+          }))
+        );
+        savedContactIds = savedContacts.map(c => c.id);
+        // saveToLibraryAs: best-effort, non-fatal — create list and import contacts in background
+        if (saveToLibraryAs) {
+          storage.createContactList({ userId: req.user.id, name: String(saveToLibraryAs).slice(0, 200) })
+            .then(list => storage.importContactsToList(req.user.id, list.id, validContacts, "campaign_upload", null))
+            .catch(err => console.error("[CONTACTS] saveToLibraryAs failed:", err.message));
+        }
+      }
 
       const contactStats = {
-        total: totalOriginal,
+        total: resolvedTotalOriginal,
         valid: savedContactIds.length,
-        duplicatesRemoved,
-        invalidFormat,
-        roleAddresses,
+        duplicatesRemoved: listId ? 0 : duplicatesRemoved,
+        invalidFormat: listId ? 0 : invalidFormat,
+        roleAddresses: listId ? 0 : roleAddresses,
         suppressed: suppressedContactCount,
       };
 
@@ -1289,6 +1515,8 @@ export async function registerRoutes(httpServer, app) {
           contactIds: savedContactIds,
           status: "PENDING",
           scheduledAt: scheduledTime,
+          listId: campaignListId,
+          listSnapshot: campaignListSnapshot,
         });
         return res.status(201).json({
           campaign,
@@ -1305,6 +1533,8 @@ export async function registerRoutes(httpServer, app) {
         templateSnapshot: template,
         contactIds: savedContactIds,
         status: "PENDING",
+        listId: campaignListId,
+        listSnapshot: campaignListSnapshot,
       });
 
       // Enqueue via BullMQ if Redis is available

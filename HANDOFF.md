@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -284,6 +284,17 @@ All five items must pass before RepMail is considered externally validated.
     - DEBT-003: Suppression delete endpoint + UI — `DELETE /api/suppressions/:id` + AlertDialog
     - DEBT-006: `MANUAL_SUPPRESSION_ADDED` raw string → `AUDIT_ACTIONS` constant
     - UX-001: senderName clear warning when active campaigns exist (frontend-only, zero extra API calls)
+
+12. ~~Milestone 6 — Contact Library~~ *(DONE — 2026-06-26 — Audit 065)*
+    - 3 new tables: `contact_lists`, `contact_list_members`, `contact_imports`
+    - 2 new columns: `contacts.updated_at`, `campaigns.list_id` (ON DELETE SET NULL) + `campaigns.list_snapshot` JSONB
+    - Migration `migrations/0001_quiet_cobalt_man.sql` applied to production (18 statements)
+    - 12 new API routes (CRUD for lists, import, contacts, exports stub)
+    - 13 new storage methods in `storage.js` + full `memoryStorage.js` mirror
+    - 2 new pages: `ContactLibrary.jsx`, `ContactListDetail.jsx` with CSV import sheet
+    - Campaign wizard extended: library tab in FileUpload, `saveToLibraryAs` option, CampaignConfirmation library mode
+    - Navbar BookUser item; App.jsx routes with correct wouter ordering
+    - All 12 API behavioral verification tests PASS (Audit 065)
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

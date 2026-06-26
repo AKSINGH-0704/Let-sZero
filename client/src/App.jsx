@@ -69,6 +69,8 @@ import NotFound from "@/pages/not-found";
 import WaitlistLanding from "@/pages/WaitlistLanding";
 import AcceptInvite from "@/pages/AcceptInvite";
 import Suppressions from "@/pages/Suppressions";
+import ContactLibrary from "@/pages/ContactLibrary";
+import ContactListDetail from "@/pages/ContactListDetail";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -181,6 +183,18 @@ function AppRoutes() {
       <Route path="/app/suppressions">
         <ProtectedRoute>
           <Suppressions />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/contacts/:id">
+        <ProtectedRoute>
+          <ContactListDetail />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/contacts">
+        <ProtectedRoute>
+          <ContactLibrary />
         </ProtectedRoute>
       </Route>
 

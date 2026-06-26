@@ -20,7 +20,9 @@ const INITIAL_STATE = {
   aiAnalysis: null,
   campaignName: "",
   campaignId: null,
-  campaignData: null
+  campaignData: null,
+  listId: null,
+  saveToLibraryAs: null,
 };
 
 export function CampaignProvider({ children }) {
@@ -82,6 +84,14 @@ export function CampaignProvider({ children }) {
     setCampaignState(prev => ({ ...prev, campaignData: data }));
   };
 
+  const setListId = (id) => {
+    setCampaignState(prev => ({ ...prev, listId: id }));
+  };
+
+  const setSaveToLibraryAs = (name) => {
+    setCampaignState(prev => ({ ...prev, saveToLibraryAs: name }));
+  };
+
   const resetCampaign = () => {
     setCampaignState(INITIAL_STATE);
   };
@@ -110,6 +120,8 @@ export function CampaignProvider({ children }) {
     setCampaignName,
     setCampaignId,
     setCampaignData,
+    setListId,
+    setSaveToLibraryAs,
     resetCampaign,
     goNext,
     goBack

@@ -26,11 +26,12 @@ import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
 
 // Use imports only when not in dev mode
-const { eq, and, desc, gte, sql, lt } = (!isDevMode && db) ? drizzleOps : {};
+const { eq, and, desc, gte, sql, lt, inArray, or, asc, ilike } = (!isDevMode && db) ? drizzleOps : {};
 const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
-  suppressions, aiUsageLogs, invites, snsEvents, platformSettings
+  suppressions, aiUsageLogs, invites, snsEvents, platformSettings,
+  contactLists, contactListMembers, contactImports,
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -722,6 +723,7 @@ const dbStorage = {
           company: sql`excluded.company`,
           category: sql`excluded.category`,
           customFields: sql`excluded.custom_fields`,
+          updatedAt: new Date(),
         },
       })
       .returning();
@@ -747,8 +749,273 @@ const dbStorage = {
 
   async getContactsByIds(ids) {
     if (!ids || ids.length === 0) return [];
-    return await db.select().from(contacts).where(drizzleOps.inArray(contacts.id, ids));
+    return await db.select().from(contacts).where(inArray(contacts.id, ids));
   },
+
+  // ── Contact Library ─────────────────────────────────────────────────────────
+
+  async createContactList({ userId, name, description }) {
+    const [list] = await db.insert(contactLists).values({ userId, name, description }).returning();
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CONTACT_LIST_CREATED,
+      targetType: "contact_list",
+      targetId: list.id,
+      details: { name },
+    });
+    return list;
+  },
+
+  async getContactLists(userId) {
+    return await db
+      .select({
+        id: contactLists.id,
+        userId: contactLists.userId,
+        name: contactLists.name,
+        description: contactLists.description,
+        createdAt: contactLists.createdAt,
+        updatedAt: contactLists.updatedAt,
+        contactCount: sql`(SELECT COUNT(*) FROM contact_list_members WHERE list_id = ${contactLists.id})::int`,
+      })
+      .from(contactLists)
+      .where(eq(contactLists.userId, userId))
+      .orderBy(desc(contactLists.createdAt));
+  },
+
+  async getContactList(id, userId) {
+    const [list] = await db
+      .select({
+        id: contactLists.id,
+        userId: contactLists.userId,
+        name: contactLists.name,
+        description: contactLists.description,
+        createdAt: contactLists.createdAt,
+        updatedAt: contactLists.updatedAt,
+        contactCount: sql`(SELECT COUNT(*) FROM contact_list_members WHERE list_id = ${contactLists.id})::int`,
+      })
+      .from(contactLists)
+      .where(and(eq(contactLists.id, id), eq(contactLists.userId, userId)));
+    return list || null;
+  },
+
+  async updateContactList(id, userId, { name, description }) {
+    const updates = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    const [list] = await db
+      .update(contactLists)
+      .set(updates)
+      .where(and(eq(contactLists.id, id), eq(contactLists.userId, userId)))
+      .returning();
+    if (list && name !== undefined) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CONTACT_LIST_RENAMED,
+        targetType: "contact_list",
+        targetId: id,
+        details: { name },
+      });
+    }
+    return list || null;
+  },
+
+  async deleteContactList(id, userId) {
+    const [list] = await db
+      .delete(contactLists)
+      .where(and(eq(contactLists.id, id), eq(contactLists.userId, userId)))
+      .returning();
+    if (list) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CONTACT_LIST_DELETED,
+        targetType: "contact_list",
+        targetId: id,
+        details: { name: list.name },
+      });
+    }
+    return list || null;
+  },
+
+  async importContactsToList(userId, listId, rows, source = "library_import", fileName = null) {
+    const BATCH = 1000;
+    let newContacts = 0, updatedContacts = 0, addedToList = 0, alreadyInList = 0, failedRows = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const emails = batch.map((r) => r.email.toLowerCase().trim());
+
+      const existingContacts = await db
+        .select({ id: contacts.id, email: contacts.email })
+        .from(contacts)
+        .where(and(eq(contacts.userId, userId), inArray(contacts.email, emails)));
+      const existingEmailSet = new Set(existingContacts.map((c) => c.email));
+
+      const upserted = await db
+        .insert(contacts)
+        .values(batch.map((r) => ({ ...r, email: r.email.toLowerCase().trim(), userId, updatedAt: new Date() })))
+        .onConflictDoUpdate({
+          target: [contacts.userId, contacts.email],
+          set: {
+            name: sql`excluded.name`,
+            company: sql`excluded.company`,
+            category: sql`excluded.category`,
+            customFields: sql`excluded.custom_fields`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ id: contacts.id, email: contacts.email });
+
+      for (const c of upserted) {
+        if (existingEmailSet.has(c.email)) updatedContacts++; else newContacts++;
+      }
+
+      const contactIds = upserted.map((c) => c.id);
+      const existingMembers = await db
+        .select({ contactId: contactListMembers.contactId })
+        .from(contactListMembers)
+        .where(and(eq(contactListMembers.listId, listId), inArray(contactListMembers.contactId, contactIds)));
+      const existingMemberSet = new Set(existingMembers.map((m) => m.contactId));
+
+      const newMemberRows = contactIds
+        .filter((id) => !existingMemberSet.has(id))
+        .map((id) => ({ listId, contactId: id }));
+
+      alreadyInList += existingMemberSet.size;
+
+      if (newMemberRows.length > 0) {
+        await db.insert(contactListMembers).values(newMemberRows).onConflictDoNothing();
+        addedToList += newMemberRows.length;
+      }
+    }
+
+    const [importRecord] = await db
+      .insert(contactImports)
+      .values({
+        userId, listId, source, fileName,
+        totalRows: rows.length, failedRows,
+        newContacts, updatedContacts, addedToList, alreadyInList,
+        completedAt: new Date(),
+      })
+      .returning();
+
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CONTACTS_IMPORTED_TO_LIST,
+      targetType: "contact_list",
+      targetId: listId,
+      details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows, fileName },
+    });
+
+    return importRecord;
+  },
+
+  async getContactListContacts(listId, userId, { search, page = 1, limit = 50 } = {}) {
+    const offset = (page - 1) * limit;
+    const conditions = [
+      eq(contactListMembers.listId, listId),
+      eq(contacts.userId, userId),
+    ];
+    if (search) {
+      conditions.push(or(ilike(contacts.email, `%${search}%`), ilike(contacts.name, `%${search}%`)));
+    }
+    const rows = await db
+      .select({
+        id: contacts.id,
+        email: contacts.email,
+        name: contacts.name,
+        company: contacts.company,
+        category: contacts.category,
+        customFields: contacts.customFields,
+        createdAt: contacts.createdAt,
+        updatedAt: contacts.updatedAt,
+        addedAt: contactListMembers.addedAt,
+      })
+      .from(contactListMembers)
+      .innerJoin(contacts, eq(contactListMembers.contactId, contacts.id))
+      .where(and(...conditions))
+      .orderBy(desc(contactListMembers.addedAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [{ total }] = await db
+      .select({ total: sql`COUNT(*)::int` })
+      .from(contactListMembers)
+      .innerJoin(contacts, eq(contactListMembers.contactId, contacts.id))
+      .where(and(...conditions));
+
+    return { rows, total, page, limit };
+  },
+
+  async removeContactFromList(listId, contactId, userId) {
+    const [member] = await db
+      .delete(contactListMembers)
+      .where(and(eq(contactListMembers.listId, listId), eq(contactListMembers.contactId, contactId)))
+      .returning();
+    if (member) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CONTACT_REMOVED_FROM_LIST,
+        targetType: "contact_list",
+        targetId: listId,
+        details: { contactId },
+      });
+    }
+    return member || null;
+  },
+
+  async bulkRemoveContactsFromList(listId, contactIds, userId) {
+    if (!contactIds || contactIds.length === 0) return 0;
+    await db
+      .delete(contactListMembers)
+      .where(and(eq(contactListMembers.listId, listId), inArray(contactListMembers.contactId, contactIds)));
+    await this.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CONTACTS_BULK_REMOVED_FROM_LIST,
+      targetType: "contact_list",
+      targetId: listId,
+      details: { count: contactIds.length },
+    });
+    return contactIds.length;
+  },
+
+  async getContactListImports(listId, userId) {
+    const list = await this.getContactList(listId, userId);
+    if (!list) return null;
+    return await db
+      .select()
+      .from(contactImports)
+      .where(eq(contactImports.listId, listId))
+      .orderBy(desc(contactImports.createdAt));
+  },
+
+  async updateContact(id, userId, fields) {
+    const [updated] = await db
+      .update(contacts)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(and(eq(contacts.id, id), eq(contacts.userId, userId)))
+      .returning();
+    if (updated) {
+      await this.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CONTACT_UPDATED,
+        targetType: "contact",
+        targetId: id,
+        details: { fields: Object.keys(fields) },
+      });
+    }
+    return updated || null;
+  },
+
+  async resolveListContactIds(listId, userId) {
+    const members = await db
+      .select({ contactId: contactListMembers.contactId })
+      .from(contactListMembers)
+      .innerJoin(contacts, eq(contactListMembers.contactId, contacts.id))
+      .where(and(eq(contactListMembers.listId, listId), eq(contacts.userId, userId)));
+    return members.map((m) => m.contactId);
+  },
+
+  // ── End Contact Library ──────────────────────────────────────────────────────
 
   async createCampaign(campaignData) {
     const [campaign] = await db.insert(campaigns).values(campaignData).returning();

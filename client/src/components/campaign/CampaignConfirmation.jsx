@@ -32,17 +32,19 @@ import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePe
 export default function CampaignConfirmation() {
   const [, setLocation] = useLocation();
   const { user, refetch: refetchUser } = useAuth();
-  const { 
-    contacts, 
-    template, 
-    columnMapping, 
-    spamAnalysis, 
+  const {
+    contacts,
+    template,
+    columnMapping,
+    spamAnalysis,
     goBack,
     setCampaignName,
     setCampaignId,
     setCampaignData,
     campaignName,
-    setStep
+    setStep,
+    listId,
+    saveToLibraryAs,
   } = useCampaign();
 
   const [name, setName] = useState(campaignName || `Campaign ${new Date().toLocaleDateString()}`);
@@ -55,9 +57,16 @@ export default function CampaignConfirmation() {
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
 
+  const { data: selectedList } = useQuery({
+    queryKey: [`/api/contact-lists/${listId}`],
+    queryFn: () => apiRequest("GET", `/api/contact-lists/${listId}`).then(r => r.json()),
+    enabled: !!listId,
+  });
+
   const senderProfileComplete = !!(user?.senderName?.trim());
 
-  const creditsRequired = contacts.length;
+  const recipientCount = listId ? (selectedList?.contactCount ?? 0) : contacts.length;
+  const creditsRequired = recipientCount;
   const creditsAvailable = creditsInfo?.total ?? calculateCreditsRemaining(
     user?.creditsReceived || 0,
     user?.creditsAllocated || 0,
@@ -110,13 +119,6 @@ export default function CampaignConfirmation() {
 
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const mappedContacts = contacts.map(contact => ({
-        email: contact[columnMapping.email],
-        name: contact[columnMapping.name],
-        company: contact[columnMapping.company],
-        category: contact[columnMapping.category]
-      }));
-
       const payload = {
         name,
         template: {
@@ -124,9 +126,22 @@ export default function CampaignConfirmation() {
           subject: template.subject,
           body: template.body
         },
-        contacts: mappedContacts,
-        totalEmails: contacts.length
       };
+
+      if (listId) {
+        payload.listId = listId;
+      } else {
+        const mappedContacts = contacts.map(contact => ({
+          email: contact[columnMapping.email],
+          name: contact[columnMapping.name],
+          company: contact[columnMapping.company],
+          category: contact[columnMapping.category]
+        }));
+        payload.contacts = mappedContacts;
+        payload.totalEmails = contacts.length;
+        if (saveToLibraryAs) payload.saveToLibraryAs = saveToLibraryAs;
+      }
+
       if (isScheduled && scheduledAt) {
         payload.scheduledAt = new Date(scheduledAt).toISOString();
       }
@@ -267,7 +282,7 @@ export default function CampaignConfirmation() {
                 <div className="flex items-center gap-3 p-3 rounded-md bg-muted/50">
                   <Users className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-2xl font-bold">{formatNumber(contacts.length)}</p>
+                    <p className="text-2xl font-bold">{formatNumber(recipientCount)}</p>
                     <p className="text-xs text-muted-foreground">Recipients</p>
                   </div>
                 </div>
@@ -440,7 +455,7 @@ export default function CampaignConfirmation() {
                 <div>
                   <Label htmlFor="confirm" className="cursor-pointer">
                     I confirm that I want to send this campaign to{" "}
-                    <strong>{formatNumber(contacts.length)}</strong> recipients using{" "}
+                    <strong>{formatNumber(recipientCount)}</strong> recipients using{" "}
                     <strong>{formatNumber(creditsRequired)}</strong> credits.
                   </Label>
                   <p className="text-sm text-muted-foreground mt-1">

@@ -5803,3 +5803,67 @@ M5 addresses production safety gaps and correctness issues identified in the M5 
 |---|---|---|---|---|
 | F-M5-1 | Architecture | senderName read at send-time, not snapshotted at campaign creation. Clearing mid-campaign silently changes From name. Long-term fix: add senderProfileSnapshot JSONB to campaigns table at creation — requires schema migration. | Medium | M7+ |
 | F-M5-2 | Security | Nodemailer ^8.0.7 remains at a CVE-affected version. sanitizeHeaderValue provides defense-in-depth but upgrading to 9.x eliminates root cause. | Medium | P3 |
+
+---
+
+## Audit 065 — Milestone 6 Contact Library Implementation Audit
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 (independent) + AK Singh
+**Scope:** Full implementation audit of M6 Contact Library feature — schema, storage, API routes, frontend
+**Commit at time of audit:** Pre-commit (post-implementation, pre-push)
+**Method:** Read-only audit of all modified and new files; behavioral verification via direct DB test (12 API test cases); independent Production Audit by fresh agent
+
+### What Was Implemented
+
+| Layer | Changes |
+|:------|:--------|
+| **Schema** | 3 new tables (`contact_lists`, `contact_list_members`, `contact_imports`); `contacts.updated_at`; `campaigns.list_id` (ON DELETE SET NULL) + `campaigns.list_snapshot` JSONB; 7 new `AUDIT_ACTIONS` |
+| **Storage** | 13 new Contact Library methods in `storage.js` + full mirror in `memoryStorage.js`; `createContacts` now tracks `updatedAt` |
+| **API** | 12 new routes; `POST /api/campaigns` extended with `listId` + `saveToLibraryAs`; `sanitizeContactTextField` helper |
+| **Frontend** | `ContactLibrary.jsx` (new); `ContactListDetail.jsx` with CSV import sheet (new); Navbar BookUser item; App.jsx routes; FileUpload tab switcher; CampaignContext/CampaignConfirmation library mode |
+| **Migration** | `migrations/0001_quiet_cobalt_man.sql` generated; applied to production via direct SQL runner |
+
+### Behavioral Verification Results
+
+All 12 API test cases passed:
+
+| # | Test | Result |
+|---|------|--------|
+| 1 | GET /api/contact-lists (empty user) | 200, 0 lists |
+| 2 | POST /api/contact-lists | 201, list created |
+| 3 | GET /api/contact-lists/:id (with contactCount) | 200 |
+| 4 | POST /api/contact-lists/:id/import (3 rows, 1 bad email) | 201, failedRows:1, newContacts:2, addedToList:2 |
+| 5 | GET /api/contact-lists/:id/contacts (paginated) | 200, total=2 |
+| 6 | PATCH /api/contact-lists/:id (rename) | 200 |
+| 7 | GET /api/contact-lists/:id/contacts?search=alice | 200, filtered |
+| 8 | GET /api/contact-lists/:id/imports | 200, 1 record |
+| 9 | PATCH /api/contacts/:id (company update) | 200 |
+| 9b | PATCH /api/contacts/:id (email change rejected) | 400, "Contact email cannot be changed" |
+| 10 | DELETE /api/contact-lists/:listId/contacts/:contactId | 200 |
+| 11 | GET /api/contact-lists/:id/export (stub) | 501 |
+| 12 | DELETE /api/contact-lists/:id + verify gone | 200, then 404 |
+
+### Independent Production Audit Findings
+
+| ID | Area | Finding | Severity |
+|----|------|---------|---------|
+| OK | Security / auth | userId ownership enforced in all Contact Library storage calls via `and(eq(table.id, id), eq(table.userId, userId))`; 404 returned for both not-found and not-owned | PASS |
+| OK | Security / XSS | `sanitizeContactTextField()` trims, type-checks, and caps at 500 chars; email normalized via `.toLowerCase().trim()` | PASS |
+| OK | Email immutability | `PATCH /api/contacts/:id` explicitly rejects `email` field with 400; storage enforces unique constraint on `(userId, email)` | PASS |
+| OK | Cascade deletes | `contactListMembers.listId → contactLists.id ON DELETE CASCADE`; `campaigns.listId → contactLists.id ON DELETE SET NULL`; memoryStorage manually cascades | PASS |
+| OK | List snapshot | Snapshot captured at campaign creation (`{ name, contactCount }`); survives list rename/delete; campaigns.contactIds is source of truth for send | PASS |
+| OK | Import atomicity | 1000-row batches; pre-validation of email format server-side; `onConflictDoNothing` prevents duplicates | PASS |
+| OK | memoryStorage parity | All 13 new methods fully implemented in memoryStorage.js | PASS |
+| OK | Query cache invalidation | All 4 related query keys invalidated after import; 3 after contact removal | PASS |
+| LOW | saveToLibraryAs error handling | Fire-and-forget on list creation; errors logged to console only; campaign still created (intentional, per design) | PASS |
+| LOW | Empty list campaign error | "No valid contacts remain after filtering" message doesn't distinguish empty list from filtered-out | INFO |
+
+### Future Engineering Findings
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M6-1 | UX | Empty list campaign gives generic "No valid contacts remain after filtering" message instead of "Contact list is empty". Confusing for library mode. | Low | M7 |
+| F-M6-2 | Reliability | `saveToLibraryAs` list creation is fire-and-forget. If the DB write fails silently, user thinks list was saved but it wasn't. Consider a background retry or at minimum a response field indicating save status. | Low | M7 |
+| F-M6-3 | Feature | Contact list export (`GET /api/contact-lists/:id/export`) returns 501. CSV export is a common user expectation. | Low | M7 |
+| F-M6-4 | Documentation | Large imports (50K rows) can take significant DB time with no progress signal. Document expected timing; consider progress webhooks for future. | Info | M8+ |

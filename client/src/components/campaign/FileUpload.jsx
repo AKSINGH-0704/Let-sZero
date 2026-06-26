@@ -1,23 +1,31 @@
 import { useState, useCallback, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import { Upload, FileSpreadsheet, X, AlertCircle, CheckCircle, Loader2, BookUser, Users } from "lucide-react";
 import { parseCSV, cn } from "@/lib/utils";
 
 export default function FileUpload() {
-  const { setContacts, goNext, contacts } = useCampaign();
+  const { setContacts, goNext, contacts, setListId, setSaveToLibraryAs, setStep } = useCampaign();
+  const [tab, setTab] = useState("upload"); // "upload" | "library"
+  const [selectedListId, setSelectedListId] = useState(null);
+  const [saveAs, setSaveAs] = useState("");
+  const [saveAsEnabled, setSaveAsEnabled] = useState(false);
+
   const [file, setFile] = useState(null);
   const [fileType, setFileType] = useState(null);
   const [preview, setPreview] = useState({ headers: [], rows: [] });
@@ -25,6 +33,12 @@ export default function FileUpload() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef(null);
+
+  const { data: contactLists = [] } = useQuery({
+    queryKey: ["/api/contact-lists"],
+    queryFn: () => apiRequest("GET", "/api/contact-lists").then(r => r.json()),
+    enabled: tab === "library",
+  });
 
   const handleBrowseClick = () => {
     fileInputRef.current?.click();
@@ -149,14 +163,100 @@ export default function FileUpload() {
 
   const canProceed = contacts.length > 0 && !error;
 
+  const handleLibraryContinue = () => {
+    if (!selectedListId) return;
+    setListId(selectedListId);
+    setSaveToLibraryAs(null);
+    // Skip ColumnMapping (step 2) — contacts come from the library
+    setStep(3);
+  };
+
+  const handleUploadContinue = () => {
+    setSaveToLibraryAs(saveAsEnabled && saveAs.trim() ? saveAs.trim() : null);
+    setListId(null);
+    goNext();
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold">Upload Your Contact List</h2>
+        <h2 className="text-xl font-semibold">Add Contacts</h2>
         <p className="text-muted-foreground mt-1">
-          Upload CSV or Excel files (.csv, .xlsx, .xls). Max size 10MB.
+          Upload a new list or choose an existing one from your library.
         </p>
       </div>
+
+      {/* Tab switcher */}
+      <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+        <button
+          className={cn(
+            "flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors",
+            tab === "upload"
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => setTab("upload")}
+        >
+          <Upload className="w-4 h-4" />
+          Upload file
+        </button>
+        <button
+          className={cn(
+            "flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors",
+            tab === "library"
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:text-foreground"
+          )}
+          onClick={() => setTab("library")}
+        >
+          <BookUser className="w-4 h-4" />
+          Contact Library
+        </button>
+      </div>
+
+      {/* Library tab */}
+      {tab === "library" && (
+        <div className="space-y-4">
+          {contactLists.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Users className="w-8 h-8 mx-auto mb-3 opacity-40" />
+              <p className="text-sm">No contact lists yet.</p>
+              <p className="text-xs mt-1">
+                Go to <a href="/app/contacts" className="underline text-primary" target="_blank" rel="noreferrer">Contact Library</a> to create and import lists.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {contactLists.map(list => (
+                <button
+                  key={list.id}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg border transition-colors",
+                    selectedListId === list.id
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/40"
+                  )}
+                  onClick={() => setSelectedListId(list.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm">{list.name}</span>
+                    <span className="text-xs text-muted-foreground">{(list.contactCount || 0).toLocaleString()} contacts</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button onClick={handleLibraryContinue} disabled={!selectedListId}>
+              Continue to Template
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Upload tab */}
+      {tab === "upload" && (<>
+
 
       {isLoading ? (
         <div className="border-2 border-dashed rounded-lg p-6 sm:p-12 text-center border-border">
@@ -295,15 +395,39 @@ export default function FileUpload() {
         </Alert>
       )}
 
+      {canProceed && (
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="checkbox"
+            id="save-to-library"
+            checked={saveAsEnabled}
+            onChange={e => setSaveAsEnabled(e.target.checked)}
+            className="rounded border-border"
+          />
+          <Label htmlFor="save-to-library" className="text-sm font-normal cursor-pointer">
+            Save to Contact Library as
+          </Label>
+          {saveAsEnabled && (
+            <Input
+              placeholder="List name…"
+              value={saveAs}
+              onChange={e => setSaveAs(e.target.value)}
+              className="h-7 text-sm max-w-xs"
+            />
+          )}
+        </div>
+      )}
+
       <div className="flex justify-end gap-4 pt-4">
         <Button
-          onClick={goNext}
+          onClick={handleUploadContinue}
           disabled={!canProceed}
           data-testid="button-next-step"
         >
           Continue to Column Mapping
         </Button>
       </div>
+      </>)}
     </div>
   );
 }

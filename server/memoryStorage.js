@@ -41,6 +41,9 @@ const store = {
   aiUsageLogs: new Map(),
   invites: new Map(),
   snsEvents: new Map(),
+  contactLists: new Map(),
+  contactListMembers: new Map(),
+  contactImports: new Map(),
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -684,7 +687,8 @@ export const memoryStorage = {
       company: contactData.company || null,
       category: contactData.category || null,
       customFields: contactData.customFields || null,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     store.contacts.set(id, contact);
     return contact;
@@ -722,6 +726,163 @@ export const memoryStorage = {
     return ids.map(id => store.contacts.get(id)).filter(Boolean);
   },
 
+  // ── Contact Library ─────────────────────────────────────────────────────────
+
+  async createContactList({ userId, name, description }) {
+    const id = generateUUID();
+    const now = new Date();
+    const list = { id, userId, name, description: description || null, createdAt: now, updatedAt: now };
+    store.contactLists.set(id, list);
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACT_LIST_CREATED, targetType: "contact_list", targetId: id, details: { name } });
+    return { ...list, contactCount: 0 };
+  },
+
+  async getContactLists(userId) {
+    return toSortedArray(store.contactLists)
+      .filter(l => l.userId === userId)
+      .map(l => ({
+        ...l,
+        contactCount: Array.from(store.contactListMembers.values()).filter(m => m.listId === l.id).length,
+      }));
+  },
+
+  async getContactList(id, userId) {
+    const list = store.contactLists.get(id);
+    if (!list || list.userId !== userId) return null;
+    return {
+      ...list,
+      contactCount: Array.from(store.contactListMembers.values()).filter(m => m.listId === id).length,
+    };
+  },
+
+  async updateContactList(id, userId, { name, description }) {
+    const list = store.contactLists.get(id);
+    if (!list || list.userId !== userId) return null;
+    if (name !== undefined) list.name = name;
+    if (description !== undefined) list.description = description;
+    list.updatedAt = new Date();
+    store.contactLists.set(id, list);
+    if (name !== undefined) {
+      await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACT_LIST_RENAMED, targetType: "contact_list", targetId: id, details: { name } });
+    }
+    return { ...list, contactCount: Array.from(store.contactListMembers.values()).filter(m => m.listId === id).length };
+  },
+
+  async deleteContactList(id, userId) {
+    const list = store.contactLists.get(id);
+    if (!list || list.userId !== userId) return null;
+    store.contactLists.delete(id);
+    for (const [mid, m] of store.contactListMembers.entries()) {
+      if (m.listId === id) store.contactListMembers.delete(mid);
+    }
+    for (const [iid, imp] of store.contactImports.entries()) {
+      if (imp.listId === id) store.contactImports.delete(iid);
+    }
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACT_LIST_DELETED, targetType: "contact_list", targetId: id, details: { name: list.name } });
+    return list;
+  },
+
+  async importContactsToList(userId, listId, rows, source = "library_import", fileName = null) {
+    let newContacts = 0, updatedContacts = 0, addedToList = 0, alreadyInList = 0;
+    for (const row of rows) {
+      const email = row.email.toLowerCase().trim();
+      const existingContact = Array.from(store.contacts.values()).find(c => c.userId === userId && c.email === email);
+      let contactId;
+      if (existingContact) {
+        existingContact.name = row.name || existingContact.name;
+        existingContact.company = row.company || existingContact.company;
+        existingContact.category = row.category || existingContact.category;
+        existingContact.updatedAt = new Date();
+        store.contacts.set(existingContact.id, existingContact);
+        contactId = existingContact.id;
+        updatedContacts++;
+      } else {
+        const id = generateUUID();
+        const now = new Date();
+        const c = { id, userId, email, name: row.name || null, company: row.company || null, category: row.category || null, customFields: row.customFields || null, createdAt: now, updatedAt: now };
+        store.contacts.set(id, c);
+        contactId = id;
+        newContacts++;
+      }
+      const alreadyMember = Array.from(store.contactListMembers.values()).some(m => m.listId === listId && m.contactId === contactId);
+      if (alreadyMember) {
+        alreadyInList++;
+      } else {
+        const mid = generateUUID();
+        store.contactListMembers.set(mid, { id: mid, listId, contactId, addedAt: new Date() });
+        addedToList++;
+      }
+    }
+    const id = generateUUID();
+    const importRecord = { id, userId, listId, source, fileName: fileName || null, totalRows: rows.length, failedRows: 0, newContacts, updatedContacts, addedToList, alreadyInList, createdAt: new Date(), completedAt: new Date() };
+    store.contactImports.set(id, importRecord);
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACTS_IMPORTED_TO_LIST, targetType: "contact_list", targetId: listId, details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows: 0, fileName } });
+    return importRecord;
+  },
+
+  async getContactListContacts(listId, userId, { search, page = 1, limit = 50 } = {}) {
+    const offset = (page - 1) * limit;
+    const members = Array.from(store.contactListMembers.values()).filter(m => m.listId === listId);
+    let rows = members
+      .map(m => {
+        const c = store.contacts.get(m.contactId);
+        return c ? { ...c, addedAt: m.addedAt } : null;
+      })
+      .filter(c => c && c.userId === userId);
+    if (search) {
+      const q = search.toLowerCase();
+      rows = rows.filter(c => c.email.includes(q) || (c.name && c.name.toLowerCase().includes(q)));
+    }
+    rows.sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+    const total = rows.length;
+    return { rows: rows.slice(offset, offset + limit), total, page, limit };
+  },
+
+  async removeContactFromList(listId, contactId, userId) {
+    const entry = Array.from(store.contactListMembers.entries()).find(([, m]) => m.listId === listId && m.contactId === contactId);
+    if (!entry) return null;
+    store.contactListMembers.delete(entry[0]);
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACT_REMOVED_FROM_LIST, targetType: "contact_list", targetId: listId, details: { contactId } });
+    return entry[1];
+  },
+
+  async bulkRemoveContactsFromList(listId, contactIds, userId) {
+    if (!contactIds || contactIds.length === 0) return 0;
+    const idSet = new Set(contactIds);
+    for (const [mid, m] of store.contactListMembers.entries()) {
+      if (m.listId === listId && idSet.has(m.contactId)) store.contactListMembers.delete(mid);
+    }
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACTS_BULK_REMOVED_FROM_LIST, targetType: "contact_list", targetId: listId, details: { count: contactIds.length } });
+    return contactIds.length;
+  },
+
+  async getContactListImports(listId, userId) {
+    const list = await this.getContactList(listId, userId);
+    if (!list) return null;
+    return toSortedArray(store.contactImports).filter(i => i.listId === listId);
+  },
+
+  async updateContact(id, userId, fields) {
+    const contact = store.contacts.get(id);
+    if (!contact || contact.userId !== userId) return null;
+    Object.assign(contact, fields, { updatedAt: new Date() });
+    store.contacts.set(id, contact);
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACT_UPDATED, targetType: "contact", targetId: id, details: { fields: Object.keys(fields) } });
+    return contact;
+  },
+
+  async resolveListContactIds(listId, userId) {
+    return Array.from(store.contactListMembers.values())
+      .filter(m => {
+        if (m.listId !== listId) return false;
+        const c = store.contacts.get(m.contactId);
+        return c && c.userId === userId;
+      })
+      .map(m => m.contactId);
+  },
+
+  // ── End Contact Library ──────────────────────────────────────────────────────
+
   // ==================== CAMPAIGN OPERATIONS ====================
   async createCampaign(campaignData) {
     const id = generateUUID();
@@ -740,6 +901,8 @@ export const memoryStorage = {
       creditsUsed: 0,
       contactIds: campaignData.contactIds || [],
       templateSnapshot: campaignData.templateSnapshot || null,
+      listId: campaignData.listId || null,
+      listSnapshot: campaignData.listSnapshot || null,
       scheduledAt: campaignData.scheduledAt || null,
       startedAt: null,
       completedAt: null,

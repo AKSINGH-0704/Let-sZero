@@ -8,6 +8,13 @@
       "when": 1781686710073,
       "tag": "0000_mean_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782495681116,
+      "tag": "0001_quiet_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

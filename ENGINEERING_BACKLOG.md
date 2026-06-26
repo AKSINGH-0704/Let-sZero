@@ -114,6 +114,17 @@
 
 ---
 
+## Contact Library (M6)
+
+| ID | Status | Severity | Description | Rationale | Milestone |
+|---|---|---|---|---|---|
+| M6-001 | OPEN | LOW | **Empty list campaign error is generic.** When a campaign is created via `listId` pointing to an empty list, the error is "No valid contacts remain after filtering" — identical to the upload-path zero-contacts error. A library-specific message ("Contact list is empty") would be clearer. | UX gap in library mode. Easy fix: check `listId` path and return distinct error. | M7 |
+| M6-002 | OPEN | LOW | **`saveToLibraryAs` is fire-and-forget.** When `saveToLibraryAs` is set on campaign creation, the contact list creation runs in background without awaiting. If the DB write fails, the user receives no signal that the list was not saved. Campaign is created either way (intentional). | Non-critical data loss. User thinks list is saved but it may not be. Consider response field `libraryListId` indicating success/failure. | M7 |
+| M6-003 | OPEN | LOW | **Contact list CSV export is a stub (501).** `GET /api/contact-lists/:id/export` returns 501 Not Implemented. CSV download is a common user expectation when managing contact lists. | Feature gap. Implement as CSV streaming response with query: `SELECT email, name, company, category FROM contacts JOIN contact_list_members ON ... WHERE list_id = ?`. | M7 |
+| M6-004 | OPEN | INFO | **Large import timing not documented.** 50K-row imports run synchronously in 1K-row batches (4 DB queries each = ~200 round-trips). No progress signal is returned to the client during execution. At typical Railway Postgres latency, a 50K import takes ~20-40s. | Document expected timing; consider streaming response or progress webhooks for large files. | M8+ |
+
+---
+
 ## Resolved / Won't Fix
 
 | ID | Resolution | Description |
