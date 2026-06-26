@@ -5575,3 +5575,104 @@ Eye button gets `aria-label` for screen reader accessibility.
 | F-M3B-2 | UX | Cancel action in History table row — power users want inline cancel from the list without opening the tracker. Requires per-row cancel mutation + dialog. | Low | M4 |
 | F-M3B-3 | UX | "Export remaining contacts" CTA after CANCELLED — contacts not reached cannot be re-targeted from the UI. Requires contact-level state tracking beyond current schema. | Medium | M4+ |
 | F-M3B-4 | UX | Admin cancel UI — cancel endpoint supports req.isRootAdmin but History admin view has no cancel button for other users' campaigns. | Low | M4 |
+
+---
+
+## Audit 063 — Milestone 4: Campaign Architecture Extraction
+
+**Date:** 2026-06-26
+**Conducted by:** Claude Sonnet 4.6 + AK Singh
+**Scope:** M4A (runCampaignLoop extraction), M4B (REL-001 + DEL-002), M4C (History cancel UX)
+**Commit at time of audit:** `83ea7c7` (pre-commit; M4 changes staged for commit immediately after)
+**Method:** Independent review of full diffs for worker.js, routes.js, index.js, storage.js, History.jsx + new files campaignConfig.js and campaignLoop.js. 127-assertion behavioral verification script (19 suites across 13 behavioral dimensions).
+
+### Background
+
+`processCampaign` (BullMQ worker path) and `executeCampaign` (inline scheduler/watchdog path) were two ~400-line functions implementing identical campaign send logic. M3A had applied 8 fixes to both functions simultaneously — a maintenance burden that had already caused at least one missed-application bug in a prior milestone. MAINT-001 was filed in Audit 062 targeting M4.
+
+M4 also closed REL-001 (no startup warning when Redis unavailable) and DEL-002 (topBouncers threshold misaligned with auto-pause enforcement threshold), and delivered UX-002/UX-004 (inline cancel from History table row with admin support).
+
+### Architectural Decisions
+
+**ADR-063-1: Module-level storage import in campaignLoop.js**
+Decision: module-level import (not parameter injection). Consistent with all other server modules (worker.js, routes.js, storage.js all import storage at module level). No test suite exists that would benefit from DI. Singleton semantics are correct for this application.
+
+**ADR-063-2: Execution-path log tags**
+Decision: `[CAMPAIGN][WORKER]` for BullMQ path, `[CAMPAIGN][INLINE]` for inline path. Both resolve to `runCampaignLoop`'s shared `${logTag}` variable. Production operators can grep either path independently. Earlier design proposed generic `[CAMPAIGN]` prefix with no path distinction — rejected in favor of observability.
+
+**ADR-063-3: Centralized runtime constants in campaignConfig.js**
+Decision: all campaign runtime constants (`SEND_RATE_MS`, `BOUNCE_RATE_PAUSE_THRESHOLD`, `COMPLAINT_RATE_PAUSE_THRESHOLD`, `MIN_SENDER_HEALTH_SENT`, `CHECKPOINT_INTERVAL`, `PAUSE_CHECK_INTERVAL`, `sleep`) moved to `server/campaignConfig.js`. Imported by campaignLoop.js and storage.js. Single source of truth — configuration drift between execution paths is now structurally impossible.
+
+### Intentional Behavioral Differences (documented and justified)
+
+| Difference | Worker Path | Inline Path | Justification |
+|---|---|---|---|
+| `onProgress` callback | `job.updateProgress(pct)` | omitted | BullMQ-specific API — inline path has no job object |
+| `worker.on("failed", ...)` handler | present | absent | BullMQ-specific retry/failure lifecycle |
+| Heartbeat interval | present | absent | BullMQ-specific job keep-alive |
+| Progress tag in logs | `[CAMPAIGN][WORKER]` | `[CAMPAIGN][INLINE]` | Execution path observability |
+
+All other behavior is structurally identical (shared code path).
+
+### New Behavioral Improvement (idempotency guard)
+
+The idempotency guard (`if (campaign.status !== CAMPAIGN_STATUS.RUNNING) return`) was previously only in `processCampaign`. Added to the shared `runCampaignLoop`. This is a correctness improvement for the inline path — harmless for the worker path where it was already present.
+
+### Circular Import Resolution
+
+`sendWithRetry` and `isThrottleError` moved from `worker.js` INTO `campaignLoop.js`. This prevents the circular dependency: `worker.js → campaignLoop.js → worker.js`. `worker.js` re-exports `sendWithRetry` for backwards compatibility. `routes.js` no longer imports `sendWithRetry`.
+
+### Files Modified
+
+| File | Change | Type |
+|---|---|---|
+| `server/campaignConfig.js` | NEW — shared runtime constants | New file |
+| `server/campaignLoop.js` | NEW — `isThrottleError`, `sendWithRetry`, `runCampaignLoop` | New file |
+| `server/worker.js` | `processCampaign` 400-line body → 4-line `runCampaignLoop` call; re-exports `sendWithRetry` | Modified |
+| `server/routes.js` | `executeCampaign` 400-line body → 3-line `runCampaignLoop` call | Modified |
+| `server/index.js` | REL-001: `console.warn` when `!worker` | Modified |
+| `server/storage.js` | DEL-002: `topBouncers` threshold reads `MIN_SENDER_HEALTH_SENT` from campaignConfig | Modified |
+| `client/src/pages/History.jsx` | M4C: page-level `cancelTarget` state + single `useMutation` + `CancelCampaignDialog` per row | Modified |
+
+### Behavioral Verification
+
+| Suite | Dimension | Result |
+|---|---|---|
+| Module structure | campaignConfig.js and campaignLoop.js exports | Pass |
+| Campaign lifecycle | RUNNING status set, completedAt on COMPLETED | Pass |
+| Email sending | updateCampaignEmail SENT, sentCount increment, log order | Pass |
+| Suppression | Skip suppressed contacts, continue loop | Pass |
+| Sender health | Auto-pause at threshold, uses MIN_SENDER_HEALTH_SENT | Pass |
+| Credit deduction | decrement per send, flush at checkpoint | Pass |
+| Checkpoints | flush at CHECKPOINT_INTERVAL=25, final flush | Pass |
+| Audit logging | AUDIT_ACTIONS.CAMPAIGN_EMAIL_SENT logged | Pass |
+| Progress updates | onProgress called with percentage | Pass |
+| Cancellation | break on CANCELLED, flush counts, set CANCELLED | Pass |
+| Pause handling | mid-loop pause flush + FAILED status | Pass |
+| Retries | sendWithRetry: SENT contacts skipped, failedCount++ on catch | Pass |
+| Failure handling | catch block: failedCount++, FAILED campaignEmail | Pass |
+| Caller integration | worker.js: logTag=[CAMPAIGN][WORKER]; routes.js: logTag=[CAMPAIGN][INLINE] | Pass |
+| M4B REL-001 | console.warn when !worker in index.js | Pass |
+| M4B DEL-002 | topBouncers uses MIN_SENDER_HEALTH_SENT constant | Pass |
+| M4C cancel UX | cancelTarget state, cancelMutation, CancelCampaignDialog | Pass |
+| Idempotency guard | non-RUNNING campaigns return early | Pass |
+| onProgress safety | wrapped in try/catch, Redis errors don't abort loop | Pass |
+
+**Total: 127/127 assertions passed (19 suites)**
+
+### Classification Summary
+
+| ID | Area | Finding | Severity | Status |
+|---|---|---|---|---|
+| MAINT-001 | Architecture | Duplicate 400-line campaign loops eliminated — single `runCampaignLoop` shared module | HIGH | Fixed |
+| REL-001 | Reliability | Startup warning when Redis unavailable / inline path active | MEDIUM | Fixed |
+| DEL-002 | Deliverability | `topBouncers` threshold aligned with auto-pause enforcement via shared constant | MEDIUM | Fixed |
+| UX-002 | UX | Cancel button in History table row — page-level state + single mutation | LOW | Fixed |
+| UX-004 | UX | Admin cancel in History UI — `req.isRootAdmin` backend already supports it; frontend `canCancel` exposes the button | LOW | Fixed |
+
+### Future Engineering Findings
+
+| ID | Domain | Description | Severity | Recommended Milestone |
+|---|---|---|---|---|
+| F-M4-1 | Performance | `onProgress` try/catch in loop adds overhead if Redis errors are frequent (rare in practice) | Low | Monitor only |
+| F-M4-2 | Operations | `sendWithRetry` re-export from worker.js creates a re-export chain; consider direct import from campaignLoop.js in any new callers | Low | Housekeeping |

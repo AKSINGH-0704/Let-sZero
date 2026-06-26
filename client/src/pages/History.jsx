@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,16 +42,62 @@ import {
   TrendingUp,
   AlertTriangle,
   Info,
+  X,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { getStatusConfig } from "@/lib/campaignStatus";
+import CancelCampaignDialog from "@/components/campaign/CancelCampaignDialog";
 
 export default function History() {
   const { isRootAdmin } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewCampaign, setViewCampaign] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelError, setCancelError] = useState(null);
+
+  const cancelMutation = useMutation({
+    mutationFn: async (campaignId) => {
+      const res = await fetch(`/api/campaigns/${campaignId}/cancel`, { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) {
+        const err = new Error(data.message || "Failed to cancel campaign");
+        err.status = res.status;
+        err.code = data.error;
+        err.campaignStatus = data.status;
+        throw err;
+      }
+      return data;
+    },
+    onSuccess: (data) => {
+      setCancelTarget(null);
+      setCancelError(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({
+        title: data.alreadyCancelled ? "Campaign was already cancelled" : "Campaign cancelled",
+        description: data.alreadyCancelled
+          ? "This campaign had already been stopped."
+          : "The campaign has been stopped. Credits for sent emails are not refunded.",
+      });
+    },
+    onError: (err) => {
+      if (err.status === 409) {
+        setCancelTarget(null);
+        setCancelError(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+        toast({
+          title: err.campaignStatus === "COMPLETED" ? "Campaign already completed" : "Campaign already stopped",
+          description: err.message,
+          variant: "destructive",
+        });
+      } else {
+        setCancelError(err);
+      }
+    },
+  });
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["/api/campaigns"]
@@ -237,6 +284,22 @@ export default function History() {
                           )}
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
+                              {config.canCancel && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Cancel campaign ${campaign.name}`}
+                                  data-testid={`button-cancel-${campaign.id}`}
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                  onClick={() => {
+                                    setCancelError(null);
+                                    cancelMutation.reset();
+                                    setCancelTarget(campaign);
+                                  }}
+                                >
+                                  <X className="h-4 w-4" aria-hidden="true" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -285,6 +348,22 @@ export default function History() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Cancel campaign dialog — page-level; one dialog shared across all rows */}
+      <CancelCampaignDialog
+        open={!!cancelTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelError(null);
+            cancelMutation.reset();
+            setCancelTarget(null);
+          }
+        }}
+        campaign={cancelTarget}
+        onConfirm={() => cancelTarget && cancelMutation.mutate(cancelTarget.id)}
+        isPending={cancelMutation.isPending}
+        error={cancelError}
+      />
 
       {/* Campaign detail dialog */}
       <Dialog open={!!viewCampaign} onOpenChange={(open) => !open && setViewCampaign(null)}>

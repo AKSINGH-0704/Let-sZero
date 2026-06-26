@@ -12,6 +12,7 @@ import { db, isDevMode } from "./db.js";
 import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { MIN_SENDER_HEALTH_SENT } from "./campaignConfig.js";
 
 // Import schema constants (always needed)
 import {
@@ -2149,7 +2150,7 @@ const dbStorage = {
       .innerJoin(users, eq(campaigns.userId, users.id))
       .where(gte(campaigns.startedAt, thirtyDaysAgo))
       .groupBy(campaigns.userId, users.email)
-      .having(sql`SUM(sent_emails) >= 10`)
+      .having(sql`SUM(sent_emails) >= ${MIN_SENDER_HEALTH_SENT}`)
       .orderBy(sql`SUM(bounced_emails)::float / NULLIF(SUM(sent_emails), 0) DESC`)
       .limit(5);
 

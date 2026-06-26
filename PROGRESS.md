@@ -1470,3 +1470,29 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 | Build clean | **COMPLETE** | 0 errors |
 
 **Milestone status: COMPLETE â€” Milestone 3B (Campaign Cancellation UX â€” Audit 062).**
+
+### 15 · Milestone 4 — Campaign Architecture Extraction (2026-06-26)
+
+**Audit:** 063 — see AUDIT_TRAIL.md
+
+| Deliverable | Status | Evidence |
+|-------------|--------|----------|
+| `server/campaignConfig.js` — shared runtime config | **COMPLETE** | SEND_RATE_MS, sleep, bounce/complaint thresholds, MIN_SENDER_HEALTH_SENT=50, CHECKPOINT_INTERVAL=25, PAUSE_CHECK_INTERVAL=50 |
+| `server/campaignLoop.js` — shared execution loop | **COMPLETE** | runCampaignLoop(campaignId, userId, {logTag, onProgress}); sendWithRetry + isThrottleError moved from worker.js |
+| `server/worker.js` refactored (M4A) | **COMPLETE** | processCampaign replaced with runCampaignLoop call; logTag=[CAMPAIGN][WORKER]; onProgress=job.updateProgress |
+| `server/routes.js` refactored (M4A) | **COMPLETE** | executeCampaign reduced to 3-line wrapper; sendWithRetry import removed; SEND_RATE_MS/sleep removed |
+| Behavioral parity verified (13 dimensions, 127 assertions) | **COMPLETE** | `tmp/verify-milestone4.mjs` — 127/127 passed; 0 intentional silent changes |
+| REL-001: Redis startup warning (M4B) | **COMPLETE** | `[STARTUP] Redis unavailable — campaigns running on inline path. SIGTERM will abandon in-progress campaigns.` |
+| DEL-002: topBouncers threshold aligned to auto-pause (M4B) | **COMPLETE** | storage.js uses MIN_SENDER_HEALTH_SENT=50 constant; hardcoded 10 removed |
+| M4C: History cancel buttons (UX-002 + UX-004) | **COMPLETE** | Per-row cancel for canCancel campaigns; page-level CancelCampaignDialog; admin can cancel any non-terminal campaign |
+| Build clean | **COMPLETE** | 0 errors |
+
+**Intentional behavioral differences (documented):**
+- Worker path: `job.updateProgress(pct)` via onProgress callback. Inline path: no progress update (no BullMQ job).
+- Idempotency guard (COMPLETED/CANCELLED skip): previously worker-only, now applied to inline path as well (correctness improvement, not a regression).
+
+**ADR-063-1:** Module-level storage import in campaignLoop.js. Parameter injection rejected — storage is a singleton, no test suite exists to exercise the flexibility, and every other server module uses module-level import.
+**ADR-063-2:** logTag option enables execution-path-specific logging (`[CAMPAIGN][WORKER]` / `[CAMPAIGN][INLINE]`) without duplicating business logic.
+**ADR-063-3:** campaignConfig.js as shared runtime config module — future campaign runtime settings go here to prevent drift.
+
+**Milestone status: COMPLETE — Milestone 4 (Campaign Architecture Extraction — Audit 063).**

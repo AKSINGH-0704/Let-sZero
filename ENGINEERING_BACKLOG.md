@@ -30,7 +30,7 @@
 | ID | Status | Severity | Description | Rationale | Milestone |
 |---|---|---|---|---|---|
 | DEL-001 | OPEN | HIGH | **`SNS_TOPIC_ARN` absence is not a startup error.** If SNS is unconfigured, bounce/complaint events are silently dropped, auto-pause never fires, and the platform can keep sending to an increasingly poisoned list. Should exit(1) on missing SNS_TOPIC_ARN in production. | Auto-pause is the only deliverability protection mechanism. Silent SNS failure defeats the entire system. Current behavior: logs a warning and continues. | M5 |
-| DEL-002 | OPEN | MEDIUM | **`topBouncers` minimum vs auto-pause minimum misaligned.** Admin health dashboard shows top bouncers only for senders with ≥ 10 sent emails. Auto-pause enforcement threshold is ≥ 50 sent emails. A sender with 10–49 emails showing in the health dashboard cannot be auto-paused. Admin sees a "problem sender" they cannot enforce against. | Operational confusion. Admin may manually investigate a sender that auto-pause would never catch. | M4 |
+| DEL-002 | **DONE** (Audit 063) | MEDIUM | **`topBouncers` minimum vs auto-pause minimum misaligned.** Admin health dashboard shows top bouncers only for senders with ≥ 10 sent emails. Auto-pause enforcement threshold is ≥ 50 sent emails. A sender with 10–49 emails showing in the health dashboard cannot be auto-paused. Admin sees a "problem sender" they cannot enforce against. | Operational confusion. Admin may manually investigate a sender that auto-pause would never catch. | M4 |
 
 ---
 
@@ -38,7 +38,7 @@
 
 | ID | Status | Severity | Description | Rationale | Milestone |
 |---|---|---|---|---|---|
-| REL-001 | OPEN | MEDIUM | **No startup warning when Redis is unavailable.** When `REDIS_URL` is unset or unreachable, campaigns silently fall back to the inline execution path (`executeCampaign` in routes.js). Inline-path campaigns cannot survive Railway redeployment (SIGTERM). Operators unfamiliar with this behavior encounter mysterious FAILED campaigns after deploys. A `[WARN] Redis unavailable — campaigns running on inline path. SIGTERM will abandon in-progress campaigns.` log at startup prevents confusion. | Operator safety. The behavior is documented in HANDOFF.md but documentation is passive; a runtime warning is active. | M4 |
+| REL-001 | **DONE** (Audit 063) | MEDIUM | **No startup warning when Redis is unavailable.** When `REDIS_URL` is unset or unreachable, campaigns silently fall back to the inline execution path (`executeCampaign` in routes.js). Inline-path campaigns cannot survive Railway redeployment (SIGTERM). Operators unfamiliar with this behavior encounter mysterious FAILED campaigns after deploys. A `[WARN] Redis unavailable — campaigns running on inline path. SIGTERM will abandon in-progress campaigns.` log at startup prevents confusion. | Operator safety. The behavior is documented in HANDOFF.md but documentation is passive; a runtime warning is active. | M4 |
 
 ---
 
@@ -64,7 +64,7 @@
 
 | ID | Status | Severity | Description | Rationale | Milestone |
 |---|---|---|---|---|---|
-| MAINT-001 | OPEN | HIGH | **`processCampaign` (worker.js) and `executeCampaign` (routes.js) are two ~400-line parallel functions with identical logic.** Every bug fix in M3A required applying the same change in both functions. Every future campaign feature (new status transitions, new exit conditions, A/B send, scheduled send improvements) will require the same doubling. Extract a shared `runCampaignLoop(campaignId, storage, options)` module. Both execution paths call the shared module; path-specific setup/teardown stays in their respective files. | Structural drift risk is currently HIGH. M3A applied 8 fixes twice. One missed application caused a subtle bug in a previous milestone. Without extraction, the next engineer touching this code will make the same mistake. | M4 |
+| MAINT-001 | **DONE** (Audit 063) | HIGH | **`processCampaign` (worker.js) and `executeCampaign` (routes.js) are two ~400-line parallel functions with identical logic.** Every bug fix in M3A required applying the same change in both functions. Every future campaign feature (new status transitions, new exit conditions, A/B send, scheduled send improvements) will require the same doubling. Extract a shared `runCampaignLoop(campaignId, storage, options)` module. Both execution paths call the shared module; path-specific setup/teardown stays in their respective files. | Structural drift risk is currently HIGH. M3A applied 8 fixes twice. One missed application caused a subtle bug in a previous milestone. Without extraction, the next engineer touching this code will make the same mistake. | M4 |
 | MAINT-002 | OPEN | LOW | **Inconsistent error field naming.** AI endpoint returns `{ code: "SENDER_PROFILE_REQUIRED" }`. Campaign endpoint returns `{ error: "SENDER_PROFILE_REQUIRED" }`. Frontend handles each differently. Any future unified error handling logic must account for both. | Small inconsistency. Low risk now, compounds with every new error code added. | P3 cleanup |
 | MAINT-003 | OPEN | LOW | **CORS `allowedOrigins` hardcoded to localhost.** Safe in current single-origin deployment. Fragile if architecture changes (CDN, separate frontend hosting, subdomains). | Low risk; record for future architect awareness. | P3 |
 
@@ -83,9 +83,9 @@
 | ID | Status | Severity | Description | Rationale | Milestone |
 |---|---|---|---|---|---|
 | UX-001 | OPEN | MEDIUM | **`senderName` can be cleared while campaigns are queued.** `PUT /api/profile` does not warn if active/pending campaigns exist. A user who clears their sender name mid-campaign causes scheduled or queued campaigns to be sent as "RepMail" (the default fallback). Warn in `PUT /api/profile` if active/pending campaigns exist. | Direct customer impact. Silent deliverability degradation — user sees "RepMail" as the sender name in their own emails. | M5 |
-| UX-002 | OPEN | LOW | **Cancel action in History table row.** Power users want to cancel campaigns from the list view without opening the ProgressTracker. Requires per-row cancel mutation + confirmation dialog. | Low urgency — cancel is available in ProgressTracker. History row cancel is a power-user convenience. | M4 |
+| UX-002 | **DONE** (Audit 063) | LOW | **Cancel action in History table row.** Power users want to cancel campaigns from the list view without opening the ProgressTracker. Requires per-row cancel mutation + confirmation dialog. | Low urgency — cancel is available in ProgressTracker. History row cancel is a power-user convenience. | M4 |
 | UX-003 | OPEN | MEDIUM | **No "export remaining contacts" path after CANCELLED.** Users who cancel a campaign mid-send cannot re-target the contacts that were not reached without manually reconstructing the list. Requires contact-level PENDING/FAILED state tracking to export a "not-yet-reached" segment. | Real recovery scenario: wrong-list cancel leaves 40% of the list unreached. User must re-upload and hope they match correctly. | M4+ (requires schema change) |
-| UX-004 | OPEN | LOW | **Admin cannot cancel other users' campaigns from the History UI.** `POST /api/campaigns/:id/cancel` supports `req.isRootAdmin` but the History page has no cancel control for other users' campaigns. Admin must use the API directly. | Admin operational friction. Low urgency since direct API call is available. | M4 |
+| UX-004 | **DONE** (Audit 063) | LOW | **Admin cannot cancel other users' campaigns from the History UI.** `POST /api/campaigns/:id/cancel` supports `req.isRootAdmin` but the History page has no cancel control for other users' campaigns. Admin must use the API directly. | Admin operational friction. Low urgency since direct API call is available. | M4 |
 
 ---
 

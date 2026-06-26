@@ -591,6 +591,9 @@ async function diagnoseSMTPPath() {
 
   // Start the BullMQ worker (no-op if REDIS_URL is not set)
   const worker = startWorker();
+  if (!worker) {
+    console.warn("[STARTUP] Redis unavailable — campaigns running on inline path. SIGTERM will abandon in-progress campaigns.");
+  }
 
   if (!process.env.SNS_TOPIC_ARN) {
     console.error("[STARTUP] SNS_TOPIC_ARN not set — SNS webhook will reject all messages until this is configured. Set this env var to enable bounce/complaint processing.");

@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -147,6 +147,16 @@ When Redis is unavailable, campaigns execute via `executeCampaign()` in `routes.
 - Conditional final status transition: `updateCampaignIfRunning()` uses WHERE status='RUNNING' atomic UPDATE, preventing TOCTOU race between currentState read and COMPLETED write.
 - Orphaned PENDING campaign_emails bulk-updated to FAILED during crash recovery — prevents History from showing permanent "Pending" records for FAILED campaigns.
 
+**Campaign Architecture Extraction (Milestone 4 — Audit 063 — 2026-06-26):**
+- `server/campaignConfig.js` (NEW): single source of truth for all campaign runtime constants — `SEND_RATE_MS`, `BOUNCE_RATE_PAUSE_THRESHOLD`, `COMPLAINT_RATE_PAUSE_THRESHOLD`, `MIN_SENDER_HEALTH_SENT`, `CHECKPOINT_INTERVAL`, `PAUSE_CHECK_INTERVAL`, `sleep`. Configuration drift between execution paths is now structurally impossible.
+- `server/campaignLoop.js` (NEW): shared `runCampaignLoop(campaignId, userId, { logTag, onProgress })` — eliminates the 400-line duplication between `processCampaign` and `executeCampaign`. Both execution paths call the shared module. `isThrottleError` and `sendWithRetry` moved here from worker.js.
+- `server/worker.js`: `processCampaign` 400-line body replaced with 4-line `runCampaignLoop` call using `logTag: "[CAMPAIGN][WORKER]"`. Re-exports `sendWithRetry` for backwards compatibility.
+- `server/routes.js`: `executeCampaign` 400-line body replaced with 3-line `runCampaignLoop` call using `logTag: "[CAMPAIGN][INLINE]"`. Function remains exported — called from `index.js` scheduler (line 762) and watchdog (line 802).
+- `server/index.js`: REL-001 startup warning when Redis unavailable and campaigns fall back to inline path.
+- `server/storage.js`: DEL-002 — `topBouncers` threshold reads `MIN_SENDER_HEALTH_SENT` from campaignConfig (was hardcoded `10`; auto-pause enforcement already used `50`). Aligned.
+- `client/src/pages/History.jsx`: M4C — page-level `cancelTarget` state + single `cancelMutation` + `CancelCampaignDialog` per row. Admin cancel for other users' campaigns wired through existing `canCancel` config. UX-002 and UX-004 closed.
+- 127/127 behavioral verification assertions passed (19 suites, 13 behavioral dimensions).
+
 **Campaign Cancellation UX (Milestone 3B — 2026-06-26):**
 - `client/src/lib/campaignStatus.js` introduced as shared STATUS_CONFIG module. All 7 statuses (RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED, PENDING, DRAFT) with icon, label, tooltip, color, isTerminal, canCancel. Eliminates status config drift between ProgressTracker and History.
 - `CancelCampaignDialog` extracted as dedicated component: confirmation stats (sent so far, credits used), credits-not-refunded notice, autoFocus on safe action, destructive Cancel button, loading state, inline error handling for all API responses.
@@ -251,6 +261,10 @@ All five items must pass before RepMail is considered externally validated.
    - Pricing calculator: all 9 edge cases verified correct — NO CHANGE
    - Team purchase flow: end-to-end functional, welcome banner confirmed — NO CHANGE
    - Production safety: no regressions from fc8341a, 5a604be, b154a04, cd04db8, a03a0f3, 01acd99
+
+10. ~~Milestone 4 — Campaign Architecture Extraction~~ *(DONE — 2026-06-26 — Audit 063)*
+    - `campaignConfig.js` + `campaignLoop.js` extracted; 400-line duplication eliminated
+    - REL-001 startup warning; DEL-002 threshold alignment; UX-002/UX-004 History cancel
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway
