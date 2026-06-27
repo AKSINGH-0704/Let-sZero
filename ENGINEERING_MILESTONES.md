@@ -24,6 +24,8 @@ This document is the definitive historical record of how RepMail was engineered,
 | M7B | Contact Management Completion | Product Capability | `c4168c8` | Audit 067 | Complete |
 | M8 | Launch Readiness Hardening | Security / Infrastructure | `eb2c2d5` | Audit 068 | Complete |
 | M9 | Sender Domain (Custom Sending) | Infrastructure | `cbfc800` | Audits 070 + 071 | Complete |
+| M10 | Email Analytics | Infrastructure / Analytics | `07f39d4` | Audit 062 | Complete |
+| M11 | Production Operations & Analytics Accuracy | Operations / Security | TBD | Audit 063-append | Complete |
 
 ---
 
@@ -1169,4 +1171,114 @@ Starter+ plan users can send campaigns from their own verified domain instead of
 | BUG-6 | LOW | Mid-loop domain recheck — removed redundant `i % 50 === 0` inner condition (dead code when `PAUSE_CHECK_INTERVAL === 50`) |
 
 All 7 validation areas passed after fixes. No architectural changes required. M9 is frozen.
+
+---
+
+## M10 — Email Analytics
+
+**Type:** Infrastructure / Analytics  
+**Commit:** `07f39d4`  
+**Audit:** Audit 062  
+**Status:** Complete
+
+### Objective
+
+Build a production-grade email engagement analytics system using server-managed tracking tokens rather than SES-level event tracking. Track opens and clicks with machine/genuine classification to prevent security gateway pre-scans from inflating engagement metrics.
+
+### What Was Built
+
+| Component | Description |
+|---|---|
+| `server/trackingTokens` schema table | 22-char base64url tokens (128-bit entropy), FK cascades from campaigns + campaign_emails |
+| `server/trackingClassifier.js` | UA classification: 7 machine categories (apple_mpp, gmail_proxy, proofpoint, barracuda, mimecast, abnormal_security, link_scanner), 2 human (mobile, desktop) |
+| `server/trackingUtils.js` | `generateTrackingToken`, `TOKEN_RE`, `TRACKING_PIXEL_GIF` (42-byte GIF), `hashIp` (SHA-256 + salt), `extractTemplateLinks` |
+| `server/email.js` — `wrapLinksForTracking` | `node-html-parser` HTML link rewriting; try/catch fallback preserves delivery |
+| `server/campaignLoop.js` | Per-contact token generation block; graceful null-passthrough on failure |
+| `server/storage.js` | 7 new methods: `createTrackingTokensForEmail`, `getTrackingToken`, `recordOpenResolution`, `recordClickResolution`, `getCampaignTrackingBreakdown`, `expireContactTrackingTokens`, `deleteExpiredTrackingTokens` |
+| `server/routes.js` | `GET /t/o/:token` (pixel, fire-and-forget open recording), `GET /t/c/:token` (redirect, fire-and-forget click recording), `trackingLimiter` (60/min/IP) |
+| `server/index.js` | `/t/` prefix added to public path allowlist; weekly token cleanup job |
+| `client/src/pages/LinkExpired.jsx` | Public page for expired/invalid click links |
+| `client/src/pages/History.jsx` | Machine activity disclosure (`~X genuine · Y machine (MPP/gateway)`) |
+
+### Key Architectural Decisions
+
+| Decision | Rationale |
+|---|---|
+| First-event model (`WHERE IS NULL RETURNING id`) | Deduplication under concurrent requests without distributed locking |
+| Machine UA classification gate on `clickedAt` | Security gateways pre-scan links; must not consume the genuine click slot |
+| `setImmediate` fire-and-forget | Zero latency added to recipient experience |
+| `TRACK_BASE_URL` opt-in | Tracking entirely inert when absent; delivery pipeline unmodified |
+| `node-html-parser` for link rewriting | Robust over regex; 500KB lighter than cheerio |
+| `IP_HASH_SALT` + SHA-256 | Never stores raw IP; satisfies GDPR/privacy baseline |
+| `ON DELETE CASCADE` from campaigns + campaign_emails | Token cleanup is automatic on campaign/email deletion |
+| Batched delete loop (1000/batch) | Avoids table-level lock contention on large token tables |
+| `TRACK_BASE_URL` opt-in deployment gate | SES configuration set must have Open/Click event types disabled at M10 deploy to avoid double-wrapping |
+
+### Behavioural Verification
+
+41/41 checks passed.
+
+### Deferred Work
+
+- Apple MPP IP-range detection (17.0.0.0/8) — deferred to M11
+- Tracking tokens DB migration file — deferred to M11 (deployed via db:push initially)
+- TRACK_BASE_URL and IP_HASH_SALT startup validation — deferred to M11
+
+---
+
+## M11 — Production Operations & Analytics Accuracy
+
+**Type:** Operations / Security / Analytics  
+**Commit:** TBD  
+**Audit:** Audit 063-append  
+**Status:** Complete
+
+### Objective
+
+Strengthen the platform's operational posture across four areas: (A) create the first formal production runbook as an operational companion to engineering documentation; (B) improve email analytics accuracy by adding Apple MPP IP-range detection; (C) harden M10's environment variable validation and establish migration-based DB deployments; (D) add per-campaign unsubscribe analytics with exact attribution.
+
+### What Was Built
+
+| Component | Description |
+|---|---|
+| `PRODUCTION_RUNBOOK.md` | Comprehensive operational reference: infrastructure map, all env vars, deployment procedures, DB migration procedure, health check interpretation, all maintenance jobs, rollback procedures, incident response, disaster recovery |
+| `server/trackingClassifier.js` — `isAppleMppIp` | IP-range check for 17.0.0.0/8 (Apple iCloud proxy); IPv4-mapped IPv6 handling; IP detection takes precedence over UA string |
+| `server/trackingClassifier.js` — `classifyUserAgent` updated | Optional `ip` parameter; IP classification runs before UA pattern matching |
+| `server/validateEnv.js` | M10 env var validation: `TRACK_BASE_URL` (URL parse + HTTPS check + trailing slash normalization), `IP_HASH_SALT` (production warning), `TRACKING_TOKEN_RETENTION_DAYS` (range 1–3650) |
+| `server/email.js` — `buildUnsubscribeFooter` | Optional `campaignId` parameter; adds `&campaign=UUID` to unsubscribe URL for exact attribution |
+| `server/email.js` — `sendCampaignEmail` | New `campaignId` parameter; passed through to `buildUnsubscribeFooter` |
+| `server/campaignLoop.js` — `sendWithRetry` | Passes `campaignId` through to `sendCampaignEmail` |
+| `shared/schema.js` | `unsubscribed_at` on `campaignEmails`; `unsubscribed_emails` on `campaigns` |
+| `migrations/0002_sticky_kulan_gath.sql` | Idempotent migration with `IF NOT EXISTS` throughout; covers M9 + M10 + M11 schema diffs from migration 0001 |
+| `server/storage.js` | `recordCampaignEmailUnsubscribed` (exact attribution via campaign+user+email+WHERE IS NULL), `incrementCampaignUnsubscribed` |
+| `server/memoryStorage.js` | Both methods mirrored; also fixed pre-existing `incrementCampaignDelivered` gap (iron rule) |
+| `server/schemaCheck.js` | `unsubscribed_at` (campaign_emails) + `unsubscribed_emails` (campaigns) column assertions |
+| `server/routes.js` — `/api/unsubscribe` | Reads `campaign` query param; fires attribution setImmediate after suppression write; UUID validation on campaign param |
+| `server/routes.js` — tracking endpoints | Pass `req.ip` to `classifyUserAgent` for IP-range detection |
+| `server/index.js` | Partial CSP via Helmet: blocks external scripts, frames, objects, form actions; `'unsafe-inline'` for styles (required for shadcn/ui SPA) |
+| `client/src/pages/History.jsx` | Unsubscribe rate card (rose color, 2 decimal places; `UserMinus` icon) |
+
+### Key Architectural Decisions
+
+| Decision | Rationale |
+|---|---|
+| IP-range detection takes precedence over UA | Apple proxy may send generic browser UA; IP is authoritative |
+| `isAppleMppIp` uses first-octet check, not bitwise | Simpler, avoids JavaScript signed 32-bit arithmetic edge cases for /8 range |
+| `&campaign=UUID` without HMAC | Route validates campaign belongs to uid+email server-side — no security risk; worst-case forgery is self-harm on own analytics |
+| No heuristic "most recent campaign" attribution | Exact attribution (campaign param) or no attribution (missing param) — never wrong attribution |
+| Old links (pre-M11) show 0 unsubscribes | Consistent with M10 pattern: pre-M10 campaigns show 0 opens/clicks |
+| Migration 0002 uses `IF NOT EXISTS` throughout | M9 and M10 were deployed via db:push; migration must be idempotent against existing state |
+| `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object` | Standard PostgreSQL pattern for idempotent FK constraint creation |
+| Partial CSP with `'unsafe-inline'` for styles | shadcn/ui and Tailwind require inline styles; nonce-based CSP deferred to M12 |
+| `incrementCampaignDelivered` gap fixed | Pre-existing iron rule violation discovered during M11 audit; fixed as part of memoryStorage additions |
+
+### Behavioural Verification
+
+29/29 checks passed.
+
+### Deferred Work
+
+- RFC 8058 one-click `List-Unsubscribe-Post` endpoint — deferred to M12
+- Full nonce-based CSP (eliminating `'unsafe-inline'` for styles) — deferred to M12
+- IPv6 Apple MPP range detection — not yet published by Apple
 

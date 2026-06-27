@@ -416,13 +416,15 @@ export async function registerRoutes(httpServer, app) {
 
   // ── Public: unsubscribe ────────────────────────────────────────────────────
   app.get("/api/unsubscribe", async (req, res) => {
-    const { token, uid, email } = req.query;
+    const { token, uid, email, campaign: campaignId } = req.query;
     const fail = (msg) => res.status(400).send(`<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"><h2 style="color:#dc2626">Unsubscribe Failed</h2><p>${msg}</p></body></html>`);
 
     if (!token || !uid || !email) return fail("Missing required parameters.");
     if (!/^[0-9a-f-]{36}$/.test(uid)) return fail("Invalid request.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Invalid email.");
     if (!/^[0-9a-f]{64}$/.test(token)) return fail("Invalid token.");
+    // campaignId is optional (absent on links sent before M11). If present, validate UUID format.
+    if (campaignId && !/^[0-9a-f-]{36}$/.test(campaignId)) return fail("Invalid request.");
 
     const valid = verifyUnsubscribeToken(uid, email, token);
     if (!valid) return fail("This unsubscribe link is invalid or has expired.");
@@ -433,6 +435,18 @@ export async function registerRoutes(httpServer, app) {
         return res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Already Unsubscribed</title><style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;text-align:center;color:#1a1a1a}.icon{font-size:48px;margin-bottom:16px}h1{font-size:22px;font-weight:600;margin-bottom:8px}p{color:#555;line-height:1.5}</style></head><body><div class="icon">✓</div><h1>Already unsubscribed</h1><p>You are already unsubscribed from this sender. No further action is needed.</p></body></html>`);
       }
       await storage.addSuppression(uid, email, "unsubscribe");
+      // M11: exact per-campaign attribution — fire-and-forget so response is never blocked.
+      // campaignId is only present on links from emails sent after M11 deployment.
+      if (campaignId) {
+        setImmediate(async () => {
+          try {
+            const result = await storage.recordCampaignEmailUnsubscribed(email, uid, campaignId);
+            if (result) await storage.incrementCampaignUnsubscribed(result.campaignId);
+          } catch (err) {
+            console.error("[UNSUBSCRIBE] Attribution error:", err.message);
+          }
+        });
+      }
       return res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Unsubscribed</title><style>body{font-family:sans-serif;max-width:480px;margin:80px auto;padding:0 20px;text-align:center;color:#1a1a1a}.icon{font-size:48px;margin-bottom:16px}h1{font-size:22px;font-weight:600;margin-bottom:8px}p{color:#555;line-height:1.5}</style></head><body><div class="icon">✓</div><h1>You've been unsubscribed</h1><p>You will no longer receive emails from this sender. This change takes effect immediately.</p></body></html>`);
     } catch (err) {
       console.error("[UNSUBSCRIBE] error:", err.message);
@@ -503,7 +517,7 @@ export async function registerRoutes(httpServer, app) {
         if (!tokenRecord) return;
         if (tokenRecord.expiresAt < new Date()) return;
         const ua = req.headers["user-agent"] || "";
-        const uaCategory = classifyUserAgent(ua);
+        const uaCategory = classifyUserAgent(ua, req.ip);
         const ipHash = hashIp(req.ip);
         await storage.recordOpenResolution(tokenRecord, { uaCategory, ipHash });
       } catch (err) {
@@ -535,7 +549,7 @@ export async function registerRoutes(httpServer, app) {
     setImmediate(async () => {
       try {
         const ua = req.headers["user-agent"] || "";
-        const uaCategory = classifyUserAgent(ua);
+        const uaCategory = classifyUserAgent(ua, req.ip);
         const ipHash = hashIp(req.ip);
         await storage.recordClickResolution(tokenRecord, { uaCategory, ipHash });
       } catch (err) {

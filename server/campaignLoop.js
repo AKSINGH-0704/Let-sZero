@@ -52,7 +52,7 @@ export async function sendWithRetry(contact, template, userId, campaignId, rateL
 
   while (attempts < maxAttempts) {
     try {
-      return await sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile, trackingTokens);
+      return await sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile, trackingTokens, campaignId);
     } catch (err) {
       lastErr = err;
 

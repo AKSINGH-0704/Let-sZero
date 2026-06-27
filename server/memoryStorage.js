@@ -1792,6 +1792,35 @@ export const memoryStorage = {
     if (campaign) campaign.clickedEmails = (campaign.clickedEmails || 0) + 1;
   },
 
+  async incrementCampaignDelivered(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.deliveredEmails = (campaign.deliveredEmails || 0) + 1;
+  },
+
+  // ── M11: Unsubscribe analytics ─────────────────────────────────────────────
+
+  async recordCampaignEmailUnsubscribed(recipientEmail, userId, campaignId) {
+    const normalizedEmail = recipientEmail.toLowerCase().trim();
+    for (const record of store.campaignEmails.values()) {
+      if (
+        record.campaignId === campaignId &&
+        record.userId === userId &&
+        record.recipientEmail === normalizedEmail &&
+        record.status !== "SUPPRESSED" &&
+        !record.unsubscribedAt
+      ) {
+        record.unsubscribedAt = new Date();
+        return { campaignId: record.campaignId };
+      }
+    }
+    return null;
+  },
+
+  async incrementCampaignUnsubscribed(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign) campaign.unsubscribedEmails = (campaign.unsubscribedEmails || 0) + 1;
+  },
+
   // ── Invites ────────────────────────────────────────────────────────────────
 
   async createInvite(data) {

@@ -96,8 +96,10 @@ const REQUIRED_COLUMNS = [
   { table: "campaign_emails", column: "recipient_email", critical: true  },
   { table: "campaign_emails", column: "ses_message_id",  critical: true  }, // SNS bounce/click lookup
   { table: "campaign_emails", column: "status",          critical: true  },
-  { table: "campaign_emails", column: "opened_at",       critical: false },
-  { table: "campaign_emails", column: "clicked_at",      critical: false },
+  { table: "campaign_emails", column: "opened_at",         critical: false },
+  { table: "campaign_emails", column: "clicked_at",        critical: false },
+  // M11: unsubscribe analytics — critical: false, analytics fail gracefully
+  { table: "campaign_emails", column: "unsubscribed_at",   critical: false },
 
   // ── suppressions ────────────────────────────────────────────────────────
   { table: "suppressions", column: "id",         critical: true },
@@ -133,6 +135,9 @@ const REQUIRED_COLUMNS = [
   // ── campaigns — M9 additions ─────────────────────────────────────────────
   { table: "campaigns", column: "sender_domain_id",      critical: false },
   { table: "campaigns", column: "sender_email_snapshot", critical: false },
+
+  // ── campaigns — M11 additions ─────────────────────────────────────────────
+  { table: "campaigns", column: "unsubscribed_emails",   critical: false },
 
   // ── tracking_tokens (M10) ────────────────────────────────────────────────
   // critical: false throughout — tracking fails gracefully (delivery is unaffected)

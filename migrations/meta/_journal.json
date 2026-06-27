@@ -15,6 +15,13 @@
       "when": 1782495681116,
       "tag": "0001_quiet_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782576887611,
+      "tag": "0002_sticky_kulan_gath",
+      "breakpoints": true
     }
   ]
 }

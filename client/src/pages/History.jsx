@@ -44,6 +44,7 @@ import {
   Info,
   X,
   Copy,
+  UserMinus,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { Link } from "wouter";
@@ -542,6 +543,17 @@ export default function History() {
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Click Rate &middot; {formatNumber(viewCampaign.clickedEmails)} clicks
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                        <UserMinus className="h-4 w-4 text-rose-500" aria-hidden="true" />
+                        <div className="text-2xl font-semibold text-rose-600 dark:text-rose-400">
+                          {((viewCampaign.unsubscribedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(2)}%
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Unsub Rate &middot; {formatNumber(viewCampaign.unsubscribedEmails ?? 0)} unsubscribed
                       </div>
                     </div>
                   </div>

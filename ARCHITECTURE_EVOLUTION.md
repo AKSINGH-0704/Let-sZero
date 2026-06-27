@@ -290,7 +290,8 @@ FOUNDATION
                   │
                   ├── CAMPAIGN EXECUTION (token generation per-contact per-send)
                   ├── DELIVERY PIPELINE (pixel + click routes; node-html-parser link rewriting)
-                  └── HISTORY UI (machineOpenCount / machineClickCount disclosure)
+                  ├── HISTORY UI (machineOpenCount / machineClickCount + unsubscribe rate card)
+                  └── UNSUBSCRIBE ANALYTICS (campaign param in unsub URL; exact attribution; campaigns.unsubscribed_emails)
 ```
 
 ### Reading the map
@@ -391,6 +392,22 @@ Email analytics is now live. Key architectural decisions:
 - **`node-html-parser` for link rewriting**: Chosen over regex (fragile, misses nested elements) and cheerio (500KB+ overhead). Link rewriting wraps its entire body in try/catch and returns the original HTML unchanged on any parser exception — email delivers without click tracking rather than failing.
 - **IP hashing**: Raw IPs are never stored. `hashIp()` uses SHA-256 with a configurable `IP_HASH_SALT` environment variable.
 - **SES configuration set conflict**: Operators must disable Open and Click tracking in the SES configuration set at M10 deploy — otherwise SES will double-wrap tracked links. This is a deployment-time requirement, not a code defect.
+
+---
+
+### M11: Production Operations & Analytics Accuracy — Shipped (2026-06-27)
+
+M11 hardened the platform across four areas: operations documentation, analytics accuracy, startup validation, and security headers.
+
+- **Apple MPP IP-range detection**: `isAppleMppIp(ip)` checks the 17.0.0.0/8 CIDR block (Apple-owned since 1990). `classifyUserAgent(ua, ip)` now accepts an optional `ip` parameter — IP classification runs before UA pattern matching. Some Apple Mail versions send generic browser UAs rather than Apple-specific strings; IP-range detection catches all MPP opens regardless of UA string. Raw IPs are discarded after classification — only the hash and category are stored.
+
+- **Unsubscribe analytics — exact attribution**: `buildUnsubscribeFooter` now appends `&campaign=UUID` to the unsubscribe URL. The campaign param is not HMAC-signed but is validated server-side (must belong to `uid` and must have been sent to `email`). Attribution is fire-and-forget via `setImmediate`. Old unsubscribe links (pre-M11, no campaign param) show 0 unsubscribes — consistent with M10's pattern for opens/clicks on pre-M10 campaigns. Correctness over approximation: no heuristic "most recent campaign" lookup.
+
+- **Migration-based DB deployments**: Migration `0002` consolidates M9 + M10 + M11 schema diffs from the last committed migration (0001). All DDL uses `IF NOT EXISTS` guards and `DO...EXCEPTION` blocks for FK constraints, making the migration safe on environments where M9/M10 were deployed via `db:push`. Future milestones use `db:generate` + `db:migrate` as the deployment standard.
+
+- **PRODUCTION_RUNBOOK.md**: New operational companion document. Covers infrastructure map, all environment variables, first-time deployment checklist, routine deployment procedure, database migration procedure, health check interpretation, maintenance jobs reference, startup validation reference, schema integrity check reference, rollback procedures, incident response, and disaster recovery (PostgreSQL restore, Redis recovery, SES credential rotation, Railway rollback, DNS recovery, infrastructure outage).
+
+- **Partial CSP via Helmet**: `contentSecurityPolicy: false` replaced with a real policy. Inline scripts are blocked (`script-src: 'self'`); inline styles are permitted (`style-src: 'self' 'unsafe-inline'`) because shadcn/ui and Tailwind require them. External frames, objects, and form actions are blocked. Full nonce-based CSP deferred to M12.
 
 ---
 

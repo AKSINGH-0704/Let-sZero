@@ -111,7 +111,8 @@ function sanitizeHeaderValue(str) {
 // senderProfile: { name, title, company, phone, replyToEmail, customFromEmail } — from user.sender* fields
 // customFromEmail: verified custom domain address (e.g. hello@acme.com); null = use SES_FROM_EMAIL
 // trackingTokens: { openToken, clickTokenMap } from storage.createTrackingTokensForEmail; null disables tracking
-export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}, trackingTokens = null) {
+// campaignId: UUID passed through to the unsubscribe URL for exact per-campaign attribution (M11)
+export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}, trackingTokens = null, campaignId = null) {
   const subject = sanitizeHtml(
     replacePlaceholders(template.subject || "", contact, senderProfile),
     { allowedTags: [], allowedAttributes: {} }
@@ -139,7 +140,7 @@ export async function sendCampaignEmail(contact, template, userId, campaignEmail
       `style="display:block;width:1px;height:1px;border:0;margin:0;padding:0;" />`;
   }
 
-  const unsubscribeFooter = buildUnsubscribeFooter(userId, contact.email);
+  const unsubscribeFooter = buildUnsubscribeFooter(userId, contact.email, campaignId);
 
   // Full HTML email document — improves rendering consistency across Gmail, Outlook, Apple Mail
   const html = `<!DOCTYPE html>
@@ -207,11 +208,14 @@ ${unsubscribeFooter.html}
   return info; // caller reads info.messageId for the SES Message-ID
 }
 
-function buildUnsubscribeFooter(userId, email) {
+function buildUnsubscribeFooter(userId, email, campaignId = null) {
   if (!userId || !email) return { url: null, html: "", text: "" };
   const token = generateUnsubscribeToken(userId, email);
   const base = process.env.APP_URL || "http://localhost:5000";
-  const url = `${base}/api/unsubscribe?uid=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}&token=${token}`;
+  // campaign param enables exact per-campaign unsubscribe attribution at the route handler.
+  // It is not included in the HMAC — the route validates it belongs to uid+email server-side.
+  const campaignParam = campaignId ? `&campaign=${encodeURIComponent(campaignId)}` : "";
+  const url = `${base}/api/unsubscribe?uid=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}&token=${token}${campaignParam}`;
   return {
     url,
     html: `<p style="margin-top:32px;font-size:12px;color:#6b7280;">If you'd prefer not to hear from me, <a href="${url}" style="color:#6b7280;">unsubscribe</a>.</p>`,

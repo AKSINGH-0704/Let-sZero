@@ -78,6 +78,40 @@ export function validateEnv() {
     }
   }
 
+  // ── M10: Email Analytics env var validation ──────────────────────────────────
+
+  // TRACK_BASE_URL — optional opt-in. If set, must be a valid URL.
+  // A malformed value breaks all click-tracking links in every sent email (P0).
+  // Trailing slash is stripped here so downstream code never needs to handle variants.
+  if (process.env.TRACK_BASE_URL) {
+    try {
+      const u = new URL(process.env.TRACK_BASE_URL);
+      if (process.env.NODE_ENV === "production" && u.protocol !== "https:") {
+        console.warn("[STARTUP] WARNING: TRACK_BASE_URL uses HTTP in production — tracking links served over insecure connections expose recipient activity.");
+      }
+      // Normalize: strip trailing slash so /t/o/:token never becomes //t/o/:token
+      process.env.TRACK_BASE_URL = process.env.TRACK_BASE_URL.replace(/\/+$/, "");
+    } catch {
+      console.error("[STARTUP] FATAL: TRACK_BASE_URL is set but is not a valid URL — email click tracking will produce broken links in all sent emails.");
+      fatalCount++;
+    }
+  }
+
+  // IP_HASH_SALT — if unset in production, a known-default string is used.
+  // Not fatal (tracking still works) but weakens IP anonymization.
+  if (process.env.NODE_ENV === "production" && !process.env.IP_HASH_SALT) {
+    console.warn("[STARTUP] WARNING: IP_HASH_SALT is not set — using default salt. Set a unique random secret for stronger IP anonymization in email analytics.");
+  }
+
+  // TRACKING_TOKEN_RETENTION_DAYS — must be a positive integer ≤ 3650 (10 years) if set.
+  if (process.env.TRACKING_TOKEN_RETENTION_DAYS) {
+    const days = parseInt(process.env.TRACKING_TOKEN_RETENTION_DAYS, 10);
+    if (isNaN(days) || days < 1 || days > 3650) {
+      console.error(`[STARTUP] FATAL: TRACKING_TOKEN_RETENTION_DAYS="${process.env.TRACKING_TOKEN_RETENTION_DAYS}" must be a positive integer between 1 and 3650.`);
+      fatalCount++;
+    }
+  }
+
   if (fatalCount > 0) {
     console.error(`[STARTUP] ${fatalCount} fatal env var validation error(s). Fix the above and restart.`);
     process.exit(1);

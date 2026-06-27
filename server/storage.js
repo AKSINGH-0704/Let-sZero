@@ -2044,6 +2044,33 @@ const dbStorage = {
       .where(eq(campaigns.id, campaignId));
   },
 
+  // ── M11: Unsubscribe analytics ─────────────────────────────────────────────
+
+  // Records the first unsubscribe event for a specific campaign_email row.
+  // campaignId is required for exact attribution — only the record for that specific
+  // campaign is updated, never a heuristic "most recent" lookup.
+  // Returns { campaignId } if the row was found and updated (first event), or null otherwise.
+  async recordCampaignEmailUnsubscribed(recipientEmail, userId, campaignId) {
+    const normalizedEmail = recipientEmail.toLowerCase().trim();
+    const rows = await db.update(campaignEmails)
+      .set({ unsubscribedAt: new Date() })
+      .where(and(
+        eq(campaignEmails.campaignId, campaignId),
+        eq(campaignEmails.userId, userId),
+        eq(campaignEmails.recipientEmail, normalizedEmail),
+        sql`${campaignEmails.status} != ${CAMPAIGN_EMAIL_STATUS.SUPPRESSED}`,
+        sql`${campaignEmails.unsubscribedAt} IS NULL`
+      ))
+      .returning({ campaignId: campaignEmails.campaignId });
+    return rows.length > 0 ? { campaignId: rows[0].campaignId } : null;
+  },
+
+  async incrementCampaignUnsubscribed(campaignId) {
+    await db.update(campaigns)
+      .set({ unsubscribedEmails: sql`${campaigns.unsubscribedEmails} + 1` })
+      .where(eq(campaigns.id, campaignId));
+  },
+
   // ── Invites ────────────────────────────────────────────────────────────────
 
   async createInvite(data) {

@@ -53,10 +53,27 @@ const httpServer = createServer(app);
 // X-Forwarded-For. Without this, all clients share the same rate-limit bucket.
 app.set("trust proxy", 1);
 
-// Security headers — CSP excluded (requires per-route tuning; add in a follow-up milestone).
-// HSTS enabled for production; helmet is a no-op in dev where HTTPS is absent.
+// Security headers. HSTS enabled for production; helmet is a no-op in dev where HTTPS is absent.
+// CSP: 'unsafe-inline' is required for style-src because shadcn/ui, Tailwind, and the HTML
+// preview in History.jsx all use inline styles. Inline scripts remain blocked (no 'unsafe-inline'
+// in script-src) — user-controlled HTML in template previews cannot execute scripts.
+// Full nonce-based CSP (eliminating 'unsafe-inline' for styles) is deferred to M12.
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc:    ["'self'"],
+      objectSrc:  ["'none'"],
+      frameSrc:   ["'none'"],
+      baseUri:    ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 
