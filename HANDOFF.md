@@ -314,7 +314,7 @@ All five items must pass before RepMail is considered externally validated.
     - Contact Edit UI — `EditSheet` component in `ContactListDetail.jsx`; PATCH `/api/contacts/:id` confirmed operational
     - Backlog items M6-001, M6-002, M6-003 resolved
 
-15. ~~Milestone 8 — Launch Readiness Hardening~~ *(DONE — 2026-06-27 — Audit 068 — Pending push)*
+15. ~~Milestone 8 — Launch Readiness Hardening~~ *(DONE — 2026-06-27 — Audit 068 — `eb2c2d5`)*
     - **E-1:** Helmet (^8.2.0) — HTTP security headers; CSP disabled (requires per-route tuning); HSTS enabled
     - **E-2:** Sentry (@sentry/node ^10.62.0) — `expressIntegration`; `setupExpressErrorHandler`; `beforeSend` strips body, cookies, auth headers, ip, email, username
     - **E-3:** Self-service password reset — SHA-256 hashed token; 1h TTL; per-email 15-min throttle; `deleteUserSessions` + auto-login after reset; `mustResetPassword` cleared; `ForgotPassword.jsx`, `ResetByToken.jsx`

@@ -22,7 +22,7 @@ This document is the definitive historical record of how RepMail was engineered,
 | M6 | Contact Library | Product Capability | `d655399` | Audit 065 | Complete |
 | M7A | Duplicate Campaign | Product Capability | `ea68878` | Audit 066 | Complete |
 | M7B | Contact Management Completion | Product Capability | `c4168c8` | Audit 067 | Complete |
-| M8 | Launch Readiness Hardening | Security / Infrastructure | Pending | Audit 068 | Complete |
+| M8 | Launch Readiness Hardening | Security / Infrastructure | `eb2c2d5` | Audit 068 | Complete |
 | M9 | Sender Domain (Custom Sending) | Infrastructure | — | — | Planned |
 
 ---
@@ -1075,7 +1075,7 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 |---|---|
 | **Status** | Complete |
 | **Audit** | Audit 068 (2026-06-27) |
-| **Commit** | Pending |
+| **Commit** | `eb2c2d5` |
 | **Date** | 2026-06-27 |
 
 ### Summary Card
