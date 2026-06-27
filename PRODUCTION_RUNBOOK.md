@@ -301,7 +301,7 @@ Never run `db:push` on production. It overwrites the schema without recording mi
 | `sendPaused` | `true` / `false` | Whether platform-wide sending is paused | If `true` unexpectedly: check for bounce/complaint spike; see incident response |
 | `ai` | `ok` / `quota_exceeded` / `error` / `unknown` | OpenAI API status | Check OPENAI_API_KEY; check OpenAI service status |
 | `sesTracking` | `configured` / `not-configured — ...` | Whether SES configuration set is set | If not-configured: open/click/delivery SNS events are disabled |
-| `domainPoll.lastCompletedAt` | ISO timestamp or `null` | Last time the domain verification poll completed successfully | If `null` after startup: poll has not completed; if no change for >20 minutes: check `[DOMAIN][VERIFY]` logs |
+| `domainPoll.lastCompletedAt` | ISO timestamp or `null` | Last time the domain verification poll completed successfully | If `null` after startup: poll has not completed (first run at 30s); if no change for >15 minutes: check `[DOMAIN][VERIFY]` logs |
 | `domainPoll.inProgress` | `true` / `false` | Whether a domain verification poll is currently running | If `true` for >10 minutes: poll may be hung on DNS/SES; check Railway logs |
 | `uptime` | seconds | Process uptime | If very low: recent restart — check logs for crash |
 
@@ -371,7 +371,7 @@ All jobs start after a delay post-boot to avoid racing with startup. All jobs us
 | Audit log cleanup | Every 30 days | 20 minutes | `[CLEANUP]` | Deletes audit logs older than `AUDIT_LOG_RETENTION_DAYS` (default 365d) |
 | AI usage log cleanup | Every 30 days | 25 minutes | `[CLEANUP]` | Deletes AI logs older than `AI_USAGE_LOG_RETENTION_DAYS` (default 90d) |
 | Expired invite cleanup | Every 24 hours | 10 minutes | `[CLEANUP]` | Deletes expired invites |
-| Domain verification poll | Every 15 minutes | 5 minutes | `[DOMAIN-POLL]` | Checks PENDING_VERIFICATION domains for DNS propagation |
+| Domain verification poll | Every 10 minutes | 30 seconds | `[DOMAIN][VERIFY]` | Checks PENDING_VERIFICATION domains for DNS propagation |
 | Expired tracking token cleanup | Every 7 days | 30 seconds | `[CLEANUP]` | Batched deletion of expired `tracking_tokens` rows |
 
 **Triggering manually** (if a job needs to run outside its schedule):
@@ -522,8 +522,9 @@ FROM sender_domains WHERE domain = '<domain>' ORDER BY created_at DESC LIMIT 1;
 3. If `status = 'SUSPENDED'`: see admin unsuspend procedure below.
 
 **Domain verification poll health check:**
-- Check `GET /api/health` → `domainPoll.lastCompletedAt` — should update at least every 15 minutes
+- Check `GET /api/health` → `domainPoll.lastCompletedAt` — should update at least every 10 minutes (30s startup delay, then every 10 minutes)
 - If `lastCompletedAt` is stale, check logs for `[DOMAIN][VERIFY] Poll error:`
+- Note: empty poll cycles (no pending domains) do not produce log output — this is normal
 
 ### Admin domain suspend and unsuspend
 
