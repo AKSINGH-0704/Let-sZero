@@ -110,6 +110,8 @@ export const AUDIT_ACTIONS = {
   DOMAIN_SUSPENDED:                "DOMAIN_SUSPENDED",
   DOMAIN_CHECK_REQUESTED:          "DOMAIN_CHECK_REQUESTED",
   CAMPAIGN_DOMAIN_REVOKED:         "CAMPAIGN_DOMAIN_REVOKED",
+  // Email analytics tracking (M10)
+  TRACKING_TOKENS_PROVISIONED:     "TRACKING_TOKENS_PROVISIONED",
 };
 
 export const PAYMENT_STATUS = {
@@ -492,6 +494,30 @@ export const invites = pgTable("invites", {
   tokenHashIdx: uniqueIndex("invites_token_hash_idx").on(table.tokenHash),
   emailIdx: index("invites_email_idx").on(table.email),
   invitedByIdx: index("invites_invited_by_idx").on(table.invitedBy),
+}));
+
+// ── Email Analytics Tracking Tokens (M10) ────────────────────────────────────
+// One row per tracking event slot: 1 open token + N click tokens per campaign_email.
+// token: 22-char base64url from crypto.randomBytes(16) — 128 bits of entropy.
+// ON DELETE CASCADE from both campaigns and campaign_emails keeps the table clean.
+export const trackingTokens = pgTable("tracking_tokens", {
+  id:                   uuid("id").defaultRandom().primaryKey(),
+  token:                text("token").notNull().unique(),
+  tokenType:            text("token_type").notNull(),        // 'open' | 'click'
+  campaignId:           uuid("campaign_id").notNull().references(() => campaigns.id, { onDelete: "cascade" }),
+  campaignEmailId:      uuid("campaign_email_id").notNull().references(() => campaignEmails.id, { onDelete: "cascade" }),
+  linkUrl:              text("link_url"),                    // null for open tokens; original URL for click tokens
+  createdAt:            timestamp("created_at").notNull().defaultNow(),
+  expiresAt:            timestamp("expires_at").notNull(),   // created_at + TRACKING_TOKEN_RETENTION_DAYS
+  firstUsedAt:          timestamp("first_used_at"),          // null until first resolution
+  usedCount:            integer("used_count").notNull().default(0),
+  lastUserAgentCategory: text("last_user_agent_category"),  // classified UA category string
+  ipHash:               text("ip_hash"),                    // SHA-256(IP + salt) — never raw IP
+}, (table) => ({
+  tokenUniqueIdx:    uniqueIndex("idx_tracking_tokens_token").on(table.token),
+  campaignTypeIdx:   index("idx_tracking_tokens_campaign").on(table.campaignId, table.tokenType),
+  campaignEmailIdx:  index("idx_tracking_tokens_campaign_email").on(table.campaignEmailId),
+  expiresAtIdx:      index("idx_tracking_tokens_expires").on(table.expiresAt),
 }));
 
 export const platformSettings = pgTable("platform_settings", {

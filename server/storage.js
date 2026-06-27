@@ -13,6 +13,8 @@ import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { MIN_SENDER_HEALTH_SENT } from "./campaignConfig.js";
+import { generateTrackingToken } from "./trackingUtils.js";
+import { isMachineCategory } from "./trackingClassifier.js";
 
 // Import schema constants (always needed)
 import {
@@ -26,12 +28,12 @@ import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
 
 // Use imports only when not in dev mode
-const { eq, and, desc, gte, sql, lt, inArray, or, asc, ilike } = (!isDevMode && db) ? drizzleOps : {};
+const { eq, and, desc, gte, sql, lt, inArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
 const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
   suppressions, aiUsageLogs, invites, snsEvents, platformSettings,
-  contactLists, contactListMembers, contactImports, senderDomains,
+  contactLists, contactListMembers, contactImports, senderDomains, trackingTokens,
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -2583,6 +2585,143 @@ const dbStorage = {
       and(eq(senderDomains.userId, userId), eq(senderDomains.id, domainId), eq(senderDomains.status, "VERIFIED"))
     );
     return row || null;
+  },
+
+  // ── M10: Email Analytics Tracking Tokens ──────────────────────────────────────
+
+  async createTrackingTokensForEmail({ campaignEmailId, campaignId, templateLinks, retentionDays }) {
+    const expiresAt = new Date(Date.now() + retentionDays * 86_400_000);
+    const openToken = generateTrackingToken();
+
+    const rows = [{
+      token: openToken,
+      tokenType: "open",
+      campaignId,
+      campaignEmailId,
+      linkUrl: null,
+      expiresAt,
+    }];
+
+    const clickTokenMap = new Map();
+    for (const url of templateLinks) {
+      const t = generateTrackingToken();
+      clickTokenMap.set(url, t);
+      rows.push({ token: t, tokenType: "click", campaignId, campaignEmailId, linkUrl: url, expiresAt });
+    }
+
+    await db.insert(trackingTokens).values(rows);
+    return { openToken, clickTokenMap };
+  },
+
+  async getTrackingToken(token) {
+    const [row] = await db.select().from(trackingTokens).where(eq(trackingTokens.token, token));
+    return row || null;
+  },
+
+  async recordOpenResolution(tokenRecord, { uaCategory, ipHash }) {
+    const now = new Date();
+    const isFirst = tokenRecord.firstUsedAt === null;
+
+    await db.update(trackingTokens)
+      .set({
+        usedCount: sql`${trackingTokens.usedCount} + 1`,
+        lastUserAgentCategory: uaCategory,
+        ipHash,
+        ...(isFirst ? { firstUsedAt: now } : {}),
+      })
+      .where(eq(trackingTokens.id, tokenRecord.id));
+
+    if (!isFirst) return;
+
+    // Conditional update: set openedAt only if not already set — deduplication under concurrent requests.
+    const updated = await db.update(campaignEmails)
+      .set({ openedAt: now })
+      .where(and(eq(campaignEmails.id, tokenRecord.campaignEmailId), isNull(campaignEmails.openedAt)))
+      .returning({ id: campaignEmails.id });
+
+    if (updated.length > 0) {
+      await db.update(campaigns)
+        .set({ openedEmails: sql`${campaigns.openedEmails} + 1` })
+        .where(eq(campaigns.id, tokenRecord.campaignId));
+    }
+  },
+
+  async recordClickResolution(tokenRecord, { uaCategory, ipHash }) {
+    const now = new Date();
+    const isFirst = tokenRecord.firstUsedAt === null;
+    const isMachine = isMachineCategory(uaCategory);
+
+    await db.update(trackingTokens)
+      .set({
+        usedCount: sql`${trackingTokens.usedCount} + 1`,
+        lastUserAgentCategory: uaCategory,
+        ipHash,
+        ...(isFirst ? { firstUsedAt: now } : {}),
+      })
+      .where(eq(trackingTokens.id, tokenRecord.id));
+
+    // Machine activity (scanners, security gateways): update token only, not campaign_emails.
+    // This prevents a scanner pre-click from setting clickedAt before the human even sees the email.
+    if (isMachine) return;
+
+    const updated = await db.update(campaignEmails)
+      .set({ clickedAt: now })
+      .where(and(eq(campaignEmails.id, tokenRecord.campaignEmailId), isNull(campaignEmails.clickedAt)))
+      .returning({ id: campaignEmails.id });
+
+    if (updated.length > 0) {
+      await db.update(campaigns)
+        .set({ clickedEmails: sql`${campaigns.clickedEmails} + 1` })
+        .where(eq(campaigns.id, tokenRecord.campaignId));
+    }
+  },
+
+  async getCampaignTrackingBreakdown(campaignId) {
+    const rows = await db
+      .select({
+        tokenType: trackingTokens.tokenType,
+        uaCategory: trackingTokens.lastUserAgentCategory,
+        count: sql`COUNT(*)`.mapWith(Number),
+      })
+      .from(trackingTokens)
+      .where(and(eq(trackingTokens.campaignId, campaignId), isNotNull(trackingTokens.firstUsedAt)))
+      .groupBy(trackingTokens.tokenType, trackingTokens.lastUserAgentCategory);
+
+    let machineOpenCount = 0;
+    let machineClickCount = 0;
+    for (const r of rows) {
+      if (isMachineCategory(r.uaCategory)) {
+        if (r.tokenType === "open")  machineOpenCount  += r.count;
+        if (r.tokenType === "click") machineClickCount += r.count;
+      }
+    }
+    return { machineOpenCount, machineClickCount };
+  },
+
+  async expireContactTrackingTokens(contactId) {
+    const subquery = db.select({ id: campaignEmails.id })
+      .from(campaignEmails)
+      .where(eq(campaignEmails.contactId, contactId));
+    await db.update(trackingTokens)
+      .set({ expiresAt: new Date() })
+      .where(inArray(trackingTokens.campaignEmailId, subquery));
+  },
+
+  async deleteExpiredTrackingTokens() {
+    let totalDeleted = 0;
+    let batchSize;
+    do {
+      const subquery = db.select({ id: trackingTokens.id })
+        .from(trackingTokens)
+        .where(lt(trackingTokens.expiresAt, new Date()))
+        .limit(1000);
+      const result = await db.delete(trackingTokens)
+        .where(inArray(trackingTokens.id, subquery))
+        .returning({ id: trackingTokens.id });
+      batchSize = result.length;
+      totalDeleted += batchSize;
+    } while (batchSize === 1000);
+    return totalDeleted;
   },
 };
 

@@ -15,6 +15,8 @@ import {
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
   INACTIVITY_THRESHOLDS, MONTHLY_CREDITS
 } from "../shared/schema.js";
+import { generateTrackingToken } from "./trackingUtils.js";
+import { isMachineCategory } from "./trackingClassifier.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -44,6 +46,7 @@ const store = {
   contactLists: new Map(),
   contactListMembers: new Map(),
   contactImports: new Map(),
+  trackingTokens: new Map(),
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -2257,6 +2260,138 @@ export const memoryStorage = {
     const row = this._senderDomains.get(domainId);
     if (!row || row.userId !== userId || row.status !== "VERIFIED") return null;
     return row;
+  },
+
+  // ── M10: Email Analytics Tracking Tokens ──────────────────────────────────────
+
+  async createTrackingTokensForEmail({ campaignEmailId, campaignId, templateLinks, retentionDays }) {
+    const expiresAt = new Date(Date.now() + retentionDays * 86_400_000);
+    const openToken = generateTrackingToken();
+    const now = new Date();
+
+    const openRow = {
+      id: crypto.randomUUID(),
+      token: openToken,
+      tokenType: "open",
+      campaignId,
+      campaignEmailId,
+      linkUrl: null,
+      createdAt: now,
+      expiresAt,
+      firstUsedAt: null,
+      usedCount: 0,
+      lastUserAgentCategory: null,
+      ipHash: null,
+    };
+    store.trackingTokens.set(openRow.id, openRow);
+
+    const clickTokenMap = new Map();
+    for (const url of templateLinks) {
+      const t = generateTrackingToken();
+      const row = {
+        id: crypto.randomUUID(),
+        token: t,
+        tokenType: "click",
+        campaignId,
+        campaignEmailId,
+        linkUrl: url,
+        createdAt: now,
+        expiresAt,
+        firstUsedAt: null,
+        usedCount: 0,
+        lastUserAgentCategory: null,
+        ipHash: null,
+      };
+      store.trackingTokens.set(row.id, row);
+      clickTokenMap.set(url, t);
+    }
+
+    return { openToken, clickTokenMap };
+  },
+
+  async getTrackingToken(token) {
+    for (const row of store.trackingTokens.values()) {
+      if (row.token === token) return { ...row };
+    }
+    return null;
+  },
+
+  async recordOpenResolution(tokenRecord, { uaCategory, ipHash }) {
+    const now = new Date();
+    const row = store.trackingTokens.get(tokenRecord.id);
+    if (!row) return;
+    const isFirst = row.firstUsedAt === null;
+    row.usedCount += 1;
+    row.lastUserAgentCategory = uaCategory;
+    row.ipHash = ipHash;
+    if (isFirst) row.firstUsedAt = now;
+
+    if (!isFirst) return;
+
+    const ceRow = store.campaignEmails.get(tokenRecord.campaignEmailId);
+    if (ceRow && !ceRow.openedAt) {
+      ceRow.openedAt = now;
+      const camp = store.campaigns.get(tokenRecord.campaignId);
+      if (camp) camp.openedEmails = (camp.openedEmails || 0) + 1;
+    }
+  },
+
+  async recordClickResolution(tokenRecord, { uaCategory, ipHash }) {
+    const now = new Date();
+    const row = store.trackingTokens.get(tokenRecord.id);
+    if (!row) return;
+    const isFirst = row.firstUsedAt === null;
+    const machine = isMachineCategory(uaCategory);
+    row.usedCount += 1;
+    row.lastUserAgentCategory = uaCategory;
+    row.ipHash = ipHash;
+    if (isFirst) row.firstUsedAt = now;
+
+    if (machine) return;
+
+    const ceRow = store.campaignEmails.get(tokenRecord.campaignEmailId);
+    if (ceRow && !ceRow.clickedAt) {
+      ceRow.clickedAt = now;
+      const camp = store.campaigns.get(tokenRecord.campaignId);
+      if (camp) camp.clickedEmails = (camp.clickedEmails || 0) + 1;
+    }
+  },
+
+  async getCampaignTrackingBreakdown(campaignId) {
+    let machineOpenCount = 0;
+    let machineClickCount = 0;
+    for (const row of store.trackingTokens.values()) {
+      if (row.campaignId !== campaignId) continue;
+      if (!row.firstUsedAt) continue;
+      if (isMachineCategory(row.lastUserAgentCategory)) {
+        if (row.tokenType === "open")  machineOpenCount++;
+        if (row.tokenType === "click") machineClickCount++;
+      }
+    }
+    return { machineOpenCount, machineClickCount };
+  },
+
+  async expireContactTrackingTokens(contactId) {
+    const now = new Date();
+    const ceIds = new Set();
+    for (const ce of store.campaignEmails.values()) {
+      if (ce.contactId === contactId) ceIds.add(ce.id);
+    }
+    for (const row of store.trackingTokens.values()) {
+      if (ceIds.has(row.campaignEmailId)) row.expiresAt = now;
+    }
+  },
+
+  async deleteExpiredTrackingTokens() {
+    const now = new Date();
+    let totalDeleted = 0;
+    for (const [id, row] of store.trackingTokens.entries()) {
+      if (row.expiresAt < now) {
+        store.trackingTokens.delete(id);
+        totalDeleted++;
+      }
+    }
+    return totalDeleted;
   },
 };
 

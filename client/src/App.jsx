@@ -74,6 +74,7 @@ import ContactListDetail from "@/pages/ContactListDetail";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetByToken from "@/pages/ResetByToken";
 import Domains from "@/pages/Domains";
+import LinkExpired from "@/pages/LinkExpired";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -171,6 +172,10 @@ function AppRoutes() {
 
       <Route path="/reset-password/token/:token">
         {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <ResetByToken />}
+      </Route>
+
+      <Route path="/link-expired">
+        {() => <LinkExpired />}
       </Route>
 
       <Route path="/app/dashboard">

@@ -284,7 +284,13 @@ FOUNDATION
         │
         ├── AI GENERATION (OpenAI; plan quota; spam analysis; template preview)
         │
-        └── TEMPLATES (per-campaign snapshot at creation; templateId FK)
+        ├── TEMPLATES (per-campaign snapshot at creation; templateId FK)
+        │
+        └── EMAIL ANALYTICS (tracking_tokens; trackingClassifier.js; trackingUtils.js)
+                  │
+                  ├── CAMPAIGN EXECUTION (token generation per-contact per-send)
+                  ├── DELIVERY PIPELINE (pixel + click routes; node-html-parser link rewriting)
+                  └── HISTORY UI (machineOpenCount / machineClickCount disclosure)
 ```
 
 ### Reading the map
@@ -370,6 +376,21 @@ The Contact Library's M-N architecture is the prerequisite for sequences. A sequ
 The current architecture is a single Node.js process per Railway deployment. Cleanup jobs (`inactivity`, `session cleanup`, `campaign recovery`) use process-local boolean flags to prevent overlap. These flags do not work across multiple instances.
 
 When horizontal scaling is needed, process-local flags will be replaced with Redis `SET NX` distributed locks. This is a contained change: the lock acquisition and release wraps the same job logic without restructuring it. No schema change is required. The campaign execution layer (BullMQ) already supports horizontal scaling — only the cleanup jobs require this migration.
+
+---
+
+### M10: Email Analytics — Shipped (2026-06-27)
+
+Email analytics is now live. Key architectural decisions:
+
+- **First-event model**: `campaign_emails.opened_at` / `clicked_at` record the first genuine open/click per recipient per campaign. An atomic `UPDATE ... WHERE opened_at IS NULL RETURNING id` prevents double-counting under concurrent requests — only the first winner updates `campaigns.opened_emails`. Identical to M9's `updateSenderDomainIfPending` pattern.
+- **Machine UA classification**: A standalone `trackingClassifier.js` module classifies all inbound requests into seven machine categories (proofpoint, barracuda, mimecast, abnormal_security, link_scanner, apple_mpp, gmail_proxy) and two human categories (mobile, desktop). Machine requests update the token's `usedCount` but do not update `campaign_emails.clicked_at` or `campaigns.clicked_emails` — preventing security gateway pre-scans from consuming the genuine click slot before the human ever opens the email.
+- **`tracking_tokens` table**: One row per link per recipient per campaign (plus one open-pixel row). Each token is a 22-character base64url string from `crypto.randomBytes(16)` — 128-bit entropy, negligible collision probability at any realistic scale. Tokens have `CASCADE DELETE` from both `campaigns` and `campaign_emails`.
+- **Opt-in via `TRACK_BASE_URL`**: If the environment variable is absent, tracking is entirely inert — no tokens generated, no pixel inserted, no links rewritten. `email.js` and `campaignLoop.js` branch on this check; the delivery pipeline is unmodified when tracking is disabled.
+- **Fire-and-forget analytics writes**: Both the pixel endpoint (`GET /t/o/:token`) and the redirect endpoint (`GET /t/c/:token`) respond immediately, then write analytics in a `setImmediate` callback. Recipients experience zero added latency.
+- **`node-html-parser` for link rewriting**: Chosen over regex (fragile, misses nested elements) and cheerio (500KB+ overhead). Link rewriting wraps its entire body in try/catch and returns the original HTML unchanged on any parser exception — email delivers without click tracking rather than failing.
+- **IP hashing**: Raw IPs are never stored. `hashIp()` uses SHA-256 with a configurable `IP_HASH_SALT` environment variable.
+- **SES configuration set conflict**: Operators must disable Open and Click tracking in the SES configuration set at M10 deploy — otherwise SES will double-wrap tracked links. This is a deployment-time requirement, not a code defect.
 
 ---
 

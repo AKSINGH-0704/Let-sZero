@@ -38,6 +38,7 @@ const REQUIRED_TABLES = [
   "platform_settings",
   "sns_events",
   "sender_domains",
+  "tracking_tokens",
 ];
 
 const REQUIRED_COLUMNS = [
@@ -132,6 +133,21 @@ const REQUIRED_COLUMNS = [
   // ── campaigns — M9 additions ─────────────────────────────────────────────
   { table: "campaigns", column: "sender_domain_id",      critical: false },
   { table: "campaigns", column: "sender_email_snapshot", critical: false },
+
+  // ── tracking_tokens (M10) ────────────────────────────────────────────────
+  // critical: false throughout — tracking fails gracefully (delivery is unaffected)
+  { table: "tracking_tokens", column: "id",                      critical: false },
+  { table: "tracking_tokens", column: "token",                   critical: false },
+  { table: "tracking_tokens", column: "token_type",              critical: false },
+  { table: "tracking_tokens", column: "campaign_id",             critical: false },
+  { table: "tracking_tokens", column: "campaign_email_id",       critical: false },
+  { table: "tracking_tokens", column: "link_url",                critical: false },
+  { table: "tracking_tokens", column: "created_at",              critical: false },
+  { table: "tracking_tokens", column: "expires_at",              critical: false },
+  { table: "tracking_tokens", column: "first_used_at",           critical: false },
+  { table: "tracking_tokens", column: "used_count",              critical: false },
+  { table: "tracking_tokens", column: "last_user_agent_category",critical: false },
+  { table: "tracking_tokens", column: "ip_hash",                 critical: false },
 ];
 
 const REQUIRED_INDEXES = [
@@ -149,6 +165,8 @@ const REQUIRED_INDEXES = [
   { index: "invites_token_hash_idx",                critical: false },
   // M9: sender domain uniqueness per user
   { index: "sender_domains_user_domain_unique",     critical: false },
+  // M10: tracking token lookup — hit on every open/click resolution
+  { index: "idx_tracking_tokens_token",             critical: false },
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────────

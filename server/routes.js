@@ -18,6 +18,8 @@ import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { runCampaignLoop } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain } from "./domainManager.js";
+import { classifyUserAgent } from "./trackingClassifier.js";
+import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
 
 // SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
 let smtpHealthCache = { status: "unknown", checkedAt: 0 };
@@ -87,6 +89,23 @@ const resetByTokenLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many reset attempts. Please try again later." },
+});
+
+// 60 tracking requests per IP per minute — open/click endpoints
+// On rate limit, pixel requests still get the 1x1 GIF (no error shown to recipient)
+const trackingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next, options) => {
+    // Open endpoints: always return the pixel to avoid broken images in email clients
+    if (req.path.startsWith("/t/o/")) {
+      res.set("Content-Type", "image/gif").set("Cache-Control", "no-store").send(TRACKING_PIXEL_GIF);
+    } else {
+      res.status(429).json({ message: "Too many requests. Please try again later." });
+    }
+  },
 });
 
 async function authMiddleware(req, res, next) {
@@ -460,6 +479,69 @@ export async function registerRoutes(httpServer, app) {
       console.error("[KEEP-CREDITS] Error:", err.message);
       return html("#dc2626", "Something went wrong", "Please try again later or contact your administrator.");
     }
+  });
+
+  // ── Public: Email tracking endpoints (M10) ───────────────────────────────
+  // No auth required — recipients access these endpoints when they open/click emails.
+  // Rate-limited to 60 req/min/IP. Analytics writes are fire-and-forget:
+  // the response is sent first so latency is never added to the recipient's experience.
+
+  app.get("/t/o/:token", trackingLimiter, async (req, res) => {
+    // Always serve the pixel — broken images in email clients look unprofessional.
+    res.set({
+      "Content-Type": "image/gif",
+      "Cache-Control": "no-store, no-cache, must-revalidate, private",
+      "Pragma": "no-cache",
+    }).send(TRACKING_PIXEL_GIF);
+
+    // Validate token format before DB lookup
+    if (!TOKEN_RE.test(req.params.token)) return;
+
+    setImmediate(async () => {
+      try {
+        const tokenRecord = await storage.getTrackingToken(req.params.token);
+        if (!tokenRecord) return;
+        if (tokenRecord.expiresAt < new Date()) return;
+        const ua = req.headers["user-agent"] || "";
+        const uaCategory = classifyUserAgent(ua);
+        const ipHash = hashIp(req.ip);
+        await storage.recordOpenResolution(tokenRecord, { uaCategory, ipHash });
+      } catch (err) {
+        console.error("[TRACKING-OPEN] Resolution error:", err.message);
+      }
+    });
+  });
+
+  app.get("/t/c/:token", trackingLimiter, async (req, res) => {
+    if (!TOKEN_RE.test(req.params.token)) {
+      return res.redirect(302, "/link-expired");
+    }
+
+    let tokenRecord;
+    try {
+      tokenRecord = await storage.getTrackingToken(req.params.token);
+    } catch (err) {
+      console.error("[TRACKING-CLICK] DB lookup error:", err.message);
+      return res.redirect(302, "/link-expired");
+    }
+
+    if (!tokenRecord || tokenRecord.expiresAt < new Date() || !tokenRecord.linkUrl) {
+      return res.redirect(302, "/link-expired");
+    }
+
+    // Redirect immediately — recipient reaches their destination without waiting for analytics
+    res.redirect(302, tokenRecord.linkUrl);
+
+    setImmediate(async () => {
+      try {
+        const ua = req.headers["user-agent"] || "";
+        const uaCategory = classifyUserAgent(ua);
+        const ipHash = hashIp(req.ip);
+        await storage.recordClickResolution(tokenRecord, { uaCategory, ipHash });
+      } catch (err) {
+        console.error("[TRACKING-CLICK] Resolution error:", err.message);
+      }
+    });
   });
 
   // ── Public: SES bounce / complaint SNS webhook ────────────────────────────
@@ -1949,7 +2031,15 @@ export async function registerRoutes(httpServer, app) {
           : ce
       );
 
-      res.json({ ...campaign, campaignEmails: enrichedEmails });
+      // M10: machine-activity breakdown — fails gracefully if tracking_tokens table missing
+      let trackingBreakdown = { machineOpenCount: 0, machineClickCount: 0 };
+      try {
+        trackingBreakdown = await storage.getCampaignTrackingBreakdown(campaign.id);
+      } catch (_err) {
+        // Non-critical: tracking analytics unavailable, campaign data still returned
+      }
+
+      res.json({ ...campaign, campaignEmails: enrichedEmails, trackingBreakdown });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

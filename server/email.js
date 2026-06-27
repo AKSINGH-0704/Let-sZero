@@ -1,7 +1,9 @@
 import nodemailer from "nodemailer";
 import sanitizeHtml from "sanitize-html";
+import { parse as parseHtml } from "node-html-parser";
 import { generateUnsubscribeToken } from "./unsubscribe.js";
 import { linkifyUrls } from "./linkify.js";
+import { TRACKING_PIXEL_GIF } from "./trackingUtils.js";
 
 const transport = nodemailer.createTransport({
   host: process.env.SES_SMTP_HOST,
@@ -71,6 +73,32 @@ const EMAIL_SANITIZE_OPTIONS = {
   allowedSchemesByTag: { img: ["http","https","data"] },
 };
 
+// Links that must never be wrapped with a click-tracking redirect.
+const SKIP_LINK_PREFIXES = ["mailto:", "tel:", "#", "javascript:", "/api/"];
+
+// Rewrites <a href> attributes in sanitized HTML to click-tracking URLs.
+// Uses node-html-parser (not regex) so malformed or edge-case HTML is handled correctly.
+// Falls back to the original HTML on any parser error — email delivery takes priority.
+function wrapLinksForTracking(html, clickTokenMap, baseUrl) {
+  if (!clickTokenMap || clickTokenMap.size === 0) return html;
+  try {
+    const root = parseHtml(html, { voidTag: { addClosingSlash: false } });
+    for (const anchor of root.querySelectorAll("a[href]")) {
+      const href = anchor.getAttribute("href");
+      if (!href) continue;
+      if (SKIP_LINK_PREFIXES.some(p => href.startsWith(p))) continue;
+      const clickToken = clickTokenMap.get(href);
+      if (clickToken) {
+        anchor.setAttribute("href", `${baseUrl}/t/c/${clickToken}`);
+      }
+    }
+    return root.toString();
+  } catch (err) {
+    console.error("[TRACKING] Link wrapping failed — delivering without click tracking:", err.message);
+    return html;
+  }
+}
+
 // Defense-in-depth against CRLF header injection (nodemailer ≤ 9.0.0 CVE).
 // Must be applied to every operator-controlled value set in custom email headers.
 // encodeURIComponent already encodes \r\n in URL components, but APP_URL and
@@ -82,7 +110,8 @@ function sanitizeHeaderValue(str) {
 
 // senderProfile: { name, title, company, phone, replyToEmail, customFromEmail } — from user.sender* fields
 // customFromEmail: verified custom domain address (e.g. hello@acme.com); null = use SES_FROM_EMAIL
-export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}) {
+// trackingTokens: { openToken, clickTokenMap } from storage.createTrackingTokensForEmail; null disables tracking
+export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}, trackingTokens = null) {
   const subject = sanitizeHtml(
     replacePlaceholders(template.subject || "", contact, senderProfile),
     { allowedTags: [], allowedAttributes: {} }
@@ -93,6 +122,22 @@ export async function sendCampaignEmail(contact, template, userId, campaignEmail
 
   // bodyHtml: convert newlines to HTML paragraph/line-break structure, then sanitize
   const bodyHtml = sanitizeHtml(plainTextToHtml(bodyRaw), EMAIL_SANITIZE_OPTIONS);
+
+  // M10 tracking instrumentation — wraps links and injects open pixel.
+  // Applied to bodyHtml only (not the full document) so the unsubscribe footer link is never wrapped.
+  // If TRACK_BASE_URL is absent or trackingTokens is null, bodyHtml passes through unchanged.
+  let instrumentedBodyHtml = bodyHtml;
+  const trackBaseUrl = process.env.TRACK_BASE_URL || null;
+  if (trackingTokens && trackBaseUrl) {
+    instrumentedBodyHtml = wrapLinksForTracking(bodyHtml, trackingTokens.clickTokenMap, trackBaseUrl);
+    // Tracking pixel: 1×1 transparent GIF appended at end of body content, before the unsubscribe footer.
+    // role="presentation" + alt="" ensures screen readers skip it.
+    // Aggressive inline style prevents any client from adding borders or spacing.
+    instrumentedBodyHtml +=
+      `\n<img src="${trackBaseUrl}/t/o/${trackingTokens.openToken}" ` +
+      `width="1" height="1" alt="" role="presentation" ` +
+      `style="display:block;width:1px;height:1px;border:0;margin:0;padding:0;" />`;
+  }
 
   const unsubscribeFooter = buildUnsubscribeFooter(userId, contact.email);
 
@@ -105,7 +150,7 @@ export async function sendCampaignEmail(contact, template, userId, campaignEmail
 </head>
 <body style="margin:0;padding:24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.6;background-color:#ffffff;">
 <div style="max-width:600px;">
-${bodyHtml}
+${instrumentedBodyHtml}
 ${unsubscribeFooter.html}
 </div>
 </body>

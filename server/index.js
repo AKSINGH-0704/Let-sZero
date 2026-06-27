@@ -583,8 +583,10 @@ async function diagnoseSMTPPath() {
     const isAllowed = allowedPaths.some(path => req.path === path);
     const isStaticFile = /\.(js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf|eot|map|xml|txt)$/i.test(req.path);
     const isAsset = req.path.startsWith('/assets');
+    // M10: tracking pixel + click redirect endpoints must be reachable even in pre-launch mode
+    const isTrackingEndpoint = req.path.startsWith('/t/');
 
-    if (isAllowed || isStaticFile || isAsset) return next();
+    if (isAllowed || isStaticFile || isAsset || isTrackingEndpoint) return next();
 
     if (req.path.startsWith('/api/')) {
       return res.status(403).json({ message: "RepMail is currently in private beta. Join the waitlist at /early-access" });
@@ -896,6 +898,29 @@ async function diagnoseSMTPPath() {
         watchdogRunning = false;
       }
     }, 2 * 60 * 1000);
+  }
+
+  // M10: Expired tracking token cleanup — weekly, 30s startup delay.
+  // First pass runs 30s after boot to clear any tokens that expired while the server was down.
+  // Batched-delete loop in storage prevents table-level lock contention on large datasets.
+  {
+    let tokenCleanupRunning = false;
+    async function runTrackingTokenCleanup() {
+      if (tokenCleanupRunning) { console.warn("[CLEANUP] Tracking token cleanup still in progress — skipping"); return; }
+      tokenCleanupRunning = true;
+      try {
+        const deleted = await storage.deleteExpiredTrackingTokens();
+        if (deleted > 0) console.log(`[CLEANUP] Expired tracking tokens deleted: ${deleted}`);
+      } catch (err) {
+        console.error("[CLEANUP] Tracking token cleanup error:", err.message);
+      } finally {
+        tokenCleanupRunning = false;
+      }
+    }
+    setTimeout(() => {
+      runTrackingTokenCleanup();
+      setInterval(runTrackingTokenCleanup, 7 * 24 * 60 * 60 * 1000);
+    }, 30 * 1000);
   }
 
   // Sentry error handler must come before the generic Express error handler

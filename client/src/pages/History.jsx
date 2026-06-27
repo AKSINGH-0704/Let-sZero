@@ -522,6 +522,16 @@ export default function History() {
                       <div className="text-xs text-muted-foreground">
                         Open Rate &middot; {formatNumber(viewCampaign.openedEmails)} opens
                       </div>
+                      {(() => {
+                        const machineCount = campaignDetail?.trackingBreakdown?.machineOpenCount ?? 0;
+                        if (machineCount === 0) return null;
+                        const genuine = Math.max(0, (viewCampaign.openedEmails ?? 0) - machineCount);
+                        return (
+                          <div className="text-xs text-muted-foreground mt-1 border-t pt-1">
+                            ~{genuine} genuine &middot; {machineCount} machine (MPP/gateway)
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="rounded-lg border p-3">
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">

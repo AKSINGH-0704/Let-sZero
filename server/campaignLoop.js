@@ -9,6 +9,7 @@
  * This module contains no path-specific logic.
  */
 
+import * as Sentry from "@sentry/node";
 import { storage } from "./storage.js";
 import { sendCampaignEmail } from "./email.js";
 import { getRateLimiter } from "./rateLimiter.js";
@@ -20,6 +21,7 @@ import {
 import {
   AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, USER_ROLES,
 } from "../shared/schema.js";
+import { extractTemplateLinks } from "./trackingUtils.js";
 
 // ── SES throttle detection ─────────────────────────────────────────────────────
 // Moved here from worker.js so the retry wrapper and the loop share one module.
@@ -42,7 +44,7 @@ function isThrottleError(err) {
  * Moved here from worker.js. Exported so worker.js can re-export for callers that
  * reference it directly (scheduler, recovery paths).
  */
-export async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3, senderProfile = {}) {
+export async function sendWithRetry(contact, template, userId, campaignId, rateLimiter, campaignEmailId, maxAttempts = 3, senderProfile = {}, trackingTokens = null) {
   let lastErr;
   let attempts = 0;
   let throttleRetries = 0;
@@ -50,7 +52,7 @@ export async function sendWithRetry(contact, template, userId, campaignId, rateL
 
   while (attempts < maxAttempts) {
     try {
-      return await sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile);
+      return await sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile, trackingTokens);
     } catch (err) {
       lastErr = err;
 
@@ -259,6 +261,16 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     console.warn(`${logTag} Campaign ${campaignId} — sender profile incomplete for userId=${userId}. From name will fall back to platform default.`);
   }
 
+  // M10: extract unique URLs from template body for click-token pre-generation.
+  // Done once before the loop — the template body is the same for every contact.
+  const trackBaseUrl = process.env.TRACK_BASE_URL || null;
+  const templateLinks = (trackBaseUrl && template.body)
+    ? extractTemplateLinks(template.body)
+    : [];
+  if (trackBaseUrl) {
+    console.log(`${logTag} Campaign ${campaignId} — tracking enabled, ${templateLinks.length} trackable link(s)`);
+  }
+
   const rateLimiter = getRateLimiter();
   let rateLimiterFallbackLogged = false;
   let sentCount    = 0;
@@ -383,6 +395,26 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       status: CAMPAIGN_EMAIL_STATUS.PENDING,
     });
 
+    // M10: generate per-contact tracking tokens if TRACK_BASE_URL is configured.
+    // Failure is non-fatal — email delivers without analytics rather than blocking.
+    let trackingTokens = null;
+    if (trackBaseUrl && contact?.email) {
+      try {
+        const retentionDays = parseInt(process.env.TRACKING_TOKEN_RETENTION_DAYS || "730", 10);
+        trackingTokens = await storage.createTrackingTokensForEmail({
+          campaignEmailId: campaignEmailRecord.id,
+          campaignId,
+          templateLinks,
+          retentionDays,
+        });
+      } catch (tokenErr) {
+        console.error(`${logTag} [${campaignId}] Token generation failed for contact ${contactId} — delivering without tracking:`, tokenErr.message);
+        if (process.env.SENTRY_DSN) {
+          Sentry.captureException(tokenErr, { extra: { campaignId, contactId, context: "token_generation" } });
+        }
+      }
+    }
+
     let attemptedSend    = false;
     let usedRateLimiter  = false;
     try {
@@ -426,7 +458,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
         const info = await sendWithRetry(
           contact, template, userId, campaignId,
           usedRateLimiter ? rateLimiter : null,
-          campaignEmailRecord.id, 3, senderProfile
+          campaignEmailRecord.id, 3, senderProfile, trackingTokens
         );
 
         // Email delivered to SES — mark SENT immediately before credit deduction.
