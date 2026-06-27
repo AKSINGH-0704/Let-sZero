@@ -18,7 +18,7 @@ const BRANDS = {
   repmail: {
     title: "RepMail",
     favicon: "/favicon.png",
-    routes: ["/products/repmail", "/pricing", "/login", "/repmail/", "/accept-invite", "/app/"],
+    routes: ["/products/repmail", "/pricing", "/login", "/forgot-password", "/reset-password/", "/repmail/", "/accept-invite", "/app/"],
   },
 };
 
@@ -71,6 +71,8 @@ import AcceptInvite from "@/pages/AcceptInvite";
 import Suppressions from "@/pages/Suppressions";
 import ContactLibrary from "@/pages/ContactLibrary";
 import ContactListDetail from "@/pages/ContactListDetail";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetByToken from "@/pages/ResetByToken";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -160,6 +162,14 @@ function AppRoutes() {
 
       <Route path="/accept-invite">
         {() => <AcceptInvite />}
+      </Route>
+
+      <Route path="/forgot-password">
+        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <ForgotPassword />}
+      </Route>
+
+      <Route path="/reset-password/token/:token">
+        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <ResetByToken />}
       </Route>
 
       <Route path="/app/dashboard">

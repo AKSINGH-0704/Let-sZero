@@ -2275,6 +2275,34 @@ const dbStorage = {
     }).where(eq(users.id, userId));
   },
 
+  // ── Self-service password reset ────────────────────────────────────────────
+  // Raw token goes in email URL, never stored — only SHA-256 hash written to DB.
+
+  async setPasswordResetToken(userId, tokenHash, expiresAt) {
+    await db.update(users).set({
+      resetToken: tokenHash,
+      resetTokenExpiresAt: expiresAt,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
+  async getUserByResetToken(tokenHash) {
+    const [user] = await db.select().from(users)
+      .where(and(
+        eq(users.resetToken, tokenHash),
+        gte(users.resetTokenExpiresAt, new Date()),
+      ));
+    return user || null;
+  },
+
+  async clearPasswordResetToken(userId) {
+    await db.update(users).set({
+      resetToken: null,
+      resetTokenExpiresAt: null,
+      updatedAt: new Date(),
+    }).where(eq(users.id, userId));
+  },
+
   // ── Secondary Root Admin ───────────────────────────────────────────────────
 
   async grantSecondaryRoot(userId) {

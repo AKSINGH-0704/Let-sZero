@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26; Milestone 7 Duplicate Campaign (Audit 066) applied 2026-06-27  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26; Milestone 7 Duplicate Campaign (Audit 066) applied 2026-06-27; Milestone 7B Contact Management Completion (Audit 067) applied 2026-06-27; Milestone 8 Launch Readiness Hardening (Audit 068) applied 2026-06-27  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -306,13 +306,25 @@ All five items must pass before RepMail is considered externally validated.
     - `TemplateBuilder.jsx`: "Pre-filled from original campaign" note
     - `History.jsx`: Duplicate Campaign button (COMPLETED/FAILED/CANCELLED; ownership-guarded); FAILED status note; `Button asChild`+`Link` pattern
 
-14. ~~Milestone 7B — Contact Management Completion~~ *(DONE — 2026-06-27 — Audit 067)*
+14. ~~Milestone 7B — Contact Management Completion~~ *(DONE — 2026-06-27 — Audit 067 — `c4168c8`)*
     - `GET /api/contact-lists/:id/export` — RFC 4180 CSV, formula injection defense, UTF-8 BOM, filename cap 100 chars, `addedAt ASC` ordering
     - `exportContactList()` in both `storage.js` and `memoryStorage.js`
     - Empty list campaign error — specific actionable message naming both recovery paths
     - `saveToLibraryAs` — `createContactList` awaited; `libraryListId` in response; confirmation toast
     - Contact Edit UI — `EditSheet` component in `ContactListDetail.jsx`; PATCH `/api/contacts/:id` confirmed operational
     - Backlog items M6-001, M6-002, M6-003 resolved
+
+15. ~~Milestone 8 — Launch Readiness Hardening~~ *(DONE — 2026-06-27 — Audit 068 — Pending push)*
+    - **E-1:** Helmet (^8.2.0) — HTTP security headers; CSP disabled (requires per-route tuning); HSTS enabled
+    - **E-2:** Sentry (@sentry/node ^10.62.0) — `expressIntegration`; `setupExpressErrorHandler`; `beforeSend` strips body, cookies, auth headers, ip, email, username
+    - **E-3:** Self-service password reset — SHA-256 hashed token; 1h TTL; per-email 15-min throttle; `deleteUserSessions` + auto-login after reset; `mustResetPassword` cleared; `ForgotPassword.jsx`, `ResetByToken.jsx`
+    - **E-4:** `PROFILE_UPDATED` audit log on `PUT /api/profile`
+    - **E-5:** `creditValidityMonths: null` in pricing API (was `6`); "Credits never expire" in Payments.jsx
+    - **E-6:** xlsx removed (CVE-2023-30533) → ExcelJS (^4.4.0); format detection by extension; behavioral differences documented
+    - **E-7:** Account deletion V1 — mailto in Profile.jsx to support@repmail.in
+    - **E-8:** drizzle-orm updated to ^0.45.2 (was ^0.39.3) — SEC-002 SQL injection in identifiers fix
+    - **DB migration required before reset flow goes live:** `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token text; ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;`
+    - **Env vars to add in Railway:** `SENTRY_DSN` (Sentry enabled only when set)
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

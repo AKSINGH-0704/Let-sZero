@@ -2012,6 +2012,34 @@ export const memoryStorage = {
     user.updatedAt = new Date();
   },
 
+  // ── Self-service password reset ────────────────────────────────────────────
+
+  async setPasswordResetToken(userId, tokenHash, expiresAt) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.resetToken = tokenHash;
+    user.resetTokenExpiresAt = expiresAt;
+    user.updatedAt = new Date();
+  },
+
+  async getUserByResetToken(tokenHash) {
+    const now = new Date();
+    for (const user of store.users.values()) {
+      if (user.resetToken === tokenHash && user.resetTokenExpiresAt && new Date(user.resetTokenExpiresAt) >= now) {
+        return { ...user };
+      }
+    }
+    return null;
+  },
+
+  async clearPasswordResetToken(userId) {
+    const user = store.users.get(userId);
+    if (!user) return;
+    user.resetToken = null;
+    user.resetTokenExpiresAt = null;
+    user.updatedAt = new Date();
+  },
+
   // ── Secondary Root Admin ───────────────────────────────────────────────────
 
   async grantSecondaryRoot(userId) {

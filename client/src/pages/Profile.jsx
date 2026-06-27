@@ -441,6 +441,25 @@ export default function Profile() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="border-destructive/30">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg text-destructive">Account Deletion</CardTitle>
+            <CardDescription>
+              To delete your account and all associated data, contact our support team. We will
+              process your request within 5 business days.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <a
+              href={`mailto:support@repmail.in?subject=Account%20deletion%20request&body=Please%20delete%20my%20account%3A%20${encodeURIComponent(user.email)}`}
+            >
+              <Button variant="destructive" size="sm">
+                Request account deletion
+              </Button>
+            </a>
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

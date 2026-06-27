@@ -1,6 +1,38 @@
 import "./env.js"; // must be first — loads .env before any other module reads process.env
+import * as Sentry from "@sentry/node";
+
+// Sentry must init before any other import that touches the Node.js runtime.
+// DSN is read from SENTRY_DSN env var; if absent, Sentry is disabled (no-op SDK).
+// Uses Sentry Node SDK v10 API (setupExpressErrorHandler, expressIntegration).
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || "development",
+    integrations: [Sentry.expressIntegration()],
+    // Strip PII before events leave the process.
+    // request body, cookies, auth headers, and session tokens must never reach Sentry.
+    beforeSend(event) {
+      if (event.request) {
+        delete event.request.data;        // request body (may contain passwords)
+        delete event.request.cookies;     // session token cookie
+        if (event.request.headers) {
+          delete event.request.headers["cookie"];
+          delete event.request.headers["authorization"];
+        }
+      }
+      if (event.user) {
+        delete event.user.ip_address;
+        delete event.user.email;
+        delete event.user.username;
+      }
+      return event;
+    },
+  });
+}
+
 import { validateEnv } from "./validateEnv.js";
 import express from "express";
+import helmet from "helmet";
 import crypto from "crypto";
 import { createConnection } from "net";
 import { lookup as dnsLookup } from "dns/promises";
@@ -19,6 +51,13 @@ const httpServer = createServer(app);
 // Trust Railway's load balancer so req.ip resolves to the real client IP from
 // X-Forwarded-For. Without this, all clients share the same rate-limit bucket.
 app.set("trust proxy", 1);
+
+// Security headers — CSP excluded (requires per-route tuning; add in a follow-up milestone).
+// HSTS enabled for production; helmet is a no-op in dev where HTTPS is absent.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 
 // Razorpay webhook MUST be registered before express.json() — HMAC-SHA256
 // signature verification requires the raw request body as a Buffer.
@@ -834,6 +873,12 @@ async function diagnoseSMTPPath() {
         watchdogRunning = false;
       }
     }, 2 * 60 * 1000);
+  }
+
+  // Sentry error handler must come before the generic Express error handler
+  // so that 5xx errors are captured with full stack context.
+  if (process.env.SENTRY_DSN) {
+    Sentry.setupExpressErrorHandler(app);
   }
 
   app.use((err, _req, res, _next) => {

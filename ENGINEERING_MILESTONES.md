@@ -21,8 +21,9 @@ This document is the definitive historical record of how RepMail was engineered,
 | M5 | Production Safety, Security & Correctness | Security / Observability | `1eb23a1` | Audit 064 | Complete |
 | M6 | Contact Library | Product Capability | `d655399` | Audit 065 | Complete |
 | M7A | Duplicate Campaign | Product Capability | `ea68878` | Audit 066 | Complete |
-| M7B | Contact Management Completion | Product Capability | Pending | Audit 067 | Complete |
-| M8 | Sender Domain (Custom Sending) | Infrastructure | — | — | Planned |
+| M7B | Contact Management Completion | Product Capability | `c4168c8` | Audit 067 | Complete |
+| M8 | Launch Readiness Hardening | Security / Infrastructure | Pending | Audit 068 | Complete |
+| M9 | Sender Domain (Custom Sending) | Infrastructure | — | — | Planned |
 
 ---
 
@@ -865,7 +866,7 @@ SEC-002 (drizzle-orm SQL injection — low exploitability given typed column usa
 |---|---|
 | **Status** | Complete |
 | **Audit** | Audit 065 (2026-06-26) |
-| **Commit** | Pending push |
+| **Commit** | `d655399` |
 | **Date** | 2026-06-26 |
 
 ### Summary Card
@@ -881,7 +882,7 @@ SEC-002 (drizzle-orm SQL injection — low exploitability given typed column usa
 | **API Changes** | 12 new routes; `POST /api/campaigns` extended with `listId` + `saveToLibraryAs` |
 | **Frontend Changes** | `ContactLibrary.jsx` (new), `ContactListDetail.jsx` with import sheet (new), Navbar BookUser item, App.jsx routes, FileUpload tab switcher, CampaignContext/CampaignConfirmation library mode |
 | **Documentation Updated** | AUDIT_TRAIL.md (Audit 065), ENGINEERING_MILESTONES.md (this section), ENGINEERING_BACKLOG.md (M6 section) |
-| **Git Commit** | Pending |
+| **Git Commit** | `d655399` |
 | **Independent Audit Status** | PASS — all categories (Security, Integrity, Edge Cases, API Consistency, Frontend, memoryStorage parity) |
 
 ### Design Documents
@@ -1016,7 +1017,7 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 |---|---|
 | **Status** | Complete |
 | **Audit** | Audit 067 (2026-06-27) |
-| **Commit** | Pending |
+| **Commit** | `c4168c8` |
 | **Date** | 2026-06-27 |
 
 ### Summary Card
@@ -1065,3 +1066,52 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 | M6-001 | Empty list error — specific actionable message |
 | M6-002 | saveToLibraryAs — `libraryListId` in response + confirmation toast |
 | M6-003 | CSV export — full RFC 4180 implementation with formula injection defense |
+
+---
+
+## Milestone 8 — Launch Readiness Hardening
+
+| Field | Value |
+|---|---|
+| **Status** | Complete |
+| **Audit** | Audit 068 (2026-06-27) |
+| **Commit** | Pending |
+| **Date** | 2026-06-27 |
+
+### Summary Card
+
+| Field | Value |
+|---|---|
+| **Category** | Security / Infrastructure |
+| **Primary Goal** | Close all P0/P1 security and policy gaps identified in the 9-perspective Production Launch Readiness Review before first external user onboarding |
+| **Major Outcome** | Platform-level security hardening: HTTP security headers, Sentry error monitoring with PII filtering, self-service password reset (full end-to-end), credit policy correction, xlsx CVE remediated, drizzle-orm SQL injection fix |
+| **Production Impact** | 11 files modified; 2 new frontend pages; package changes (3 added, 1 removed, 2 upgraded) |
+| **Database Migration** | `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token text; ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;` |
+| **API Changes** | `POST /api/auth/forgot-password` (new); `POST /api/auth/reset-by-token` (new); `GET /api/pricing/plans` — `creditValidityMonths: null` (was `6`); `PUT /api/profile` — audit log added |
+| **Frontend Changes** | `ForgotPassword.jsx` (new), `ResetByToken.jsx` (new), Login.jsx "Forgot password?" → `/forgot-password`, Payments.jsx copy, Profile.jsx account deletion section, App.jsx new routes |
+
+### Engineering Items
+
+| ID | Item | Status |
+|----|------|--------|
+| E-1 | HTTP security headers (Helmet ^8.2.0) | Complete |
+| E-2 | Sentry error monitoring (@sentry/node ^10.62.0) | Complete |
+| E-3 | Self-service password reset | Complete |
+| E-4 | Profile change audit log (`PROFILE_UPDATED`) | Complete |
+| E-5 | Credit expiry policy fix (`creditValidityMonths: null`) | Complete |
+| E-6 | xlsx → ExcelJS migration (CVE-2023-30533) | Complete |
+| E-7 | Account deletion V1 (mailto link) | Complete |
+| E-8 | drizzle-orm ^0.45.2 (SEC-002 SQL injection fix) | Complete |
+
+### Key Security Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| SHA-256 hash of reset token in DB | Matches `inactivityKeepToken` pattern — consistent precedent, raw token only in email |
+| Always-200 on forgot-password | Prevents email enumeration — cannot distinguish registered from unregistered |
+| Per-email throttle (15-min minimum) | Token expiry > 45 min remaining → issued < 15 min ago → skip resend |
+| `deleteUserSessions` on reset | All sessions invalidated — forces re-auth on all devices |
+| `mustResetPassword = false` on token reset | Admin-forced gate cleared — user lands on dashboard, not forced-change page |
+| Sentry `beforeSend` PII filter | Strips body, cookies, auth headers, ip, email, username before transmission |
+| CSP disabled in helmet | Requires per-route tuning; deferred to avoid breaking existing SPA inline styles |
+| Account deletion via mailto (V1) | Self-service delete requires cascading data cleanup and compliance workflow; V1 routes to support team |

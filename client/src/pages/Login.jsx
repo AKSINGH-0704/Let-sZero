@@ -285,7 +285,7 @@ function SignInForm({ login, isLoggingIn, loginError }) {
             <Label htmlFor="password" className="text-sm font-medium">
               Password
             </Label>
-            <Link href="/contact">
+            <Link href="/forgot-password">
               <span className="text-xs text-muted-foreground hover:text-primary transition-colors duration-200 cursor-pointer">
                 Forgot password?
               </span>

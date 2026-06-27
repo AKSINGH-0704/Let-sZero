@@ -380,6 +380,29 @@ Product Architecture Review → Engineering Design Review (approved with 6 refin
 
 ---
 
+### 17 · Milestone 8: Launch Readiness Hardening (Audit 068 — 2026-06-27)
+
+**Audit:** 068 — see AUDIT_TRAIL.md
+
+| Deliverable | Status | Evidence |
+|-------------|--------|---------|
+| E-1: Helmet HTTP security headers | **COMPLETE** | `app.use(helmet({ contentSecurityPolicy: false, ... }))` in server/index.js |
+| E-2: Sentry error monitoring | **COMPLETE** | `@sentry/node` ^10.62.0; `expressIntegration`; PII stripped in `beforeSend` |
+| E-3: Self-service password reset | **COMPLETE** | SHA-256 hashed token; 1h TTL; per-email throttle; session invalidation + auto-login; ForgotPassword.jsx + ResetByToken.jsx |
+| E-4: Profile change audit log | **COMPLETE** | `PROFILE_UPDATED` in AUDIT_ACTIONS; logged on PUT /api/profile |
+| E-5: Credit expiry policy fix | **COMPLETE** | `creditValidityMonths: null` in API; Payments.jsx "Credits never expire" |
+| E-6: xlsx → ExcelJS migration | **COMPLETE** | xlsx (CVE-2023-30533) removed; exceljs ^4.4.0 installed; format detection by extension |
+| E-7: Account deletion V1 | **COMPLETE** | mailto link in Profile.jsx → support@repmail.in |
+| E-8: drizzle-orm SQL injection fix | **COMPLETE** | drizzle-orm updated to ^0.45.2 (was ^0.39.3) |
+
+**Post-deploy action required:** Run `npm run db:push` to add `reset_token` and `reset_token_expires_at` columns before password reset flows are live.
+
+**Railway env var to add:** `SENTRY_DSN` — Sentry is a no-op until this is set.
+
+**Milestone status: COMPLETE — Milestone 8 (Launch Readiness Hardening — Audit 068)**
+
+---
+
 ## Launch blockers (ranked)
 
 | # | Blocker | Severity | Current status |

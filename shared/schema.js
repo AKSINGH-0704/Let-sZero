@@ -98,6 +98,10 @@ export const AUDIT_ACTIONS = {
   CONTACT_REMOVED_FROM_LIST:       "CONTACT_REMOVED_FROM_LIST",
   CONTACTS_BULK_REMOVED_FROM_LIST: "CONTACTS_BULK_REMOVED_FROM_LIST",
   CONTACT_UPDATED:                 "CONTACT_UPDATED",
+  // Self-service password reset
+  PROFILE_UPDATED:                 "PROFILE_UPDATED",
+  PASSWORD_RESET_REQUESTED:        "PASSWORD_RESET_REQUESTED",
+  PASSWORD_RESET_COMPLETED:        "PASSWORD_RESET_COMPLETED",
 };
 
 export const PAYMENT_STATUS = {
@@ -187,6 +191,13 @@ export const users = pgTable("users", {
   senderCompany: text("sender_company"),
   senderPhone: text("sender_phone"),
   replyToEmail: text("reply_to_email"),
+
+  // ── Self-service password reset ───────────────────────────────────────────
+  // SHA-256 hash of raw reset token (raw goes in email URL, never stored).
+  // SQL migration: ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token text;
+  //               ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;
+  resetToken: text("reset_token"),
+  resetTokenExpiresAt: timestamp("reset_token_expires_at"),
 }, (table) => ({
   // Supports fast inactivity job query filtering active non-root users
   activeActivityIdx: index("users_active_activity_idx").on(table.isActive, table.lastActivityAt),

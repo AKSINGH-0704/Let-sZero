@@ -6076,3 +6076,110 @@ No regressions identified in existing contact library, campaign creation, or his
 | M6-001 | OPEN — empty list error is generic ("No valid contacts remain after filtering") | RESOLVED — specific message with both recovery paths |
 | M6-002 | OPEN — saveToLibraryAs fire-and-forget with no user signal | RESOLVED — `libraryListId` in response + confirmation toast |
 | M6-003 | OPEN — export stub (501) | RESOLVED — full RFC 4180 implementation |
+
+---
+
+## Audit 068 — Launch Readiness Hardening (2026-06-27)
+
+**Milestone:** Launch Readiness Hardening  
+**Trigger:** Production Launch Readiness Review (9-perspective) identified P0/P1 security and policy gaps before first external user onboarding  
+**Auditor:** Independent (Claude Sonnet 4.6)  
+**Scope:** Security headers, error monitoring, self-service password reset, profile audit logging, credit policy fix, xlsx CVE remediation, account deletion V1, drizzle-orm SQL injection fix
+
+---
+
+### Engineering Items Implemented
+
+| ID | Item | Implementation |
+|----|------|----------------|
+| E-1 | HTTP security headers (Helmet) | `app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }))` — HSTS + security headers enabled; CSP deferred (requires per-route tuning) |
+| E-2 | Centralized error monitoring (Sentry) | `@sentry/node` v10; `Sentry.init()` with `expressIntegration()`; `setupExpressErrorHandler(app)` before generic handler; `beforeSend` strips request body, cookies, Authorization header, ip_address, email, username |
+| E-3 | Self-service password reset | SHA-256 hashed token in DB (never stored raw); 1-hour TTL; per-email throttle (15-min minimum between resends via expiry check); `deleteUserSessions` + new session on reset; `mustResetPassword` cleared; `ForgotPassword.jsx`, `ResetByToken.jsx` pages; always-200 on forgot-password (prevents enumeration) |
+| E-4 | Profile change audit log | `PROFILE_UPDATED` audit log added to `PUT /api/profile`; logs which fields were changed |
+| E-5 | Credit expiry policy fix | `creditValidityMonths: null` in `GET /api/pricing/plans` response (was `CREDIT_VALIDITY_MONTHS = 6`); `CREDIT_VALIDITY_MONTHS` import removed from routes.js; Payments.jsx copy updated to "Credits never expire" |
+| E-6 | xlsx → ExcelJS migration | `xlsx` (CVE-2023-30533, no patch available) replaced with `exceljs`; format detection by file extension; `Readable.from(buffer)` for CSV path; behavioral differences documented in comments |
+| E-7 | Account deletion V1 | mailto link in Profile.jsx — `support@repmail.in` with pre-filled subject and user email in body |
+| E-8 | drizzle-orm SQL injection fix | Updated from `^0.39.3` to `^0.45.2` — resolves SEC-002 (SQL injection in identifiers) |
+
+---
+
+### Schema Changes
+
+**users table — 2 new nullable columns:**
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;
+```
+
+**AUDIT_ACTIONS additions:**
+- `PROFILE_UPDATED`
+- `PASSWORD_RESET_REQUESTED`
+- `PASSWORD_RESET_COMPLETED`
+
+---
+
+### Security Design Decisions
+
+**Token hashing:** SHA-256 hash stored in DB; raw token in email URL. Identical pattern to `inactivityKeepToken` — consistent, no new precedent.
+
+**Session invalidation:** `deleteUserSessions(userId)` called after successful token-based reset. New session created immediately (user auto-logged in). Pattern identical to emergency recovery flow.
+
+**Per-email throttle:** Token expiry > 45 minutes remaining means token was issued < 15 minutes ago → silent skip. Prevents email flooding without exposing whether an account exists.
+
+**mustResetPassword cleared:** Admin-forced reset gate is cleared after token-based reset. User arrives at dashboard, not the forced-change page.
+
+**Concurrent reset requests:** Second request overwrites first token. Only the second link is valid.
+
+**Google OAuth users:** Can use the password reset flow to optionally set a password (they have a `passwordHash` from initial account creation; reset flow replaces it).
+
+**Sentry PII filter:** `request.data` (body), `cookies`, `Authorization` header, `cookie` header, `user.ip_address`, `user.email`, `user.username` all stripped in `beforeSend`.
+
+---
+
+### Behavioural Verification
+
+| Check | Result |
+|-------|--------|
+| `shared/schema.js` — PROFILE_UPDATED, PASSWORD_RESET_REQUESTED, PASSWORD_RESET_COMPLETED present | PASS |
+| `shared/schema.js` — resetToken, resetTokenExpiresAt columns defined on users table | PASS |
+| `memoryStorage.js` — setPasswordResetToken, getUserByResetToken, clearPasswordResetToken present | PASS |
+| `storage.js` — same 3 methods use gte (available from drizzle imports) | PASS |
+| Node syntax check — server/routes.js, server/index.js, server/storage.js, server/memoryStorage.js | PASS |
+| Package verification — helmet ^8.2.0, @sentry/node ^10.62.0, exceljs ^4.4.0, drizzle-orm ^0.45.2 | PASS |
+| Package verification — xlsx removed from dependencies | PASS |
+| Sentry v10 API — Handlers does NOT exist; setupExpressErrorHandler IS a function | PASS |
+| ExcelJS — Workbook constructor is a function | PASS |
+| helmet — is a function | PASS |
+| forgotPasswordLimiter — defined (5/IP/hour) | PASS |
+| POST /api/auth/forgot-password — always 200, per-email throttle, SHA-256 hash, 1h TTL, PASSWORD_RESET_REQUESTED audit | PASS |
+| POST /api/auth/reset-by-token — hash verify, deleteUserSessions, createSession, mustResetPassword=false, PASSWORD_RESET_COMPLETED audit, cookie set | PASS |
+| Login.jsx — "Forgot password?" links to /forgot-password (was /contact) | PASS |
+| App.jsx — /forgot-password and /reset-password/token/:token routes registered | PASS |
+| Payments.jsx — "Credits never expire" (was "Credits never expire early") | PASS |
+| Profile.jsx — account deletion section with mailto link | PASS |
+| creditValidityMonths: null in API response | PASS |
+
+---
+
+### Independent Production Audit
+
+| ID | Area | Finding | Severity | Resolution |
+|----|------|---------|----------|------------|
+| OK | Token storage | Raw token never in DB; SHA-256 hash only; matches inactivityKeepToken pattern exactly | PASS | — |
+| OK | Email enumeration | forgot-password always returns 200 with identical message regardless of whether email exists | PASS | — |
+| OK | Per-email throttle | 45-minute expiry threshold correctly maps to 15-minute minimum between sends | PASS | — |
+| OK | Session invalidation | `deleteUserSessions` called before `createSession` — no window where two sessions are valid | PASS | — |
+| OK | mustResetPassword | Cleared on token reset — user goes to dashboard, not forced-change page | PASS | — |
+| OK | Rate limiting | forgotPasswordLimiter: 5/IP/hour. Existing loginLimiter: 5/IP/15min. No gap. | PASS | — |
+| OK | Sentry API version | Sentry v10 uses `setupExpressErrorHandler` and `expressIntegration`; deprecated `Handlers` removed | PASS | — |
+| OK | PII filter scope | body (passwords), cookies (session), auth headers all stripped before Sentry transmission | PASS | — |
+| OK | xlsx removal | Package removed, import replaced, no remaining XLSX references in server code | PASS | — |
+| OK | ExcelJS CSV | `Readable.from(buffer)` correctly converts buffer to stream for ExcelJS csv.read() | PASS | — |
+| OK | ExcelJS row indexing | `row.values.slice(1)` strips the 1-indexed leading undefined — correct | PASS | — |
+| OK | credit policy | `creditValidityMonths: null` removes false 6-month expiry signal; copy says "never expire" | PASS | — |
+| OK | Account deletion email | mailto pre-fills subject + encoded email; no PII logged to browser history | PASS | — |
+| OK | drizzle-orm | SEC-002 addressed with ^0.45.2 upgrade | PASS | — |
+| INFO | DB migration required | reset_token and reset_token_expires_at columns must be added to production DB before password reset flows are live | ACTION | Run `npm run db:push` after deploy |
+| INFO | SENTRY_DSN env var | Sentry is a no-op until SENTRY_DSN is set in Railway | ACTION | Add env var in Railway dashboard |
+| INFO | CSP deferred | Content Security Policy disabled (helmet option) — requires per-route tuning in a future milestone | DEFERRED | Backlog |
+| INFO | Password reset email HTML | Current email is plaintext. A styled HTML email with clear CTA button would improve deliverability/CTR. | DEFERRED | Backlog |

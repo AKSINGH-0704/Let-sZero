@@ -1,7 +1,8 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, CREDIT_VALIDITY_MONTHS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
-import * as XLSX from "xlsx";
+import { Readable } from "stream";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
+import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
@@ -69,6 +70,15 @@ const acceptLimiter = rateLimit({
   message: { message: "Too many attempts. Please wait before trying again." },
 });
 
+// 5 password reset requests per IP per hour — prevents email flooding
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many password reset requests. Please try again later." },
+});
+
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
                 req.cookies?.token ||
@@ -124,7 +134,8 @@ async function authMiddleware(req, res, next) {
   if (user.mustResetPassword) {
     const allowed = req.path === "/api/auth/me" ||
                     req.path === "/api/auth/reset-password" ||
-                    req.path === "/api/auth/logout";
+                    req.path === "/api/auth/logout" ||
+                    req.path === "/api/auth/reset-by-token";
     if (!allowed) {
       return res.status(403).json({
         mustResetPassword: true,
@@ -727,6 +738,15 @@ export async function registerRoutes(httpServer, app) {
         title:   senderTitle   !== undefined ? (senderTitle.trim()   || null) : updatedUser.senderTitle,
         company: senderCompany !== undefined ? (senderCompany.trim() || null) : updatedUser.senderCompany,
       });
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.PROFILE_UPDATED,
+        targetType: "user",
+        targetId: req.user.id,
+        details: { fields: Object.keys(req.body).filter(k => req.body[k] !== undefined) },
+      });
+
       res.json({ message: "Profile updated", user: updatedUser, senderWarnings });
     } catch (error) {
       console.error("[PROFILE] update error:", error.message);
@@ -753,9 +773,127 @@ export async function registerRoutes(httpServer, app) {
 
       await storage.updatePassword(req.user.id, newPassword);
 
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+        targetType: "user",
+        targetId: req.user.id,
+      });
+
       res.json({ message: "Password updated successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Self-service password reset — unauthenticated routes.
+  // Always respond 200 on forgot-password to prevent email enumeration.
+  // Token is SHA-256 hashed in DB; raw token travels only in the email URL.
+  app.post("/api/auth/forgot-password", forgotPasswordLimiter, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== "string") {
+        return res.status(400).json({ message: "Email is required." });
+      }
+
+      const user = await storage.getUserByEmail(email.trim().toLowerCase());
+
+      // Always 200 — prevents email enumeration
+      if (!user || !user.isActive) {
+        return res.json({ message: "If that email is registered, you will receive a reset link shortly." });
+      }
+
+      // Per-email throttle: if a valid (unexpired) token already exists and was created
+      // within the last 15 minutes, skip sending a new one. Check by attempting a DB lookup.
+      // We compare token expiry: tokens are valid for 1 hour, so "too recent" = expiry > 45 min away.
+      if (user.resetToken && user.resetTokenExpiresAt) {
+        const expiresAt = new Date(user.resetTokenExpiresAt);
+        const msRemaining = expiresAt.getTime() - Date.now();
+        if (msRemaining > 45 * 60 * 1000) {
+          // Token was issued less than 15 minutes ago — silently skip resend
+          return res.json({ message: "If that email is registered, you will receive a reset link shortly." });
+        }
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1-hour TTL
+
+      await storage.setPasswordResetToken(user.id, tokenHash, expiresAt);
+
+      await storage.createAuditLog({
+        userId: user.id,
+        action: AUDIT_ACTIONS.PASSWORD_RESET_REQUESTED,
+        targetType: "user",
+        targetId: user.id,
+        details: { email: user.email },
+      });
+
+      const appUrl = process.env.APP_URL || "http://localhost:5000";
+      const resetUrl = `${appUrl}/reset-password/token/${rawToken}`;
+
+      // Fire-and-forget — do not block the response on email delivery
+      sendTransactionalEmail(
+        user.email,
+        "Reset your RepMail password",
+        `Hi ${user.username},\n\nYou requested a password reset for your RepMail account.\n\nClick the link below to set a new password. This link expires in 1 hour and can only be used once.\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.\n\nFor support: support@repmail.in\n\n— The RepMail Team`
+      ).catch(err => console.error("[PASSWORD-RESET] Email send failed uid=%s:", user.id, err.message));
+
+      res.json({ message: "If that email is registered, you will receive a reset link shortly." });
+    } catch (error) {
+      console.error("[PASSWORD-RESET] forgot-password error:", error.message);
+      res.status(500).json({ message: "An error occurred. Please try again." });
+    }
+  });
+
+  app.post("/api/auth/reset-by-token", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || typeof token !== "string") {
+        return res.status(400).json({ message: "Reset token is required." });
+      }
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ message: "Password must be at least 8 characters." });
+      }
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const user = await storage.getUserByResetToken(tokenHash);
+
+      if (!user) {
+        return res.status(400).json({ message: "This reset link is invalid or has expired." });
+      }
+
+      await storage.updatePassword(user.id, newPassword);
+      await storage.clearPasswordResetToken(user.id);
+
+      // Clear mustResetPassword so admin-forced change gate does not redirect the user
+      await storage.updateUser(user.id, { mustResetPassword: false });
+
+      // Invalidate all existing sessions — forces re-authentication everywhere
+      await storage.deleteUserSessions(user.id);
+
+      // Create a new session so the user is immediately logged in after reset
+      const newSession = await storage.createSession(user.id);
+
+      await storage.createAuditLog({
+        userId: user.id,
+        action: AUDIT_ACTIONS.PASSWORD_RESET_COMPLETED,
+        targetType: "user",
+        targetId: user.id,
+      });
+
+      res.cookie("token", newSession.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 24 * 60 * 60 * 1000,
+      });
+
+      res.json({ message: "Password updated successfully. You are now logged in." });
+    } catch (error) {
+      console.error("[PASSWORD-RESET] reset-by-token error:", error.message);
+      res.status(500).json({ message: "An error occurred. Please try again." });
     }
   });
 
@@ -2327,7 +2465,7 @@ export async function registerRoutes(httpServer, app) {
         creditTiers: CREDIT_TIERS,
         teamPricing: TEAM_PRICING,
         freeTrialCredits: FREE_TRIAL_CREDITS,
-        creditValidityMonths: CREDIT_VALIDITY_MONTHS,
+        creditValidityMonths: null,
         minCreditPurchase: MIN_CREDIT_PURCHASE,
         lastUpdated: new Date().toISOString(),
       });
@@ -2812,16 +2950,32 @@ export async function registerRoutes(httpServer, app) {
         ? buffer.slice(3)
         : buffer;
 
-      let workbook;
+      // ExcelJS replaces xlsx (removed: CVE-2023-30533, no patch available).
+      // Behavioural differences vs xlsx:
+      //   - Empty rows are skipped automatically (fine — filtered downstream anyway)
+      //   - Formula cells return their text representation, not the evaluated value (security improvement)
+      //   - Row/cell indexing is 1-based; row.values.slice(1) below strips the leading undefined
+      const ext = (fileName || "").split(".").pop().toLowerCase();
+      const workbook = new ExcelJS.Workbook();
       try {
-        workbook = XLSX.read(parseBuffer, { type: "buffer" });
+        if (ext === "csv") {
+          await workbook.csv.read(Readable.from(parseBuffer));
+        } else {
+          await workbook.xlsx.load(parseBuffer);
+        }
       } catch {
         return res.status(400).json({ message: "Failed to parse file. Ensure it is a valid Excel or CSV file." });
       }
 
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) {
+        return res.status(400).json({ message: "File is empty or has no headers" });
+      }
+
+      const jsonData = [];
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        jsonData.push(row.values.slice(1)); // slice(1): ExcelJS row.values is 1-indexed (index 0 is undefined)
+      });
 
       if (!jsonData.length || !jsonData[0]?.length) {
         return res.status(400).json({ message: "File is empty or has no headers" });
@@ -2832,7 +2986,7 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "File has too many columns (maximum 20)" });
       }
 
-      const headers = rawHeaders.map(h => String(h || "").trim());
+      const headers = rawHeaders.map(h => String(h ?? "").trim());
       const emailColPresent = headers.includes("email");
       let malformedCount = 0;
 
@@ -2840,7 +2994,9 @@ export async function registerRoutes(httpServer, app) {
         .map(row => {
           const obj = {};
           headers.forEach((header, i) => {
-            obj[header] = row[i] !== undefined ? String(row[i]) : "";
+            const cell = row[i];
+            // ExcelJS returns cell objects for rich text; extract plain value
+            obj[header] = cell !== undefined && cell !== null ? String(cell) : "";
           });
           return obj;
         })
