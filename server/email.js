@@ -80,7 +80,8 @@ function sanitizeHeaderValue(str) {
   return String(str).replace(/[\r\n]/g, "");
 }
 
-// senderProfile: { name, title, company, phone, replyToEmail } — from user.sender* fields
+// senderProfile: { name, title, company, phone, replyToEmail, customFromEmail } — from user.sender* fields
+// customFromEmail: verified custom domain address (e.g. hello@acme.com); null = use SES_FROM_EMAIL
 export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}) {
   const subject = sanitizeHtml(
     replacePlaceholders(template.subject || "", contact, senderProfile),
@@ -119,7 +120,7 @@ ${unsubscribeFooter.html}
     : (process.env.SES_FROM_NAME || "RepMail");
 
   const mailOptions = {
-    from: `"${fromName}" <${process.env.SES_FROM_EMAIL}>`,
+    from: `"${fromName}" <${senderProfile.customFromEmail || process.env.SES_FROM_EMAIL}>`,
     to: contact.email,
     subject,
     html,

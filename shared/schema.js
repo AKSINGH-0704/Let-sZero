@@ -102,6 +102,14 @@ export const AUDIT_ACTIONS = {
   PROFILE_UPDATED:                 "PROFILE_UPDATED",
   PASSWORD_RESET_REQUESTED:        "PASSWORD_RESET_REQUESTED",
   PASSWORD_RESET_COMPLETED:        "PASSWORD_RESET_COMPLETED",
+  // Custom sending domains (M9)
+  DOMAIN_REGISTERED:               "DOMAIN_REGISTERED",
+  DOMAIN_VERIFIED:                 "DOMAIN_VERIFIED",
+  DOMAIN_VERIFICATION_FAILED:      "DOMAIN_VERIFICATION_FAILED",
+  DOMAIN_REMOVED:                  "DOMAIN_REMOVED",
+  DOMAIN_SUSPENDED:                "DOMAIN_SUSPENDED",
+  DOMAIN_CHECK_REQUESTED:          "DOMAIN_CHECK_REQUESTED",
+  CAMPAIGN_DOMAIN_REVOKED:         "CAMPAIGN_DOMAIN_REVOKED",
 };
 
 export const PAYMENT_STATUS = {
@@ -285,6 +293,36 @@ export const contactImports = pgTable("contact_imports", {
   listIdIdx: index("contact_imports_list_id_idx").on(table.listId),
 }));
 
+// ── Custom Sending Domains (M9) ───────────────────────────────────────────────
+// Lifecycle: PENDING_VERIFICATION → VERIFIED | FAILED | SUSPENDED
+// Soft-deleted domains keep status = SUSPENDED (no hard delete until user confirms).
+// senderEmailSnapshot on campaigns is the durable copy of the from-address captured
+// at campaign creation — survives domain deletion without breaking history display.
+
+export const senderDomains = pgTable("sender_domains", {
+  id:           uuid("id").defaultRandom().primaryKey(),
+  userId:       uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  domain:       text("domain").notNull(),
+  fromEmail:    text("from_email").notNull(),
+  status:       text("status").notNull().default("PENDING_VERIFICATION"),
+  // AWS Easy DKIM — SES generates and manages these CNAME records automatically
+  dkimTokens:  jsonb("dkim_tokens"),          // [{ name, value, type }]
+  // Ownership proof record (TXT): name=_repmail-verify.<domain>, value=repmail-verify=<userId>
+  verifyRecord: jsonb("verify_record"),        // { name, value, type }
+  verifiedAt:   timestamp("verified_at"),
+  suspendedAt:  timestamp("suspended_at"),
+  // Domain-level health counters (tracked separately from per-user health)
+  sentCount:       integer("sent_count").notNull().default(0),
+  bouncedCount:    integer("bounced_count").notNull().default(0),
+  complainedCount: integer("complained_count").notNull().default(0),
+  verificationWindowDays: integer("verification_window_days").notNull().default(14),
+  createdAt:    timestamp("created_at").defaultNow().notNull(),
+  updatedAt:    timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx:    index("sender_domains_user_id_idx").on(table.userId),
+  userDomainUnique: uniqueIndex("sender_domains_user_domain_unique").on(table.userId, table.domain),
+}));
+
 export const campaigns = pgTable("campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -310,6 +348,12 @@ export const campaigns = pgTable("campaigns", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   listId:       uuid("list_id").references(() => contactLists.id, { onDelete: "set null" }),
   listSnapshot: jsonb("list_snapshot"),
+  // Custom sending domain — NULL means use platform default SES_FROM_EMAIL.
+  // ON DELETE SET NULL: domain deletion does not break existing campaigns.
+  senderDomainId:       uuid("sender_domain_id").references(() => senderDomains.id, { onDelete: "set null" }),
+  // Durable snapshot of fromEmail captured at campaign creation time.
+  // Survives domain hard-delete without breaking history display.
+  senderEmailSnapshot:  text("sender_email_snapshot"),
 }, (table) => ({
   // Supports getCampaigns(userId) — called on every campaign page load and dashboard stats
   userIdIdx: index("campaigns_user_id_idx").on(table.userId),

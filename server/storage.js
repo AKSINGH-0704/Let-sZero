@@ -31,7 +31,7 @@ const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
   suppressions, aiUsageLogs, invites, snsEvents, platformSettings,
-  contactLists, contactListMembers, contactImports,
+  contactLists, contactListMembers, contactImports, senderDomains,
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -2516,6 +2516,73 @@ const dbStorage = {
         addedLast30d: Number(suppressionLast30d?.count || 0),
       },
     };
+  },
+
+  // ── Sender Domains (M9) ────────────────────────────────────────────────────
+
+  async createSenderDomain({ userId, domain, fromEmail, status, dkimTokens, verifyRecord, verificationWindowDays }) {
+    const [row] = await db.insert(senderDomains).values({
+      userId,
+      domain,
+      fromEmail,
+      status: status || "PENDING_VERIFICATION",
+      dkimTokens: dkimTokens || null,
+      verifyRecord: verifyRecord || null,
+      verificationWindowDays: verificationWindowDays || 14,
+    }).returning();
+    return row;
+  },
+
+  async getSenderDomainsByUserId(userId) {
+    return db.select().from(senderDomains).where(eq(senderDomains.userId, userId)).orderBy(desc(senderDomains.createdAt));
+  },
+
+  async getSenderDomainById(id) {
+    const [row] = await db.select().from(senderDomains).where(eq(senderDomains.id, id));
+    return row || null;
+  },
+
+  async getSenderDomainByUserIdAndDomain(userId, domain) {
+    const [row] = await db.select().from(senderDomains).where(
+      and(eq(senderDomains.userId, userId), eq(senderDomains.domain, domain))
+    );
+    return row || null;
+  },
+
+  async getSenderDomainByDomain(domain) {
+    const [row] = await db.select().from(senderDomains).where(eq(senderDomains.domain, domain));
+    return row || null;
+  },
+
+  async getSenderDomainsByStatus(status) {
+    return db.select().from(senderDomains).where(eq(senderDomains.status, status));
+  },
+
+  async updateSenderDomain(id, updates) {
+    const [row] = await db.update(senderDomains).set({ ...updates, updatedAt: new Date() }).where(eq(senderDomains.id, id)).returning();
+    return row || null;
+  },
+
+  async updateSenderDomainIfPending(id, updates) {
+    // Conditional UPDATE: only applies when status = 'PENDING_VERIFICATION'.
+    // Prevents the polling job from reverting a domain that was already VERIFIED
+    // by a concurrent manual check or a race between poll intervals.
+    const [row] = await db.update(senderDomains)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(senderDomains.id, id), eq(senderDomains.status, "PENDING_VERIFICATION")))
+      .returning();
+    return row || null;
+  },
+
+  async deleteSenderDomain(id) {
+    await db.delete(senderDomains).where(eq(senderDomains.id, id));
+  },
+
+  async getVerifiedDomainForUser(userId, domainId) {
+    const [row] = await db.select().from(senderDomains).where(
+      and(eq(senderDomains.userId, userId), eq(senderDomains.id, domainId), eq(senderDomains.status, "VERIFIED"))
+    );
+    return row || null;
   },
 };
 

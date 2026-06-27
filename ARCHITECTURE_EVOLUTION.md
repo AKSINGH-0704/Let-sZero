@@ -373,11 +373,15 @@ When horizontal scaling is needed, process-local flags will be replaced with Red
 
 ---
 
-### Long-term: Customer-Managed Sender Domains
+### M9: Custom Sending Domains — Shipped (2026-06-27)
 
-Currently all campaigns send from a shared LetsZero SES identity. Customer-managed sender domains (per-customer DKIM signing, SES identity verification, dedicated sending domain) would allow customers to send from their own domain.
+Custom sending domains are now live (Starter+ plan, Audit 070). Key architectural decisions:
 
-This requires a new `sender_domains` table, per-domain SES identity verification, and DNS record management via an admin surface. The campaign execution layer is unchanged — email construction would read the domain configuration rather than the shared SES identity. The full scope is documented in `SENDER_DOMAIN_PHASE2_SCOPE.md`.
+- **AWS Easy DKIM** (not self-managed): SES generates and manages DKIM key pairs automatically. Customers add 3 CNAME records. No RSA key storage, no AES encryption, no per-message DKIM injection. `email.js` changed by exactly one line: `senderProfile.customFromEmail || SES_FROM_EMAIL`.
+- **`senderEmailSnapshot` pattern**: The `fromEmail` is captured at campaign creation time in `campaigns.sender_email_snapshot`. Domain deletions set `sender_domain_id = NULL` (FK `ON DELETE SET NULL`) but the snapshot persists — history display is never broken.
+- **`domainManager.js` module**: All domain business logic (normalization, registration idempotency, SES calls, verification polling, removal) is isolated here. Routes are thin HTTP wrappers.
+- **Verification polling**: 10-minute `setInterval` with 30s startup delay and a `running` guard. `updateSenderDomainIfPending` uses a conditional `WHERE status = 'PENDING_VERIFICATION'` UPDATE — the poll can never revert a VERIFIED domain.
+- **Mid-loop recheck**: `campaignLoop.js` rechecks domain status every 50 contacts. Admin suspensions take effect within 50 sends, not just at campaign start.
 
 ---
 

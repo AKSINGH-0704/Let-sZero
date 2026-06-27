@@ -45,6 +45,7 @@ import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { runSchemaCheck } from "./schemaCheck.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
+import { runDomainVerificationPoll } from "./domainManager.js";
 const app = express();
 const httpServer = createServer(app);
 
@@ -810,6 +811,28 @@ async function diagnoseSMTPPath() {
     runInactivityJob();
     setInterval(runInactivityJob, 24 * 60 * 60 * 1000);
   }, 10 * 60 * 1000);
+
+  // Domain verification polling — 30s startup delay, then every 10 minutes.
+  // Checks all PENDING_VERIFICATION domains against SES for verified status.
+  // The running guard prevents overlap if SES is slow and a poll takes > 10 minutes.
+  {
+    let domainPollRunning = false;
+    async function runDomainPoll() {
+      if (domainPollRunning) { console.warn("[DOMAIN][VERIFY] Poll still in progress — skipping"); return; }
+      domainPollRunning = true;
+      try {
+        await runDomainVerificationPoll();
+      } catch (err) {
+        console.error("[DOMAIN][VERIFY] Poll error:", err.message);
+      } finally {
+        domainPollRunning = false;
+      }
+    }
+    setTimeout(() => {
+      runDomainPoll();
+      setInterval(runDomainPoll, 10 * 60 * 1000);
+    }, 30 * 1000);
+  }
 
   // Scheduled-campaign scheduler — checks every 30s for PENDING campaigns
   // whose scheduledAt has passed and enqueues them for the worker.

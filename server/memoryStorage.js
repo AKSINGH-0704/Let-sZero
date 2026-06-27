@@ -2182,6 +2182,82 @@ export const memoryStorage = {
       suppression: { addedLast7d: 0, addedLast30d: 0 },
     };
   },
+
+  // ── Sender Domains (M9) ────────────────────────────────────────────────────
+
+  async createSenderDomain({ userId, domain, fromEmail, status, dkimTokens, verifyRecord, verificationWindowDays }) {
+    if (!this._senderDomains) this._senderDomains = new Map();
+    const id = `sd-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const now = new Date();
+    const row = {
+      id, userId, domain, fromEmail,
+      status: status || "PENDING_VERIFICATION",
+      dkimTokens: dkimTokens || null,
+      verifyRecord: verifyRecord || null,
+      verifiedAt: null,
+      suspendedAt: null,
+      sentCount: 0, bouncedCount: 0, complainedCount: 0,
+      verificationWindowDays: verificationWindowDays || 14,
+      createdAt: now, updatedAt: now,
+    };
+    this._senderDomains.set(id, row);
+    return row;
+  },
+
+  async getSenderDomainsByUserId(userId) {
+    if (!this._senderDomains) return [];
+    return [...this._senderDomains.values()]
+      .filter(d => d.userId === userId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async getSenderDomainById(id) {
+    return this._senderDomains?.get(id) || null;
+  },
+
+  async getSenderDomainByUserIdAndDomain(userId, domain) {
+    if (!this._senderDomains) return null;
+    return [...this._senderDomains.values()].find(d => d.userId === userId && d.domain === domain) || null;
+  },
+
+  async getSenderDomainByDomain(domain) {
+    if (!this._senderDomains) return null;
+    return [...this._senderDomains.values()].find(d => d.domain === domain) || null;
+  },
+
+  async getSenderDomainsByStatus(status) {
+    if (!this._senderDomains) return [];
+    return [...this._senderDomains.values()].filter(d => d.status === status);
+  },
+
+  async updateSenderDomain(id, updates) {
+    if (!this._senderDomains) return null;
+    const row = this._senderDomains.get(id);
+    if (!row) return null;
+    const updated = { ...row, ...updates, updatedAt: new Date() };
+    this._senderDomains.set(id, updated);
+    return updated;
+  },
+
+  async updateSenderDomainIfPending(id, updates) {
+    if (!this._senderDomains) return null;
+    const row = this._senderDomains.get(id);
+    if (!row || row.status !== "PENDING_VERIFICATION") return null;
+    const updated = { ...row, ...updates, updatedAt: new Date() };
+    this._senderDomains.set(id, updated);
+    return updated;
+  },
+
+  async deleteSenderDomain(id) {
+    this._senderDomains?.delete(id);
+  },
+
+  async getVerifiedDomainForUser(userId, domainId) {
+    if (!this._senderDomains) return null;
+    const row = this._senderDomains.get(domainId);
+    if (!row || row.userId !== userId || row.status !== "VERIFIED") return null;
+    return row;
+  },
 };
 
 console.log("[DEV MODE] In-memory storage initialized - all data will reset on server restart");

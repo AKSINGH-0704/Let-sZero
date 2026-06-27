@@ -73,6 +73,7 @@ import ContactLibrary from "@/pages/ContactLibrary";
 import ContactListDetail from "@/pages/ContactListDetail";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetByToken from "@/pages/ResetByToken";
+import Domains from "@/pages/Domains";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -205,6 +206,12 @@ function AppRoutes() {
       <Route path="/app/contacts">
         <ProtectedRoute>
           <ContactLibrary />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/domains">
+        <ProtectedRoute>
+          <Domains />
         </ProtectedRoute>
       </Route>
 

@@ -1115,3 +1115,45 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 | Sentry `beforeSend` PII filter | Strips body, cookies, auth headers, ip, email, username before transmission |
 | CSP disabled in helmet | Requires per-route tuning; deferred to avoid breaking existing SPA inline styles |
 | Account deletion via mailto (V1) | Self-service delete requires cascading data cleanup and compliance workflow; V1 routes to support team |
+
+---
+
+## Milestone 9 — Custom Sending Domains (M9)
+
+**Status:** Complete  
+**Completed:** 2026-06-27  
+**Audit:** Audit 070 — PASS  
+**Commit:** pending
+
+### Overview
+
+Starter+ plan users can send campaigns from their own verified domain instead of the shared RepMail SES address. Uses AWS Easy DKIM for automatic signing — no self-managed RSA keys required.
+
+### Scope
+
+| Item | Description | Status |
+|------|-------------|--------|
+| E-1 | `senderDomains` table + schema changes | Complete |
+| E-2 | `domainManager.js` — domain business logic module | Complete |
+| E-3 | Storage methods (10 new; mirrored in memoryStorage) | Complete |
+| E-4 | 8 domain API routes (user + admin) | Complete |
+| E-5 | Campaign creation: domain validation + `senderEmailSnapshot` | Complete |
+| E-6 | Campaign loop: domain check at start + mid-loop recheck every 50 contacts | Complete |
+| E-7 | `email.js`: `customFromEmail` parameter in From header | Complete |
+| E-8 | Verification polling job (10-min interval, 30s startup delay) | Complete |
+| E-9 | `schemaCheck.js` updated for `sender_domains` table | Complete |
+| E-10 | `Domains.jsx` page — full lifecycle UI (5 states + DNS instructions + copy buttons) | Complete |
+| E-11 | `CampaignConfirmation.jsx` — domain selector (Starter+, VERIFIED only) | Complete |
+
+### Key Architectural Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| AWS Easy DKIM | Eliminates RSA key generation, AES encryption, and per-message DKIM injection — SES signs automatically |
+| `senderEmailSnapshot` on campaigns | Durable copy of fromEmail captured at creation time; domain deletion does not break history display |
+| `ON DELETE SET NULL` on `sender_domain_id` FK | Domain hard-delete is safe — only the FK is nulled, the snapshot is preserved |
+| `updateSenderDomainIfPending` conditional UPDATE | Polling job cannot revert VERIFIED→PENDING via race condition |
+| DB-first removal order | Delete from DB first, then SES — orphaned SES identities are harmless |
+| Mid-loop domain recheck every 50 contacts | Admin suspensions propagate within 50 sends without a full-campaign-abort overhead |
+| `domainManager.js` isolated module | All SES + domain business logic centralized; routes are thin HTTP wrappers |
+

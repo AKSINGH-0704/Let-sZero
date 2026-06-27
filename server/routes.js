@@ -17,6 +17,7 @@ import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { runCampaignLoop } from "./campaignLoop.js";
+import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain } from "./domainManager.js";
 
 // SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
 let smtpHealthCache = { status: "unknown", checkedAt: 0 };
@@ -1481,6 +1482,151 @@ export async function registerRoutes(httpServer, app) {
 
   // ── End Contact Library routes ────────────────────────────────────────────────
 
+  // ── Sender Domains (M9) ─────────────────────────────────────────────────────
+
+  // GET /api/domains — list all domains for the authenticated user
+  app.get("/api/domains", authMiddleware, async (req, res) => {
+    try {
+      const domains = await storage.getSenderDomainsByUserId(req.user.id);
+      res.json(domains);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/domains — register a new custom sending domain
+  app.post("/api/domains", authMiddleware, async (req, res) => {
+    try {
+      assertDomainEligible(req.user);
+      const { domain, fromEmail } = req.body;
+      if (!domain || !fromEmail) {
+        return res.status(400).json({ message: "domain and fromEmail are required" });
+      }
+      const result = await registerDomain(req.user.id, domain, fromEmail);
+      res.status(201).json(result);
+    } catch (err) {
+      if (err.code === "PLAN_LIMIT") return res.status(403).json({ error: err.code, message: err.message });
+      if (err.code === "ALREADY_VERIFIED") return res.status(409).json({ error: err.code, message: err.message });
+      if (err.code === "DOMAIN_SUSPENDED") return res.status(403).json({ error: err.code, message: err.message });
+      if (err.code === "DOMAIN_CONFLICT") return res.status(409).json({ error: err.code, message: err.message });
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // GET /api/domains/:id — fetch a single domain record
+  app.get("/api/domains/:id", authMiddleware, async (req, res) => {
+    try {
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      res.json(domain);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/domains/:id/check — manual verification check (also runs DNS diagnostics)
+  app.post("/api/domains/:id/check", authMiddleware, async (req, res) => {
+    try {
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      if (domain.status === "VERIFIED") {
+        return res.json({ ...domain, message: "Domain is already verified" });
+      }
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.DOMAIN_CHECK_REQUESTED,
+        targetType: "sender_domain",
+        targetId: domain.id,
+        details: { domain: domain.domain },
+      });
+      const updated = await checkDomainVerification(domain, { logTag: "[DOMAIN][CHECK]" });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // DELETE /api/domains/:id — remove a domain (soft: suspend active, hard: delete PENDING/FAILED)
+  app.delete("/api/domains/:id", authMiddleware, async (req, res) => {
+    try {
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      await removeDomain(domain, req.user.id);
+      res.json({ message: "Domain removed" });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/domains/:id/dns-instructions — returns the DNS records the user must add
+  app.get("/api/domains/:id/dns-instructions", authMiddleware, async (req, res) => {
+    try {
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      res.json({
+        domain: domain.domain,
+        status: domain.status,
+        dkimRecords: domain.dkimTokens || [],
+        ownershipRecord: domain.verifyRecord || null,
+        verificationWindowDays: domain.verificationWindowDays,
+        createdAt: domain.createdAt,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Admin domain routes (ROOT_ADMIN only) ─────────────────────────────────
+
+  // GET /api/admin/domains — list all domains across all users
+  app.get("/api/admin/domains", authMiddleware, async (req, res) => {
+    try {
+      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      const allPending  = await storage.getSenderDomainsByStatus("PENDING_VERIFICATION");
+      const allVerified = await storage.getSenderDomainsByStatus("VERIFIED");
+      const allFailed   = await storage.getSenderDomainsByStatus("FAILED");
+      const allSuspended = await storage.getSenderDomainsByStatus("SUSPENDED");
+      res.json({ pending: allPending, verified: allVerified, failed: allFailed, suspended: allSuspended });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/domains/:id/suspend — admin suspend a verified domain
+  app.post("/api/admin/domains/:id/suspend", authMiddleware, async (req, res) => {
+    try {
+      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      const updated = await storage.updateSenderDomain(domain.id, {
+        status: "SUSPENDED",
+        suspendedAt: new Date(),
+      });
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.DOMAIN_SUSPENDED,
+        targetType: "sender_domain",
+        targetId: domain.id,
+        details: { domain: domain.domain, reason: req.body.reason || "admin_action" },
+      });
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/campaigns", authMiddleware, async (req, res) => {
     try {
       const campaignsList = await storage.getCampaigns(req.user.id, req.isRootAdmin);
@@ -1492,12 +1638,14 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/campaigns", authMiddleware, async (req, res) => {
     try {
-      const { name, template, contacts, scheduledAt, listId, saveToLibraryAs } = req.body;
+      const { name, template, contacts, scheduledAt, listId, saveToLibraryAs, senderDomainId } = req.body;
       const rawContacts = listId ? [] : (contacts || []);
       const validationErrors = [];
       let campaignListId = null;
       let campaignListSnapshot = null;
       let libraryListId = null;
+      let resolvedSenderDomainId = null;
+      let senderEmailSnapshot = null;
 
       // ── Sender profile gate ───────────────────────────────────────────────────
       // senderName is stored on the user record, not in the request body.
@@ -1508,6 +1656,21 @@ export async function registerRoutes(httpServer, app) {
           error: "SENDER_PROFILE_REQUIRED",
           message: "Add your sender name in Profile settings before creating a campaign.",
         });
+      }
+
+      // ── Custom sender domain validation ───────────────────────────────────────
+      if (senderDomainId) {
+        try {
+          assertDomainEligible(req.user);
+        } catch (err) {
+          return res.status(403).json({ error: err.code || "PLAN_LIMIT", message: err.message });
+        }
+        const domainRecord = await storage.getVerifiedDomainForUser(req.user.id, senderDomainId);
+        if (!domainRecord) {
+          return res.status(400).json({ error: "DOMAIN_NOT_VERIFIED", message: "The selected sending domain is not verified or does not belong to your account." });
+        }
+        resolvedSenderDomainId = domainRecord.id;
+        senderEmailSnapshot = domainRecord.fromEmail;
       }
 
       // ── Plan limit check ──────────────────────────────────────────────────────
@@ -1698,6 +1861,8 @@ export async function registerRoutes(httpServer, app) {
           scheduledAt: scheduledTime,
           listId: campaignListId,
           listSnapshot: campaignListSnapshot,
+          senderDomainId: resolvedSenderDomainId,
+          senderEmailSnapshot,
         });
         return res.status(201).json({
           campaign,
@@ -1717,6 +1882,8 @@ export async function registerRoutes(httpServer, app) {
         status: "PENDING",
         listId: campaignListId,
         listSnapshot: campaignListSnapshot,
+        senderDomainId: resolvedSenderDomainId,
+        senderEmailSnapshot,
       });
 
       // Enqueue via BullMQ if Redis is available

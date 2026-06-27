@@ -26,8 +26,16 @@ import {
   Loader2,
   Shield,
   ArrowRight,
-  Calendar
+  Calendar,
+  Globe,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePersonalizationStats } from "@/lib/utils";
 
 export default function CampaignConfirmation() {
@@ -56,8 +64,19 @@ export default function CampaignConfirmation() {
   const [validationErrors, setValidationErrors] = useState([]);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
+  const [senderDomainId, setSenderDomainId] = useState("");
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
+
+  const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
+  const isDomainEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
+
+  const { data: verifiedDomains = [] } = useQuery({
+    queryKey: ["/api/domains"],
+    queryFn: () => apiRequest("GET", "/api/domains").then(r => r.json()),
+    enabled: isDomainEligible,
+    select: (data) => data.filter(d => d.status === "VERIFIED"),
+  });
 
   const { data: selectedList } = useQuery({
     queryKey: [`/api/contact-lists/${listId}`],
@@ -129,6 +148,10 @@ export default function CampaignConfirmation() {
           body: template.body
         },
       };
+
+      if (senderDomainId && senderDomainId !== "platform") {
+        payload.senderDomainId = senderDomainId;
+      }
 
       if (listId) {
         payload.listId = listId;
@@ -290,6 +313,32 @@ export default function CampaignConfirmation() {
                   </p>
                 </div>
               ) : null}
+
+              {/* Custom Sending Domain selector — Starter+ only */}
+              {isDomainEligible && verifiedDomains.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Globe className="h-4 w-4 text-primary" />
+                    Sending Domain
+                  </Label>
+                  <Select value={senderDomainId} onValueChange={setSenderDomainId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Use platform default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="platform">Platform default (RepMail shared address)</SelectItem>
+                      {verifiedDomains.map(d => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.fromEmail}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Choose a verified custom domain or use the platform default.
+                  </p>
+                </div>
+              )}
 
               <Separator />
 

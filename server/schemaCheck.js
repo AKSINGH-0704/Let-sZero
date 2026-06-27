@@ -37,6 +37,7 @@ const REQUIRED_TABLES = [
   "invites",
   "platform_settings",
   "sns_events",
+  "sender_domains",
 ];
 
 const REQUIRED_COLUMNS = [
@@ -118,6 +119,19 @@ const REQUIRED_COLUMNS = [
   { table: "credit_transactions", column: "type",        critical: true },
   { table: "credit_transactions", column: "amount",      critical: true },
   { table: "credit_transactions", column: "campaign_id", critical: false },
+
+  // ── sender_domains (M9) ──────────────────────────────────────────────────
+  { table: "sender_domains", column: "id",            critical: true },
+  { table: "sender_domains", column: "user_id",       critical: true },
+  { table: "sender_domains", column: "domain",        critical: true },
+  { table: "sender_domains", column: "from_email",    critical: true },
+  { table: "sender_domains", column: "status",        critical: true },
+  { table: "sender_domains", column: "dkim_tokens",   critical: false },
+  { table: "sender_domains", column: "verify_record", critical: false },
+
+  // ── campaigns — M9 additions ─────────────────────────────────────────────
+  { table: "campaigns", column: "sender_domain_id",      critical: false },
+  { table: "campaigns", column: "sender_email_snapshot", critical: false },
 ];
 
 const REQUIRED_INDEXES = [
@@ -133,6 +147,8 @@ const REQUIRED_INDEXES = [
   { index: "users_active_activity_idx",             critical: false },
   // Correctness: invite token uniqueness
   { index: "invites_token_hash_idx",                critical: false },
+  // M9: sender domain uniqueness per user
+  { index: "sender_domains_user_domain_unique",     critical: false },
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────────
