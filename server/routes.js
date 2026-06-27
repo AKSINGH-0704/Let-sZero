@@ -17,7 +17,7 @@ import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { runCampaignLoop } from "./campaignLoop.js";
-import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain } from "./domainManager.js";
+import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
 import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
 
@@ -89,6 +89,40 @@ const resetByTokenLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many reset attempts. Please try again later." },
+});
+
+// Domain registration: 3 per user per day (SES identity creation has a quota cost)
+// Root admins are not rate-limited — they may need to register domains for support.
+const domainRegisterLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `domain_register:${req.user?.id ?? req.ip}`,
+  skip: (req) => req.isRootAdmin === true,
+  message: { message: "Domain registration limit reached. You can register up to 3 domains per day." },
+});
+
+// Manual verification check: 5 per domain per hour (triggers SES API + DNS lookups)
+const domainCheckLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `domain_check:${req.user?.id ?? req.ip}:${req.params.id ?? ""}`,
+  skip: (req) => req.isRootAdmin === true,
+  message: { message: "Too many verification checks. Please wait before checking again." },
+});
+
+// Domain deletion: 5 per user per day (SES identity deletion is irreversible)
+const domainDeleteLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `domain_delete:${req.user?.id ?? req.ip}`,
+  skip: (req) => req.isRootAdmin === true,
+  message: { message: "Domain deletion limit reached. Please try again tomorrow." },
 });
 
 // 60 tracking requests per IP per minute — open/click endpoints
@@ -321,6 +355,7 @@ export async function registerRoutes(httpServer, app) {
     result.sesTracking = process.env.SES_CONFIGURATION_SET
       ? "configured"
       : "not-configured — open/click/delivery tracking disabled";
+    result.domainPoll = getDomainPollHealth();
     result.timestamp = new Date().toISOString();
 
     res.json(result);
@@ -1591,7 +1626,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // POST /api/domains — register a new custom sending domain
-  app.post("/api/domains", authMiddleware, async (req, res) => {
+  app.post("/api/domains", authMiddleware, domainRegisterLimiter, async (req, res) => {
     try {
       assertDomainEligible(req.user);
       const { domain, fromEmail } = req.body;
@@ -1624,7 +1659,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // POST /api/domains/:id/check — manual verification check (also runs DNS diagnostics)
-  app.post("/api/domains/:id/check", authMiddleware, async (req, res) => {
+  app.post("/api/domains/:id/check", authMiddleware, domainCheckLimiter, async (req, res) => {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
@@ -1649,7 +1684,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // DELETE /api/domains/:id — remove a domain (soft: suspend active, hard: delete PENDING/FAILED)
-  app.delete("/api/domains/:id", authMiddleware, async (req, res) => {
+  app.delete("/api/domains/:id", authMiddleware, domainDeleteLimiter, async (req, res) => {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
@@ -1675,7 +1710,6 @@ export async function registerRoutes(httpServer, app) {
         domain: domain.domain,
         status: domain.status,
         dkimRecords: domain.dkimTokens || [],
-        ownershipRecord: domain.verifyRecord || null,
         verificationWindowDays: domain.verificationWindowDays,
         createdAt: domain.createdAt,
       });
@@ -1729,6 +1763,24 @@ export async function registerRoutes(httpServer, app) {
         ).catch(err => console.error("[DOMAIN][SUSPEND] Notification email failed uid=%s domain=%s:", domain.userId, domain.domain, err.message));
       }
 
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/admin/domains/:id/unsuspend — admin restore a suspended domain
+  // Re-checks SES state rather than blindly restoring VERIFIED — the identity
+  // may have degraded while suspended (see unsuspendDomain in domainManager.js).
+  app.post("/api/admin/domains/:id/unsuspend", authMiddleware, async (req, res) => {
+    try {
+      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      const domain = await storage.getSenderDomainById(req.params.id);
+      if (!domain) return res.status(404).json({ message: "Domain not found" });
+      if (domain.status !== "SUSPENDED") {
+        return res.status(409).json({ message: `Domain is not suspended (current status: ${domain.status})` });
+      }
+      const updated = await unsuspendDomain(domain, req.user.id);
       res.json(updated);
     } catch (err) {
       res.status(500).json({ message: err.message });

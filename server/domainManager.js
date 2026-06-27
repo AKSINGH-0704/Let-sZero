@@ -1,24 +1,40 @@
 /**
- * Domain Manager — M9 Custom Sending Domains
+ * Domain Manager — M9 Custom Sending Domains (hardened M12)
  * ============================================
  * Handles domain registration, SES identity management, verification polling,
  * and domain-level validation. All business logic for sender domains lives here;
  * routes.js calls these functions and handles HTTP framing.
  *
  * AWS Easy DKIM: SES manages DKIM key pairs automatically. Customers add 3 CNAME
- * records (provided by SES) + 1 TXT ownership record. No per-message DKIM injection
- * needed — SES signs automatically for verified identities.
+ * records (provided by SES). No per-message DKIM injection needed — SES signs
+ * automatically for verified identities. The ownership TXT record was removed in
+ * M12 — SES CNAME verification is the authoritative ownership proof.
  */
 
 import { SESv2Client, CreateEmailIdentityCommand, GetEmailIdentityCommand, DeleteEmailIdentityCommand } from "@aws-sdk/client-sesv2";
-import { resolveTxt, resolveCname } from "dns/promises";
+import { resolveCname } from "dns/promises";
 import { storage } from "./storage.js";
-import { AUDIT_ACTIONS } from "../shared/schema.js";
+import { sendTransactionalEmail } from "./email.js";
+import { AUDIT_ACTIONS, DOMAIN_ELIGIBLE_PLANS } from "../shared/schema.js";
+import { normalizeDomain, validateFromEmail } from "./domainUtils.js";
+
+export { normalizeDomain, validateFromEmail };
 
 const VERIFICATION_WINDOW_DAYS = parseInt(process.env.DOMAIN_VERIFICATION_WINDOW_DAYS || "14", 10);
 
-// Plans allowed to use custom sending domains
-const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
+// ── Module-level poll health state ────────────────────────────────────────────
+// Exported so the health endpoint can surface domain poll liveness without
+// needing to know about the scheduling logic in index.js.
+
+let _lastPollCompletedAt = null;
+let _pollInProgress = false;
+
+export function getDomainPollHealth() {
+  return {
+    lastCompletedAt: _lastPollCompletedAt,
+    inProgress: _pollInProgress,
+  };
+}
 
 let ses = null;
 function getSesClient() {
@@ -32,59 +48,6 @@ function getSesClient() {
     });
   }
   return ses;
-}
-
-// ── Domain normalisation ──────────────────────────────────────────────────────
-
-export function normalizeDomain(input) {
-  if (!input || typeof input !== "string") throw new Error("Domain is required");
-  const trimmed = input.trim().toLowerCase();
-
-  // Reject obviously invalid inputs before URL parsing
-  if (!trimmed || trimmed.includes(" ")) throw new Error("Invalid domain");
-
-  // Use URL constructor to parse and validate structure
-  let hostname;
-  try {
-    const url = new URL(`https://${trimmed}`);
-    hostname = url.hostname;
-  } catch {
-    throw new Error("Invalid domain format");
-  }
-
-  // Strip trailing dots (some DNS tools append them)
-  hostname = hostname.replace(/\.+$/, "");
-
-  // Reject bare IPs — domains must have at least one dot and a TLD
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) throw new Error("IP addresses are not valid sending domains");
-
-  // Reject reserved/local names
-  const reserved = ["localhost", "local", "internal", "example", "test", "invalid"];
-  const parts = hostname.split(".");
-  if (parts.length < 2) throw new Error("Domain must include a TLD");
-  if (reserved.includes(parts[parts.length - 1])) throw new Error("Reserved TLD not allowed");
-  if (reserved.includes(hostname)) throw new Error("Reserved domain not allowed");
-
-  return hostname;
-}
-
-export function validateFromEmail(email, domain) {
-  if (!email || typeof email !== "string") throw new Error("From email is required");
-  const trimmed = email.trim().toLowerCase();
-
-  const atIdx = trimmed.lastIndexOf("@");
-  if (atIdx < 1) throw new Error("Invalid email format");
-
-  const localPart = trimmed.slice(0, atIdx);
-  const emailDomain = trimmed.slice(atIdx + 1);
-
-  if (!localPart || !emailDomain) throw new Error("Invalid email format");
-  if (emailDomain !== domain) throw new Error(`From email must use the domain @${domain}`);
-
-  // Reject control characters and header-injection sequences
-  if (/[\r\n<>"]/.test(trimmed)) throw new Error("Invalid characters in email address");
-
-  return trimmed;
 }
 
 // ── Plan gate ─────────────────────────────────────────────────────────────────
@@ -107,7 +70,7 @@ export async function registerDomain(userId, rawDomain, rawFromEmail) {
   const existing = await storage.getSenderDomainByUserIdAndDomain(userId, domain);
   if (existing) {
     if (existing.status === "PENDING_VERIFICATION") {
-      console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — returning existing PENDING record`);
+      console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — returning existing PENDING record id=${existing.id}`);
       return existing;
     }
     if (existing.status === "VERIFIED") {
@@ -121,8 +84,7 @@ export async function registerDomain(userId, rawDomain, rawFromEmail) {
       throw err;
     }
     if (existing.status === "FAILED") {
-      // Delete existing FAILED record — fresh start
-      console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — deleting FAILED record for fresh start`);
+      console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — deleting FAILED record id=${existing.id} for fresh start`);
       await storage.deleteSenderDomain(existing.id);
       try { await getSesClient().send(new DeleteEmailIdentityCommand({ EmailIdentity: domain })); } catch {}
     }
@@ -136,24 +98,23 @@ export async function registerDomain(userId, rawDomain, rawFromEmail) {
     throw err;
   }
 
-  // SES: check if identity exists before creating (idempotency for SES side)
+  // SES: reuse existing identity if present (idempotent on repeated registrations)
   let sesData = null;
   try {
     sesData = await getSesClient().send(new GetEmailIdentityCommand({ EmailIdentity: domain }));
     console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — SES identity already exists, reusing`);
   } catch (err) {
     if (err.name !== "NotFoundException") throw err;
-    // Not found — create it
     sesData = await getSesClient().send(new CreateEmailIdentityCommand({
       EmailIdentity: domain,
-      // SigningAttributesOrigin: "AWS_SES" is required when DkimSigningAttributes is provided.
-      // NextSigningKeyLength specifies RSA-2048 keys (SES manages key rotation automatically).
+      // Easy DKIM: AWS_SES manages RSA-2048 key pairs and rotation automatically.
       DkimSigningAttributes: { SigningAttributesOrigin: "AWS_SES", NextSigningKeyLength: "RSA_2048_BIT" },
     }));
     console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — SES identity created`);
   }
 
-  // Extract DKIM CNAME records from SES response
+  // Extract DKIM CNAME records from SES response.
+  // These are the only DNS records customers need to add — no ownership TXT record.
   const dkimAttrs = sesData.DkimAttributes || {};
   const dkimTokens = (dkimAttrs.Tokens || []).map(token => ({
     name: `${token}._domainkey.${domain}`,
@@ -161,20 +122,12 @@ export async function registerDomain(userId, rawDomain, rawFromEmail) {
     type: "CNAME",
   }));
 
-  // Ownership proof TXT record (proves the user owns the domain in RepMail context)
-  const verifyRecord = {
-    name: `_repmail-verify.${domain}`,
-    value: `repmail-verify=${userId}`,
-    type: "TXT",
-  };
-
   const senderDomain = await storage.createSenderDomain({
     userId,
     domain,
     fromEmail,
     status: "PENDING_VERIFICATION",
     dkimTokens,
-    verifyRecord,
     verificationWindowDays: VERIFICATION_WINDOW_DAYS,
   });
 
@@ -204,8 +157,7 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
     dkimStatus = sesData.DkimAttributes?.Status || "NOT_STARTED";
   } catch (err) {
     if (err.name === "NotFoundException") {
-      // SES identity was deleted externally — cannot verify or send. Fail immediately.
-      console.warn(`${logTag} domain=${domain} — SES identity no longer exists; marking FAILED`);
+      console.warn(`${logTag} domainId=${id} userId=${userId} domain=${domain} — SES identity no longer exists; marking FAILED`);
       const updated = await storage.updateSenderDomainIfPending(id, {
         status: "FAILED",
         updatedAt: new Date(),
@@ -218,28 +170,33 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
           targetId: id,
           details: { domain, reason: "ses_identity_not_found" },
         });
+        await _notifyVerificationFailed(userId, domain, domainRecord.verificationWindowDays, "ses_identity_not_found");
       }
       return { ...domainRecord, status: "FAILED" };
     } else if (err.name === "ThrottlingException") {
-      console.warn(`${logTag} domain=${domain} — SES ThrottlingException, skipping this cycle`);
-      return domainRecord; // return unchanged
+      console.warn(`${logTag} domainId=${id} userId=${userId} domain=${domain} — SES ThrottlingException, skipping this cycle`);
+      return domainRecord;
     } else {
       throw err;
     }
   }
 
-  // DNS-level diagnostics for DKIM (informational, does not block verification)
-  const dnsResults = {};
-  if (domainRecord.dkimTokens && Array.isArray(domainRecord.dkimTokens)) {
-    for (const record of domainRecord.dkimTokens.slice(0, 1)) {
-      try {
-        await resolveCname(record.name);
-        dnsResults.dkim = "RESOLVED";
-      } catch {
-        dnsResults.dkim = "NOT_RESOLVED";
-      }
-      break;
-    }
+  // Per-record CNAME propagation check (diagnostic — does not block verification).
+  // Returns individual propagation state per token so the frontend can show
+  // "2 of 3 records propagated" instead of a single pass/fail.
+  const dnsResults = { dkimRecords: [] };
+  if (Array.isArray(domainRecord.dkimTokens) && domainRecord.dkimTokens.length > 0) {
+    const cnameResults = await Promise.allSettled(
+      domainRecord.dkimTokens.map(rec => resolveCname(rec.name))
+    );
+    dnsResults.dkimRecords = cnameResults.map((result, i) => ({
+      name: domainRecord.dkimTokens[i].name,
+      resolved: result.status === "fulfilled",
+    }));
+    const resolvedCount = dnsResults.dkimRecords.filter(r => r.resolved).length;
+    dnsResults.dkimSummary = resolvedCount === domainRecord.dkimTokens.length
+      ? "ALL_RESOLVED"
+      : resolvedCount > 0 ? "PARTIAL" : "NONE_RESOLVED";
   }
 
   if (sesStatus === "VERIFIED" && dkimStatus === "SUCCESS") {
@@ -256,11 +213,11 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
         targetId: id,
         details: { domain, dnsResults },
       });
-      console.log(`${logTag} domain=${domain} — VERIFIED`);
-      return { ...domainRecord, status: "VERIFIED", verifiedAt: new Date() };
+      console.log(`${logTag} domainId=${id} userId=${userId} domain=${domain} — VERIFIED`);
+      await _notifyVerificationSuccess(userId, domain);
+      return { ...domainRecord, status: "VERIFIED", verifiedAt: new Date(), dnsResults };
     }
-    // Already VERIFIED — no update needed
-    return domainRecord;
+    return { ...domainRecord, dnsResults };
   }
 
   // Check if verification window has expired
@@ -279,13 +236,14 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
         targetId: id,
         details: { domain, reason: "verification_window_expired", windowDays: domainRecord.verificationWindowDays },
       });
-      console.warn(`${logTag} domain=${domain} — FAILED (window expired)`);
-      return { ...domainRecord, status: "FAILED" };
+      console.warn(`${logTag} domainId=${id} userId=${userId} domain=${domain} — FAILED (window expired after ${domainRecord.verificationWindowDays}d)`);
+      await _notifyVerificationFailed(userId, domain, domainRecord.verificationWindowDays, "verification_window_expired");
+      return { ...domainRecord, status: "FAILED", dnsResults };
     }
   }
 
-  console.log(`${logTag} domain=${domain} — still pending (ses=${sesStatus}, dkim=${dkimStatus})`);
-  return domainRecord;
+  console.log(`${logTag} domainId=${id} userId=${userId} domain=${domain} — still pending (ses=${sesStatus}, dkim=${dkimStatus}, dns=${dnsResults.dkimSummary || "unchecked"})`);
+  return { ...domainRecord, dnsResults };
 }
 
 // ── Domain removal ────────────────────────────────────────────────────────────
@@ -293,7 +251,7 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
 export async function removeDomain(domainRecord, userId) {
   const { id, domain } = domainRecord;
 
-  // DB first — orphaned SES identities are harmless (they have no reputation cost)
+  // DB first — orphaned SES identities are harmless (no reputation cost)
   await storage.deleteSenderDomain(id);
 
   await storage.createAuditLog({
@@ -315,18 +273,130 @@ export async function removeDomain(domainRecord, userId) {
   }
 }
 
+// ── Admin unsuspend ───────────────────────────────────────────────────────────
+
+export async function unsuspendDomain(domainRecord, adminUserId) {
+  const { id, domain, userId } = domainRecord;
+
+  // Re-check SES to determine the correct restoration status rather than blindly
+  // restoring to VERIFIED. The SES identity may have degraded while suspended.
+  let restoredStatus = "PENDING_VERIFICATION";
+  let sesReason = "ses_status_unknown";
+
+  try {
+    const sesData = await getSesClient().send(new GetEmailIdentityCommand({ EmailIdentity: domain }));
+    const sesVerified = sesData.VerifiedForSendingStatus === true;
+    const dkimOk = sesData.DkimAttributes?.Status === "SUCCESS";
+
+    if (sesVerified && dkimOk) {
+      restoredStatus = "VERIFIED";
+      sesReason = "ses_confirmed_verified";
+    } else {
+      restoredStatus = "PENDING_VERIFICATION";
+      sesReason = `ses_not_verified (VerifiedForSending=${sesVerified}, dkim=${sesData.DkimAttributes?.Status})`;
+    }
+  } catch (err) {
+    if (err.name === "NotFoundException") {
+      // SES identity was deleted while the domain was suspended.
+      // Cannot restore to VERIFIED — the customer must re-register.
+      restoredStatus = "FAILED";
+      sesReason = "ses_identity_not_found";
+    } else {
+      throw err;
+    }
+  }
+
+  const updated = await storage.updateSenderDomain(id, {
+    status: restoredStatus,
+    suspendedAt: null,
+    updatedAt: new Date(),
+  });
+
+  await storage.createAuditLog({
+    userId: adminUserId,
+    action: AUDIT_ACTIONS.DOMAIN_UNSUSPENDED,
+    targetType: "sender_domain",
+    targetId: id,
+    details: { domain, restoredStatus, sesReason, domainOwnerUserId: userId },
+  });
+
+  console.log(`[DOMAIN][UNSUSPEND] adminUserId=${adminUserId} domain=${domain} — restored to ${restoredStatus} (${sesReason})`);
+
+  // Notify the domain owner of the restoration
+  const owner = await storage.getUserById(userId).catch(() => null);
+  if (owner?.email) {
+    const appUrl = process.env.APP_URL || "https://repmail.in";
+    let subject, body;
+    if (restoredStatus === "VERIFIED") {
+      subject = `Your RepMail sending domain has been restored — ${domain}`;
+      body = `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain}" has been restored on RepMail and is active again.\n\nYou can now use it for new campaigns.\n\n${appUrl}/app/domains\n\n— The RepMail Team`;
+    } else if (restoredStatus === "PENDING_VERIFICATION") {
+      subject = `Your RepMail domain is pending re-verification — ${domain}`;
+      body = `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain}" has been unsuspended but needs to complete verification.\n\nPlease visit your Domains page to check status.\n\n${appUrl}/app/domains\n\n— The RepMail Team`;
+    } else {
+      subject = `Action required: RepMail domain needs re-registration — ${domain}`;
+      body = `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain}" was unsuspended, but the domain identity was no longer found in the sending service.\n\nPlease delete this domain in RepMail and re-register it to restore sending.\n\n${appUrl}/app/domains\n\n— The RepMail Team`;
+    }
+    sendTransactionalEmail(owner.email, subject, body).catch(err =>
+      console.error(`[DOMAIN][UNSUSPEND] Notification email failed userId=${userId} domain=${domain}:`, err.message)
+    );
+  }
+
+  return updated;
+}
+
 // ── Polling job runner ────────────────────────────────────────────────────────
 
 export async function runDomainVerificationPoll() {
-  const pending = await storage.getSenderDomainsByStatus("PENDING_VERIFICATION");
-  if (!pending.length) return;
-
-  console.log(`[DOMAIN][VERIFY] Polling ${pending.length} pending domain(s)`);
-  for (const domain of pending) {
-    try {
-      await checkDomainVerification(domain, { logTag: "[DOMAIN][VERIFY]" });
-    } catch (err) {
-      console.error(`[DOMAIN][VERIFY] domain=${domain.domain} error:`, err.message);
+  _pollInProgress = true;
+  try {
+    const pending = await storage.getSenderDomainsByStatus("PENDING_VERIFICATION");
+    if (!pending.length) {
+      _lastPollCompletedAt = new Date().toISOString();
+      return;
     }
+
+    console.log(`[DOMAIN][VERIFY] Polling ${pending.length} pending domain(s)`);
+    for (const domain of pending) {
+      try {
+        await checkDomainVerification(domain, { logTag: "[DOMAIN][VERIFY]" });
+      } catch (err) {
+        console.error(`[DOMAIN][VERIFY] domainId=${domain.id} domain=${domain.domain} error:`, err.message);
+      }
+    }
+    _lastPollCompletedAt = new Date().toISOString();
+  } finally {
+    _pollInProgress = false;
   }
+}
+
+// ── Internal notification helpers ─────────────────────────────────────────────
+
+async function _notifyVerificationSuccess(userId, domain) {
+  const owner = await storage.getUserById(userId).catch(() => null);
+  if (!owner?.email) return;
+  const appUrl = process.env.APP_URL || "https://repmail.in";
+  sendTransactionalEmail(
+    owner.email,
+    `Your RepMail sending domain is verified — ${domain}`,
+    `Hi ${owner.username || owner.email},\n\nGreat news! Your custom sending domain "${domain}" has been verified on RepMail and is ready to use.\n\nYou can now select it when creating a new campaign.\n\n${appUrl}/app/domains\n\n— The RepMail Team`
+  ).catch(err =>
+    console.error(`[DOMAIN][NOTIFY] Verified email failed userId=${userId} domain=${domain}:`, err.message)
+  );
+}
+
+async function _notifyVerificationFailed(userId, domain, windowDays, reason) {
+  const owner = await storage.getUserById(userId).catch(() => null);
+  if (!owner?.email) return;
+  const appUrl = process.env.APP_URL || "https://repmail.in";
+  const isExpiry = reason === "verification_window_expired";
+  sendTransactionalEmail(
+    owner.email,
+    `RepMail domain verification ${isExpiry ? "expired" : "failed"} — ${domain}`,
+    isExpiry
+      ? `Hi ${owner.username || owner.email},\n\nThe ${windowDays}-day verification window for your custom sending domain "${domain}" has expired.\n\nTo use this domain, please:\n1. Go to Custom Sending Domains in RepMail\n2. Delete the existing record for ${domain}\n3. Re-register the domain to start a new verification window\n\n${appUrl}/app/domains\n\n— The RepMail Team`
+      : `Hi ${owner.username || owner.email},\n\nWe were unable to verify your custom sending domain "${domain}".\n\nPlease delete it in RepMail and re-register to try again.\n\n${appUrl}/app/domains\n\n— The RepMail Team`
+  ).catch(err =>
+    console.error(`[DOMAIN][NOTIFY] Failed email failed userId=${userId} domain=${domain}:`, err.message)
+  );
 }

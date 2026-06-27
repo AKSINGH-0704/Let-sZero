@@ -2,6 +2,18 @@ import { pgTable, text, integer, boolean, timestamp, jsonb, serial, uuid, index,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Plans that can register and use custom sending domains.
+// Single authoritative source — imported by server and client.
+export const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
+
+// Canonical domain lifecycle statuses.
+export const SENDER_DOMAIN_STATUS = {
+  PENDING_VERIFICATION: "PENDING_VERIFICATION",
+  VERIFIED:             "VERIFIED",
+  FAILED:               "FAILED",
+  SUSPENDED:            "SUSPENDED",
+};
+
 export const USER_ROLES = {
   ROOT_ADMIN: "ROOT_ADMIN",
   SUB_ADMIN: "SUB_ADMIN",
@@ -102,12 +114,13 @@ export const AUDIT_ACTIONS = {
   PROFILE_UPDATED:                 "PROFILE_UPDATED",
   PASSWORD_RESET_REQUESTED:        "PASSWORD_RESET_REQUESTED",
   PASSWORD_RESET_COMPLETED:        "PASSWORD_RESET_COMPLETED",
-  // Custom sending domains (M9)
+  // Custom sending domains (M9/M12)
   DOMAIN_REGISTERED:               "DOMAIN_REGISTERED",
   DOMAIN_VERIFIED:                 "DOMAIN_VERIFIED",
   DOMAIN_VERIFICATION_FAILED:      "DOMAIN_VERIFICATION_FAILED",
   DOMAIN_REMOVED:                  "DOMAIN_REMOVED",
   DOMAIN_SUSPENDED:                "DOMAIN_SUSPENDED",
+  DOMAIN_UNSUSPENDED:              "DOMAIN_UNSUSPENDED",
   DOMAIN_CHECK_REQUESTED:          "DOMAIN_CHECK_REQUESTED",
   CAMPAIGN_DOMAIN_REVOKED:         "CAMPAIGN_DOMAIN_REVOKED",
   // Email analytics tracking (M10)

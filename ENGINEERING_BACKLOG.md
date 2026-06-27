@@ -20,8 +20,8 @@
 | ID | Status | Severity | Description | Rationale | Milestone |
 |---|---|---|---|---|---|
 | SEC-001 | **DONE** (Audit 064) | HIGH | **nodemailer CRLF injection in `List-*` headers** (nodemailer ≤ 9.0.0). Directly relevant when M5 adds `List-Unsubscribe` headers — a malicious or malformed unsubscribe URL could inject arbitrary headers. Sanitize the unsubscribe URL before injecting into headers. | Confirmed nodemailer vulnerability. Risk is latent now; becomes exploitable the moment `List-Unsubscribe` header is added. | M5 (must fix before implementing List-Unsubscribe) |
-| SEC-002 | OPEN | MEDIUM | **drizzle-orm SQL injection** (drizzle-orm < 0.45.2). SQL injection via improperly escaped SQL identifiers. Risk is low in this codebase (typed column references used, not user-controlled identifiers), but dependency update is warranted. | Confirmed upstream CVE. Low exploitability given current usage patterns; update eliminates risk entirely. | P2 dependency update pass |
-| SEC-003 | OPEN | MEDIUM | **`PUT /api/profile` writes no audit log.** Sender identity changes (name, domain, SMTP credentials) are not recorded. An attacker who gains account access can change sender identity without leaving a trace. | Audit trail gap for a high-value field. Sender identity directly affects deliverability and domain reputation. | M7 |
+| SEC-002 | **DONE** (M8) | MEDIUM | **drizzle-orm SQL injection** (drizzle-orm < 0.45.2). SQL injection via improperly escaped SQL identifiers. Risk is low in this codebase (typed column references used, not user-controlled identifiers), but dependency update is warranted. | Confirmed upstream CVE. Low exploitability given current usage patterns; update eliminates risk entirely. | P2 dependency update pass |
+| SEC-003 | **DONE** (M8) | MEDIUM | **`PUT /api/profile` writes no audit log.** Sender identity changes (name, domain, SMTP credentials) are not recorded. An attacker who gains account access can change sender identity without leaving a trace. | Audit trail gap for a high-value field. Sender identity directly affects deliverability and domain reputation. | M7 |
 
 ---
 
@@ -122,6 +122,30 @@
 | M6-002 | RESOLVED (M7B) | LOW | **`saveToLibraryAs` is fire-and-forget.** | Fixed in M7B: `createContactList` is now awaited and `libraryListId` is returned in the campaign creation response. Frontend shows a confirmation toast when `libraryListId` is present. Import still runs async (non-blocking). | M7 |
 | M6-003 | RESOLVED (M7B) | LOW | **Contact list CSV export is a stub (501).** | Fixed in M7B: `GET /api/contact-lists/:id/export` returns RFC 4180 CSV with formula injection defense, UTF-8 BOM, filename sanitization (cap 100 chars), and list membership order (addedAt ASC). | M7 |
 | M6-004 | OPEN | INFO | **Large import timing not documented.** 50K-row imports run synchronously in 1K-row batches (4 DB queries each = ~200 round-trips). No progress signal is returned to the client during execution. At typical Railway Postgres latency, a 50K import takes ~20-40s. | Document expected timing; consider streaming response or progress webhooks for large files. | M8+ |
+
+---
+
+## Custom Domains (M9 / M12)
+
+Findings from engineering compliance audit (M12) against `sender_domain_phase2_scope.md`.
+
+| ID | Status | Severity | Description | Rationale | Milestone |
+|---|---|---|---|---|---|
+| DOM-001 | **DONE** (M12) | HIGH | **Ownership TXT record generated but never verified.** `registerDomain()` generated `_repmail-verify.${domain}` TXT record stored in `verifyRecord`, displayed in DNS instructions UI, but never checked anywhere. SES CNAME verification is the real ownership proof — the TXT record was security theater. | Removed entirely in M12. No customer instruction required. | M12 |
+| DOM-002 | **DONE** (M12) | HIGH | **CNAME check only verified token[0] of 3 DKIM tokens.** `checkDomainVerification()` only queried the first CNAME. SES requires all 3. Domains with 1 propagated record appeared to pass DNS checks. | All 3 tokens now checked; per-record results returned to frontend. | M12 |
+| DOM-003 | **DONE** (M12) | HIGH | **ARCH-001: Dead fallback `senderEmailSnapshot \|\| domainRecord.fromEmail` in campaignLoop.js.** The fallback masks data integrity errors — if `senderEmailSnapshot` is null, campaigns should fail hard, not silently use `fromEmail` which may have changed. | Fallback removed in M12. Null `senderEmailSnapshot` now fails the campaign immediately with a log. | M12 |
+| DOM-004 | **DONE** (M12) | MEDIUM | **`DOMAIN_ELIGIBLE_PLANS` hardcoded in 3 places.** `server/domainManager.js:21`, `client/src/pages/Domains.jsx:276`, `client/src/components/campaign/CampaignConfirmation.jsx:71`. | Moved to `shared/schema.js` as single source of truth. All 3 sites updated to import. | M12 |
+| DOM-005 | **DONE** (M12) | MEDIUM | **No notification emails on domain state transitions.** Customers never learned when their domain verified or failed — they had to poll. | Notification emails added in M12 for VERIFIED, FAILED (window expired), FAILED (identity not found), and SUSPENDED/UNSUSPENDED. | M12 |
+| DOM-006 | **DONE** (M12) | MEDIUM | **No rate limiting on domain endpoints.** Registration, check, and delete endpoints had no throttling — SES identity creation/deletion are irreversible quota-consuming operations. | Rate limiters added: 3 registrations/user/day, 5 checks/domain/hour, 5 deletes/user/day. Root admin exempt. | M12 |
+| DOM-007 | **DONE** (M12) | MEDIUM | **Domain health counters (`sentCount`, `bouncedCount`, `complainedCount`) in schema but never incremented.** SNS handler increments per-campaign counters only. | Dead schema documented. Incrementing in SNS handler is a future task (requires domain-level suppression rules). Deferred — not worth the risk of touching the SNS critical path. | Future |
+| DOM-008 | **DONE** (M12) | MEDIUM | **No admin unsuspend endpoint.** `POST /api/admin/domains/:id/suspend` existed with no corresponding unsuspend — domains were permanently suspended until direct DB access. | `POST /api/admin/domains/:id/unsuspend` added in M12. Re-checks SES state to determine correct restoration status (VERIFIED / PENDING_VERIFICATION / FAILED). | M12 |
+| DOM-009 | **DONE** (M12) | MEDIUM | **No domain poll liveness signal in health endpoint.** Domain verification polls were invisible to the health endpoint — operators could not tell if the poll job had stalled. | `domainPoll: { lastCompletedAt, inProgress }` added to `GET /api/health` in M12. | M12 |
+| DOM-010 | **DONE** (M12) | MEDIUM | **Non-ASCII / IDN homoglyph domains not rejected.** WHATWG URL standard converts Cyrillic/IDN labels to Punycode silently. A lookalike domain (`аcme.com` with Cyrillic `а`) would create a SES identity the customer doesn't own. | Explicit ASCII check added in `normalizeDomain()` before URL parsing. | M12 |
+| DOM-011 | **DONE** (M12) | LOW | **Pure validation functions untestable due to SES/storage coupling.** `normalizeDomain()` and `validateFromEmail()` were defined inside `domainManager.js` alongside SES imports. | Extracted to `server/domainUtils.js` (zero dependencies). 18 unit tests added. | M12 |
+| DOM-012 | **DONE** (M12) | LOW | **Domain list not auto-refreshing while pending.** Customers had to manually reload to see verification status. | `refetchInterval` added to `Domains.jsx` useQuery: polls every 30s when any domain is PENDING_VERIFICATION. | M12 |
+| DOM-013 | **DONE** (M12) | LOW | **No DNS provider hint in domain UI.** Cloudflare customers enter incorrect record names (full vs. subdomain-only). | DNS provider tip added below DKIM records section in `Domains.jsx`. | M12 |
+| DOM-014 | OPEN | LOW | **Domain health counters (sentCount/bouncedCount/complainedCount) are dead schema.** SNS handler does not increment them. If per-domain reputation enforcement is added in future, these will need backfill logic. | Deferred — not worth touching SNS critical path without a concrete use case. | Future |
+| DOM-015 | OPEN | MEDIUM | **CloudWatch SES reputation alarms not set up.** `Reputation.BounceRate > 3%` and `Reputation.ComplaintRate > 0.08%` thresholds require CloudWatch alarms in AWS console. Code cannot set this up — requires manual AWS console action. | GA blocker (GA-7 from Production Readiness Review). Must be done before first real customer. | Pre-GA ops |
 
 ---
 

@@ -3,7 +3,13 @@
 **Document type:** Engineering Scope Document  
 **Date:** 2026-06-26  
 **Author:** AK Singh  
-**Status:** Pre-implementation — scope definition only  
+**Status:** Partially Implemented (M9) and hardened (M12) — see architectural decisions below
+
+> **Architectural decisions made during implementation (M9/M12):**
+>
+> **DKIM approach changed:** This document specifies self-managed RSA-2048 DKIM key pairs with AES-256-GCM encrypted storage. The actual implementation uses **AWS Easy DKIM** (`SigningAttributesOrigin: "AWS_SES"`). SES manages key pairs, rotation, and signing automatically. This is strictly superior: eliminates private key storage, eliminates `DOMAIN_KEY_ENCRYPTION_SECRET`, eliminates per-message DKIM injection, and eliminates key rotation risk. Do not implement the self-managed approach described below.
+>
+> **TXT ownership record removed:** This document describes generating and verifying a `_repmail-verify.<domain>` TXT record for ownership proof. The actual implementation does not generate or check this record. SES CNAME verification is the authoritative ownership proof. The TXT record was security theater — it was generated and displayed but never checked. It was removed in M12.  
 **Repository:** AKSINGH-0704/Let-sZero
 
 ---

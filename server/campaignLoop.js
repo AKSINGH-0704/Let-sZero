@@ -242,9 +242,15 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       console.warn(`${logTag} Campaign ${campaignId} failed — senderDomain ${campaign.senderDomainId} not VERIFIED at start`);
       return;
     }
-    // Use the snapshot address (captured at creation) — not domainRecord.fromEmail,
-    // which may have changed since the campaign was created.
-    customFromEmail = campaign.senderEmailSnapshot || domainRecord.fromEmail;
+    if (!campaign.senderEmailSnapshot) {
+      // Data integrity error — senderEmailSnapshot should always be set when senderDomainId is set.
+      // Failing here rather than silently falling back to domainRecord.fromEmail, which may
+      // have changed since campaign creation, or be blank on a freshly-edited domain.
+      console.error(`${logTag} Campaign ${campaignId} — ABORT: senderDomainId=${campaign.senderDomainId} but senderEmailSnapshot is null`);
+      await storage.updateCampaign(campaignId, { status: "FAILED" });
+      return;
+    }
+    customFromEmail = campaign.senderEmailSnapshot;
     console.log(`${logTag} Campaign ${campaignId} — custom sender: ${customFromEmail}`);
   }
 

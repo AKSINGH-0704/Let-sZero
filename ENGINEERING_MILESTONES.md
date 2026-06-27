@@ -24,8 +24,9 @@ This document is the definitive historical record of how RepMail was engineered,
 | M7B | Contact Management Completion | Product Capability | `c4168c8` | Audit 067 | Complete |
 | M8 | Launch Readiness Hardening | Security / Infrastructure | `eb2c2d5` | Audit 068 | Complete |
 | M9 | Sender Domain (Custom Sending) | Infrastructure | `cbfc800` | Audits 070 + 071 | Complete |
-| M10 | Email Analytics | Infrastructure / Analytics | `07f39d4` | Audit 062 | Complete |
-| M11 | Production Operations & Analytics Accuracy | Operations / Security | TBD | Audit 063-append | Complete |
+| M10 | Email Analytics | Infrastructure / Analytics | `07f39d4` | Audit 072 | Complete |
+| M11 | Production Operations & Analytics Accuracy | Operations / Security | TBD | Audit 073 | Complete |
+| M12 | Custom Domain Hardening | Security / Infrastructure / DX | — | Audit 074 | Complete |
 
 ---
 
@@ -1178,7 +1179,7 @@ All 7 validation areas passed after fixes. No architectural changes required. M9
 
 **Type:** Infrastructure / Analytics  
 **Commit:** `07f39d4`  
-**Audit:** Audit 062  
+**Audit:** Audit 072  
 **Status:** Complete
 
 ### Objective
@@ -1230,7 +1231,7 @@ Build a production-grade email engagement analytics system using server-managed 
 
 **Type:** Operations / Security / Analytics  
 **Commit:** TBD  
-**Audit:** Audit 063-append  
+**Audit:** Audit 073  
 **Status:** Complete
 
 ### Objective
@@ -1278,7 +1279,74 @@ Strengthen the platform's operational posture across four areas: (A) create the 
 
 ### Deferred Work
 
-- RFC 8058 one-click `List-Unsubscribe-Post` endpoint — deferred to M12
-- Full nonce-based CSP (eliminating `'unsafe-inline'` for styles) — deferred to M12
+- RFC 8058 one-click `List-Unsubscribe-Post` endpoint — deferred to future milestone
+- Full nonce-based CSP (eliminating `'unsafe-inline'` for styles) — deferred to future milestone
 - IPv6 Apple MPP range detection — not yet published by Apple
+
+---
+
+## M12 — Custom Domain Hardening
+
+**Type:** Security / Infrastructure / Developer Experience  
+**Audit:** Audit 074  
+**Status:** Complete
+
+### Objective
+
+Re-evaluate the M9 Custom Sending Domains implementation from first principles. Remove unnecessary complexity, harden against abuse, establish a minimal automated test foundation, and ensure every part of the domain workflow is production-grade (observable, rate-limited, operationally owned, and fully documented).
+
+Guided by the engineering philosophy: "Optimize for building the highest-quality long-term SaaS platform."
+
+### What Was Built
+
+| Component | Description |
+|---|---|
+| `server/domainUtils.js` | New file. Pure `normalizeDomain()` and `validateFromEmail()` extracted from domainManager — zero imports, zero side effects, directly unit-testable |
+| `server/domainManager.js` | Complete rewrite. Easy DKIM (AWS_SES managed), all 3 CNAME tokens checked, per-record DNS results, VERIFIED/FAILED notification emails, unsuspend logic, module-level poll health state, structured logs with domainId/userId |
+| `server/routes.js` | Rate limiters: 3 registrations/user/day, 5 checks/domain/hour, 5 deletes/user/day. `POST /api/admin/domains/:id/unsuspend`. Domain poll health in `GET /api/health`. Removed `ownershipRecord` from dns-instructions response |
+| `server/campaignLoop.js` | ARCH-001 removed: dead fallback `senderEmailSnapshot \|\| domainRecord.fromEmail` eliminated. Null snapshot now fails campaign immediately with error log |
+| `shared/schema.js` | `DOMAIN_ELIGIBLE_PLANS` (single authoritative source), `SENDER_DOMAIN_STATUS` constants, `DOMAIN_UNSUSPENDED` audit action |
+| `client/src/pages/Domains.jsx` | `DOMAIN_ELIGIBLE_PLANS` imported from `@shared/schema`. Auto-refresh every 30s while any domain is PENDING_VERIFICATION. Per-record DNS propagation feedback in "Check Now" toast. DNS provider tip (Cloudflare vs. full-name providers). TXT ownership record display removed |
+| `client/src/components/campaign/CampaignConfirmation.jsx` | `DOMAIN_ELIGIBLE_PLANS` imported from `@shared/schema` |
+| `vitest.config.js` | New file. Vitest config with `@shared` alias matching Vite config |
+| `tests/unit/domainUtils.test.js` | 18 unit tests covering normalizeDomain (12) and validateFromEmail (6), including non-ASCII/IDN homoglyph rejection (DOM-010) |
+| `package.json` | `"test": "vitest run"` and `"test:watch": "vitest"` scripts added |
+| `ENGINEERING_BACKLOG.md` | SEC-002 and SEC-003 marked DONE (M8). Custom Domains section added (DOM-001 through DOM-015). |
+| `ENGINEERING_MILESTONES.md` | Duplicate audit numbers fixed (M10: 072, M11: 073). M12 section added |
+
+### Key Architectural Decisions
+
+| Decision | Rationale |
+|---|---|
+| AWS Easy DKIM (AWS_SES-managed) | SES manages DKIM key pairs and rotation automatically. Eliminates private key storage and per-message signing. Strictly superior to the spec's self-managed RSA-2048 approach |
+| Removed ownership TXT record entirely | TXT record was generated and displayed but never checked. SES CNAME verification is the real ownership proof. Removing it eliminates a confusing and misleading DNS instruction |
+| Extend CNAME check to all 3 tokens | SES requires all 3 for VERIFIED status. Only checking token[0] was a verification accuracy bug |
+| Per-record DNS results returned to frontend | Customers can see "2 of 3 records propagated" rather than a single pass/fail — actionable feedback during propagation delay |
+| `normalizeDomain` / `validateFromEmail` extracted to `domainUtils.js` | Allows unit testing without mocking SES, storage, or email. Zero dependencies — the definition of a testable function |
+| Non-ASCII explicit rejection before URL parsing | WHATWG URL converts IDN to Punycode silently. Cyrillic homoglyphs (`аcme.com`) would create SES identities for domains the customer doesn't own |
+| Unsuspend re-checks SES state | Blindly restoring to VERIFIED ignores SES identity degradation during suspension. Re-checking produces the correct restoration status |
+| Rate limiters keyed on user ID (not IP) | IP-keying is easily circumvented; user ID is authoritative for authenticated endpoints |
+| Poll health as module-level state in domainManager | `getDomainPollHealth()` is imported by the health endpoint — no shared global state, no circular dependency |
+
+### Behavioural Verification
+
+18/18 unit tests pass (`npm test`).
+
+DOM-001 through DOM-013 verified via code inspection. Operational items (DOM-014 domain health counters, DOM-015 CloudWatch alarms) documented in ENGINEERING_BACKLOG.md as future/pre-GA work.
+
+### Operational Ownership
+
+| Area | Owner |
+|---|---|
+| Domain verification polling | `runDomainVerificationPoll()` in domainManager.js, scheduled in index.js |
+| Domain poll liveness | `GET /api/health → domainPoll.lastCompletedAt` |
+| Admin suspend / unsuspend | `POST /api/admin/domains/:id/suspend` / `unsuspend` |
+| CloudWatch SES reputation alarms | **Manual AWS console setup required before GA** (GA-7, see ENGINEERING_BACKLOG.md DOM-015) |
+
+### Deferred Work
+
+- Domain health counters (`sentCount`, `bouncedCount`, `complainedCount`) — dead schema, not worth touching SNS critical path without a concrete use case (DOM-014)
+- CloudWatch SES reputation alarms — requires manual AWS console action, not code (DOM-015, GA-7)
+- RFC 8058 one-click `List-Unsubscribe-Post` — still deferred
+- Full nonce-based CSP — still deferred
 

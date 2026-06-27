@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -174,13 +175,9 @@ function DomainCard({ domain, onCheck, onDelete, isChecking, isDeleting }) {
                   </div>
                 )}
 
-                {/* Ownership TXT record */}
-                {domain.verifyRecord && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Ownership Record (TXT)</p>
-                    <DnsRecord record={domain.verifyRecord} type="TXT" />
-                  </div>
-                )}
+                <p className="text-xs text-muted-foreground pt-1">
+                  <span className="font-medium">DNS provider tip:</span> In Cloudflare, enter only the subdomain part (e.g. <code className="font-mono text-xs">{"<token>._domainkey"}</code>). Other providers may require the full record name — check your provider's documentation.
+                </p>
               </div>
             )}
           </div>
@@ -273,13 +270,13 @@ export default function Domains() {
   const [checkingId, setCheckingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
   const isEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
 
   const { data: domains = [], isLoading } = useQuery({
     queryKey: ["/api/domains"],
     queryFn: () => apiRequest("GET", "/api/domains").then(r => r.json()),
     enabled: isEligible,
+    refetchInterval: (data) => data?.some(d => d.status === "PENDING_VERIFICATION") ? 30000 : false,
   });
 
   const checkMutation = useMutation({
@@ -291,7 +288,18 @@ export default function Domains() {
       } else if (data.status === "FAILED") {
         toast({ variant: "destructive", title: "Verification failed", description: "The verification window has expired. Delete and re-register to try again." });
       } else {
-        toast({ description: "DNS records not yet detected. Try again in a few hours." });
+        const dnsRecords = data.dnsResults?.dkimRecords;
+        if (dnsRecords?.length) {
+          const resolved = dnsRecords.filter(r => r.resolved).length;
+          const total = dnsRecords.length;
+          toast({
+            description: resolved === total
+              ? `All ${total} CNAME records detected — verification in progress.`
+              : `${resolved} of ${total} CNAME records detected. DNS propagation may take a few hours.`,
+          });
+        } else {
+          toast({ description: "DNS records not yet detected. Try again in a few hours." });
+        }
       }
       setCheckingId(null);
     },

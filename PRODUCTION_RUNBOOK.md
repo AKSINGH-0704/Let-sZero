@@ -283,6 +283,10 @@ Never run `db:push` on production. It overwrites the schema without recording mi
   "sendPaused": false,
   "ai": "ok",
   "sesTracking": "configured",
+  "domainPoll": {
+    "lastCompletedAt": "2026-06-27T00:00:00.000Z",
+    "inProgress": false
+  },
   "timestamp": "2026-06-27T00:00:00.000Z"
 }
 ```
@@ -297,6 +301,8 @@ Never run `db:push` on production. It overwrites the schema without recording mi
 | `sendPaused` | `true` / `false` | Whether platform-wide sending is paused | If `true` unexpectedly: check for bounce/complaint spike; see incident response |
 | `ai` | `ok` / `quota_exceeded` / `error` / `unknown` | OpenAI API status | Check OPENAI_API_KEY; check OpenAI service status |
 | `sesTracking` | `configured` / `not-configured — ...` | Whether SES configuration set is set | If not-configured: open/click/delivery SNS events are disabled |
+| `domainPoll.lastCompletedAt` | ISO timestamp or `null` | Last time the domain verification poll completed successfully | If `null` after startup: poll has not completed; if no change for >20 minutes: check `[DOMAIN][VERIFY]` logs |
+| `domainPoll.inProgress` | `true` / `false` | Whether a domain verification poll is currently running | If `true` for >10 minutes: poll may be hung on DNS/SES; check Railway logs |
 | `uptime` | seconds | Process uptime | If very low: recent restart — check logs for crash |
 
 ---
@@ -498,6 +504,54 @@ If no recent rows: SNS is not delivering.
 1. Check Razorpay dashboard for failed payments
 2. If webhook events are missing: check `RAZORPAY_WEBHOOK_SECRET` and SNS delivery in Razorpay dashboard
 3. If the payment succeeded in Razorpay but credits were not granted: look up the order in `payments` table and manually grant credits via Admin → Users → Manage Credits
+
+### Custom domain verification failure
+
+**Symptom:** A customer reports their domain has been stuck in "Pending" for several days, or they received a verification-expired email.
+
+**Diagnosis:**
+```sql
+-- Find the domain record
+SELECT id, domain, status, created_at, verified_at, suspended_at, verification_window_days
+FROM sender_domains WHERE domain = '<domain>' ORDER BY created_at DESC LIMIT 1;
+```
+
+**Response:**
+1. If `status = 'FAILED'`: advise the customer to delete the domain in RepMail and re-register. The 14-day window has expired or the SES identity was removed.
+2. If `status = 'PENDING_VERIFICATION'` and window hasn't expired: verify the CNAME records exist in their DNS with a tool like `dig <token>._domainkey.<domain> CNAME`. If not propagated, customer needs to check their DNS provider.
+3. If `status = 'SUSPENDED'`: see admin unsuspend procedure below.
+
+**Domain verification poll health check:**
+- Check `GET /api/health` → `domainPoll.lastCompletedAt` — should update at least every 15 minutes
+- If `lastCompletedAt` is stale, check logs for `[DOMAIN][VERIFY] Poll error:`
+
+### Admin domain suspend and unsuspend
+
+**Suspend a verified domain (reputation protection):**
+```
+POST /api/admin/domains/:id/suspend
+Authorization: Bearer <root-admin-token>
+Content-Type: application/json
+{ "reason": "High bounce rate — customer contact list quality" }
+```
+The owner receives an email notification. Campaigns using this domain will be blocked at the domain-status check at campaign start.
+
+**Unsuspend a domain after the issue is resolved:**
+```
+POST /api/admin/domains/:id/unsuspend
+Authorization: Bearer <root-admin-token>
+```
+The endpoint re-checks SES state and restores to the correct status:
+- `VERIFIED` if SES still confirms the identity as fully verified
+- `PENDING_VERIFICATION` if SES identity exists but DKIM is not in SUCCESS state
+- `FAILED` if the SES identity was deleted while suspended (customer must re-register)
+
+The owner receives an email notification for all three outcomes. The action is audit-logged under `DOMAIN_UNSUSPENDED`.
+
+**To find a domain's ID for the above API calls:**
+```sql
+SELECT id, domain, status, user_id FROM sender_domains WHERE domain = '<domain>';
+```
 
 ### Tracking token cleanup needed
 

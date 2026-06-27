@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -68,7 +69,6 @@ export default function CampaignConfirmation() {
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
 
-  const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
   const isDomainEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
 
   const { data: verifiedDomains = [] } = useQuery({
