@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -32,6 +33,7 @@ import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePe
 export default function CampaignConfirmation() {
   const [, setLocation] = useLocation();
   const { user, refetch: refetchUser } = useAuth();
+  const { toast } = useToast();
   const {
     contacts,
     template,
@@ -150,7 +152,7 @@ export default function CampaignConfirmation() {
       return res.json();
     },
     onSuccess: (data) => {
-      // POST /api/campaigns returns { campaign, contactStats, validationErrors }.
+      // POST /api/campaigns returns { campaign, contactStats, libraryListId, validationErrors }.
       // Extract the campaign object — data.id would be undefined on the wrapper.
       const campaign = data.campaign ?? data;
       setCampaignName(name);
@@ -162,6 +164,19 @@ export default function CampaignConfirmation() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       refetchUser();
+
+      // If the user checked "Save to Contact Library as", the list record is now created.
+      // Contacts are imported asynchronously and will appear in the library within seconds.
+      // No "View Library" action is offered here — the user is about to watch their campaign
+      // launch on the next step; navigating away at this moment would be disorienting.
+      if (saveToLibraryAs && data.libraryListId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/contact-lists"] });
+        toast({
+          title: "Saved to Contact Library",
+          description: `"${saveToLibraryAs}" was added to your Contact Library. Contacts will appear shortly.`,
+        });
+      }
+
       setStep(7);
     },
     onError: (err) => {

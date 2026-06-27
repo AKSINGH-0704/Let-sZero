@@ -296,7 +296,7 @@ All five items must pass before RepMail is considered externally validated.
     - Navbar BookUser item; App.jsx routes with correct wouter ordering
     - All 12 API behavioral verification tests PASS (Audit 065)
 
-13. ~~Milestone 7 (Partial) — Duplicate Campaign~~ *(DONE — 2026-06-27 — Audit 066)*
+13. ~~Milestone 7A — Duplicate Campaign~~ *(DONE — 2026-06-27 — Audit 066)*
     - Zero backend changes; zero schema migrations
     - `useSearchParam` helper: routing abstraction for `?duplicate=<id>` deep-link pattern
     - `CampaignContext`: exports `INITIAL_STATE`; adds `isDuplicate` + `listSnapshot`; `CampaignProvider` accepts `initialState` prop
@@ -305,7 +305,14 @@ All five items must pass before RepMail is considered externally validated.
     - `FileUpload.jsx`: auto-tab to library + list pre-selection; count comparison note; deleted-list warning; `canContinueLibrary` guard
     - `TemplateBuilder.jsx`: "Pre-filled from original campaign" note
     - `History.jsx`: Duplicate Campaign button (COMPLETED/FAILED/CANCELLED; ownership-guarded); FAILED status note; `Button asChild`+`Link` pattern
-    - Remaining M7 scope: CSV Export, saveToLibraryAs confirmation, Contact Edit UI, Empty list error
+
+14. ~~Milestone 7B — Contact Management Completion~~ *(DONE — 2026-06-27 — Audit 067)*
+    - `GET /api/contact-lists/:id/export` — RFC 4180 CSV, formula injection defense, UTF-8 BOM, filename cap 100 chars, `addedAt ASC` ordering
+    - `exportContactList()` in both `storage.js` and `memoryStorage.js`
+    - Empty list campaign error — specific actionable message naming both recovery paths
+    - `saveToLibraryAs` — `createContactList` awaited; `libraryListId` in response; confirmation toast
+    - Contact Edit UI — `EditSheet` component in `ContactListDetail.jsx`; PATCH `/api/contacts/:id` confirmed operational
+    - Backlog items M6-001, M6-002, M6-003 resolved
 
 **Remaining (non-blocking):**
 - Execute Free Plan deployment runbook (see section below) — requires `FREE_PLAN_ENABLED=true` in Railway

@@ -820,6 +820,18 @@ export const memoryStorage = {
     return importRecord;
   },
 
+  async exportContactList(listId, userId) {
+    const members = Array.from(store.contactListMembers.values()).filter(m => m.listId === listId);
+    return members
+      .map(m => {
+        const c = store.contacts.get(m.contactId);
+        return c && c.userId === userId ? { email: c.email, name: c.name, company: c.company, category: c.category, addedAt: m.addedAt } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.addedAt) - new Date(b.addedAt))
+      .map(({ addedAt: _, ...rest }) => rest);
+  },
+
   async getContactListContacts(listId, userId, { search, page = 1, limit = 50 } = {}) {
     const offset = (page - 1) * limit;
     const members = Array.from(store.contactListMembers.values()).filter(m => m.listId === listId);

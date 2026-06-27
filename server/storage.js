@@ -909,6 +909,20 @@ const dbStorage = {
     return importRecord;
   },
 
+  async exportContactList(listId, userId) {
+    return await db
+      .select({
+        email: contacts.email,
+        name: contacts.name,
+        company: contacts.company,
+        category: contacts.category,
+      })
+      .from(contactListMembers)
+      .innerJoin(contacts, eq(contactListMembers.contactId, contacts.id))
+      .where(and(eq(contactListMembers.listId, listId), eq(contacts.userId, userId)))
+      .orderBy(asc(contactListMembers.addedAt));
+  },
+
   async getContactListContacts(listId, userId, { search, page = 1, limit = 50 } = {}) {
     const offset = (page - 1) * limit;
     const conditions = [

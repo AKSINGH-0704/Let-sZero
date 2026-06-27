@@ -19,8 +19,9 @@ This document is the definitive historical record of how RepMail was engineered,
 | M3B | Campaign Cancellation UX | UX | `a1a8fd9` | Audit 062 | Complete |
 | M4 | Campaign Architecture Extraction | Architecture | `5d0bbb5` | Audit 063 | Complete |
 | M5 | Production Safety, Security & Correctness | Security / Observability | `1eb23a1` | Audit 064 | Complete |
-| M6 | Contact Library | Product Capability | Pending | Pending | In Progress |
-| M7 | Campaign Re-Run | Product Capability | — | — | Planned |
+| M6 | Contact Library | Product Capability | `d655399` | Audit 065 | Complete |
+| M7A | Duplicate Campaign | Product Capability | `ea68878` | Audit 066 | Complete |
+| M7B | Contact Management Completion | Product Capability | Pending | Audit 067 | Complete |
 | M8 | Sender Domain (Custom Sending) | Infrastructure | — | — | Planned |
 
 ---
@@ -967,4 +968,100 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 
 **Append only for completed milestones.** Once a milestone section is written, its historical record is immutable. New milestones are added as new sections. Corrections to factual errors (wrong commit hash, wrong date) may be made with a note.
 
-**Future milestones to be documented:** M7 (Campaign Re-Run), M8 (Sender Domain Phase 2 — custom domain sending, per `SENDER_DOMAIN_PHASE2_SCOPE.md`), and beyond.
+**Future milestones to be documented:** M8 (Sender Domain Phase 2 — custom domain sending, per `SENDER_DOMAIN_PHASE2_SCOPE.md`), and beyond.
+
+---
+
+## Milestone 7A — Duplicate Campaign
+
+| Field | Value |
+|---|---|
+| **Status** | Complete |
+| **Audit** | Audit 066 (2026-06-27) |
+| **Commit** | `ea68878` |
+| **Date** | 2026-06-27 |
+
+### Summary Card
+
+| Field | Value |
+|---|---|
+| **Category** | Product Capability |
+| **Primary Goal** | Allow users to re-use a completed campaign as the starting point for a new one |
+| **Major Outcome** | History now has a "Duplicate Campaign" button for COMPLETED/FAILED/CANCELLED campaigns. Clicking it deep-links to the wizard pre-filled with the original template, list, and name (suffixed `(Copy)`). Zero backend changes. Zero schema migrations. |
+| **Production Impact** | 5 frontend files modified; 1 helper created |
+| **Database Migration** | None |
+| **API Changes** | None — reuses existing `GET /api/campaigns/:id` |
+| **Frontend Changes** | `useSearchParam` helper, `CampaignContext` extended, `campaignStatus.js` `canDuplicate`, `NewCampaign.jsx` deep-link gate, `FileUpload.jsx` auto-tab + pre-select, `TemplateBuilder.jsx` duplicate note, `History.jsx` Duplicate button |
+
+### Architectural Decisions
+
+| Decision | Rationale |
+|---|---|
+| URL-driven initialization (`?duplicate=<id>`) | URL survives refresh and link sharing; no global state manager needed; consistent with how the platform already handles routing |
+| Render gate: fetch before mounting `CampaignProvider` | `useState` reads `initialState` once on first mount; provider must not mount until data is resolved |
+| `INITIAL_STATE` exported from context | Enables `resetCampaign()` to reliably clear duplicate state without the caller knowing which fields are duplicate-specific |
+| `canDuplicate` in `campaignStatus.js` | Centralizes all campaign action eligibility; avoids scattered status string comparisons in UI components |
+
+### Behavioral Verification
+
+40/40 assertions pass. Two bugs found and fixed:
+- Regex quantifier scope for `(Copy)` chain stripping
+- Leading space on empty basename
+
+---
+
+## Milestone 7B — Contact Management Completion
+
+| Field | Value |
+|---|---|
+| **Status** | Complete |
+| **Audit** | Audit 067 (2026-06-27) |
+| **Commit** | Pending |
+| **Date** | 2026-06-27 |
+
+### Summary Card
+
+| Field | Value |
+|---|---|
+| **Category** | Product Capability |
+| **Primary Goal** | Complete the Contact Library feature: CSV export, contact editing, saveToLibraryAs UX, empty list validation |
+| **Major Outcome** | The Contact Library is now fully operational. Users can export any list to CSV, edit individual contact fields, and receive confirmation when a campaign saves its upload to the library. Empty list validation now provides actionable guidance. |
+| **Production Impact** | 6 files modified; no new files |
+| **Database Migration** | None |
+| **API Changes** | `GET /api/contact-lists/:id/export` — fully implemented (was 501 stub); `POST /api/campaigns` — `libraryListId` added to response; `PATCH /api/contacts/:id` — confirmed operational (was already implemented in M6 but unlinked from frontend) |
+| **Frontend Changes** | `ContactListDetail.jsx` — EditSheet component; export trigger; `CampaignConfirmation.jsx` — libraryListId toast; `campaignStatus.js` — documentation comments |
+
+### Design Refinements Applied (from Engineering Design Review)
+
+| Refinement | Decision |
+|---|---|
+| CSV Formula Injection | Values starting with `=`, `+`, `-`, `@` prefixed with `'` — established spreadsheet-safe approach |
+| Filename Length Cap | Sanitized to `[a-z0-9 _-]`, capped at 100 chars, fallback `contacts.csv` |
+| saveToLibraryAs UX | `createContactList` awaited; `libraryListId` in response; confirmation toast; no "View Library" action (navigating away during campaign launch is disorienting) |
+| Contact Edit Dirty State | No confirmation on close — database record is unmodified until Save is clicked; discard is lossless. Matches the ImportSheet pattern. |
+| Empty List Messaging | "The selected contact list is empty. Add contacts to this list or choose another list before creating a campaign." |
+| Export Ordering | `addedAt ASC` (list membership order, oldest first) — users think in import order, not alphabetical |
+
+### Independent Audit Finding (Fixed)
+
+**UTF-8 BOM missing** — Without a BOM, Excel on Windows interprets UTF-8 CSV as Windows-1252, garbling non-ASCII characters in name/company fields. Fixed: response now prepends `Buffer.from([0xef, 0xbb, 0xbf])`. This is a production-correct fix with no impact on non-Excel parsers (BOM is ignored by RFC 4180-compliant readers).
+
+### Behavioral Verification
+
+42/42 assertions pass:
+- CSV escape logic (13 edge cases including formula injection, null, unicode) ✓
+- CSV row building (4 scenarios) ✓
+- Filename sanitization (8 edge cases) ✓
+- Empty list validation response format (3 checks) ✓
+- saveToLibraryAs success/failure/absent (4 scenarios) ✓
+- Frontend toast condition (4 scenarios) ✓
+- Edit mutation field guard (4 checks) ✓
+- Export ordering (addedAt ASC vs DESC) ✓
+
+### Resolved Backlog Items
+
+| ID | Resolution |
+|---|---|
+| M6-001 | Empty list error — specific actionable message |
+| M6-002 | saveToLibraryAs — `libraryListId` in response + confirmation toast |
+| M6-003 | CSV export — full RFC 4180 implementation with formula injection defense |

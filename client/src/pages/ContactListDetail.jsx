@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import AppLayout from "@/components/layout/AppLayout";
@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Trash2, Search, ChevronLeft, ChevronRight, Users, FileText, Download } from "lucide-react";
+import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download } from "lucide-react";
 
 // ── CSV parse helpers ─────────────────────────────────────────────────────────
 
@@ -214,6 +214,73 @@ function ImportSheet({ listId, open, onClose }) {
   );
 }
 
+// ── Edit sheet ────────────────────────────────────────────────────────────────
+
+function EditSheet({ contact, listId, open, onClose }) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [category, setCategory] = useState("");
+
+  // Sync form fields when contact changes (e.g. user opens edit for a second contact
+  // before closing). No dirty-state confirmation on close — the contact's database
+  // record is unmodified until Save is clicked, so discarding in-progress edits is
+  // safe. This matches the ImportSheet pattern in this file.
+  useEffect(() => {
+    if (contact) {
+      setName(contact.name || "");
+      setCompany(contact.company || "");
+      setCategory(contact.category || "");
+    }
+  }, [contact]);
+
+  const editMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", `/api/contacts/${contact.id}`, { name, company, category }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/contact-lists/${listId}/contacts`] });
+      toast({ title: "Contact updated" });
+      onClose();
+    },
+    onError: (err) =>
+      toast({ title: "Failed to update contact", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Sheet open={open} onOpenChange={o => !o && onClose()}>
+      <SheetContent side="right" className="w-full sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Edit contact</SheetTitle>
+        </SheetHeader>
+        <div className="py-4 space-y-4">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Email (cannot be changed)</p>
+            <p className="font-mono text-sm">{contact?.email}</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Company</Label>
+            <Input value={company} onChange={e => setCompany(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Category</Label>
+            <Input value={category} onChange={e => setCategory(e.target.value)} />
+          </div>
+        </div>
+        <SheetFooter className="flex gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => editMutation.mutate()} disabled={editMutation.isPending}>
+            {editMutation.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ContactListDetail() {
@@ -226,6 +293,7 @@ export default function ContactListDetail() {
   const [page, setPage] = useState(1);
   const [importOpen, setImportOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
 
   const { data: list, isLoading: listLoading } = useQuery({
     queryKey: [`/api/contact-lists/${listId}`],
@@ -262,7 +330,7 @@ export default function ContactListDetail() {
   };
 
   const handleExport = () => {
-    toast({ title: "Export coming soon", description: "This feature is not yet available." });
+    window.location.href = `/api/contact-lists/${listId}/export`;
   };
 
   const rows = contactsData?.rows || [];
@@ -356,7 +424,7 @@ export default function ContactListDetail() {
                     <TableHead>Name</TableHead>
                     <TableHead>Company</TableHead>
                     <TableHead>Added</TableHead>
-                    <TableHead className="w-10" />
+                    <TableHead className="w-20" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -367,14 +435,24 @@ export default function ContactListDetail() {
                       <TableCell className="text-sm">{contact.company || <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(contact.addedAt)}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => setRemoveTarget(contact)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={() => setEditTarget(contact)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => setRemoveTarget(contact)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -401,6 +479,7 @@ export default function ContactListDetail() {
       </div>
 
       <ImportSheet listId={listId} open={importOpen} onClose={() => setImportOpen(false)} />
+      <EditSheet contact={editTarget} listId={listId} open={!!editTarget} onClose={() => setEditTarget(null)} />
 
       <AlertDialog open={!!removeTarget} onOpenChange={open => !open && setRemoveTarget(null)}>
         <AlertDialogContent>

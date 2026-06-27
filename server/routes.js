@@ -1257,8 +1257,35 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.get("/api/contact-lists/:id/export", authMiddleware, async (_req, res) => {
-    res.status(501).json({ message: "Export is coming soon" });
+  app.get("/api/contact-lists/:id/export", authMiddleware, async (req, res) => {
+    try {
+      const list = await storage.getContactList(req.params.id, req.user.id);
+      if (!list) return res.status(404).json({ message: "List not found" });
+      const rows = await storage.exportContactList(req.params.id, req.user.id);
+      // Sanitize for filename safety: keep alphanumeric, space, dash, underscore; cap at 100 chars.
+      const safeName = (list.name.replace(/[^a-z0-9 _-]/gi, "_").trim() || "contacts").slice(0, 100);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}.csv"`);
+      // RFC 4180 quoting: wrap every field in double quotes, escape internal " as "".
+      // Formula injection defense: prefix values starting with =, +, -, @ with a single quote
+      // so spreadsheet apps treat them as literal strings rather than executing as formulas.
+      const escapeCsv = (v) => {
+        let s = String(v ?? "");
+        if (/^[=+\-@]/.test(s)) s = "'" + s;
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+      const header = ["email", "name", "company", "category"].map(escapeCsv).join(",");
+      const body = rows.map(r =>
+        [r.email, r.name, r.company, r.category].map(escapeCsv).join(",")
+      ).join("\r\n");
+      // UTF-8 BOM (0xEF 0xBB 0xBF) ensures Excel on Windows interprets the file
+      // as UTF-8 rather than Windows-1252, preventing garbled non-ASCII characters.
+      const utf8Bom = Buffer.from([0xef, 0xbb, 0xbf]);
+      const csvText = rows.length ? header + "\r\n" + body + "\r\n" : header + "\r\n";
+      res.send(Buffer.concat([utf8Bom, Buffer.from(csvText, "utf8")]));
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
   });
 
   app.delete("/api/contact-lists/:listId/contacts/:contactId", authMiddleware, async (req, res) => {
@@ -1331,6 +1358,7 @@ export async function registerRoutes(httpServer, app) {
       const validationErrors = [];
       let campaignListId = null;
       let campaignListSnapshot = null;
+      let libraryListId = null;
 
       // ── Sender profile gate ───────────────────────────────────────────────────
       // senderName is stored on the user record, not in the request body.
@@ -1449,6 +1477,9 @@ export async function registerRoutes(httpServer, app) {
         if (listContactIds.length > CAMPAIGN_MAX_CONTACTS) {
           return res.status(400).json({ validationErrors: [`Contact list exceeds the maximum of ${CAMPAIGN_MAX_CONTACTS.toLocaleString()} contacts`] });
         }
+        if (listContactIds.length === 0) {
+          return res.status(400).json({ validationErrors: ["The selected contact list is empty. Add contacts to this list or choose another list before creating a campaign."] });
+        }
         validContacts = await storage.getContactsByIds(listContactIds);
         resolvedTotalOriginal = validContacts.length;
         campaignListId = listId;
@@ -1493,11 +1524,18 @@ export async function registerRoutes(httpServer, app) {
           }))
         );
         savedContactIds = savedContacts.map(c => c.id);
-        // saveToLibraryAs: best-effort, non-fatal — create list and import contacts in background
+        // createContactList is awaited so we can return libraryListId in the response.
+        // importContactsToList runs async — contacts appear in the library within seconds.
+        // The entire block is non-fatal: a failure here does not abort campaign creation.
         if (saveToLibraryAs) {
-          storage.createContactList({ userId: req.user.id, name: String(saveToLibraryAs).slice(0, 200) })
-            .then(list => storage.importContactsToList(req.user.id, list.id, validContacts, "campaign_upload", null))
-            .catch(err => console.error("[CONTACTS] saveToLibraryAs failed:", err.message));
+          try {
+            const libraryList = await storage.createContactList({ userId: req.user.id, name: String(saveToLibraryAs).slice(0, 200) });
+            libraryListId = libraryList.id;
+            storage.importContactsToList(req.user.id, libraryList.id, validContacts, "campaign_upload", null)
+              .catch(err => console.error("[CONTACTS] saveToLibraryAs import failed:", err.message));
+          } catch (err) {
+            console.error("[CONTACTS] saveToLibraryAs create failed:", err.message);
+          }
         }
       }
 
@@ -1525,6 +1563,7 @@ export async function registerRoutes(httpServer, app) {
         return res.status(201).json({
           campaign,
           contactStats,
+          libraryListId,
           validationErrors: [],
           message: `Campaign scheduled for ${scheduledTime.toISOString()}`,
         });
@@ -1560,7 +1599,7 @@ export async function registerRoutes(httpServer, app) {
       }
 
       // Return immediately — client polls GET /api/campaigns/:id for progress
-      res.status(201).json({ campaign, contactStats, validationErrors: [] });
+      res.status(201).json({ campaign, contactStats, libraryListId, validationErrors: [] });
     } catch (error) {
       res.status(400).json({ message: error.message });
     }

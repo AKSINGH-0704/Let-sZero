@@ -5949,11 +5949,130 @@ No regressions identified. No new backend changes required.
 
 ---
 
-### Out of Scope (M7 — remaining capabilities)
+### Out of Scope (M7A — delivered in M7B)
 
 | Capability | Status |
 |-----------|--------|
-| CSV Export | Not yet implemented |
-| saveToLibraryAs confirmation | Not yet implemented |
-| Contact Edit UI | Not yet implemented |
-| Empty list error (F-M6-1) | Not yet implemented |
+| CSV Export | Delivered in Audit 067 |
+| saveToLibraryAs confirmation | Delivered in Audit 067 |
+| Contact Edit UI | Delivered in Audit 067 |
+| Empty list error (F-M6-1) | Delivered in Audit 067 |
+
+---
+
+## Audit 067 — M7B: Contact Management Completion (2026-06-27)
+
+**Type:** Implementation audit — feature completion  
+**Scope:** M7B — CSV export, contact editing, saveToLibraryAs UX, empty list validation  
+**Files:** `server/routes.js`, `server/storage.js`, `server/memoryStorage.js`, `client/src/pages/ContactListDetail.jsx`, `client/src/components/campaign/CampaignConfirmation.jsx`, `client/src/lib/campaignStatus.js`
+
+---
+
+### Context
+
+M7B completes the Contact Library feature introduced in M6. All four capabilities deferred from M6 (M6-001 through M6-003 + empty list error) are implemented in this audit. The implementation incorporates six refinements from the Engineering Design Review approval.
+
+This audit ran as a continuation of an interrupted session. The interrupted session had already implemented all core features. This audit added one independent finding (UTF-8 BOM) and completed all documentation.
+
+---
+
+### Implementation
+
+**CSV Export (`GET /api/contact-lists/:id/export`)**
+
+Replaces the 501 stub with a full implementation:
+
+- Ownership check: `getContactList(id, userId)` → 404 if not found
+- `exportContactList(listId, userId)` — JOIN `contact_list_members` + `contacts`, `orderBy(asc(contactListMembers.addedAt))` — preserves list membership order (chronological, not alphabetical)
+- RFC 4180 compliance: every field wrapped in double quotes; internal `"` doubled as `""`
+- Formula injection defense: values starting with `=`, `+`, `-`, `@` prefixed with `'` — established spreadsheet-safe convention; prevents spreadsheet apps from executing cell formulas
+- Filename sanitization: `[^a-z0-9 _-]` → `_`, trimmed, capped at 100 chars, fallback `contacts.csv` for all-special-char or empty names
+- UTF-8 BOM: `Buffer.from([0xef, 0xbb, 0xbf])` prepended — ensures Excel on Windows identifies the encoding correctly; non-Excel parsers ignore BOMs per RFC 4180
+- `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment`
+- Empty list: header-only CSV (correct RFC 4180 behavior)
+- Frontend: `window.location.href = /api/contact-lists/${listId}/export` — browser triggers download without navigation (attachment disposition)
+
+**Export ordering decision:** `addedAt ASC` preserves the order in which contacts were added to the list. Alphabetical order was considered and rejected — users think in import order, especially when the original import had a meaningful sequence. Oldest-first also matches the intuitive expectation of "the list as I built it."
+
+**`exportContactList()` storage method** (both `storage.js` and `memoryStorage.js`):
+- DB: Drizzle JOIN + `orderBy(asc(contactListMembers.addedAt))`
+- Memory: filter members by listId, map to contact with userId check, sort by addedAt, strip addedAt from output
+
+**Empty list validation (`POST /api/campaigns`)**
+
+After `resolveListContactIds`, if `listContactIds.length === 0`:
+```js
+return res.status(400).json({ validationErrors: ["The selected contact list is empty. Add contacts to this list or choose another list before creating a campaign."] });
+```
+Message names both recovery paths explicitly (matches Engineering Design Review refinement #5).
+
+**`saveToLibraryAs` UX**
+
+`createContactList` is now awaited before returning the campaign creation response:
+- `libraryListId` is set when the create succeeds; remains `null` on failure
+- `importContactsToList` still runs async (`.catch()` logged, non-fatal)
+- `libraryListId` included in both the scheduled-campaign and immediate-campaign response paths
+- Frontend: toast shown when `saveToLibraryAs && data.libraryListId` — confirmed by `libraryListId` presence to handle failure silently
+- No "View Library" deep-link in the toast — the user is about to watch their campaign launch on step 7; navigating away at this moment would be disorienting
+
+**Contact Edit UI (`ContactListDetail.jsx`)**
+
+`EditSheet` component:
+- Props: `contact`, `listId`, `open`, `onClose`
+- `useEffect([contact])` syncs form fields when contact changes — handles rapid sequential edits without stale data
+- PATCH `/api/contacts/:id` — email field excluded from route payload; backend rejects email-change attempts with 400
+- On success: `queryClient.invalidateQueries([/api/contact-lists/${listId}/contacts])` + toast + close
+- No dirty-state confirmation on close: the database record is unmodified until Save is clicked; discard is lossless. This matches the `ImportSheet` pattern in the same file and avoids a confirmation dialog for a low-stakes operation.
+- Icon: `Pencil` from lucide-react; cell width expanded from `w-10` to `w-20` to accommodate two action buttons (edit + delete)
+
+**`campaignStatus.js` documentation**
+
+Added module-level comment documenting the dual concern of the file (visual presentation + action eligibility) and the pattern for future campaign actions (`canReschedule`, `canArchive`). No functional changes.
+
+---
+
+### Independent Production Audit
+
+| ID | Area | Finding | Severity | Resolution |
+|----|------|---------|----------|------------|
+| FIX-067-1 | CSV encoding | **UTF-8 BOM missing.** Without `0xEF 0xBB 0xBF`, Excel on Windows interprets the file as Windows-1252 and garbles non-ASCII characters (accented names, company names with special characters). | LOW | Fixed: `Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(csvText, "utf8")])` |
+| OK | CSV injection | Formula injection defense covers all four hazard prefixes (`=`, `+`, `-`, `@`). Email addresses with `+` in non-position-0 are correctly unaffected. | PASS | — |
+| OK | CSV ownership | `getContactList(id, userId)` + `eq(contacts.userId, userId)` in `exportContactList` — double ownership enforcement | PASS | — |
+| OK | Filename safety | Regex `[^a-z0-9 _-]` eliminates all characters that could cause path traversal or shell interpretation; cap at 100 chars handles OS limits; no `Content-Disposition` injection possible | PASS | — |
+| OK | Empty list export | Returns header-only CSV — correct RFC 4180 behavior | PASS | — |
+| OK | Edit mutation stale-data | `contact.id` is stable UUID; `useEffect([contact])` refreshes fields when prop changes — no stale-data risk on sequential edits | PASS | — |
+| OK | Edit email protection | PATCH route strips `email` from req.body and returns 400 if email field was sent; frontend `EditSheet` never sends email | PASS | — |
+| OK | libraryListId failure path | `try/catch` around `createContactList`; `libraryListId` stays `null` on failure; campaign creation succeeds either way; frontend toast suppressed on null | PASS | — |
+| OK | memoryStorage parity | `exportContactList` implemented in both storage layers with identical field output and addedAt ordering | PASS | — |
+| OK | Export auth | `authMiddleware` on export route; ownership enforced at both list-lookup and contact-query level | PASS | — |
+| INFO | Large export memory | `exportContactList` buffers all rows in memory before sending. At 10K contacts (platform max for campaigns), peak memory is ~10K × ~200 bytes = ~2MB — acceptable for V1. Streaming can be implemented when list sizes grow beyond campaign limits. | DEFERRED | Backlog |
+| INFO | Export rate limiting | No per-user rate limit on export endpoint. Mitigated by: auth required, userId scoping, Railway's own request limits. | DEFERRED | Backlog |
+
+No regressions identified in existing contact library, campaign creation, or history features.
+
+---
+
+### Behavioral Verification Results
+
+42/42 assertions pass (`tmp/test-m7b.mjs`):
+
+| Suite | Assertions | Result |
+|---|---|---|
+| CSV escape logic | 13 | PASS |
+| CSV row building | 4 | PASS |
+| Filename sanitization | 8 | PASS |
+| Empty list validation format | 3 | PASS |
+| saveToLibraryAs server logic | 4 | PASS |
+| Frontend toast condition | 4 | PASS |
+| Edit mutation field guard | 4 | PASS |
+| Export ordering (addedAt ASC vs DESC) | 2 | PASS |
+
+---
+
+### Resolved Backlog Items
+
+| ID | Was | Now |
+|---|---|---|
+| M6-001 | OPEN — empty list error is generic ("No valid contacts remain after filtering") | RESOLVED — specific message with both recovery paths |
+| M6-002 | OPEN — saveToLibraryAs fire-and-forget with no user signal | RESOLVED — `libraryListId` in response + confirmation toast |
+| M6-003 | OPEN — export stub (501) | RESOLVED — full RFC 4180 implementation |

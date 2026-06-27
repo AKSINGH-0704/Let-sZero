@@ -345,9 +345,38 @@ Zero backend changes. Zero schema migrations. Five files modified, one helper cr
 
 **Architecture note:** `?duplicate=` is the platform's first deep-link workflow. Establishes precedent for future pre-initialized wizard flows (templates, sequences, re-engagement).
 
-**Milestone 7 remaining scope:** CSV Export, saveToLibraryAs confirmation, Contact Edit UI, Empty list error.
+**Milestone status: COMPLETE (M7A) — Audit 066 — 2026-06-27**
 
-**Milestone status: D** — Implementation complete; UI browser testing deferred to full M7 delivery
+---
+
+### 16 · Milestone 7B: Contact Management Completion (Audit 067 — 2026-06-27)
+
+Product Architecture Review → Engineering Design Review (approved with 6 refinements) → Implementation → Behavioral Verification (42/42) → Independent Audit → Audit 067.
+
+| Component | Description | File(s) | Status |
+|---|---|---|---|
+| CSV Export | `GET /api/contact-lists/:id/export` — RFC 4180, formula injection defense (`=+−@` → `'`), UTF-8 BOM, filename sanitized + capped 100 chars, ordered by `addedAt ASC` | `server/routes.js`, `server/storage.js`, `server/memoryStorage.js`, `client/src/pages/ContactListDetail.jsx` | **D** |
+| `exportContactList()` storage method | JOIN `contact_list_members` + `contacts`, ordered by `addedAt ASC`, both DB and memory implementations | `server/storage.js`, `server/memoryStorage.js` | **D** |
+| Empty list error | `POST /api/campaigns` returns `validationErrors: ["The selected contact list is empty. Add contacts to this list or choose another list before creating a campaign."]` when `listContactIds.length === 0` | `server/routes.js` | **D** |
+| saveToLibraryAs UX | `createContactList` awaited; `libraryListId` in campaign response; import still async; confirmation toast in frontend | `server/routes.js`, `client/src/components/campaign/CampaignConfirmation.jsx` | **D** |
+| Contact Edit UI | `EditSheet` component in `ContactListDetail.jsx`; PATCH `/api/contacts/:id` confirmed operational; no dirty-state confirm (database unmodified until Save) | `client/src/pages/ContactListDetail.jsx` | **D** |
+
+**Design refinements applied:**
+- Formula injection: `=`, `+`, `-`, `@` prefixes neutralized per established spreadsheet convention
+- Filename cap: 100 chars, `[a-z0-9 _-]` only, fallback `contacts.csv`
+- No "View Library" CTA in toast: navigating away during campaign launch is disorienting
+- No dirty-state confirmation on close: lossless discard (DB unchanged until Save)
+- Empty list message: both recovery paths named ("Add contacts" / "choose another list")
+- Export order: `addedAt ASC` (list membership order, not alphabetical)
+
+**Audit finding fixed during independent review:**
+- UTF-8 BOM (`0xEF 0xBB 0xBF`) added to CSV response — without it, Excel on Windows garbles non-ASCII characters in name/company fields
+
+**Behavioral verification:** 42/42 assertions PASS (2026-06-27)
+
+**Backlog items resolved:** M6-001, M6-002, M6-003
+
+**Milestone status: COMPLETE — Milestone 7B (Contact Management Completion — Audit 067)**
 
 ---
 

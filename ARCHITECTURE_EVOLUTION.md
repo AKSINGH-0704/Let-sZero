@@ -303,11 +303,43 @@ This section describes high-level architectural direction only. It is not a feat
 
 ### Near-term: Contact Library Completion (Milestone 7)
 
-**CSV Export** will be implemented as a streaming response from a single `SELECT` joining `contacts` and `contact_list_members`. No schema change required.
+**CSV Export** is implemented (M7B). A single `SELECT` joins `contact_list_members` and `contacts`, ordered by `addedAt ASC` to preserve list membership order. The response is RFC 4180-compliant (every field double-quoted, internal quotes doubled), includes formula injection defense (values starting with `=`, `+`, `-`, `@` are prefixed with `'`), and prepends a UTF-8 BOM (0xEF 0xBB 0xBF) so Excel on Windows correctly identifies the encoding. No schema change required.
 
-**Campaign Re-Run** will extend the existing campaign creation path to accept a `sourceCampaignId`. The new campaign reads the current live members of the original campaign's list (not the snapshot). The snapshot is history; re-run targets current reality.
+**Duplicate Campaign** is implemented (M7A). A `?duplicate=<campaignId>` URL parameter causes `NewCampaign.jsx` to fetch the source campaign before mounting `CampaignProvider`, then passes a partial `initialState` override so the wizard opens pre-filled. This is the platform's first URL-driven workflow; see the section below.
 
-**`saveToLibraryAs` confirmation** will change from fire-and-forget to a synchronous operation returning `libraryListId` in the campaign creation response.
+**`saveToLibraryAs` confirmation** is implemented (M7B). `createContactList` is awaited so `libraryListId` is confirmed synchronously in the campaign creation response. The subsequent contact import remains asynchronous (non-blocking). The frontend shows a toast on `libraryListId` presence; no "View Library" deep-link is offered because navigating away during campaign launch would be disorienting.
+
+---
+
+### URL-Driven Wizard Initialization
+
+**Introduced in Milestone 7A (Duplicate Campaign).**
+
+Before M7A, every wizard entry point was homogeneous — the wizard always opened empty, and all content was produced by user action inside it. The Duplicate Campaign feature introduced the first URL-driven pre-initialization pattern:
+
+- A `?duplicate=<campaignId>` query parameter is read by a `useSearchParam` helper (wrapping wouter's `useSearch()`) inside `NewCampaign.jsx`.
+- If the parameter is present, the page fetches the source campaign before mounting `CampaignProvider`. This is a deliberate render gate — `useState` only reads `initialState` once on first mount, so the provider must not mount until the source data is available.
+- The fetch result is reduced to a partial `initialState` override (template content, listId, listSnapshot, campaignName with `(Copy)` suffix, `isDuplicate` flag) and passed to `CampaignProvider` via prop.
+- The `CampaignProvider` merges the override with `INITIAL_STATE` through a lazy initializer, ensuring fields not present in the override retain their defaults.
+- TanStack Query's global `staleTime: Infinity` means the source campaign fetch is cache-served instantly when the History dialog already loaded the same campaign, producing zero-latency initialization on the happy path.
+
+**Why this pattern was chosen over alternatives:**
+
+| Alternative | Rejected because |
+|---|---|
+| Store source campaign ID in React context | Context is reset on navigation; URL survives page refresh and direct link sharing |
+| POST `/api/campaigns/draft` before entering wizard | Creates DB record before user commits; requires cleanup on abandon |
+| Redux / Zustand global state | Not used anywhere in the platform; adding a state manager for one flow is disproportionate |
+| `window.sessionStorage` | Not shareable, not bookmarkable, not the established routing pattern |
+
+**Future flows that should reuse this pattern:**
+
+Any wizard that needs to open pre-filled from an external trigger — template-to-campaign, sequence step creation, re-engagement campaign from a segment — should follow the same structure: read a URL parameter, gate on the fetch, pass a partial `initialState` override to the provider. The `useSearchParam` helper at `client/src/lib/useSearchParam.js` is the correct entry point for reading URL parameters in the wizard layer.
+
+**Invariants that must hold for this pattern to be correct:**
+1. `CampaignProvider` must not mount until `initialState` is finalized (otherwise `useState` captures an empty override).
+2. `resetCampaign()` must return to `INITIAL_STATE`, not to the override (confirmed: it sets state back to the exported constant directly).
+3. Wizard initialization state (`isDuplicate`, `listSnapshot`) must not have setters and must not be repurposed for general mid-wizard state.
 
 ---
 

@@ -8,6 +8,17 @@ import {
   XCircle,
 } from "lucide-react";
 
+// Campaign capability configuration.
+//
+// This file is the single source of truth for two concerns:
+//   1. Visual status presentation (icon, label, color, tooltip)
+//   2. Campaign action eligibility (canCancel, canDuplicate)
+//
+// As new campaign actions are introduced (e.g., canReschedule, canArchive),
+// add their eligibility flag here rather than scattering conditionals across
+// History, campaign cards, or context menus. Any component that gates an
+// action on campaign status should read from getStatusConfig(), not hardcode
+// status strings.
 export const CAMPAIGN_STATUS_CONFIG = {
   RUNNING: {
     icon: Activity,
