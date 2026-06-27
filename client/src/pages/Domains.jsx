@@ -218,7 +218,7 @@ function AddDomainForm({ onSuccess, onCancel }) {
     // Auto-fill from email with the local part already typed (or suggest hello@domain)
     if (val && !fromEmail) {
       setFromEmail(`hello@${val}`);
-    } else if (fromEmail) {
+    } else if (fromEmail && val) {
       const atIdx = fromEmail.indexOf("@");
       const localPart = atIdx >= 0 ? fromEmail.slice(0, atIdx) : fromEmail;
       setFromEmail(`${localPart}@${val}`);

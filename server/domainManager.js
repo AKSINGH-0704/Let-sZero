@@ -146,7 +146,9 @@ export async function registerDomain(userId, rawDomain, rawFromEmail) {
     // Not found — create it
     sesData = await getSesClient().send(new CreateEmailIdentityCommand({
       EmailIdentity: domain,
-      DkimSigningAttributes: { NextSigningKeyLength: "RSA_2048_BIT" },
+      // SigningAttributesOrigin: "AWS_SES" is required when DkimSigningAttributes is provided.
+      // NextSigningKeyLength specifies RSA-2048 keys (SES manages key rotation automatically).
+      DkimSigningAttributes: { SigningAttributesOrigin: "AWS_SES", NextSigningKeyLength: "RSA_2048_BIT" },
     }));
     console.log(`[DOMAIN][REGISTER] userId=${userId} domain=${domain} — SES identity created`);
   }
@@ -202,8 +204,22 @@ export async function checkDomainVerification(domainRecord, { logTag = "[DOMAIN]
     dkimStatus = sesData.DkimAttributes?.Status || "NOT_STARTED";
   } catch (err) {
     if (err.name === "NotFoundException") {
-      console.warn(`${logTag} domain=${domain} — SES identity not found; registering`);
-      sesStatus = "NOT_FOUND";
+      // SES identity was deleted externally — cannot verify or send. Fail immediately.
+      console.warn(`${logTag} domain=${domain} — SES identity no longer exists; marking FAILED`);
+      const updated = await storage.updateSenderDomainIfPending(id, {
+        status: "FAILED",
+        updatedAt: new Date(),
+      });
+      if (updated) {
+        await storage.createAuditLog({
+          userId,
+          action: AUDIT_ACTIONS.DOMAIN_VERIFICATION_FAILED,
+          targetType: "sender_domain",
+          targetId: id,
+          details: { domain, reason: "ses_identity_not_found" },
+        });
+      }
+      return { ...domainRecord, status: "FAILED" };
     } else if (err.name === "ThrottlingException") {
       console.warn(`${logTag} domain=${domain} — SES ThrottlingException, skipping this cycle`);
       return domainRecord; // return unchanged

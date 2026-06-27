@@ -1622,3 +1622,27 @@ Non-blocking: Verify-after-capture network failure (webhook resolves); JSONB sca
 **ADR-063-3:** campaignConfig.js as shared runtime config module � future campaign runtime settings go here to prevent drift.
 
 **Milestone status: COMPLETE � Milestone 4 (Campaign Architecture Extraction � Audit 063).**
+
+### 16 — Milestone 9 — Custom Sending Domains (2026-06-27)
+
+**Audits:** 070 (implementation) + 071 (production validation) — see AUDIT_TRAIL.md
+
+| Deliverable | Status | Evidence |
+|-------------|--------|----------|
+| `senderDomains` table + `senderDomainId`/`senderEmailSnapshot` on campaigns | **COMPLETE** | `shared/schema.js`; DB migration applied (`npm run db:push`) |
+| `server/domainManager.js` — domain business logic module | **COMPLETE** | `normalizeDomain`, `validateFromEmail`, `assertDomainEligible`, `registerDomain`, `checkDomainVerification`, `removeDomain`, `runDomainVerificationPoll` |
+| Storage methods (10 new; mirrored in memoryStorage — iron rule) | **COMPLETE** | `server/storage.js`, `server/memoryStorage.js` |
+| 8 domain API routes (6 user + 2 admin) | **COMPLETE** | `server/routes.js`: GET/POST/DELETE /api/domains, /api/domains/:id, /api/domains/:id/check, /api/domains/:id/dns-instructions, /api/admin/domains, /api/admin/domains/:id/suspend |
+| Campaign creation: `senderDomainId` validation + `senderEmailSnapshot` capture | **COMPLETE** | Plan gate + `getVerifiedDomainForUser` ownership check |
+| Campaign loop: pre-loop domain check + mid-loop recheck every 50 contacts | **COMPLETE** | `server/campaignLoop.js`; fails campaign immediately if domain not VERIFIED |
+| `email.js`: `customFromEmail` in From header | **COMPLETE** | One-line change to `from:` field; all other headers unchanged |
+| Verification polling job (30s startup delay, 10-min interval, running guard) | **COMPLETE** | `server/index.js` |
+| `schemaCheck.js` updated | **COMPLETE** | `sender_domains` in REQUIRED_TABLES; 7 column checks; 1 index check |
+| `Domains.jsx` page — full lifecycle UI | **COMPLETE** | 5 lifecycle states, DNS record copy buttons, Check Now, Remove |
+| `CampaignConfirmation.jsx` — domain selector | **COMPLETE** | Starter+ only, VERIFIED domains only, `senderDomainId` in payload |
+| `@aws-sdk/client-sesv2` installed | **COMPLETE** | `package.json` |
+| Production validation — Audit 071 (6 bugs fixed) | **COMPLETE** | BUG-1: `SigningAttributesOrigin` added; BUG-2: `NotFoundException` → immediate FAILED; BUG-3: admin suspend notification; BUG-4: `handleDomainChange` malformed email; BUG-5: pre-loop silent fallback → fail; BUG-6: redundant `i % 50` removed |
+
+**Post-deploy action required:** `npm run db:push` on Railway (already applied locally).
+
+**Milestone status: COMPLETE — Milestone 9 (Custom Sending Domains — Audits 070 + 071).**

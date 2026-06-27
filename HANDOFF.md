@@ -1,7 +1,7 @@
 # RepMail Engineering Handoff
 
 **For:** New engineers joining the RepMail project  
-**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26; Milestone 7 Duplicate Campaign (Audit 066) applied 2026-06-27; Milestone 7B Contact Management Completion (Audit 067) applied 2026-06-27; Milestone 8 Launch Readiness Hardening (Audit 068) applied 2026-06-27  
+**Verified against:** commit `00a260a` (2026-06-24) through Legal Content Review — see AUDIT_TRAIL.md Audits 015–042; Audits 043–058 applied through 2026-06-25; Milestone 1 (Audit 059) applied 2026-06-26; Milestone 2 (Audit 060) applied 2026-06-26; Milestone 3A (Audit 061) applied 2026-06-26; Milestone 3B (Audit 062) applied 2026-06-26; Milestone 4 (Audit 063) applied 2026-06-26; Milestone 5 (Audit 064) applied 2026-06-26; Milestone 6 (Audit 065) applied 2026-06-26; Milestone 7 Duplicate Campaign (Audit 066) applied 2026-06-27; Milestone 7B Contact Management Completion (Audit 067) applied 2026-06-27; Milestone 8 Launch Readiness Hardening (Audit 068) applied 2026-06-27; Milestone 9 Custom Sending Domains (Audits 070 + 071) applied 2026-06-27 — M9 frozen  
 **Detailed reference:** `REPMAIL_ENGINEERING_HANDOFF.md` — full schema, security design, SNS, queue worker, cleanup jobs, AI governance
 
 ---
@@ -313,6 +313,21 @@ All five items must pass before RepMail is considered externally validated.
     - `saveToLibraryAs` — `createContactList` awaited; `libraryListId` in response; confirmation toast
     - Contact Edit UI — `EditSheet` component in `ContactListDetail.jsx`; PATCH `/api/contacts/:id` confirmed operational
     - Backlog items M6-001, M6-002, M6-003 resolved
+
+16. ~~Milestone 9 — Custom Sending Domains~~ *(DONE — 2026-06-27 — Audits 070 + 071 — `cbfc800` + validation commit)*
+    - **E-1:** `senderDomains` table (14 cols, 2 indexes); `senderDomainId` FK + `senderEmailSnapshot` on campaigns; 7 new `AUDIT_ACTIONS`
+    - **E-2:** `server/domainManager.js` — AWS Easy DKIM registration, `normalizeDomain`, `validateFromEmail`, `registerDomain`, `checkDomainVerification`, `removeDomain`, poll runner
+    - **E-3:** 10 new storage methods + memoryStorage mirror (iron rule)
+    - **E-4:** 8 domain API routes — GET/POST/DELETE /api/domains, /api/domains/:id, /api/domains/:id/check, /api/domains/:id/dns-instructions, /api/admin/domains, /api/admin/domains/:id/suspend
+    - **E-5:** Campaign creation: plan gate + `getVerifiedDomainForUser` ownership check + `senderEmailSnapshot` capture
+    - **E-6:** `campaignLoop.js`: pre-loop domain check (fails campaign if not VERIFIED) + mid-loop recheck every 50 contacts
+    - **E-7:** `email.js`: `senderProfile.customFromEmail || SES_FROM_EMAIL` in From header only
+    - **E-8:** Verification polling: 30s startup, 10-min interval, `domainPollRunning` guard in `server/index.js`
+    - **E-9:** `schemaCheck.js`: `sender_domains` in REQUIRED_TABLES + 7 column checks + 1 index check
+    - **E-10:** `client/src/pages/Domains.jsx` — 5-state lifecycle UI with DNS record copy buttons
+    - **E-11:** `CampaignConfirmation.jsx` — domain selector (Starter+, VERIFIED only)
+    - **Validation (Audit 071):** 6 bugs fixed — `SigningAttributesOrigin` missing, NotFoundException→immediate FAILED, admin suspend notification, malformed email on domain clear, pre-loop silent fallback→fail, redundant condition
+    - **Post-deploy action required:** `npm run db:push` on Railway
 
 15. ~~Milestone 8 — Launch Readiness Hardening~~ *(DONE — 2026-06-27 — Audit 068 — `eb2c2d5`)*
     - **E-1:** Helmet (^8.2.0) — HTTP security headers; CSP disabled (requires per-route tuning); HSTS enabled

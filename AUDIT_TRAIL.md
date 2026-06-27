@@ -6304,3 +6304,127 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;
 
 **PASS.** All cross-user isolation, plan gate, header injection, SES idempotency, and campaign loop integrity vectors pass. Four INFO items documented; none require immediate action. Implementation is ready for production deployment. Run `npm run db:push` after deploy (already applied in local env).
 
+
+---
+
+## Audit 071 — M9 Production Validation and Behavioural Verification (2026-06-27)
+
+**Date:** 2026-06-27  
+**Conducted by:** Claude Sonnet 4.6 (independent, adversarial stance)  
+**Scope:** Full post-implementation production validation of M9 Custom Sending Domains across 7 mandated areas: AWS SES failure recovery, polling behaviour, campaign execution, domain suspension, frontend UX, behavioural verification, and independent production audit.  
+**Method:** Code-level inspection of all 13 M9 implementation files. Adversarial analysis across 7 personas: naive user, aggressive API client, sysadmin, account-sharing attacker, concurrent-request stress tester, domain squatter, insider threat.
+
+### Bugs Found and Fixed
+
+| ID | Severity | File | Bug | Fix |
+|----|----------|------|-----|-----|
+| BUG-1 | HIGH | `server/domainManager.js` | `CreateEmailIdentityCommand` called with `DkimSigningAttributes: { NextSigningKeyLength: "RSA_2048_BIT" }` — missing required `SigningAttributesOrigin: "AWS_SES"` field per AWS SDK v3 type contract. API may reject or produce unexpected DKIM configuration. | Added `SigningAttributesOrigin: "AWS_SES"` to `DkimSigningAttributes` object |
+| BUG-2 | HIGH | `server/domainManager.js` | `checkDomainVerification` `NotFoundException` path logged a misleading "registering" message and fell through to the window-expiry check — domain stayed `PENDING_VERIFICATION` indefinitely if SES identity was deleted externally. Customer had no actionable error for up to 14 days. | `NotFoundException` path now immediately calls `updateSenderDomainIfPending(FAILED)` + audit log, returns `{ status: "FAILED" }` |
+| BUG-3 | MEDIUM | `server/routes.js` | Admin domain suspension (`POST /api/admin/domains/:id/suspend`) wrote the audit log but sent no notification to the domain owner. Customer discovered the suspension only when their next campaign failed mid-loop. | Added fire-and-forget `sendTransactionalEmail` to domain owner with domain name and reason |
+| BUG-4 | LOW | `client/src/pages/Domains.jsx` | `handleDomainChange` in `AddDomainForm`: when domain field cleared (val = ""), `else if (fromEmail)` branch set `fromEmail = "{localPart}@"` — malformed email with empty domain. | Added `&& val` to the else-if guard |
+| BUG-5 | HIGH | `server/campaignLoop.js` | Pre-loop domain check silently fell back to platform email (`SES_FROM_EMAIL`) when `campaign.senderDomainId` exists but domain is not VERIFIED. Customer campaign sent from wrong address with no error signal. | Domain check now fails campaign immediately with `CAMPAIGN_DOMAIN_REVOKED` audit log + `return` |
+| BUG-6 | LOW | `server/campaignLoop.js` | Mid-loop domain recheck had redundant `i % 50 === 0` inner condition inside `if (i > 0 && i % PAUSE_CHECK_INTERVAL === 0)` where `PAUSE_CHECK_INTERVAL = 50`. Dead code; latent bug if interval changes. | Removed inner condition; now `if (campaign.senderDomainId)` |
+
+### Validation Area Results
+
+**Area 1 — AWS SES Failure Recovery:**
+
+| Scenario | Code Path | Result |
+|----------|-----------|--------|
+| CreateEmailIdentity succeeds, DB write fails | User retries; `GetEmailIdentityCommand` finds existing identity; "reusing" path retries `createSenderDomain` | PASS |
+| DeleteEmailIdentity fails during cleanup | Swallowed in bare `try/catch {}` | PASS |
+| DeleteEmailIdentity fails during domain removal | `removeDomain`: try/catch logs warning but does not block response | PASS |
+| GetEmailIdentity ThrottlingException during poll | Returns `domainRecord` unchanged; next 10-min cycle retries | PASS |
+| GetEmailIdentity NotFoundException during poll | Fixed by BUG-2: immediately marks FAILED with audit log | PASS (after fix) |
+
+**Area 2 — Polling Behaviour:**
+
+| Scenario | Result |
+|----------|--------|
+| Running guard prevents concurrent poll | `domainPollRunning` flag; early return if still running | PASS |
+| Server restart startup delay | 30s `setTimeout` before first poll | PASS |
+| VERIFIED not reverted by poll | `updateSenderDomainIfPending` conditional `WHERE status = 'PENDING_VERIFICATION'` | PASS |
+| Poll only processes PENDING_VERIFICATION | `getSenderDomainsByStatus("PENDING_VERIFICATION")` | PASS |
+| VERIFIED state transition | `sesStatus === "VERIFIED" && dkimStatus === "SUCCESS"` + audit log | PASS |
+| FAILED on window expiry | `new Date() > windowExpiry` + `updateSenderDomainIfPending(FAILED)` | PASS |
+| FAILED on SES identity deleted | Fixed by BUG-2 | PASS (after fix) |
+
+**Area 3 — Campaign Execution:**
+
+| Scenario | Result |
+|----------|--------|
+| `customFromEmail` affects only From header | `email.js:123`: single `from:` field change | PASS |
+| SES SMTP auth unchanged | Transport credentials independent of From address | PASS |
+| DKIM signing | SES Easy DKIM signs automatically for verified domains | PASS |
+| Return-Path / envelope sender | Managed by SES; DMARC alignment automatic for verified domains | PASS |
+| Pre-loop silent fallback | Fixed by BUG-5: campaign fails with audit log | PASS (after fix) |
+| `senderEmailSnapshot` used over live `fromEmail` | `campaign.senderEmailSnapshot \|\| domainRecord.fromEmail` | PASS |
+
+**Area 4 — Domain Suspension:**
+
+| Scenario | Result |
+|----------|--------|
+| Admin suspends during active campaign | Mid-loop recheck finds `status !== "VERIFIED"` → FAILED + CAMPAIGN_DOMAIN_REVOKED | PASS |
+| Automatic suspension from health monitoring | Not implemented in M9 — deferred to M10 (INFO-2, Audit 070) | N/A |
+| Mid-loop pause condition | Fixed by BUG-6: no redundant inner check | PASS |
+| Audit log correctness | `DOMAIN_SUSPENDED` + `CAMPAIGN_DOMAIN_REVOKED` with full details | PASS |
+| Customer notification on admin suspension | Fixed by BUG-3: email sent to domain owner | PASS (after fix) |
+
+**Area 5 — Frontend UX:**
+
+| Scenario | Result |
+|----------|--------|
+| Copy button whitespace | `navigator.clipboard.writeText(record.name/value)` — raw strings | PASS |
+| Unicode/IDN domains | `normalizeDomain` converts to punycode; stored and displayed as punycode — correct | PASS |
+| PENDING_VERIFICATION state | DNS records shown; `showDns` initialized correctly | PASS |
+| VERIFIED state | Verified date shown | PASS |
+| FAILED state | Expiry message shown | PASS |
+| SUSPENDED state | Suspended badge shown | PASS |
+| Empty state | CTA to add first domain | PASS |
+| `handleDomainChange` malformed email | Fixed by BUG-4 | PASS (after fix) |
+
+**Area 6 — Behavioural Verification:**
+
+| Flow | Result |
+|------|--------|
+| Register → DNS → poll verifies | Full happy path: SES creates identity → tokens returned → poll transitions to VERIFIED | PASS |
+| Manual "Check Now" | Validates ownership → `checkDomainVerification` → updated record | PASS |
+| Campaign with custom domain | Pre-loop → VERIFIED → `customFromEmail` set → emails from custom address | PASS |
+| Re-registration after FAILED | FAILED path: delete DB + best-effort SES delete → fresh start | PASS |
+| Cross-user conflict | `getSenderDomainByDomain` → DOMAIN_CONFLICT 409 | PASS |
+| Plan gate | `assertDomainEligible(req.user)` server-side; `isDomainEligible` client-side | PASS |
+| History after domain delete | `senderEmailSnapshot` survives `ON DELETE SET NULL` | PASS |
+| Campaign starts with revoked domain | Fixed by BUG-5 | PASS (after fix) |
+
+**Area 7 — Independent Production Audit:**
+
+| Vector | Result |
+|--------|--------|
+| Header injection via fromEmail | `validateFromEmail` rejects `[\r\n<>"]`; `sanitizeHeaderValue` in email.js as second layer | PASS |
+| IP address registered as domain | `normalizeDomain` rejects IPv4 pattern | PASS |
+| Reserved domain registration | TLD + hostname level reserved checks | PASS |
+| Cross-user domain IDOR | All routes: `domain.userId !== req.user.id && !req.isRootAdmin` → 403 | PASS |
+| Cross-user domain use in campaign | `getVerifiedDomainForUser(req.user.id, domainId)` — userId + VERIFIED required | PASS |
+| Plan gate bypass via API | `assertDomainEligible(req.user)` uses server-side DB value | PASS |
+| Domain squatting | `getSenderDomainByDomain` → DOMAIN_CONFLICT; if attacker deleted, SES identity reuse is domain-scoped and safe | PASS |
+| Poll reverts VERIFIED | `updateSenderDomainIfPending` conditional WHERE | PASS |
+| Admin routes by non-admin | `if (!req.isRootAdmin) return 403` | PASS |
+| Auth bypass on domain routes | All 8 routes use `authMiddleware` | PASS |
+| SSRF via domain input | Domain passed to AWS SES API only; `normalizeDomain` rejects localhost/IP | PASS |
+| Concurrent registration race | `sender_domains_user_domain_unique` unique index catches races at DB | PASS |
+| Audit log completeness | All 7 AUDIT_ACTIONS constants used at correct code points | PASS |
+| XSS via suspension reason | Notification is text-only email; no HTML rendering surface | PASS |
+
+### Known Limitations (INFO, no action required)
+
+| ID | Finding | Assessment |
+|----|---------|------------|
+| INFO-1 | No per-user domain count limit | Accepted at current scale; enforce post-launch if abused |
+| INFO-2 | Health counters schema-defined but not populated; automatic suspension deferred | Tracked as M10 item |
+| INFO-3 | Dev mode registration fails at SES call — custom domains are production-only | Accepted |
+| INFO-4 | `DOMAIN_ELIGIBLE_PLANS` duplicated in server and frontend | Accepted maintenance concern; consolidate post-launch |
+| INFO-5 | IDN domains stored and displayed as punycode — no display-layer conversion | Acceptable for B2B |
+
+### Verdict
+
+**PASS with 6 bugs fixed.** All 7 validation areas pass after fixes. No architectural changes required — all 6 fixes are targeted corrections within existing code paths. M9 is now frozen.

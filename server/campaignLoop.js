@@ -219,24 +219,31 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   const contactIds = campaign.contactIds || [];
 
   // ── Domain check at campaign start ───────────────────────────────────────────
-  // Resolves the custom domain once before the loop. The senderEmailSnapshot captured
-  // at campaign creation is used for the From address — changes to the domain after
-  // campaign creation do not affect in-flight campaigns.
+  // Resolves the custom domain once before the loop. If the domain was suspended or
+  // removed after campaign creation, the campaign must fail — silent fallback to the
+  // platform email would send from a different domain than the customer intended.
   let customFromEmail = null;
   if (campaign.senderDomainId) {
     const domainRecord = await storage.getSenderDomainById(campaign.senderDomainId);
     if (!domainRecord || domainRecord.status !== "VERIFIED") {
-      // Domain was removed or suspended after campaign creation — use snapshot address
-      // but warn operators; the SMTP server may reject if domain is no longer in SES.
-      console.warn(`${logTag} Campaign ${campaignId} — senderDomain ${campaign.senderDomainId} not VERIFIED at start; using senderEmailSnapshot`);
-      // Fall through: customFromEmail stays null, SES_FROM_EMAIL is used as fallback.
-      // The senderEmailSnapshot is for display purposes; actual send uses platform email.
-    } else {
-      // Use the snapshot address (captured at creation) — not domainRecord.fromEmail,
-      // which may have changed since the campaign was created.
-      customFromEmail = campaign.senderEmailSnapshot || domainRecord.fromEmail;
-      console.log(`${logTag} Campaign ${campaignId} — custom sender: ${customFromEmail}`);
+      // Domain was removed or suspended after campaign creation — fail immediately.
+      // A silent fallback would send from platform email, masking the issue and
+      // potentially confusing recipients or triggering spam filters.
+      await storage.updateCampaign(campaignId, { status: "FAILED" });
+      await storage.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CAMPAIGN_DOMAIN_REVOKED,
+        targetType: "campaign",
+        targetId: campaignId,
+        details: { reason: "sender_domain_not_verified_at_start", domainId: campaign.senderDomainId },
+      });
+      console.warn(`${logTag} Campaign ${campaignId} failed — senderDomain ${campaign.senderDomainId} not VERIFIED at start`);
+      return;
     }
+    // Use the snapshot address (captured at creation) — not domainRecord.fromEmail,
+    // which may have changed since the campaign was created.
+    customFromEmail = campaign.senderEmailSnapshot || domainRecord.fromEmail;
+    console.log(`${logTag} Campaign ${campaignId} — custom sender: ${customFromEmail}`);
   }
 
   // Build sender profile once — used for From name, Reply-To, and signature placeholders.
@@ -303,9 +310,9 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
         break;
       }
 
-      // Domain recheck — every 50 contacts, verify domain still VERIFIED.
+      // Domain recheck — fires at every PAUSE_CHECK_INTERVAL boundary (same as this block).
       // Catches admin suspensions or revocations that happen mid-campaign.
-      if (campaign.senderDomainId && i % 50 === 0) {
+      if (campaign.senderDomainId) {
         const freshDomain = await storage.getSenderDomainById(campaign.senderDomainId);
         if (!freshDomain || freshDomain.status !== "VERIFIED") {
           await storage.updateCampaign(campaignId, {

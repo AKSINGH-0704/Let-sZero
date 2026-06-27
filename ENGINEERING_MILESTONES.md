@@ -23,7 +23,7 @@ This document is the definitive historical record of how RepMail was engineered,
 | M7A | Duplicate Campaign | Product Capability | `ea68878` | Audit 066 | Complete |
 | M7B | Contact Management Completion | Product Capability | `c4168c8` | Audit 067 | Complete |
 | M8 | Launch Readiness Hardening | Security / Infrastructure | `eb2c2d5` | Audit 068 | Complete |
-| M9 | Sender Domain (Custom Sending) | Infrastructure | — | — | Planned |
+| M9 | Sender Domain (Custom Sending) | Infrastructure | `cbfc800` | Audits 070 + 071 | Complete |
 
 ---
 
@@ -1122,8 +1122,8 @@ All categories PASS. Findings that became ENGINEERING_BACKLOG items:
 
 **Status:** Complete  
 **Completed:** 2026-06-27  
-**Audit:** Audit 070 — PASS  
-**Commit:** pending
+**Audits:** Audit 070 (implementation) — PASS; Audit 071 (production validation) — PASS with 6 bugs fixed  
+**Commits:** `cbfc800` (implementation); validation + docs in subsequent commit
 
 ### Overview
 
@@ -1156,4 +1156,17 @@ Starter+ plan users can send campaigns from their own verified domain instead of
 | DB-first removal order | Delete from DB first, then SES — orphaned SES identities are harmless |
 | Mid-loop domain recheck every 50 contacts | Admin suspensions propagate within 50 sends without a full-campaign-abort overhead |
 | `domainManager.js` isolated module | All SES + domain business logic centralized; routes are thin HTTP wrappers |
+
+### Production Validation — Audit 071 (6 Bugs Fixed)
+
+| ID | Severity | Fix |
+|----|----------|-----|
+| BUG-1 | HIGH | `CreateEmailIdentityCommand` — added `SigningAttributesOrigin: "AWS_SES"` (required per AWS SDK v3 type contract) |
+| BUG-2 | HIGH | `checkDomainVerification` `NotFoundException` — immediately marks FAILED with audit log instead of sitting in limbo until window expires |
+| BUG-3 | MEDIUM | Admin suspend — added fire-and-forget email notification to domain owner |
+| BUG-4 | LOW | `handleDomainChange` — added `&& val` guard to prevent malformed email when domain field is cleared |
+| BUG-5 | HIGH | Pre-loop domain check — fails campaign with `CAMPAIGN_DOMAIN_REVOKED` audit log instead of silently falling back to platform email |
+| BUG-6 | LOW | Mid-loop domain recheck — removed redundant `i % 50 === 0` inner condition (dead code when `PAUSE_CHECK_INTERVAL === 50`) |
+
+All 7 validation areas passed after fixes. No architectural changes required. M9 is frozen.
 

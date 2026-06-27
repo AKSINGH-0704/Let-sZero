@@ -1621,6 +1621,18 @@ export async function registerRoutes(httpServer, app) {
         targetId: domain.id,
         details: { domain: domain.domain, reason: req.body.reason || "admin_action" },
       });
+
+      // Notify the domain owner so they aren't silently surprised when their next campaign fails.
+      const owner = await storage.getUserById(domain.userId);
+      if (owner?.email) {
+        const reason = req.body.reason || "policy violation";
+        sendTransactionalEmail(
+          owner.email,
+          `Your sending domain ${domain.domain} has been suspended`,
+          `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain.domain}" has been suspended on RepMail.\n\nReason: ${reason}\n\nAny campaigns using this domain will be stopped. Please contact support@repmail.in to appeal or get more information.\n\n— The RepMail Team`
+        ).catch(err => console.error("[DOMAIN][SUSPEND] Notification email failed uid=%s domain=%s:", domain.userId, domain.domain, err.message));
+      }
+
       res.json(updated);
     } catch (err) {
       res.status(500).json({ message: err.message });
