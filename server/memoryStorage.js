@@ -253,7 +253,14 @@ export const memoryStorage = {
 
   sanitizeUser(user) {
     if (!user) return null;
-    const { passwordHash, ...sanitized } = user;
+    const {
+      passwordHash,
+      resetToken,
+      resetTokenExpiresAt,
+      inactivityKeepToken,
+      inactivityKeepTokenExpiresAt,
+      ...sanitized
+    } = user;
     sanitized.creditsRemaining = (sanitized.creditsReceived || 0) -
                                   (sanitized.creditsAllocated || 0) -
                                   (sanitized.creditsUsed || 0);

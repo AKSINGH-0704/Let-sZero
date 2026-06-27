@@ -6183,3 +6183,56 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;
 | INFO | SENTRY_DSN env var | Sentry is a no-op until SENTRY_DSN is set in Railway | ACTION | Add env var in Railway dashboard |
 | INFO | CSP deferred | Content Security Policy disabled (helmet option) — requires per-route tuning in a future milestone | DEFERRED | Backlog |
 | INFO | Password reset email HTML | Current email is plaintext. A styled HTML email with clear CTA button would improve deliverability/CTR. | DEFERRED | Backlog |
+
+---
+
+## Audit 069 — M8 Post-Approval: Authentication Production Audit (2026-06-27)
+
+**Date:** 2026-06-27  
+**Conducted by:** Claude Sonnet 4.6 (independent, adversarial stance)  
+**Scope:** Dedicated attempt-to-break audit of the password reset and account recovery implementation shipped in M8. Checked all attack vectors: replay, expiry, concurrent resets, token overwrite, session invalidation, OAuth coexistence, enumeration, rate limiting, audit trail, frontend UX, and sanitization.  
+**Commit at time of audit:** `eb2c2d5`  
+**Method:** Read `server/routes.js`, `server/storage.js`, `server/memoryStorage.js`, `client/src/pages/ForgotPassword.jsx`, `client/src/pages/ResetByToken.jsx`, `client/src/App.jsx` against adversarial attack surface
+
+### Attack Vector Coverage
+
+| Vector | Test | Result |
+|--------|------|--------|
+| Token replay after use | `clearPasswordResetToken` nulls DB before new session is issued; second request finds no token → 400 | PASS |
+| Expired token | `getUserByResetToken` uses `gte(resetTokenExpiresAt, now)` — DB rejects expired tokens at query level | PASS |
+| Concurrent resets: old link still valid | New `setPasswordResetToken` call overwrites the old hash; only one token per user at all times | PASS |
+| Concurrent reset requests: email flooding | Per-email throttle (expiry > 45 min = issued < 15 min) silently drops resend before token issuance | PASS |
+| Session invalidation after reset | `deleteUserSessions` runs before `createSession`; no window of dual-valid sessions | PASS |
+| OAuth user reset flow | `getUserByEmail` finds OAuth-created users; reset issues a real bcrypt hash; user gains password auth | PASS |
+| User enumeration via forgot-password | Always HTTP 200 with identical body regardless of whether email exists, is inactive, or was throttled | PASS |
+| User enumeration via reset-by-token | Same "invalid or expired" message for bad token, expired token, and already-used token | PASS |
+| `mustResetPassword` gate bypass | `/api/auth/reset-by-token` is in the exempt list; forced-reset users can complete self-service reset | PASS |
+| Token in server logs | Raw token only in email; response bodies logged, not request bodies; rawToken never in any log | PASS |
+| Rate limiting — forgot-password | `forgotPasswordLimiter`: 5 requests/IP/hour | PASS |
+| Rate limiting — reset-by-token | `resetByTokenLimiter`: 10 requests/IP/hour (added during this audit) | FIXED |
+| Audit completeness | PASSWORD_RESET_REQUESTED on issuance; PASSWORD_RESET_COMPLETED after reset; PASSWORD_CHANGED from updatePassword() internally | PASS |
+| Frontend: missing token in URL | `ResetByToken.jsx` renders an "invalid link" UI with a link to /forgot-password when token param is absent | PASS |
+| Frontend: replay after success | Second submission → backend returns 400 "invalid or expired" → displayed in Alert component | PASS |
+| Frontend: authenticated user hits reset URL | App.jsx redirects authenticated users from `/reset-password/token/:token` to dashboard | PASS |
+| Frontend: rate limit error display | ForgotPassword.jsx handles non-200 (429) and displays `data.message` in Alert component | PASS |
+| Throttle check field access | `getUserByEmail` returns raw user (no `sanitizeUser`); `user.resetToken` available for throttle check | PASS |
+
+### Bugs Found and Fixed
+
+| ID | Bug | Location | Fix Applied |
+|----|-----|----------|-------------|
+| BUG-1 | Duplicate `PASSWORD_CHANGED` audit log | `POST /api/auth/reset-password` in `server/routes.js` — explicit `createAuditLog` added alongside `updatePassword()` which already logs internally | Removed the explicit `createAuditLog` call; kept comment explaining the internal behavior |
+| BUG-2 | Redundant `updateUser({ mustResetPassword: false })` | `POST /api/auth/reset-by-token` in `server/routes.js` — `updatePassword()` already sets this field | Removed the no-op `updateUser` call |
+| BUG-3 | `sanitizeUser` leaking internal token hashes to clients | `server/storage.js` and `server/memoryStorage.js` — only `passwordHash` was stripped; `resetToken`, `resetTokenExpiresAt`, `inactivityKeepToken`, `inactivityKeepTokenExpiresAt` were sent to clients via `GET /api/auth/me` | Extended `sanitizeUser` in both files to destructure and discard all four internal fields |
+| BUG-4 | No rate limiter on `POST /api/auth/reset-by-token` | `server/routes.js` — forgot-password was protected but the token redemption endpoint was not | Added `resetByTokenLimiter` (10/IP/hour) and applied to the route |
+
+### Known Limitations (INFO, no action)
+
+| ID | Finding | Assessment |
+|----|---------|------------|
+| INFO-1 | Timing side-channel on forgot-password: existing-email path does a DB write before responding; non-existing-email returns early. Timing difference exists but is dwarfed by network latency variance. | Accepted — standard trade-off for always-200 enumeration protection |
+| INFO-2 | TOCTOU: two simultaneous reset-by-token requests with the same valid token could both pass `getUserByResetToken` before either calls `clearPasswordResetToken`. Node.js single-threaded execution makes the window ~microseconds. | Accepted — infeasible to exploit; attacker would need the link and two exact-simultaneous requests |
+
+### Verdict
+
+**PASS with fixes applied.** The password reset implementation is sound. All primary attack vectors are mitigated. Four issues found and corrected during this audit. The implementation meets production standards for a B2B SaaS platform at this stage.

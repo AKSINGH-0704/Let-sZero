@@ -79,6 +79,15 @@ const forgotPasswordLimiter = rateLimit({
   message: { message: "Too many password reset requests. Please try again later." },
 });
 
+// 10 token redemption attempts per IP per hour — defense in depth against enumeration
+const resetByTokenLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many reset attempts. Please try again later." },
+});
+
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.replace("Bearer ", "") || 
                 req.cookies?.token ||
@@ -772,13 +781,7 @@ export async function registerRoutes(httpServer, app) {
       }
 
       await storage.updatePassword(req.user.id, newPassword);
-
-      await storage.createAuditLog({
-        userId: req.user.id,
-        action: AUDIT_ACTIONS.PASSWORD_CHANGED,
-        targetType: "user",
-        targetId: req.user.id,
-      });
+      // updatePassword() handles PASSWORD_CHANGED audit log and mustResetPassword=false internally.
 
       res.json({ message: "Password updated successfully" });
     } catch (error) {
@@ -846,7 +849,7 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/auth/reset-by-token", async (req, res) => {
+  app.post("/api/auth/reset-by-token", resetByTokenLimiter, async (req, res) => {
     try {
       const { token, newPassword } = req.body;
 
@@ -865,10 +868,8 @@ export async function registerRoutes(httpServer, app) {
       }
 
       await storage.updatePassword(user.id, newPassword);
+      // updatePassword() sets mustResetPassword=false and logs PASSWORD_CHANGED internally.
       await storage.clearPasswordResetToken(user.id);
-
-      // Clear mustResetPassword so admin-forced change gate does not redirect the user
-      await storage.updateUser(user.id, { mustResetPassword: false });
 
       // Invalidate all existing sessions — forces re-authentication everywhere
       await storage.deleteUserSessions(user.id);
