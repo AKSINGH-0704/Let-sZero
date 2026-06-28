@@ -14,5 +14,8 @@ vite.config.ts.*
 .test-server.log
 server_output.log
 
+# Development artifacts and session scripts
+tmp/
+
 # Claude Code local config and memory
 .claude/

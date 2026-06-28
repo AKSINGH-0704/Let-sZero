@@ -474,10 +474,9 @@ All endpoints prefixed `/api/`. Auth via HTTP-only session cookie or `Authorizat
 
 | Document | Purpose |
 |:---------|:--------|
-| [HANDOFF.md](./HANDOFF.md) | **Start here.** New-engineer onboarding: local setup, current state, priorities, known gaps, non-goals, key files, production env vars. |
-| [PROGRESS.md](./PROGRESS.md) | Launch readiness tracker: milestone status (D/I/O/V evidence scale), launch blockers, verification log. |
-| [REPMAIL_ENGINEERING_HANDOFF.md](./REPMAIL_ENGINEERING_HANDOFF.md) | Deep technical reference: complete schema, SNS design, queue worker sequence, AI governance, security rules, cleanup jobs, env var table. |
-| [AUDIT_TRAIL.md](./AUDIT_TRAIL.md) | Append-only audit log: all code reviews, security audits, and documentation sync sessions with findings and commit refs. |
+| [RELEASE_NOTES.md](./RELEASE_NOTES.md) | Customer-facing changelog: features, improvements, and fixes by release. |
+
+Internal engineering documentation — audit trail, architecture reviews, production runbook, milestone history, engineering backlog, and technical handoffs — is maintained in the private engineering repository ([`AKSINGH-0704/Let-sZero-private`](https://github.com/AKSINGH-0704/Let-sZero-private)). Contact the engineering team for access.
 
 <br/>
 
