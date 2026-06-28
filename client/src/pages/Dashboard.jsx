@@ -37,6 +37,7 @@ import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils
 import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 import WelcomeModal from "@/components/WelcomeModal";
+import OnboardingChecklist from "@/components/OnboardingChecklist";
 
 // Animation variants
 const containerVariants = {
@@ -191,6 +192,13 @@ export default function Dashboard() {
 
         {/* Welcome modal — shown once to brand new users (OAuth ?welcome=1 flow) */}
         {showWelcomeBanner && <WelcomeModal onDismiss={dismissBanner} />}
+
+        {/* Onboarding checklist — shown until all identity setup steps are complete (non-admin only) */}
+        {!showWelcomeBanner && !isAdmin && (
+          <motion.div variants={itemVariants}>
+            <OnboardingChecklist />
+          </motion.div>
+        )}
 
         {/* Free Plan banner — compact persistent reminder for free plan users */}
         {creditsInfo?.isFreePlan && !showWelcomeBanner && (

@@ -69,6 +69,17 @@ const REQUIRED_COLUMNS = [
   { table: "users", column: "inactivity_warning_sent_at",       critical: false },
   { table: "users", column: "inactivity_keep_token",            critical: false },
   { table: "users", column: "inactivity_keep_token_expires_at", critical: false },
+  // M13B: Trust model — read by the Sender Authorization Service on every campaign start.
+  // All are critical: a missing column causes SAS to treat every user as unauthorized.
+  { table: "users", column: "email_verified",                     critical: true  },
+  { table: "users", column: "email_verification_token",           critical: false },
+  { table: "users", column: "email_verification_expires_at",     critical: false },
+  { table: "users", column: "sending_identity_type",             critical: true  },
+  { table: "users", column: "platform_identity_acknowledged_at", critical: true  },
+  { table: "users", column: "first_send_at",                     critical: true  },
+  { table: "users", column: "warmup_daily_limit",                critical: true  },
+  { table: "users", column: "warmup_emails_sent_today",          critical: true  },
+  { table: "users", column: "warmup_emails_reset_at",            critical: true  },
 
   // ── sessions ────────────────────────────────────────────────────────────
   { table: "sessions", column: "id",         critical: true },

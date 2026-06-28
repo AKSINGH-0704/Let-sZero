@@ -61,6 +61,7 @@ export default function CampaignConfirmation() {
   const [name, setName] = useState(campaignName || `Campaign ${new Date().toLocaleDateString()}`);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [sasBlocked, setSasBlocked] = useState(null); // { message, remediationAction } when SAS denies
   const [upgradeNeeded, setUpgradeNeeded] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [isScheduled, setIsScheduled] = useState(false);
@@ -212,6 +213,11 @@ export default function CampaignConfirmation() {
         }
         if (Array.isArray(parsed.validationErrors) && parsed.validationErrors.length > 0) {
           setValidationErrors(parsed.validationErrors);
+          return;
+        }
+        // SAS denial — dimension-aware: Identity and Reputation need user action
+        if (parsed.dimension && parsed.remediationAction && parsed.message) {
+          setSasBlocked({ message: parsed.message, remediationAction: parsed.remediationAction });
           return;
         }
         if (parsed.message) {
@@ -562,6 +568,22 @@ export default function CampaignConfirmation() {
               Set up your sender profile
             </Link>{" "}
             before launching this campaign.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {sasBlocked && (
+        <Alert variant="destructive">
+          <Shield className="h-4 w-4" />
+          <AlertDescription className="space-y-2">
+            <p>{sasBlocked.message}</p>
+            {sasBlocked.remediationAction === "SETUP_IDENTITY" && (
+              <Link href="/app/profile">
+                <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
+                  Set up your sending identity <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
+            )}
           </AlertDescription>
         </Alert>
       )}
