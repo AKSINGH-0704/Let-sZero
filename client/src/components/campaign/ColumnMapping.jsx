@@ -159,11 +159,14 @@ function ReadinessSummary({ mapping }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function ColumnMapping() {
   const { contacts, columnMapping, setColumnMapping, goNext, goBack } = useCampaign();
   const [mapping, setMapping] = useState(columnMapping);
   const [suggestions, setSuggestions] = useState({});
   const [error, setError] = useState("");
+  const [validationSummary, setValidationSummary] = useState(null);
 
   const headers = contacts.length > 0 ? Object.keys(contacts[0]) : [];
 
@@ -198,19 +201,52 @@ export default function ColumnMapping() {
       [field]: value === "none" ? undefined : value,
     }));
     setError("");
+    setValidationSummary(null);
   };
 
   const validateAndContinue = () => {
     if (!mapping.email) {
       setError("Email Address must be mapped before you can continue.");
+      setValidationSummary(null);
       return;
     }
-    const sampleEmail = contacts[0]?.[mapping.email];
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (sampleEmail && !emailRegex.test(sampleEmail)) {
-      setError("The selected column doesn't appear to contain valid email addresses.");
+
+    let blank = 0, invalid = 0, valid = 0;
+    const sampleIssues = [];
+
+    contacts.forEach((contact, idx) => {
+      const raw = contact[mapping.email];
+      const val = typeof raw === "string" ? raw.trim() : String(raw ?? "").trim();
+      if (!val) {
+        blank++;
+        if (sampleIssues.length < 5) sampleIssues.push({ row: idx + 1, issue: "blank" });
+      } else if (!EMAIL_REGEX.test(val)) {
+        invalid++;
+        if (sampleIssues.length < 5) sampleIssues.push({ row: idx + 1, issue: "invalid", value: val });
+      } else {
+        valid++;
+      }
+    });
+
+    if (valid === 0) {
+      setError("No valid email addresses found in this column. Select a different column or re-upload your file.");
+      setValidationSummary(null);
       return;
     }
+
+    if (blank + invalid > 0) {
+      setError("");
+      setValidationSummary({ total: contacts.length, valid, blank, invalid, sampleIssues });
+      return;
+    }
+
+    setError("");
+    setValidationSummary(null);
+    setColumnMapping(mapping);
+    goNext();
+  };
+
+  const continueWithValid = () => {
     setColumnMapping(mapping);
     goNext();
   };
@@ -401,19 +437,62 @@ export default function ColumnMapping() {
         </Alert>
       )}
 
+      {/* ── Validation summary (some contacts will be skipped) ────────────────── */}
+      {validationSummary && (
+        <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+          <AlertDescription className="space-y-3">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+              {validationSummary.valid} of {validationSummary.total}{" "}
+              {validationSummary.total === 1 ? "contact has" : "contacts have"} a valid email.{" "}
+              {validationSummary.blank + validationSummary.invalid}{" "}
+              {validationSummary.blank + validationSummary.invalid === 1 ? "row" : "rows"} will be skipped.
+            </p>
+            <ul className="text-xs text-amber-700 dark:text-amber-500 space-y-0.5 list-none">
+              {validationSummary.blank > 0 && (
+                <li>• {validationSummary.blank} blank {validationSummary.blank === 1 ? "entry" : "entries"}</li>
+              )}
+              {validationSummary.invalid > 0 && (
+                <li>• {validationSummary.invalid} invalid email {validationSummary.invalid === 1 ? "format" : "formats"}</li>
+              )}
+              {validationSummary.sampleIssues.map((issue, i) => (
+                <li key={i} className="font-mono pl-3">
+                  Row {issue.row}: {issue.issue === "blank" ? "blank" : `"${issue.value}"`}
+                </li>
+              ))}
+              {(validationSummary.blank + validationSummary.invalid) > validationSummary.sampleIssues.length && (
+                <li className="pl-3">
+                  …and {(validationSummary.blank + validationSummary.invalid) - validationSummary.sampleIssues.length} more
+                </li>
+              )}
+            </ul>
+            <Button
+              size="sm"
+              onClick={continueWithValid}
+              data-testid="button-continue-valid"
+            >
+              Continue with {validationSummary.valid}{" "}
+              {validationSummary.valid === 1 ? "contact" : "contacts"}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ── Navigation ───────────────────────────────────────────────────────── */}
       <div className="flex justify-between pt-2">
         <Button variant="outline" onClick={goBack} data-testid="button-back">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button
-          onClick={validateAndContinue}
-          disabled={!mapping.email}
-          data-testid="button-next-step"
-        >
-          Continue to Template
-        </Button>
+        {!validationSummary && (
+          <Button
+            onClick={validateAndContinue}
+            disabled={!mapping.email}
+            data-testid="button-next-step"
+          >
+            Continue to Template
+          </Button>
+        )}
       </div>
     </div>
   );
