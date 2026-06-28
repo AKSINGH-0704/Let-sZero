@@ -87,7 +87,8 @@ const dbStorage = {
       isTrialUser,
       mustResetPassword: userData.mustResetPassword !== false,
       isActive: true,
-      plan: userData.plan || "free"
+      plan: userData.plan || "free",
+      emailVerified: userData.emailVerified === true,
     }).returning();
     return this.sanitizeUser(user);
   },
@@ -171,6 +172,13 @@ const dbStorage = {
     if (updates.senderCompany!== undefined) allowedUpdates.senderCompany= updates.senderCompany|| null;
     if (updates.senderPhone  !== undefined) allowedUpdates.senderPhone  = updates.senderPhone  || null;
     if (updates.replyToEmail !== undefined) allowedUpdates.replyToEmail = updates.replyToEmail || null;
+    // Trust model fields (M13B)
+    if (updates.emailVerified !== undefined) allowedUpdates.emailVerified = updates.emailVerified;
+    if (updates.emailVerificationToken !== undefined) allowedUpdates.emailVerificationToken = updates.emailVerificationToken || null;
+    if (updates.emailVerificationExpiresAt !== undefined) allowedUpdates.emailVerificationExpiresAt = updates.emailVerificationExpiresAt || null;
+    if (updates.sendingIdentityType !== undefined) allowedUpdates.sendingIdentityType = updates.sendingIdentityType || null;
+    if (updates.platformIdentityAcknowledgedAt !== undefined) allowedUpdates.platformIdentityAcknowledgedAt = updates.platformIdentityAcknowledgedAt || null;
+    if ("warmupDailyLimit" in updates) allowedUpdates.warmupDailyLimit = updates.warmupDailyLimit; // allow null (admin clears override)
     allowedUpdates.updatedAt = new Date();
     
     const [user] = await db.update(users)
@@ -178,6 +186,43 @@ const dbStorage = {
       .where(eq(users.id, id))
       .returning();
     return user ? this.sanitizeUser(user) : null;
+  },
+
+  async setFirstSendAt(userId) {
+    // Idempotent — only sets firstSendAt on the first ever dispatched email.
+    // Conditional WHERE prevents overwriting a value already set by a concurrent request.
+    await db.update(users)
+      .set({ firstSendAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(users.id, userId), isNull(users.firstSendAt)));
+  },
+
+  async atomicIncrementWarmupCount(userId, dailyLimit) {
+    // Atomically increment warmup_emails_sent_today.
+    // Resets the 24h counter when the window has expired, then claims the slot.
+    // Returns the new count, or null if the daily limit was already reached (prevents overshoot
+    // between concurrent campaign loops running for the same user).
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 86_400_000);
+    const result = await db.update(users)
+      .set({
+        warmupEmailsSentToday: sql`CASE
+          WHEN warmup_emails_reset_at IS NULL OR warmup_emails_reset_at < ${cutoff}
+          THEN 1
+          ELSE warmup_emails_sent_today + 1
+        END`,
+        warmupEmailsResetAt: sql`CASE
+          WHEN warmup_emails_reset_at IS NULL OR warmup_emails_reset_at < ${cutoff}
+          THEN ${now}
+          ELSE warmup_emails_reset_at
+        END`,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(users.id, userId),
+        sql`(warmup_emails_reset_at IS NULL OR warmup_emails_reset_at < ${cutoff} OR warmup_emails_sent_today < ${dailyLimit})`
+      ))
+      .returning({ warmupEmailsSentToday: users.warmupEmailsSentToday });
+    return result[0]?.warmupEmailsSentToday ?? null;
   },
 
   async deleteUser(id) {
@@ -224,6 +269,8 @@ const dbStorage = {
       passwordHash,
       resetToken,
       resetTokenExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
       inactivityKeepToken,
       inactivityKeepTokenExpiresAt,
       ...sanitized

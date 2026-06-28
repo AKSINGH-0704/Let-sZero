@@ -125,6 +125,15 @@ export const AUDIT_ACTIONS = {
   CAMPAIGN_DOMAIN_REVOKED:         "CAMPAIGN_DOMAIN_REVOKED",
   // Email analytics tracking (M10)
   TRACKING_TOKENS_PROVISIONED:     "TRACKING_TOKENS_PROVISIONED",
+  // Platform trust model (M13B) — Sender Authorization Service
+  SEND_AUTHORIZATION_DENIED:       "SEND_AUTHORIZATION_DENIED",
+  SEND_AUTHORIZATION_DENIED_EXEC:  "SEND_AUTHORIZATION_DENIED_EXEC",
+  EMAIL_VERIFICATION_SENT:         "EMAIL_VERIFICATION_SENT",
+  EMAIL_VERIFIED:                  "EMAIL_VERIFIED",
+  SENDING_IDENTITY_SET:            "SENDING_IDENTITY_SET",
+  PLATFORM_IDENTITY_ACKNOWLEDGED:  "PLATFORM_IDENTITY_ACKNOWLEDGED",
+  WARMUP_LIMIT_HIT:                "WARMUP_LIMIT_HIT",
+  FIRST_SEND_RECORDED:             "FIRST_SEND_RECORDED",
 };
 
 export const PAYMENT_STATUS = {
@@ -221,6 +230,25 @@ export const users = pgTable("users", {
   //               ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at timestamptz;
   resetToken: text("reset_token"),
   resetTokenExpiresAt: timestamp("reset_token_expires_at"),
+
+  // ── Platform trust model (M13B) ──────────────────────────────────────────
+  // Identity dimension: email ownership, sending identity choice, acknowledgment.
+  // emailVerificationToken: SHA-256 hash of raw token (raw in email URL, never stored).
+  emailVerified: boolean("email_verified").notNull().default(false),
+  emailVerificationToken: text("email_verification_token"),
+  emailVerificationExpiresAt: timestamp("email_verification_expires_at"),
+  // 'custom_domain' | 'platform' | null. null = not yet set up.
+  sendingIdentityType: text("sending_identity_type"),
+  // Set when user explicitly accepts shared-reputation terms for platform-identity path.
+  platformIdentityAcknowledgedAt: timestamp("platform_identity_acknowledged_at"),
+  // Policy/reputation dimension: warm-up lifecycle anchor and rolling counters.
+  // Set on first ever successfully dispatched email; null = never sent.
+  firstSendAt: timestamp("first_send_at"),
+  // null = use platform default from platform_settings; integer = admin override.
+  warmupDailyLimit: integer("warmup_daily_limit"),
+  warmupEmailsSentToday: integer("warmup_emails_sent_today").notNull().default(0),
+  // Window start for the rolling 24h warm-up counter. Reset per-email via conditional WHERE.
+  warmupEmailsResetAt: timestamp("warmup_emails_reset_at"),
 }, (table) => ({
   // Supports fast inactivity job query filtering active non-root users
   activeActivityIdx: index("users_active_activity_idx").on(table.isActive, table.lastActivityAt),
@@ -564,6 +592,16 @@ export const insertUserSchema = createInsertSchema(users).omit({
   sendPaused: true,
   sendPausedReason: true,
   sendPausedAt: true,
+  // Trust model fields — system-managed, never set at user creation
+  emailVerified: true,
+  emailVerificationToken: true,
+  emailVerificationExpiresAt: true,
+  sendingIdentityType: true,
+  platformIdentityAcknowledgedAt: true,
+  firstSendAt: true,
+  warmupDailyLimit: true,
+  warmupEmailsSentToday: true,
+  warmupEmailsResetAt: true,
 }).extend({
   password: z.string().min(6, "Password must be at least 6 characters"),
   username: z.string().min(3, "Username must be at least 3 characters"),

@@ -113,6 +113,16 @@ export const memoryStorage = {
       senderCompany: null,
       senderPhone: null,
       replyToEmail: null,
+      // Trust model (M13B)
+      emailVerified: userData.emailVerified === true,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+      sendingIdentityType: null,
+      platformIdentityAcknowledgedAt: null,
+      firstSendAt: null,
+      warmupDailyLimit: null,
+      warmupEmailsSentToday: 0,
+      warmupEmailsResetAt: null,
     };
 
     store.users.set(id, user);
@@ -213,9 +223,39 @@ export const memoryStorage = {
     if (updates.senderCompany !== undefined) user.senderCompany = updates.senderCompany || null;
     if (updates.senderPhone   !== undefined) user.senderPhone   = updates.senderPhone   || null;
     if (updates.replyToEmail  !== undefined) user.replyToEmail  = updates.replyToEmail  || null;
+    // Trust model fields (M13B)
+    if (updates.emailVerified !== undefined) user.emailVerified = updates.emailVerified;
+    if (updates.emailVerificationToken !== undefined) user.emailVerificationToken = updates.emailVerificationToken || null;
+    if (updates.emailVerificationExpiresAt !== undefined) user.emailVerificationExpiresAt = updates.emailVerificationExpiresAt || null;
+    if (updates.sendingIdentityType !== undefined) user.sendingIdentityType = updates.sendingIdentityType || null;
+    if (updates.platformIdentityAcknowledgedAt !== undefined) user.platformIdentityAcknowledgedAt = updates.platformIdentityAcknowledgedAt || null;
+    if ("warmupDailyLimit" in updates) user.warmupDailyLimit = updates.warmupDailyLimit;
     user.updatedAt = new Date();
 
     return this.sanitizeUser(user);
+  },
+
+  async setFirstSendAt(userId) {
+    const user = store.users.get(userId);
+    if (user && !user.firstSendAt) {
+      user.firstSendAt = new Date();
+      user.updatedAt = new Date();
+    }
+  },
+
+  async atomicIncrementWarmupCount(userId, dailyLimit) {
+    const user = store.users.get(userId);
+    if (!user) return null;
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 86_400_000);
+    if (!user.warmupEmailsResetAt || new Date(user.warmupEmailsResetAt) < cutoff) {
+      user.warmupEmailsSentToday = 0;
+      user.warmupEmailsResetAt = now;
+    }
+    if (user.warmupEmailsSentToday >= dailyLimit) return null;
+    user.warmupEmailsSentToday += 1;
+    user.updatedAt = now;
+    return user.warmupEmailsSentToday;
   },
 
   async deleteUser(id) {
@@ -260,6 +300,8 @@ export const memoryStorage = {
       passwordHash,
       resetToken,
       resetTokenExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
       inactivityKeepToken,
       inactivityKeepTokenExpiresAt,
       ...sanitized

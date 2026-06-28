@@ -22,6 +22,7 @@ import {
   AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, USER_ROLES,
 } from "../shared/schema.js";
 import { extractTemplateLinks } from "./trackingUtils.js";
+import { assertCanSend, recordFirstSend, claimWarmupSlot, SEND_MODES } from "./senderAuth.js";
 
 // ── SES throttle detection ─────────────────────────────────────────────────────
 // Moved here from worker.js so the retry wrapper and the loop share one module.
@@ -99,18 +100,18 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     return;
   }
 
-  // ── Owner-active guard ───────────────────────────────────────────────────────
+  // ── Load owner ───────────────────────────────────────────────────────────────
   const owner = await storage.getUserById(userId);
-  if (!owner || !owner.isActive) {
+  if (!owner) {
     await storage.updateCampaign(campaignId, { status: "FAILED" });
     await storage.createAuditLog({
       userId,
       action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
       targetType: "campaign",
       targetId: campaignId,
-      details: { reason: "Campaign owner account deactivated", name: campaign.name },
+      details: { reason: "Campaign owner account not found", name: campaign.name },
     });
-    console.warn(`${logTag} Campaign ${campaignId} aborted — owner ${userId} is inactive`);
+    console.warn(`${logTag} Campaign ${campaignId} aborted — owner ${userId} not found`);
     return;
   }
 
@@ -174,22 +175,11 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     return;
   }
 
-  // ── Pre-loop: per-user manual pause check ────────────────────────────────────
-  if (owner.sendPaused) {
-    await storage.updateCampaign(campaignId, { status: "FAILED" });
-    await storage.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
-      targetType: "campaign",
-      targetId: campaignId,
-      details: { reason: "sender_paused", pausedReason: owner.sendPausedReason },
-    });
-    console.warn(`${logTag} Campaign ${campaignId} failed — sender ${userId} is paused`);
-    return;
-  }
-
   // ── Pre-loop: auto-pause check (7-day rolling bounce/complaint rate) ──────────
-  // Fetch health once before the loop — never per-contact.
+  // This is a side-effect step: reads fresh health data, may set sendPaused=true in DB
+  // and return early. The SAS check below sees the cached `owner` object loaded above;
+  // if auto-pause fires here, it returns before the SAS is reached. If it doesn't fire,
+  // the SAS checks the cached sendPaused value (same stale-state window as before M13B).
   const senderHealth = await storage.getUserSenderHealth(userId);
 
   if (senderHealth.sent >= MIN_SENDER_HEALTH_SENT &&
@@ -217,35 +207,43 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     return;
   }
 
+  // ── Sender Authorization Service check ───────────────────────────────────────
+  // Centralized identity + reputation + policy gate. Replaces the old isActive,
+  // sendPaused, and domain-verified checks that were distributed across this file.
+  // Policy check is skipped on retry (mode=retry) because credits/warm-up were consumed.
+  const execMode = isRetry ? SEND_MODES.RETRY
+    : campaign.scheduledAt ? SEND_MODES.SCHEDULED_FIRE
+    : SEND_MODES.IMMEDIATE;
+  try {
+    await assertCanSend({
+      user: owner,
+      mode: execMode,
+      campaignId,
+      senderDomainId: campaign.senderDomainId ?? null,
+    });
+  } catch (authErr) {
+    await storage.updateCampaign(campaignId, { status: "FAILED" });
+    await storage.createAuditLog({
+      userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "send_not_authorized", code: authErr.code, dimension: authErr.dimension, message: authErr.message },
+    });
+    console.warn(`${logTag} Campaign ${campaignId} failed — SAS denied [${authErr.dimension}/${authErr.code}]: ${authErr.message}`);
+    return;
+  }
+
   const template   = campaign.templateSnapshot || {};
   const contactIds = campaign.contactIds || [];
 
-  // ── Domain check at campaign start ───────────────────────────────────────────
-  // Resolves the custom domain once before the loop. If the domain was suspended or
-  // removed after campaign creation, the campaign must fail — silent fallback to the
-  // platform email would send from a different domain than the customer intended.
+  // ── Custom domain data setup (authorization confirmed by SAS above) ───────────
+  // SAS verified that the domain is VERIFIED for this user. We now only need to
+  // resolve the from-address from the campaign's snapshot (durable at creation time).
   let customFromEmail = null;
   if (campaign.senderDomainId) {
-    const domainRecord = await storage.getSenderDomainById(campaign.senderDomainId);
-    if (!domainRecord || domainRecord.status !== "VERIFIED") {
-      // Domain was removed or suspended after campaign creation — fail immediately.
-      // A silent fallback would send from platform email, masking the issue and
-      // potentially confusing recipients or triggering spam filters.
-      await storage.updateCampaign(campaignId, { status: "FAILED" });
-      await storage.createAuditLog({
-        userId,
-        action: AUDIT_ACTIONS.CAMPAIGN_DOMAIN_REVOKED,
-        targetType: "campaign",
-        targetId: campaignId,
-        details: { reason: "sender_domain_not_verified_at_start", domainId: campaign.senderDomainId },
-      });
-      console.warn(`${logTag} Campaign ${campaignId} failed — senderDomain ${campaign.senderDomainId} not VERIFIED at start`);
-      return;
-    }
     if (!campaign.senderEmailSnapshot) {
-      // Data integrity error — senderEmailSnapshot should always be set when senderDomainId is set.
-      // Failing here rather than silently falling back to domainRecord.fromEmail, which may
-      // have changed since campaign creation, or be blank on a freshly-edited domain.
+      // Data integrity error — senderEmailSnapshot must be set when senderDomainId is set.
       console.error(`${logTag} Campaign ${campaignId} — ABORT: senderDomainId=${campaign.senderDomainId} but senderEmailSnapshot is null`);
       await storage.updateCampaign(campaignId, { status: "FAILED" });
       return;
@@ -283,8 +281,10 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   let failedCount  = 0;
   let skippedCount = 0;
   let outOfCredits         = false;
+  let outOfWarmupSlots     = false;
   let globalPausedMidLoop  = false;
   let senderPausedMidLoop  = false;
+  let firstSendRecorded    = false;
   let cancelledMidLoop     = false;
 
   console.log(`${logTag} Campaign ${campaignId} — ${contactIds.length} contacts`);
@@ -461,6 +461,24 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
           }
         }
 
+        // Claim a warm-up slot before each send — atomic WHERE guard prevents concurrent overshoot.
+        if (!(await claimWarmupSlot(owner))) {
+          await storage.updateCampaign(campaignId, {
+            status: "PAUSED",
+            sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+          });
+          await storage.createAuditLog({
+            userId,
+            action: AUDIT_ACTIONS.WARMUP_LIMIT_HIT,
+            targetType: "campaign",
+            targetId: campaignId,
+            details: { name: campaign.name, sentEmails: sentCount, stoppedAtContact: i },
+          });
+          console.warn(`${logTag} Campaign ${campaignId} paused at contact ${i} — warm-up daily limit reached`);
+          outOfWarmupSlots = true;
+          break;
+        }
+
         const info = await sendWithRetry(
           contact, template, userId, campaignId,
           usedRateLimiter ? rateLimiter : null,
@@ -475,6 +493,10 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
           sentAt: new Date(),
         });
         sentCount++;
+        if (!firstSendRecorded) {
+          firstSendRecorded = true;
+          recordFirstSend(userId).catch(() => {});
+        }
         console.log(`${logTag} [${campaignId}] ${sentCount}/${contactIds.length} → ${contact.email}`);
 
         try {
@@ -539,6 +561,10 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     console.warn(`${logTag} Campaign ${campaignId} stopped early — insufficient credits`);
   }
 
+  if (outOfWarmupSlots) {
+    console.warn(`${logTag} Campaign ${campaignId} paused mid-loop — warm-up daily limit reached`);
+    return;
+  }
   if (globalPausedMidLoop) {
     console.warn(`${logTag} Campaign ${campaignId} paused mid-loop — status already PAUSED`);
     return;

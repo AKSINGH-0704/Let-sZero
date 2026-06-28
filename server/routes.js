@@ -20,6 +20,8 @@ import { runCampaignLoop } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
 import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
+import { assertCanSend, getSenderHealthReport, SEND_MODES } from "./senderAuth.js";
+import { checkBrandImpersonation } from "./brandGuard.js";
 
 // SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
 let smtpHealthCache = { status: "unknown", checkedAt: 0 };
@@ -71,6 +73,15 @@ const acceptLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many attempts. Please wait before trying again." },
+});
+
+// 5 new accounts per IP per 24 hours — prevents mass account creation abuse
+const registrationLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "REGISTRATION_RATE_LIMIT", message: "Too many accounts created from this IP address. Please try again tomorrow." },
 });
 
 // 5 password reset requests per IP per hour — prevents email flooding
@@ -276,6 +287,22 @@ function extractPlaceholders(text) {
   return found;
 }
 
+// Normalise an ExcelJS cell value to a plain string.
+// ExcelJS returns non-primitive values for certain cell types:
+//   Rich text → {richText: [{text:"..."}]}  — join all segments
+//   Hyperlink  → {text:"...", hyperlink:"..."} — use display text
+//   Date       → Date object                  — ISO string
+// All other values fall through to String().
+function extractCellValue(cell) {
+  if (cell === undefined || cell === null) return "";
+  if (typeof cell === "object") {
+    if (Array.isArray(cell.richText)) return cell.richText.map(r => String(r.text ?? "")).join("");
+    if (typeof cell.text === "string") return cell.text;
+    if (cell instanceof Date) return cell.toISOString();
+  }
+  return String(cell);
+}
+
 export async function registerRoutes(httpServer, app) {
   await storage.initializeRootAdmin();
 
@@ -400,6 +427,7 @@ export async function registerRoutes(httpServer, app) {
               plan: "free",
               creditsReceived: 0,
               mustResetPassword: false,
+              emailVerified: true, // Google has already verified this address
             });
             user._isNewOAuthUser = true;
           }
@@ -865,6 +893,18 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Reply-to email must be a valid email address" });
       }
 
+      // Brand impersonation guard — platform-identity senders may not use major brand names
+      if (senderName !== undefined) {
+        const user = await storage.getUserById(req.user.id);
+        const { blocked, matchedTerm } = checkBrandImpersonation(senderName.trim(), user.sendingIdentityType);
+        if (blocked) {
+          return res.status(400).json({
+            error: "BRAND_IMPERSONATION_DETECTED",
+            message: `The sender name "${senderName.trim()}" is not permitted because it includes a protected brand name ("${matchedTerm}"). Use a name that clearly identifies your own organization.`,
+          });
+        }
+      }
+
       await storage.updateUser(req.user.id, {
         senderName:    senderName    !== undefined ? (senderName.trim()    || null) : undefined,
         senderTitle:   senderTitle   !== undefined ? (senderTitle.trim()   || null) : undefined,
@@ -891,6 +931,74 @@ export async function registerRoutes(httpServer, app) {
       res.json({ message: "Profile updated", user: updatedUser, senderWarnings });
     } catch (error) {
       console.error("[PROFILE] update error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Set sending identity type — required before a user may create campaigns (TRUST-006)
+  app.post("/api/user/sending-identity", authMiddleware, async (req, res) => {
+    try {
+      const { sendingIdentityType } = req.body;
+      if (!["platform", "custom_domain"].includes(sendingIdentityType)) {
+        return res.status(400).json({
+          error: "INVALID_IDENTITY_TYPE",
+          message: "sendingIdentityType must be 'platform' or 'custom_domain'.",
+        });
+      }
+
+      const updates = { sendingIdentityType };
+      if (sendingIdentityType === "platform") {
+        updates.platformIdentityAcknowledgedAt = new Date();
+      }
+      await storage.updateUser(req.user.id, updates);
+
+      const auditLogs = [storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.SENDING_IDENTITY_SET,
+        details: { sendingIdentityType },
+      })];
+      if (sendingIdentityType === "platform") {
+        auditLogs.push(storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.PLATFORM_IDENTITY_ACKNOWLEDGED,
+        }));
+      }
+      await Promise.all(auditLogs);
+
+      const updatedUser = await storage.getUserById(req.user.id);
+      res.json({ message: "Sending identity updated.", user: updatedUser });
+    } catch (error) {
+      console.error("[SENDING_IDENTITY] error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Sender health report — dimensions: identity, reputation, policy (TRUST-013)
+  app.get("/api/sender-health", authMiddleware, async (req, res) => {
+    try {
+      const report = await getSenderHealthReport(req.user);
+      res.json(report);
+    } catch (error) {
+      console.error("[SENDER_HEALTH] error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Onboarding status — checklist for new accounts to reach "workspace ready" state (TRUST-008)
+  app.get("/api/user/onboarding-status", authMiddleware, async (req, res) => {
+    try {
+      const user = await storage.getUserById(req.user.id);
+      const profileComplete = !!(user.senderName?.trim() && user.senderCompany?.trim());
+      const steps = {
+        emailVerified:       user.emailVerified ?? false,
+        profileComplete,
+        sendingIdentitySet:  !!user.sendingIdentityType,
+        firstCampaignSent:   !!user.firstSendAt,
+      };
+      const complete = Object.values(steps).every(Boolean);
+      res.json({ steps, complete });
+    } catch (error) {
+      console.error("[ONBOARDING_STATUS] error:", error.message);
       res.status(500).json({ message: error.message });
     }
   });
@@ -1093,7 +1201,8 @@ export async function registerRoutes(httpServer, app) {
         parentId: req.user.id,
         creditsReceived: 0,
         mustResetPassword: true,
-        plan: req.user.plan || "free"
+        plan: req.user.plan || "free",
+        emailVerified: true, // Admin-provisioned accounts are considered verified by the creating admin
       });
 
       if (credits && credits > 0) {
@@ -1807,18 +1916,23 @@ export async function registerRoutes(httpServer, app) {
       let resolvedSenderDomainId = null;
       let senderEmailSnapshot = null;
 
-      // ── Sender profile gate ───────────────────────────────────────────────────
-      // senderName is stored on the user record, not in the request body.
-      // Without it, campaign emails fall back to "RepMail" as the From display name,
-      // allowing senders to masquerade as the platform.
-      if (!req.user.senderName?.trim()) {
-        return res.status(400).json({
-          error: "SENDER_PROFILE_REQUIRED",
-          message: "Add your sender name in Profile settings before creating a campaign.",
+      // ── Sender Authorization Service — identity + reputation + policy ─────────
+      try {
+        await assertCanSend({
+          user: req.user,
+          mode: scheduledAt ? SEND_MODES.SCHEDULED : SEND_MODES.IMMEDIATE,
+          senderDomainId: senderDomainId || null,
+        });
+      } catch (authErr) {
+        return res.status(403).json({
+          error: authErr.code || "SEND_NOT_AUTHORIZED",
+          message: authErr.message,
+          dimension: authErr.dimension,
+          remediationAction: authErr.remediationAction,
         });
       }
 
-      // ── Custom sender domain validation ───────────────────────────────────────
+      // ── Custom sender domain data setup (authorization confirmed by SAS above) ─
       if (senderDomainId) {
         try {
           assertDomainEligible(req.user);
@@ -2456,7 +2570,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // POST /api/invites/accept — public, create account and accept invite
-  app.post("/api/invites/accept", acceptLimiter, async (req, res) => {
+  app.post("/api/invites/accept", acceptLimiter, registrationLimiter, async (req, res) => {
     try {
       const { token, username, password } = req.body;
 
@@ -2503,6 +2617,7 @@ export async function registerRoutes(httpServer, app) {
         role: invite.role,
         parentId: invite.invitedBy,
         mustResetPassword: false,
+        emailVerified: true, // Invite token acceptance proves ownership of the invite email address
       });
 
       await storage.markInviteAccepted(invite.id);
@@ -3330,9 +3445,7 @@ export async function registerRoutes(httpServer, app) {
         .map(row => {
           const obj = {};
           headers.forEach((header, i) => {
-            const cell = row[i];
-            // ExcelJS returns cell objects for rich text; extract plain value
-            obj[header] = cell !== undefined && cell !== null ? String(cell) : "";
+            obj[header] = extractCellValue(row[i]);
           });
           return obj;
         })
