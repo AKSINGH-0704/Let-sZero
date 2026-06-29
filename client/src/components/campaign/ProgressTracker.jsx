@@ -219,10 +219,22 @@ export default function ProgressTracker() {
     ? (((sentEmails + skippedEmails) / totalEmails) * 100).toFixed(1)
     : 100;
 
-  const handleFinish = () => {
+  const invalidatePostCampaign = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
     queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
     queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+  };
+
+  // Auto-invalidate credits and stats as soon as campaign completes (no click required)
+  useEffect(() => {
+    if (isComplete) {
+      invalidatePostCampaign();
+    }
+  }, [isComplete]);
+
+  const handleFinish = () => {
+    invalidatePostCampaign();
     resetCampaign();
   };
 

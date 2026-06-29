@@ -107,10 +107,11 @@ function ProtectedRoute({ children, requiredRole }) {
   return children;
 }
 
-// Redirects non-admin users without a sending identity to the Workspace Activation wizard
+// Redirects users who haven't verified a custom domain to the Workspace Activation wizard.
+// ROOT_ADMIN and isSecondaryRoot bypass SAS entirely — they never need onboarding.
 function RequiresWorkspaceActivation({ children }) {
-  const { user, isAdmin } = useAuth();
-  if (user && !isAdmin && !user.sendingIdentityType) {
+  const { user, isRootAdmin } = useAuth();
+  if (user && !isRootAdmin && !user.isSecondaryRoot && !user.sendingIdentityType) {
     return <Redirect to="/app/onboarding" />;
   }
   return children;

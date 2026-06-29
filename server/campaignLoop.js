@@ -289,6 +289,9 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
 
   console.log(`${logTag} Campaign ${campaignId} — ${contactIds.length} contacts`);
 
+  // Dynamic checkpoint: at least 5 DB writes per campaign so progress tracker shows incremental movement.
+  const effectiveCheckpoint = Math.min(CHECKPOINT_INTERVAL, Math.max(1, Math.ceil(contactIds.length / 5)));
+
   // Batch-load all contacts before the loop — 1 query instead of N per-contact lookups.
   // Per-contact suppression checks remain inside the loop (a concurrent campaign can add
   // suppressions mid-execution, so those must stay live).
@@ -522,9 +525,9 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       console.error(`${logTag} [${campaignId}] contact ${i + 1} failed:`, err.message);
     }
 
-    // Checkpoint every CHECKPOINT_INTERVAL emails — matches UI poll cadence, reduces DB writes.
+    // Checkpoint every effectiveCheckpoint emails — dynamic to ensure incremental UI progress.
     // Terminal exits (cancel, pause, credit exhaustion) always flush final counts separately.
-    if ((i + 1) % CHECKPOINT_INTERVAL === 0) {
+    if ((i + 1) % effectiveCheckpoint === 0) {
       await storage.updateCampaign(campaignId, {
         sentEmails:   sentCount,
         failedEmails: failedCount,

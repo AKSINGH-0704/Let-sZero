@@ -4,7 +4,7 @@ import { z } from "zod";
 
 // Plans that can register and use custom sending domains.
 // Single authoritative source — imported by server and client.
-export const DOMAIN_ELIGIBLE_PLANS = ["starter", "growth", "scale", "enterprise"];
+export const DOMAIN_ELIGIBLE_PLANS = ["free", "trial", "starter", "growth", "scale", "enterprise"];
 
 // Canonical domain lifecycle statuses.
 export const SENDER_DOMAIN_STATUS = {

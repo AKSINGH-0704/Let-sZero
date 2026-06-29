@@ -205,10 +205,10 @@ async function _checkIdentity({ user, senderDomainId }) {
       "emailVerified=false", "VERIFY_EMAIL");
   }
 
-  if (!user.sendingIdentityType) {
+  if (!user.sendingIdentityType || user.sendingIdentityType !== "custom_domain") {
     return _deny("IDENTITY", "SENDING_IDENTITY_NOT_SET",
-      "Set up a sending identity in Settings before creating campaigns.",
-      "sendingIdentityType=null", "SETUP_IDENTITY");
+      "Verify a custom domain in Settings → Domains before sending campaigns.",
+      `sendingIdentityType=${user.sendingIdentityType ?? "null"} — custom_domain required`, "SETUP_IDENTITY");
   }
 
   if (!user.senderName?.trim()) {
@@ -217,26 +217,18 @@ async function _checkIdentity({ user, senderDomainId }) {
       "senderName empty or null", "SETUP_IDENTITY");
   }
 
-  if (user.sendingIdentityType === "platform" && !user.platformIdentityAcknowledgedAt) {
-    return _deny("IDENTITY", "PLATFORM_IDENTITY_NOT_ACKNOWLEDGED",
-      "Accept the platform sending terms to enable sending.",
-      "sendingIdentityType=platform but platformIdentityAcknowledgedAt=null", "SETUP_IDENTITY");
-  }
-
-  // Custom-domain users must always specify a domain — no silent fallback to platform identity.
-  if (user.sendingIdentityType === "custom_domain" && !senderDomainId) {
+  // All users must select a verified custom domain — no platform fallback.
+  if (!senderDomainId) {
     return _deny("IDENTITY", "SENDER_DOMAIN_REQUIRED",
-      "Your account uses custom domain sending. Select a verified domain for this campaign.",
-      "sendingIdentityType=custom_domain but senderDomainId=null", "SETUP_IDENTITY");
+      "Select a verified sending domain for this campaign. Add and verify a domain in Settings → Domains.",
+      "senderDomainId=null — custom domain selection is required for all users", "SETUP_IDENTITY");
   }
 
-  if (senderDomainId) {
-    const domain = await storage.getVerifiedDomainForUser(user.id, senderDomainId);
-    if (!domain) {
-      return _deny("IDENTITY", "DOMAIN_NOT_VERIFIED",
-        "The selected sending domain is not verified or does not belong to your account.",
-        `senderDomainId=${senderDomainId} not VERIFIED for userId=${user.id}`, "SETUP_IDENTITY");
-    }
+  const domain = await storage.getVerifiedDomainForUser(user.id, senderDomainId);
+  if (!domain) {
+    return _deny("IDENTITY", "DOMAIN_NOT_VERIFIED",
+      "The selected sending domain is not verified or does not belong to your account.",
+      `senderDomainId=${senderDomainId} not VERIFIED for userId=${user.id}`, "SETUP_IDENTITY");
   }
 
   return { allowed: true };

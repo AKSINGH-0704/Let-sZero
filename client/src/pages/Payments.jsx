@@ -1867,8 +1867,8 @@ export default function Payments() {
             </div>
           </motion.div>
 
-          {/* ── Developer Test Plan (Admin Only) ────────────────────────── */}
-          {isAdmin && (
+          {/* ── Developer Test Plan (ROOT_ADMIN Only) ───────────────────── */}
+          {user?.role === "ROOT_ADMIN" && (
             <motion.div
               initial="hidden"
               whileInView="visible"

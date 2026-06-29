@@ -220,8 +220,9 @@ async function authMiddleware(req, res, next) {
 
   req.user = user;
   req.token = token;
-  // Precompute so routes don't need to re-derive isSecondaryRoot inline
   req.isRootAdmin = user.role === "ROOT_ADMIN" || user.isSecondaryRoot === true;
+  // Resolve workspace plan — walks ancestor chain so SUB_ADMIN/USER inherit ROOT_ADMIN's plan
+  req.user.effectivePlan = await storage.getEffectivePlan(user.id);
   next();
 }
 
@@ -935,35 +936,24 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  // Set sending identity type — required before a user may create campaigns (TRUST-006)
+  // Set sending identity type — only custom_domain is accepted (platform identity removed)
   app.post("/api/user/sending-identity", authMiddleware, async (req, res) => {
     try {
       const { sendingIdentityType } = req.body;
-      if (!["platform", "custom_domain"].includes(sendingIdentityType)) {
+      if (sendingIdentityType !== "custom_domain") {
         return res.status(400).json({
           error: "INVALID_IDENTITY_TYPE",
-          message: "sendingIdentityType must be 'platform' or 'custom_domain'.",
+          message: "All users must verify a custom domain. Platform sending identity is not available.",
         });
       }
 
-      const updates = { sendingIdentityType };
-      if (sendingIdentityType === "platform") {
-        updates.platformIdentityAcknowledgedAt = new Date();
-      }
-      await storage.updateUser(req.user.id, updates);
+      await storage.updateUser(req.user.id, { sendingIdentityType: "custom_domain" });
 
-      const auditLogs = [storage.createAuditLog({
+      await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.SENDING_IDENTITY_SET,
-        details: { sendingIdentityType },
-      })];
-      if (sendingIdentityType === "platform") {
-        auditLogs.push(storage.createAuditLog({
-          userId: req.user.id,
-          action: AUDIT_ACTIONS.PLATFORM_IDENTITY_ACKNOWLEDGED,
-        }));
-      }
-      await Promise.all(auditLogs);
+        details: { sendingIdentityType: "custom_domain" },
+      });
 
       const updatedUser = await storage.getUserById(req.user.id);
       res.json({ message: "Sending identity updated.", user: updatedUser });
@@ -1188,14 +1178,14 @@ export async function registerRoutes(httpServer, app) {
       const { username, email, password, role, credits } = req.body;
 
       // Plan limit check — team members
-      const memberLimit = MAX_TEAM_MEMBERS[req.user.plan] ?? 0;
+      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
       if (memberLimit !== Infinity) {
         const activeCount = await storage.getChildUserCount(req.user.id);
         if (activeCount >= memberLimit) {
           return res.status(403).json({
             error: "PLAN_LIMIT",
             message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade to add more.`,
-            currentPlan: req.user.plan || "free",
+            currentPlan: req.user.effectivePlan || "free",
             limit: memberLimit,
             current: activeCount,
           });
@@ -1223,7 +1213,7 @@ export async function registerRoutes(httpServer, app) {
         parentId: req.user.id,
         creditsReceived: 0,
         mustResetPassword: true,
-        plan: req.user.plan || "free",
+        plan: req.user.effectivePlan || "free",
         emailVerified: true, // Admin-provisioned accounts are considered verified by the creating admin
       });
 
@@ -1274,8 +1264,8 @@ export async function registerRoutes(httpServer, app) {
 
       await storage.allocateCredits(req.user.id, id, credits, req.user.id);
 
-      // Sync child's plan to admin's plan
-      const adminPlan = req.user.plan || "free";
+      // Sync child's plan to admin's effective plan
+      const adminPlan = req.user.effectivePlan || "free";
       const childUser = await storage.getUserById(id);
       if (childUser && childUser.plan !== adminPlan) {
         await storage.updateUser(childUser.id, { plan: adminPlan });
@@ -1617,10 +1607,19 @@ export async function registerRoutes(httpServer, app) {
       if (!list) return res.status(404).json({ message: "List not found" });
 
       const validRows = [];
-      let failedRows = 0;
-      for (const row of rows) {
-        const email = normalizeContactEmail(row.email || "");
-        if (!email || !isValidEmailFormat(email)) { failedRows++; continue; }
+      const rowErrors = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rawEmail = row.email || "";
+        const email = normalizeContactEmail(rawEmail);
+        if (!rawEmail || rawEmail === "") {
+          rowErrors.push({ row: i + 1, value: null, reason: "Missing email — no 'email' column or cell is empty" });
+          continue;
+        }
+        if (!email || !isValidEmailFormat(email)) {
+          rowErrors.push({ row: i + 1, value: rawEmail, reason: `Invalid email format: "${rawEmail}"` });
+          continue;
+        }
         validRows.push({
           email,
           name: sanitizeContactTextField(row.name),
@@ -1630,7 +1629,15 @@ export async function registerRoutes(httpServer, app) {
         });
       }
       if (validRows.length === 0) {
-        return res.status(400).json({ message: "No valid email rows found in import data" });
+        const detectedKeys = rows.length > 0 ? Object.keys(rows[0]).join(", ") : "none";
+        return res.status(400).json({
+          error: "NO_VALID_ROWS",
+          message: "No valid email addresses found in the import file.",
+          hint: `Detected columns: [${detectedKeys}]. Ensure your file has an 'email' column with valid email addresses.`,
+          rowErrors: rowErrors.slice(0, 20),
+          totalRows: rows.length,
+          failedRows: rowErrors.length,
+        });
       }
 
       const importRecord = await storage.importContactsToList(
@@ -1641,7 +1648,8 @@ export async function registerRoutes(httpServer, app) {
         fileName ? String(fileName).slice(0, 500) : null
       );
       // Patch failedRows to include pre-validation rejects (storage only counts insert-level failures)
-      importRecord.failedRows = (importRecord.failedRows || 0) + failedRows;
+      importRecord.failedRows = (importRecord.failedRows || 0) + rowErrors.length;
+      if (rowErrors.length > 0) importRecord.rowErrors = rowErrors.slice(0, 20);
       importRecord.totalRows = rows.length;
       res.status(201).json(importRecord);
     } catch (error) {
@@ -1972,12 +1980,12 @@ export async function registerRoutes(httpServer, app) {
       // ── Plan limit check ──────────────────────────────────────────────────────
       const userCampaigns = await storage.getCampaigns(req.user.id, false);
       const activeCampaigns = userCampaigns.filter(c => ["RUNNING", "PENDING", "DRAFT"].includes(c.status));
-      const campaignLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
+      const campaignLimits = PLAN_LIMITS[req.user.effectivePlan] || PLAN_LIMITS["free"];
       if (activeCampaigns.length >= campaignLimits.maxActiveCampaigns) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
           message: `Your ${campaignLimits.label} plan allows up to ${campaignLimits.maxActiveCampaigns} active campaigns. Wait for current campaigns to complete or upgrade your plan.`,
-          currentPlan: req.user.plan || "free",
+          currentPlan: req.user.effectivePlan || "free",
           limit: campaignLimits.maxActiveCampaigns,
           current: activeCampaigns.length,
         });
@@ -1987,7 +1995,7 @@ export async function registerRoutes(httpServer, app) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
           message: "Campaign scheduling is available on Starter plan and above.",
-          currentPlan: req.user.plan || "free",
+          currentPlan: req.user.effectivePlan || "free",
         });
       }
 
@@ -2363,12 +2371,12 @@ export async function registerRoutes(httpServer, app) {
 
       // Plan limit check
       const userTemplates = await storage.getTemplates(req.user.id);
-      const templateLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
+      const templateLimits = PLAN_LIMITS[req.user.effectivePlan] || PLAN_LIMITS["free"];
       if (userTemplates.length >= templateLimits.maxTemplates) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
           message: `Your ${templateLimits.label} plan allows up to ${templateLimits.maxTemplates} templates. Delete an existing template or upgrade your plan.`,
-          currentPlan: req.user.plan || "free",
+          currentPlan: req.user.effectivePlan || "free",
           limit: templateLimits.maxTemplates,
           current: userTemplates.length,
         });
@@ -2427,12 +2435,12 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/audit-logs/export", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
-      const exportLimits = PLAN_LIMITS[req.user.plan] || PLAN_LIMITS["free"];
+      const exportLimits = PLAN_LIMITS[req.user.effectivePlan] || PLAN_LIMITS["free"];
       if (!exportLimits.canExportAudit) {
         return res.status(403).json({
           error: "PLAN_LIMIT",
           message: "Audit log export is available on Scale plan and above.",
-          currentPlan: req.user.plan || "free",
+          currentPlan: req.user.effectivePlan || "free",
         });
       }
 
@@ -2502,7 +2510,7 @@ export async function registerRoutes(httpServer, app) {
       }
 
       // Enforce team member limit
-      const limit = MAX_TEAM_MEMBERS[req.user.plan] ?? 0;
+      const limit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
       if (limit !== Infinity) {
         const activeCount = await storage.getChildUserCount(req.user.id);
         if (activeCount >= limit) {

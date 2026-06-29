@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -72,12 +71,9 @@ export default function CampaignConfirmation() {
   const { data: platformConfig } = useQuery({ queryKey: ["/api/platform-config"], staleTime: 60_000 });
   const { data: health } = useQuery({ queryKey: ["/api/sender-health"], staleTime: 30_000 });
 
-  const isDomainEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
-
   const { data: verifiedDomains = [] } = useQuery({
     queryKey: ["/api/domains"],
     queryFn: () => apiRequest("GET", "/api/domains").then(r => r.json()),
-    enabled: isDomainEligible,
     select: (data) => data.filter(d => d.status === "VERIFIED"),
   });
 
@@ -180,7 +176,7 @@ export default function CampaignConfirmation() {
         },
       };
 
-      if (senderDomainId && senderDomainId !== "platform") {
+      if (senderDomainId) {
         payload.senderDomainId = senderDomainId;
       }
 
@@ -268,6 +264,10 @@ export default function CampaignConfirmation() {
       setError("Please confirm you want to send this campaign");
       return;
     }
+    if (!senderDomainId) {
+      setError("Select a verified sending domain before launching.");
+      return;
+    }
     if (isScheduled && !scheduledAt) {
       setError("Please select a date and time to schedule the campaign");
       return;
@@ -316,7 +316,7 @@ export default function CampaignConfirmation() {
               </div>
 
               {/* Campaign Scheduling */}
-              {user?.plan && user.plan !== "free" ? (
+              {user?.effectivePlan && user.effectivePlan !== "free" ? (
                 <div className="space-y-2">
                   <label className="flex items-center gap-3 text-sm text-muted-foreground cursor-pointer">
                     <input
@@ -341,7 +341,7 @@ export default function CampaignConfirmation() {
                     </div>
                   )}
                 </div>
-              ) : user?.plan === "free" ? (
+              ) : user?.effectivePlan === "free" || !user?.effectivePlan ? (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                   <p className="text-sm text-amber-400">
                     Campaign scheduling is available on Starter plan and above.{" "}
@@ -350,31 +350,43 @@ export default function CampaignConfirmation() {
                 </div>
               ) : null}
 
-              {/* Custom Sending Domain selector — Starter+ only */}
-              {isDomainEligible && verifiedDomains.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <Globe className="h-4 w-4 text-primary" />
-                    Sending Domain
-                  </Label>
-                  <Select value={senderDomainId} onValueChange={setSenderDomainId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Use platform default" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="platform">Platform default (RepMail shared address)</SelectItem>
-                      {verifiedDomains.map(d => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.fromEmail}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Choose a verified custom domain or use the platform default.
-                  </p>
-                </div>
-              )}
+              {/* Sending Domain selector — required for all users */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Globe className="h-4 w-4 text-primary" />
+                  Sending Domain <span className="text-destructive">*</span>
+                </Label>
+                {verifiedDomains.length === 0 ? (
+                  <Alert className="border-destructive/40 bg-destructive/10">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    <AlertDescription className="text-destructive">
+                      No verified domains found.{" "}
+                      <Link href="/app/domains" className="underline font-medium">
+                        Add and verify a domain in Settings → Domains
+                      </Link>{" "}
+                      before sending campaigns.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <>
+                    <Select value={senderDomainId} onValueChange={setSenderDomainId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select a sending domain" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {verifiedDomains.map(d => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.fromEmail}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Select the verified domain this campaign will send from.
+                    </p>
+                  </>
+                )}
+              </div>
 
               <Separator />
 
@@ -642,19 +654,11 @@ export default function CampaignConfirmation() {
           <AlertDescription className="space-y-2">
             <p>{sasBlocked.message}</p>
             {sasBlocked.remediationAction === "SETUP_IDENTITY" && (
-              user?.sendingIdentityType === "custom_domain" ? (
-                <Link href="/app/domains">
-                  <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
-                    Check your domain DNS records <ArrowRight className="h-3 w-3" />
-                  </span>
-                </Link>
-              ) : (
-                <Link href="/app/profile">
-                  <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
-                    Set up your sending identity <ArrowRight className="h-3 w-3" />
-                  </span>
-                </Link>
-              )
+              <Link href="/app/domains">
+                <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
+                  Add and verify a domain in Settings → Domains <ArrowRight className="h-3 w-3" />
+                </span>
+              </Link>
             )}
           </AlertDescription>
         </Alert>
@@ -693,7 +697,7 @@ export default function CampaignConfirmation() {
         </Button>
         <Button
           onClick={handleSend}
-          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || !senderProfileComplete || sendMutation.isPending}
+          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || !senderProfileComplete || !senderDomainId || verifiedDomains.length === 0 || sendMutation.isPending}
           data-testid="button-send-campaign"
         >
           {sendMutation.isPending ? (

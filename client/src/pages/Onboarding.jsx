@@ -3,10 +3,9 @@ import { Redirect, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
-import { Loader2, Building2, Globe, CheckCircle, ArrowRight } from "lucide-react";
+import { Loader2, Globe, CheckCircle } from "lucide-react";
 
-const STEP = { IDENTITY: 1, CONFIRM: 2, SUMMARY: 3 };
+const STEP = { DOMAIN: 1, SUMMARY: 2 };
 
 const C = {
   bg: "#06060B",
@@ -27,89 +26,33 @@ function StepIndicator({ step }) {
       transition: "background 0.3s",
     }} />
   );
-  const line = (n) => (
-    <div key={`l${n}`} style={{
+  const line = () => (
+    <div style={{
       width: 32, height: 1,
-      background: step >= n ? C.primary : "#2A2A4A",
+      background: step >= 2 ? C.primary : "#2A2A4A",
       transition: "background 0.3s",
     }} />
   );
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 28 }}>
-      {dot(1)}{line(2)}{dot(2)}{line(3)}{dot(3)}
+      {dot(1)}{line()}{dot(2)}
     </div>
   );
 }
 
-function AckCheck({ checked, onChange, label }) {
-  return (
-    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onChange}
-        style={{ marginTop: 3, accentColor: C.primary, width: 14, height: 14, flexShrink: 0 }}
-      />
-      <span style={{ color: C.subtle, fontSize: 12, lineHeight: 1.5 }}>{label}</span>
-    </label>
-  );
-}
-
-function Btn({ onClick, disabled, children, secondary }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        padding: "12px 20px", borderRadius: 10, border: "none", cursor: disabled ? "not-allowed" : "pointer",
-        background: secondary
-          ? C.surface
-          : disabled ? "#1E1E30" : `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
-        color: secondary ? C.muted : disabled ? C.muted : "#06060B",
-        fontWeight: 700, fontSize: 13,
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-        transition: "all 0.2s",
-        ...(secondary ? { border: `1px solid ${C.border}` } : {}),
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 export default function Onboarding() {
-  const { user, isAdmin, refetch } = useAuth();
-  const [step, setStep] = useState(STEP.IDENTITY);
-  const [identityType, setIdentityType] = useState(null);
-  const [ack, setAck] = useState({ domain: false, optin: false, terms: false });
+  const { user, isRootAdmin, refetch } = useAuth();
+  const [step, setStep] = useState(STEP.DOMAIN);
   const [domainName, setDomainName] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [domainError, setDomainError] = useState("");
   const [dnsResult, setDnsResult] = useState(null);
   const [justCompleted, setJustCompleted] = useState(false);
-  const [platformError, setPlatformError] = useState("");
 
   const { data: config } = useQuery({
     queryKey: ["/api/platform-config"],
     enabled: !!user,
     staleTime: 60_000,
-  });
-
-  const platformMutation = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", "/api/user/sending-identity", { sendingIdentityType: "platform" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
-      refetch();
-      setJustCompleted(true);
-      setStep(STEP.SUMMARY);
-    },
-    onError: (err) => {
-      let msg = "Activation failed. Please try again.";
-      try { const p = JSON.parse(err.message || ""); msg = p.message || msg; } catch {}
-      setPlatformError(msg);
-    },
   });
 
   const domainMutation = useMutation({
@@ -133,211 +76,34 @@ export default function Onboarding() {
     },
   });
 
-  // Users who already completed setup or are admins go straight to dashboard
-  if (!justCompleted && user && (user.sendingIdentityType || isAdmin)) {
+  // ROOT_ADMIN and isSecondaryRoot skip onboarding — they bypass SAS entirely
+  // Users who have already set up a custom domain go to dashboard
+  if (!justCompleted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
     return <Redirect to="/app/dashboard" />;
   }
 
-  const isDomainEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
-
-  const allAcked = ack.domain && ack.optin && ack.terms;
-  const platformFromAddress = config?.platformFromAddress || null;
-  const platformLimit = config?.warmup?.platformDailyLimit ?? 100;
   const customLimit = config?.warmup?.customDomainDailyLimit ?? 200;
   const durationDays = config?.warmup?.durationDays ?? 30;
 
-
-  // ── Step 1: Identity type selection ───────────────────────────────────────────
-  const Step1 = () => {
-    const OptionCard = ({ type, icon: Icon, title, tagline, bullets, locked, lockedNote }) => {
-      const active = identityType === type;
-      return (
-        <button
-          onClick={() => !locked && setIdentityType(type)}
-          style={{
-            background: active ? "rgba(0,229,200,0.06)" : C.surface,
-            border: `1px solid ${active ? C.primary : C.border}`,
-            borderRadius: 12, padding: "16px 20px", textAlign: "left",
-            cursor: locked ? "not-allowed" : "pointer", opacity: locked ? 0.55 : 1,
-            boxShadow: active ? `0 0 0 1px ${C.primary}` : "none",
-            transition: "all 0.2s", width: "100%",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 8, flexShrink: 0, marginTop: 2,
-              background: active ? "rgba(0,229,200,0.12)" : "rgba(255,255,255,0.05)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <Icon size={16} color={active ? C.primary : C.muted} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ color: C.text, fontWeight: 600, fontSize: 14 }}>{title}</span>
-                {locked && (
-                  <span style={{ background: "rgba(255,255,255,0.08)", color: C.muted, fontSize: 10, padding: "1px 7px", borderRadius: 20, fontWeight: 600 }}>
-                    Starter plan+
-                  </span>
-                )}
-              </div>
-              <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.5, marginBottom: 8 }}>{tagline}</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {bullets.map(b => (
-                  <div key={b} style={{ display: "flex", alignItems: "center", gap: 6, color: C.subtle, fontSize: 11 }}>
-                    <CheckCircle size={10} color={!locked ? C.primary : C.muted} />
-                    {b}
-                  </div>
-                ))}
-              </div>
-              {lockedNote && (
-                <p style={{ marginTop: 8, color: C.subtle, fontSize: 11 }}>
-                  Your plan: <strong style={{ color: C.text }}>{user?.plan || "free"}</strong> —{" "}
-                  <a href="/app/payments" style={{ color: C.primary, textDecoration: "none" }}>upgrade to unlock</a>
-                </p>
-              )}
-            </div>
-          </div>
-        </button>
-      );
-    };
-
-    return (
-      <>
-        <h2 style={{ color: C.text, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6, textAlign: "center" }}>
-          Activate Your Workspace
-        </h2>
-        <p style={{ color: C.muted, fontSize: 13, marginBottom: 24, textAlign: "center" }}>
-          Choose how your emails reach contacts. Takes 2 minutes.
-        </p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-          {OptionCard({
-            type: "platform",
-            icon: Building2,
-            title: "RepMail Platform",
-            tagline: "Start sending immediately — no DNS setup required.",
-            bullets: ["Ready in 2 minutes", "500 free credits included", "Upgrade to your domain any time"],
-          })}
-          {OptionCard({
-            type: "custom_domain",
-            icon: Globe,
-            title: "Your Own Domain",
-            tagline: "Emails come from you@yourdomain.com — best deliverability.",
-            bullets: ["Best inbox rates", "Your brand in the From field", "5–10 min DNS setup"],
-            locked: !isDomainEligible,
-            lockedNote: !isDomainEligible,
-          })}
-        </div>
-
-        {!isDomainEligible && (
-          <p style={{ color: C.muted, fontSize: 11, textAlign: "center", marginBottom: 16 }}>
-            You can add your own domain later from Settings after upgrading.
-          </p>
-        )}
-
-        <Btn onClick={() => setStep(STEP.CONFIRM)} disabled={!identityType}>
-          Continue <ArrowRight size={14} />
-        </Btn>
-      </>
-    );
-  };
-
-  // ── Step 2a: Platform acknowledgment ─────────────────────────────────────────
-  const Step2Platform = () => {
-    const displayName = user?.senderName?.trim() || "Your Name";
-    const fromAddr = platformFromAddress || "noreply@repmail.in";
-
-    return (
-      <>
-        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6, textAlign: "center" }}>
-          What your contacts will see
-        </h2>
-        <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-          Review your sender details before confirming.
-        </p>
-
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", marginBottom: 20, fontFamily: "monospace", fontSize: 12 }}>
-          <div style={{ color: C.muted, marginBottom: 6, fontSize: 11, fontFamily: "inherit" }}>EMAIL PREVIEW</div>
-          <div style={{ color: C.text }}>
-            <span style={{ color: C.muted }}>From:  </span>
-            &ldquo;{displayName}&rdquo; &lt;{fromAddr}&gt;
-          </div>
-          <p style={{ color: "#55556A", fontSize: 11, marginTop: 6, fontFamily: "inherit" }}>
-            &ldquo;{displayName}&rdquo; is your sender display name (editable in Profile).
-          </p>
-        </div>
-
-        <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "14px 16px", marginBottom: 24 }}>
-          <p style={{ color: C.primary, fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Building your sender reputation</p>
-          <p style={{ color: C.subtle, fontSize: 12, lineHeight: 1.55, margin: 0, marginBottom: 10 }}>
-            To protect your deliverability, we start you at <strong style={{ color: C.text }}>{platformLimit} emails/day</strong> and
-            grow to unlimited after Day {durationDays}. This is standard practice — inbox providers trust
-            senders who build reputation gradually.
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.muted }}>
-            <span>Day 1</span>
-            <div style={{ flex: 1, height: 4, background: "#2A2A4A", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ width: "15%", height: "100%", background: `linear-gradient(90deg, ${C.primary}, #00B8A3)`, borderRadius: 4 }} />
-            </div>
-            <span style={{ color: C.primary }}>Unlimited</span>
-            <span>Day {durationDays}+</span>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-          <AckCheck
-            checked={ack.domain}
-            onChange={e => setAck(a => ({ ...a, domain: e.target.checked }))}
-            label={`I understand my emails will come from ${fromAddr} (RepMail's domain, not mine)`}
-          />
-          <AckCheck
-            checked={ack.optin}
-            onChange={e => setAck(a => ({ ...a, optin: e.target.checked }))}
-            label="I will only send to contacts who have opted in to receive my emails"
-          />
-          <AckCheck
-            checked={ack.terms}
-            onChange={e => setAck(a => ({ ...a, terms: e.target.checked }))}
-            label="I agree to RepMail's Terms of Service and email sending policies"
-          />
-        </div>
-
-        {platformError && (
-          <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 16, color: "#F87171", fontSize: 12 }}>
-            {platformError}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <Btn secondary onClick={() => setStep(STEP.IDENTITY)}>← Back</Btn>
-          <button
-            onClick={() => { if (allAcked) { setPlatformError(""); platformMutation.mutate(); } }}
-            disabled={!allAcked || platformMutation.isPending}
-            style={{
-              flex: 1, padding: "12px", borderRadius: 10, border: "none",
-              background: allAcked ? `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)` : "#1E1E30",
-              color: allAcked ? "#06060B" : C.muted,
-              fontWeight: 700, fontSize: 13, cursor: allAcked ? "pointer" : "not-allowed",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            {platformMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-            I Agree — Activate
-          </button>
-        </div>
-      </>
-    );
-  };
-
-  // ── Step 2b: Custom domain ─────────────────────────────────────────────────────
-  const Step2Domain = () => (
+  // ── Step 1: Domain registration ───────────────────────────────────────────────
+  const StepDomain = () => (
     <>
-      <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6, textAlign: "center" }}>
-        Add your sending domain
-      </h2>
-      <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-        We'll generate DNS records. Most domains verify within 1 hour.
-      </p>
+      <div style={{ textAlign: "center", marginBottom: 16 }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12, margin: "0 auto 12px",
+          background: "rgba(0,229,200,0.10)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <Globe size={22} color={C.primary} />
+        </div>
+        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6 }}>
+          Verify Your Sending Domain
+        </h2>
+        <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
+          All email must come from your own verified domain.<br />
+          Add DNS records and sending unlocks automatically once verified.
+        </p>
+      </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
         <div>
@@ -367,15 +133,15 @@ export default function Onboarding() {
               borderRadius: 8, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box",
             }}
           />
-          <p style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>This is what contacts see in the From field.</p>
+          <p style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Contacts see this in the From field.</p>
         </div>
       </div>
 
       <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
         <p style={{ color: C.subtle, fontSize: 11, margin: 0 }}>
-          Custom domains build reputation faster: <strong style={{ color: C.text }}>{customLimit} emails/day</strong> during
-          your first {durationDays}-day warm-up, then unlimited. Inbox providers trust your own domain more
-          than shared infrastructure.
+          Custom domains start at <strong style={{ color: C.text }}>{customLimit} emails/day</strong> during
+          the first {durationDays}-day warm-up, then unlimited. Your domain builds sender reputation
+          that belongs to you.
         </p>
       </div>
 
@@ -389,43 +155,36 @@ export default function Onboarding() {
         You can build your first campaign while DNS propagates. Sending unlocks once verified.
       </p>
 
-      <div style={{ display: "flex", gap: 10 }}>
-        <Btn secondary onClick={() => setStep(STEP.IDENTITY)}>← Back</Btn>
-        <button
-          onClick={() => {
-            if (!domainName.trim() || !fromEmail.trim()) {
-              setDomainError("Both fields are required");
-              return;
-            }
-            domainMutation.mutate({ domain: domainName.trim(), fromEmail: fromEmail.trim() });
-          }}
-          disabled={domainMutation.isPending}
-          style={{
-            flex: 1, padding: "12px", borderRadius: 10, border: "none",
-            background: `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
-            color: "#06060B", fontWeight: 700, fontSize: 13, cursor: domainMutation.isPending ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}
-        >
-          {domainMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-          Add Domain — Verify Later
-        </button>
-      </div>
+      <button
+        onClick={() => {
+          if (!domainName.trim() || !fromEmail.trim()) {
+            setDomainError("Both domain and from-email are required");
+            return;
+          }
+          domainMutation.mutate({ domain: domainName.trim(), fromEmail: fromEmail.trim() });
+        }}
+        disabled={domainMutation.isPending}
+        style={{
+          width: "100%", padding: "12px", borderRadius: 10, border: "none",
+          background: `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
+          color: "#06060B", fontWeight: 700, fontSize: 13, cursor: domainMutation.isPending ? "not-allowed" : "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}
+      >
+        {domainMutation.isPending && <Loader2 size={14} className="animate-spin" />}
+        Add Domain — Verify Later
+      </button>
     </>
   );
 
-  // ── Step 3: Activation Summary ────────────────────────────────────────────────
-  const Step3 = () => {
-    const isPlatform = identityType === "platform";
-    const fromAddr = isPlatform
-      ? (platformFromAddress || "noreply@repmail.in")
-      : (dnsResult?.fromEmail || fromEmail || "you@yourdomain.com");
-    const limit = isPlatform ? platformLimit : customLimit;
+  // ── Step 2: Activation summary ────────────────────────────────────────────────
+  const StepSummary = () => {
+    const fromAddr = dnsResult?.fromEmail || fromEmail || "you@yourdomain.com";
 
     const rows = [
       { icon: "📧", label: "Who recipients see", value: `"${user?.senderName?.trim() || "Your Name"}" <${fromAddr}>` },
-      { icon: "💳", label: "Emails you can send today", value: `${limit} (warm-up limit — grows to unlimited after Day ${durationDays})` },
-      { icon: "📈", label: "Why there's a daily limit", value: `Inbox providers trust senders who build reputation gradually. This protects your deliverability and RepMail's platform reputation.` },
+      { icon: "💳", label: "Emails you can send today", value: `${customLimit} (warm-up limit — grows to unlimited after Day ${durationDays})` },
+      { icon: "📈", label: "Why there's a daily limit", value: "Inbox providers trust senders who build reputation gradually. This protects your deliverability." },
       { icon: "🚀", label: "Recommended next step", value: "Create your first campaign with your most engaged contacts." },
     ];
 
@@ -433,12 +192,10 @@ export default function Onboarding() {
       <>
         <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>✅</div>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 4, textAlign: "center" }}>
-          {isPlatform ? "You're ready to send." : "Domain added — verification in progress."}
+          Domain added — verification in progress.
         </h2>
         <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-          {isPlatform
-            ? "Here's what your first campaign will look like."
-            : "Build your campaign while DNS propagates — sending unlocks automatically when verified."}
+          Build your campaign while DNS propagates — sending unlocks automatically when verified.
         </p>
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px", marginBottom: 20 }}>
@@ -461,14 +218,27 @@ export default function Onboarding() {
           ))}
         </div>
 
-        {!isPlatform && (
-          <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
-            <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
-              ⏳ DNS is propagating. We check automatically every 30 minutes and unlock sending once verified.
-            </p>
-            <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
-              View DNS records in Settings → Domains →
-            </Link>
+        <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
+          <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
+            ⏳ DNS is propagating. We check automatically every 30 minutes and unlock sending once verified.
+          </p>
+          <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
+            View DNS records in Settings → Domains →
+          </Link>
+        </div>
+
+        {dnsResult?.dnsRecords?.length > 0 && (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
+            <p style={{ color: C.muted, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>DNS RECORDS TO ADD</p>
+            {dnsResult.dnsRecords.map((rec, i) => (
+              <div key={i} style={{ marginBottom: i < dnsResult.dnsRecords.length - 1 ? 10 : 0 }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 2 }}>
+                  <span style={{ background: "rgba(0,229,200,0.12)", color: C.primary, fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>{rec.type}</span>
+                  <span style={{ color: C.muted, fontSize: 11 }}>{rec.name}</span>
+                </div>
+                <div style={{ color: C.subtle, fontSize: 10, wordBreak: "break-all", fontFamily: "monospace" }}>{rec.value}</div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -484,7 +254,7 @@ export default function Onboarding() {
             background: `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
             color: "#06060B", fontSize: 13, fontWeight: 700, textAlign: "center", textDecoration: "none", display: "block",
           }}>
-            {isPlatform ? "Create First Campaign →" : "Build First Campaign →"}
+            Build First Campaign →
           </Link>
         </div>
       </>
@@ -507,10 +277,8 @@ export default function Onboarding() {
 
           <StepIndicator step={step} />
 
-          {step === STEP.IDENTITY && Step1()}
-          {step === STEP.CONFIRM && identityType === "platform" && Step2Platform()}
-          {step === STEP.CONFIRM && identityType === "custom_domain" && Step2Domain()}
-          {step === STEP.SUMMARY && Step3()}
+          {step === STEP.DOMAIN && StepDomain()}
+          {step === STEP.SUMMARY && StepSummary()}
         </div>
 
         <p style={{ color: "#2A2A4A", fontSize: 11, textAlign: "center", marginTop: 20 }}>
