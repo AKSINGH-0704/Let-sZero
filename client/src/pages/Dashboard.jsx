@@ -111,8 +111,6 @@ export default function Dashboard() {
   // Chart data: real monthly aggregates from stats (last 6 calendar months).
   const chartData = stats?.monthlyChart || [];
 
-  const isAdmin = user?.role === 'ROOT_ADMIN' || user?.role === 'SUB_ADMIN' || user?.isSecondaryRoot;
-
   const { data: usersData } = useQuery({
     queryKey: ["/api/users"],
     enabled: isAdmin,
