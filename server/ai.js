@@ -924,3 +924,21 @@ export function validateTemplate(subject, body, { campaignType = 'general', inta
 
   return { subject: s, body: b, hardBlocked: false, warnings };
 }
+
+// Startup health probe — called once at boot to avoid "unknown" status until first user AI call
+export async function verifyAiHealth() {
+  if (!process.env.OPENAI_API_KEY) {
+    aiHealthCache.status = "not_configured";
+    aiHealthCache.updatedAt = Date.now();
+    return;
+  }
+  try {
+    const client = getClient();
+    await client.models.list();
+    markAiHealthOk();
+    console.log("[AI] Startup health probe: ok");
+  } catch (err) {
+    markAiHealthError(err);
+    console.warn("[AI] Startup health probe failed:", err.message);
+  }
+}

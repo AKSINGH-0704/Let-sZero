@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
@@ -30,14 +30,12 @@ import {
   PieChart,
   Target,
   UserPlus,
-  X,
   Sparkles
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
 import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
-import WelcomeModal from "@/components/WelcomeModal";
-import OnboardingChecklist from "@/components/OnboardingChecklist";
+import SenderHealthWidget from "@/components/SenderHealthWidget";
 
 // Animation variants
 const containerVariants = {
@@ -80,30 +78,7 @@ const PLAN_LABELS = {
 };
 
 export default function Dashboard() {
-  const { user, isRootAdmin } = useAuth();
-  const [showWelcomeBanner, setShowWelcomeBanner] = useState(() => {
-    try {
-      const stored = localStorage.getItem("repmail_new_user");
-      return stored ? JSON.parse(stored)?.isNewUser === true : false;
-    } catch {
-      return false;
-    }
-  });
-
-  const dismissBanner = () => {
-    localStorage.removeItem("repmail_new_user");
-    setShowWelcomeBanner(false);
-  };
-
-  // OAuth new users land with ?welcome=1 — set localStorage key and show banner
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("welcome") === "1") {
-      try { localStorage.setItem("repmail_new_user", JSON.stringify({ isNewUser: true })); } catch {}
-      setShowWelcomeBanner(true);
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-  }, []);
+  const { user, isAdmin, isRootAdmin } = useAuth();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard/stats"]
@@ -190,18 +165,15 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
 
-        {/* Welcome modal — shown once to brand new users (OAuth ?welcome=1 flow) */}
-        {showWelcomeBanner && <WelcomeModal onDismiss={dismissBanner} />}
-
-        {/* Onboarding checklist — shown until all identity setup steps are complete (non-admin only) */}
-        {!showWelcomeBanner && !isAdmin && (
+        {/* Sender health — warm-up progress and DNS verification status (non-admin only) */}
+        {!isAdmin && (
           <motion.div variants={itemVariants}>
-            <OnboardingChecklist />
+            <SenderHealthWidget />
           </motion.div>
         )}
 
         {/* Free Plan banner — compact persistent reminder for free plan users */}
-        {creditsInfo?.isFreePlan && !showWelcomeBanner && (
+        {creditsInfo?.isFreePlan && (
           <motion.div
             variants={itemVariants}
             className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-4 py-3 text-sm"

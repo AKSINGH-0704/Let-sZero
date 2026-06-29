@@ -225,7 +225,7 @@ export default function FileUpload() {
           onClick={() => setTab("library")}
         >
           <BookUser className="w-4 h-4" />
-          Contact Library
+          Contacts
         </button>
       </div>
 
@@ -245,7 +245,7 @@ export default function FileUpload() {
               <Users className="w-8 h-8 mx-auto mb-3 opacity-40" />
               <p className="text-sm">No contact lists yet.</p>
               <p className="text-xs mt-1">
-                Go to <a href="/app/contacts" className="underline text-primary" target="_blank" rel="noreferrer">Contact Library</a> to create and import lists.
+                Go to <a href="/app/contacts" className="underline text-primary" target="_blank" rel="noreferrer">Contacts</a> to create and import lists.
               </p>
             </div>
           ) : (
@@ -440,7 +440,7 @@ export default function FileUpload() {
             className="rounded border-border"
           />
           <Label htmlFor="save-to-library" className="text-sm font-normal cursor-pointer">
-            Save to Contact Library as
+            Save to Contacts as
           </Label>
           {saveAsEnabled && (
             <Input

@@ -46,6 +46,7 @@ import { runSchemaCheck } from "./schemaCheck.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import { runDomainVerificationPoll } from "./domainManager.js";
+import { verifyAiHealth } from "./ai.js";
 const app = express();
 const httpServer = createServer(app);
 
@@ -57,18 +58,21 @@ app.set("trust proxy", 1);
 // CSP: 'unsafe-inline' is required for style-src because shadcn/ui, Tailwind, and the HTML
 // preview in History.jsx all use inline styles. Inline scripts remain blocked (no 'unsafe-inline'
 // in script-src) — user-controlled HTML in template previews cannot execute scripts.
-// Full nonce-based CSP (eliminating 'unsafe-inline' for styles) is deferred to M12.
+// Razorpay allowlist: checkout.razorpay.com (script), api.razorpay.com (connect + frame),
+// lumberjack.razorpay.com (connect — Razorpay analytics; omitting causes silent checkout failure
+// in some browsers). These are the minimum directives required for the checkout modal to open.
+// Full nonce-based CSP (eliminating 'unsafe-inline' for styles) is deferred to post-beta.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'"],
+      scriptSrc:  ["'self'", "https://checkout.razorpay.com"],
       styleSrc:   ["'self'", "'unsafe-inline'"],
       imgSrc:     ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
       fontSrc:    ["'self'"],
       objectSrc:  ["'none'"],
-      frameSrc:   ["'none'"],
+      frameSrc:   ["https://api.razorpay.com"],
       baseUri:    ["'self'"],
       formAction: ["'self'"],
       upgradeInsecureRequests: [],
@@ -684,6 +688,9 @@ async function diagnoseSMTPPath() {
 
   // SMTP path diagnostic — temporary, runs once at startup.
   await diagnoseSMTPPath();
+
+  // AI startup health probe — sets aiHealthCache to ok/degraded instead of staying "unknown"
+  verifyAiHealth().catch(err => console.warn("[AI] Startup probe error:", err.message));
 
   // Railway sends SIGTERM with a 30-second grace window before SIGKILL.
   // worker.close() waits for the current job iteration to finish before exiting.

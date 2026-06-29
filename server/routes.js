@@ -463,7 +463,7 @@ export async function registerRoutes(httpServer, app) {
             userAgent: req.headers["user-agent"],
           });
           const isNewOAuthUser = req.user._isNewOAuthUser === true;
-          res.redirect(isNewOAuthUser ? "/app/dashboard?welcome=1" : "/app/dashboard");
+          res.redirect(isNewOAuthUser ? "/app/onboarding" : "/app/dashboard");
         } catch (err) {
           console.error("Google callback error:", err);
           res.redirect("/login?error=google_failed");
@@ -981,6 +981,28 @@ export async function registerRoutes(httpServer, app) {
     } catch (error) {
       console.error("[SENDER_HEALTH] error:", error.message);
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Platform configuration — read-only authenticated endpoint for client-side UI (M14)
+  app.get("/api/platform-config", authMiddleware, async (req, res) => {
+    try {
+      const [platformLimit, customLimit, duration] = await Promise.all([
+        storage.getPlatformSetting("warmup_platform_identity_daily_limit"),
+        storage.getPlatformSetting("warmup_custom_domain_daily_limit"),
+        storage.getPlatformSetting("warmup_duration_days"),
+      ]);
+      return res.json({
+        platformFromAddress: process.env.SES_FROM_EMAIL || null,
+        warmup: {
+          platformDailyLimit: parseInt(platformLimit?.value ?? "100", 10),
+          customDomainDailyLimit: parseInt(customLimit?.value ?? "200", 10),
+          durationDays: parseInt(duration?.value ?? "30", 10),
+        },
+      });
+    } catch (error) {
+      console.error("[platform-config] error:", error);
+      return res.status(500).json({ message: "Failed to load platform configuration" });
     }
   });
 
@@ -3360,6 +3382,101 @@ export async function registerRoutes(httpServer, app) {
       res.json({ message: "User sending resumed" });
     } catch (err) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST /api/contacts/parse-file — parse CSV, XLSX, or XLS into rows for the
+  // contact-import mapping step. Returns headers, rows (objects keyed by header),
+  // rowCount, and sheetNames (null for single-sheet / CSV; list for multi-sheet
+  // workbooks so the client can present a worksheet picker).
+  // Accepts optional `sheet` field to select a specific worksheet on re-request.
+  app.post("/api/contacts/parse-file", authMiddleware, express.json({ limit: "20mb" }), async (req, res) => {
+    try {
+      const { fileData, fileName, sheet } = req.body;
+      if (!fileData) return res.status(400).json({ message: "No file data provided" });
+
+      let buffer;
+      try {
+        buffer = Buffer.from(fileData, "base64");
+      } catch {
+        return res.status(400).json({ message: "Invalid file data" });
+      }
+
+      if (buffer.length === 0) return res.status(400).json({ message: "File is empty" });
+      if (buffer.length > 15 * 1024 * 1024) return res.status(400).json({ message: "File exceeds the 15 MB limit" });
+
+      const ext = (fileName || "").split(".").pop().toLowerCase();
+
+      // Strip UTF-8 BOM (0xEF 0xBB 0xBF) before CSV parsing — common in Excel CSV exports
+      const parseBuffer = buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF
+        ? buffer.slice(3)
+        : buffer;
+
+      const workbook = new ExcelJS.Workbook();
+      try {
+        if (ext === "csv") {
+          await workbook.csv.read(Readable.from(parseBuffer));
+        } else {
+          // ExcelJS reads XLSX (OpenXML). Modern .xls files saved in OOXML
+          // compatibility mode also parse correctly. Legacy BIFF8 binary .xls
+          // files will throw and be caught below with an actionable error.
+          await workbook.xlsx.load(parseBuffer);
+        }
+      } catch {
+        if (ext === "xls") {
+          return res.status(400).json({
+            message: "This XLS file uses a legacy binary format that cannot be read. Please re-save it as .xlsx or .csv from Excel and try again.",
+          });
+        }
+        return res.status(400).json({ message: "Failed to parse file. Ensure it is a valid CSV, XLSX, or XLS file." });
+      }
+
+      const worksheets = workbook.worksheets;
+
+      // For multi-sheet workbooks, build a per-sheet summary so the client can
+      // render a meaningful picker (name + estimated contact count, not just Sheet1/Sheet2).
+      // Only computed when needed — single-sheet files skip this entirely.
+      const sheetsMeta = worksheets.length > 1
+        ? worksheets.map(ws => {
+            let dataRows = 0;
+            ws.eachRow({ includeEmpty: false }, () => { dataRows++; });
+            return { name: ws.name, rowCount: Math.max(0, dataRows - 1) }; // -1 for header
+          })
+        : null;
+
+      const worksheet = sheet
+        ? workbook.getWorksheet(sheet)
+        : worksheets[0];
+
+      if (!worksheet) return res.status(400).json({ message: "Worksheet not found" });
+
+      const jsonData = [];
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        jsonData.push(row.values.slice(1)); // ExcelJS is 1-indexed; slice strips leading undefined
+      });
+
+      if (!jsonData.length || !jsonData[0]?.length) {
+        return res.status(400).json({ message: "The selected worksheet has no data" });
+      }
+
+      const headers = jsonData[0].map(h => extractCellValue(h));
+      const rows = jsonData.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((header, i) => {
+          if (header) obj[header] = extractCellValue(row[i]);
+        });
+        return obj;
+      }).filter(row => Object.values(row).some(v => v));
+
+      res.json({
+        headers,
+        rows,
+        sheetNames: sheetsMeta,  // null for CSV/single-sheet; { name, rowCount }[] for multi-sheet
+        rowCount: rows.length,
+      });
+    } catch (error) {
+      console.error("[CONTACTS] parse-file error:", error);
+      res.status(400).json({ message: "Failed to parse file. Please check the format." });
     }
   });
 

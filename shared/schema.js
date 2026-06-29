@@ -837,15 +837,17 @@ export function convertCurrency(amountUsd, toInr = true, exchangeRate = DEFAULT_
 
 export function getPlanWithPrices(plan, exchangeRate = DEFAULT_EXCHANGE_RATE) {
   const priceInr = plan.priceUsd !== null ? convertCurrency(plan.priceUsd, true, exchangeRate) : plan.priceInr || null;
-  const costPerEmailInr = plan.costPerEmailUsd ? Math.round(plan.costPerEmailUsd * exchangeRate * 100) / 100 : null;
-
+  const effectiveCredits = plan.totalCredits ?? plan.credits;
+  const computedCostPerEmailUsd = plan.costPerEmailUsd
+    ?? (plan.priceUsd && effectiveCredits ? Math.round((plan.priceUsd / effectiveCredits) * 1_000_000) / 1_000_000 : null);
+  const costPerEmailInr = computedCostPerEmailUsd ? Math.round(computedCostPerEmailUsd * exchangeRate * 100) / 100 : null;
   return {
     ...plan,
     priceUsd: plan.priceUsd,
     priceInr,
     bonusCredits: plan.bonusCredits ?? 0,
-    totalCredits: plan.totalCredits ?? plan.credits,
-    costPerEmailUsd: plan.costPerEmailUsd || null,
+    totalCredits: effectiveCredits,
+    costPerEmailUsd: computedCostPerEmailUsd,
     costPerEmailInr,
     exchangeRate,
   };

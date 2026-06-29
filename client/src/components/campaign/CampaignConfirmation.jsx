@@ -69,6 +69,8 @@ export default function CampaignConfirmation() {
   const [senderDomainId, setSenderDomainId] = useState("");
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
+  const { data: platformConfig } = useQuery({ queryKey: ["/api/platform-config"], staleTime: 60_000 });
+  const { data: health } = useQuery({ queryKey: ["/api/sender-health"], staleTime: 30_000 });
 
   const isDomainEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
 
@@ -87,7 +89,35 @@ export default function CampaignConfirmation() {
 
   const senderProfileComplete = !!(user?.senderName?.trim());
 
+  // Effective From address — custom domain selection takes priority over platform default
+  const selectedDomain = verifiedDomains.find(d => String(d.id) === String(senderDomainId));
+  const effectiveFromEmail = selectedDomain?.fromEmail ?? platformConfig?.platformFromAddress ?? null;
+  const fromDisplay = effectiveFromEmail
+    ? `"${user?.senderName?.trim() || "Your Name"}" <${effectiveFromEmail}>`
+    : null;
+
   const recipientCount = listId ? (selectedList?.contactCount ?? 0) : contacts.length;
+
+  // Warm-up delivery schedule — shown when campaign spans multiple days
+  const warmupData = health?.policy?.warmup;
+  const isWarmupActive = warmupData?.active === true;
+  const warmupRemainingToday = warmupData?.remainingToday ?? 0;
+  const warmupDailyLimit = warmupData?.dailyLimit ?? 0;
+  const deliveryDays = (() => {
+    if (!isWarmupActive || !warmupDailyLimit || recipientCount <= warmupRemainingToday) return null;
+    const days = [];
+    let rem = recipientCount;
+    const todayCount = Math.min(rem, warmupRemainingToday);
+    if (todayCount > 0) { days.push({ label: "Today", count: todayCount }); rem -= todayCount; }
+    let d = 2;
+    while (rem > 0 && d <= 60) {
+      const n = Math.min(rem, warmupDailyLimit);
+      days.push({ label: `Day ${d}`, count: n });
+      rem -= n;
+      d++;
+    }
+    return days.length > 1 ? days : null;
+  })();
   const creditsRequired = recipientCount;
   const creditsAvailable = creditsInfo?.total ?? calculateCreditsRemaining(
     user?.creditsReceived || 0,
@@ -196,8 +226,8 @@ export default function CampaignConfirmation() {
       if (saveToLibraryAs && data.libraryListId) {
         queryClient.invalidateQueries({ queryKey: ["/api/contact-lists"] });
         toast({
-          title: "Saved to Contact Library",
-          description: `"${saveToLibraryAs}" was added to your Contact Library. Contacts will appear shortly.`,
+          title: "Saved to Contacts",
+          description: `"${saveToLibraryAs}" was added to your Contacts. Recipients will appear shortly.`,
         });
       }
 
@@ -459,6 +489,14 @@ export default function CampaignConfirmation() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {fromDisplay && (
+                  <div className="p-4 rounded-md bg-muted/50">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+                      From
+                    </p>
+                    <p className="font-medium text-sm">{fromDisplay}</p>
+                  </div>
+                )}
                 <div className="p-4 rounded-md bg-muted/50">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
                     Subject
@@ -508,6 +546,32 @@ export default function CampaignConfirmation() {
                       </div>
                     );
                   })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {deliveryDays && (
+            <Card className="border-amber-500/20" style={{ background: "rgba(245,158,11,0.04)" }}>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-start gap-2">
+                  <Calendar className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-sm flex-1">
+                    <p className="font-medium text-amber-400 mb-2">
+                      Multi-day delivery — sender reputation protection
+                    </p>
+                    <div className="space-y-1">
+                      {deliveryDays.map(({ label, count }) => (
+                        <div key={label} className="flex justify-between text-muted-foreground text-xs">
+                          <span>{label}</span>
+                          <span>{formatNumber(count)} emails</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Daily limit grows after your warm-up period ends.
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -578,11 +642,19 @@ export default function CampaignConfirmation() {
           <AlertDescription className="space-y-2">
             <p>{sasBlocked.message}</p>
             {sasBlocked.remediationAction === "SETUP_IDENTITY" && (
-              <Link href="/app/profile">
-                <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
-                  Set up your sending identity <ArrowRight className="h-3 w-3" />
-                </span>
-              </Link>
+              user?.sendingIdentityType === "custom_domain" ? (
+                <Link href="/app/domains">
+                  <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
+                    Check your domain DNS records <ArrowRight className="h-3 w-3" />
+                  </span>
+                </Link>
+              ) : (
+                <Link href="/app/profile">
+                  <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
+                    Set up your sending identity <ArrowRight className="h-3 w-3" />
+                  </span>
+                </Link>
+              )
             )}
           </AlertDescription>
         </Alert>

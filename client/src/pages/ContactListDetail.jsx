@@ -42,22 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download } from "lucide-react";
-
-// ── CSV parse helpers ─────────────────────────────────────────────────────────
-
-function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
-  const rows = lines.slice(1).map(line => {
-    const cols = line.split(",").map(c => c.trim().replace(/^"|"$/g, ""));
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = cols[i] || ""; });
-    return obj;
-  });
-  return { headers, rows };
-}
+import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download, Loader2 } from "lucide-react";
 
 const CONTACT_FIELDS = ["email", "name", "company", "category"];
 
@@ -67,46 +52,135 @@ function formatDate(ts) {
 }
 
 // ── Import sheet ──────────────────────────────────────────────────────────────
+// Supports CSV, XLSX, and XLS. Parses server-side via /api/contacts/parse-file
+// (uses ExcelJS, the same engine as the campaign file-upload flow) so the
+// server-side validation pipeline is shared regardless of file format.
+// Multi-sheet workbooks show a worksheet picker before the column-mapping step.
 
 function ImportSheet({ listId, open, onClose }) {
   const { toast } = useToast();
   const fileRef = useRef(null);
-  const [step, setStep] = useState("upload"); // upload | map | preview
+  const [step, setStep] = useState("upload"); // upload | sheet | map | preview
   const [fileName, setFileName] = useState(null);
-  const [csvHeaders, setCsvHeaders] = useState([]);
-  const [csvRows, setCsvRows] = useState([]);
+  const [fileHeaders, setFileHeaders] = useState([]);
+  const [fileRows, setFileRows] = useState([]);
   const [mapping, setMapping] = useState({});
   const [importResult, setImportResult] = useState(null);
+  const [sheetNames, setSheetNames] = useState(null);
+  const [selectedSheet, setSelectedSheet] = useState(null);
+  const [rawFileData, setRawFileData] = useState(null);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const reset = useCallback(() => {
     setStep("upload");
     setFileName(null);
-    setCsvHeaders([]);
-    setCsvRows([]);
+    setFileHeaders([]);
+    setFileRows([]);
     setMapping({});
     setImportResult(null);
+    setSheetNames(null);
+    setSelectedSheet(null);
+    setRawFileData(null);
+    setIsParsing(false);
+    setIsDragOver(false);
   }, []);
 
   const handleClose = () => { reset(); onClose(); };
 
+  const applyParsedData = (headers, rows) => {
+    setFileHeaders(headers);
+    setFileRows(rows);
+    const autoMap = {};
+    CONTACT_FIELDS.forEach(field => {
+      const match = headers.find(h => h.toLowerCase() === field);
+      if (match) autoMap[field] = match;
+    });
+    setMapping(autoMap);
+  };
+
+  const parseFile = async (fileData, name, sheet) => {
+    setIsParsing(true);
+    try {
+      const res = await fetch("/api/contacts/parse-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ fileData, fileName: name, ...(sheet ? { sheet } : {}) }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(body.message);
+      }
+      return await res.json();
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const processFile = async (file) => {
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["csv", "xlsx", "xls"].includes(ext)) {
+      toast({ title: "Unsupported file type", description: "Please select a CSV, XLSX, or XLS file.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 15 MB.", variant: "destructive" });
+      return;
+    }
+
+    setFileName(file.name);
+    setIsParsing(true);
+
+    try {
+      const fileData = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        // readAsDataURL → "data:<mime>;base64,<payload>" — strip the prefix
+        reader.onload = (ev) => resolve(ev.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const fd = { fileData, fileName: file.name };
+      const result = await parseFile(fileData, file.name);
+      setRawFileData(fd);
+      applyParsedData(result.headers, result.rows);
+
+      if (result.sheetNames) {
+        setSheetNames(result.sheetNames);
+        setStep("sheet");
+      } else {
+        setStep("map");
+      }
+    } catch (err) {
+      toast({ title: "Could not read file", description: err.message, variant: "destructive" });
+      reset();
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const handleFile = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const { headers, rows } = parseCSV(ev.target.result);
-      setCsvHeaders(headers);
-      setCsvRows(rows);
-      const autoMap = {};
-      CONTACT_FIELDS.forEach(field => {
-        const match = headers.find(h => h.toLowerCase() === field);
-        if (match) autoMap[field] = match;
-      });
-      setMapping(autoMap);
+    if (file) processFile(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const handleSheetSelect = async (sheetName) => {
+    setSelectedSheet(sheetName);
+    try {
+      const result = await parseFile(rawFileData.fileData, rawFileData.fileName, sheetName);
+      applyParsedData(result.headers, result.rows);
       setStep("map");
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      toast({ title: "Could not read worksheet", description: err.message, variant: "destructive" });
+      setSelectedSheet(null);
+    }
   };
 
   const importMutation = useMutation({
@@ -124,7 +198,7 @@ function ImportSheet({ listId, open, onClose }) {
   });
 
   const handleImport = () => {
-    const rows = csvRows.map(row => {
+    const rows = fileRows.map(row => {
       const mapped = {};
       CONTACT_FIELDS.forEach(field => {
         if (mapping[field]) mapped[field] = row[mapping[field]] || "";
@@ -143,45 +217,118 @@ function ImportSheet({ listId, open, onClose }) {
 
         {step === "upload" && (
           <div className="flex flex-col items-center justify-center gap-4 py-12">
-            <div
-              className="border-2 border-dashed rounded-xl p-10 text-center cursor-pointer hover:border-primary transition-colors w-full"
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm font-medium">Click to select a CSV file</p>
-              <p className="text-xs text-muted-foreground mt-1">Max 50,000 rows · UTF-8 · comma-delimited</p>
+            {isParsing ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Reading file…</p>
+              </div>
+            ) : (
+              <>
+                <div
+                  className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors w-full ${
+                    isDragOver
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary"
+                  }`}
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={handleDrop}
+                >
+                  <Upload className={`w-8 h-8 mx-auto mb-3 ${isDragOver ? "text-primary" : "text-muted-foreground"}`} />
+                  <p className="text-sm font-medium">
+                    {isDragOver ? "Drop to import" : "Click or drag and drop a file"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">CSV, XLSX, or XLS · Max 50,000 rows · 15 MB</p>
+                </div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFile}
+                />
+              </>
+            )}
+          </div>
+        )}
+
+        {step === "sheet" && (
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This workbook has multiple worksheets. Select the one containing your contacts.
+            </p>
+            {sheetNames.map(sheet => (
+              <button
+                key={sheet.name}
+                className="w-full text-left p-3 rounded-lg border border-border hover:border-primary/40 transition-colors text-sm flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => !isParsing && handleSheetSelect(sheet.name)}
+                disabled={isParsing}
+              >
+                <div>
+                  <span className="font-medium">{sheet.name}</span>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ~{sheet.rowCount.toLocaleString()} rows
+                  </span>
+                </div>
+                {isParsing && selectedSheet === sheet.name && (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground flex-shrink-0" />
+                )}
+              </button>
+            ))}
+            <div className="pt-2">
+              <Button variant="outline" onClick={reset} disabled={isParsing}>← Back</Button>
             </div>
-            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
           </div>
         )}
 
         {step === "map" && (
           <div className="py-4 space-y-5">
             <p className="text-sm text-muted-foreground">
-              Map your CSV columns to contact fields. <span className="font-medium text-foreground">Email is required.</span>
+              Map your file columns to contact fields. <span className="font-medium text-foreground">Email is required.</span>
             </p>
             {CONTACT_FIELDS.map(field => (
               <div key={field} className="space-y-1.5">
                 <Label className="capitalize">{field}{field === "email" ? " *" : ""}</Label>
-                <Select value={mapping[field] || "__none__"} onValueChange={val => setMapping(m => ({ ...m, [field]: val === "__none__" ? undefined : val }))}>
+                <Select
+                  value={mapping[field] || "__none__"}
+                  onValueChange={val => setMapping(m => ({ ...m, [field]: val === "__none__" ? undefined : val }))}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="— skip —" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">— skip —</SelectItem>
-                    {csvHeaders.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                    {fileHeaders.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             ))}
-            <p className="text-xs text-muted-foreground">{csvRows.length.toLocaleString()} rows detected in "{fileName}"</p>
+            <p className="text-xs text-muted-foreground">
+              {fileRows.length.toLocaleString()} rows in &ldquo;{fileName}&rdquo;
+              {selectedSheet ? ` — sheet: ${selectedSheet}` : ""}
+            </p>
             <SheetFooter className="flex gap-2 pt-2">
-              <Button variant="outline" onClick={() => { reset(); fileRef.current && (fileRef.current.value = ""); }}>Back</Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (sheetNames) {
+                    setSelectedSheet(null);
+                    setStep("sheet");
+                  } else {
+                    reset();
+                    if (fileRef.current) fileRef.current.value = "";
+                  }
+                }}
+              >
+                Back
+              </Button>
               <Button
                 onClick={handleImport}
                 disabled={!mapping.email || importMutation.isPending}
               >
-                {importMutation.isPending ? "Importing…" : `Import ${csvRows.length.toLocaleString()} rows`}
+                {importMutation.isPending ? "Importing…" : `Import ${fileRows.length.toLocaleString()} rows`}
               </Button>
             </SheetFooter>
           </div>
@@ -399,7 +546,7 @@ export default function ContactListDetail() {
             </Button>
             <Button size="sm" onClick={() => setImportOpen(true)}>
               <Upload className="w-3.5 h-3.5 mr-1.5" />
-              Import CSV
+              Import
             </Button>
           </div>
         </div>
@@ -414,7 +561,7 @@ export default function ContactListDetail() {
             ) : rows.length === 0 ? (
               <div className="py-16 text-center text-muted-foreground">
                 <FileText className="w-8 h-8 mx-auto mb-3 opacity-40" />
-                {search ? "No contacts match your search." : "No contacts in this list yet. Import a CSV to get started."}
+                {search ? "No contacts match your search." : "No contacts in this list yet. Import a CSV, XLSX, or XLS file to get started."}
               </div>
             ) : (
               <Table>

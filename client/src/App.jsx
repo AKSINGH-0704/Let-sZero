@@ -75,6 +75,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import ResetByToken from "@/pages/ResetByToken";
 import Domains from "@/pages/Domains";
 import LinkExpired from "@/pages/LinkExpired";
+import Onboarding from "@/pages/Onboarding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import { Loader2 } from "lucide-react";
 
@@ -103,6 +104,15 @@ function ProtectedRoute({ children, requiredRole }) {
     }
   }
 
+  return children;
+}
+
+// Redirects non-admin users without a sending identity to the Workspace Activation wizard
+function RequiresWorkspaceActivation({ children }) {
+  const { user, isAdmin } = useAuth();
+  if (user && !isAdmin && !user.sendingIdentityType) {
+    return <Redirect to="/app/onboarding" />;
+  }
   return children;
 }
 
@@ -178,15 +188,25 @@ function AppRoutes() {
         {() => <LinkExpired />}
       </Route>
 
+      <Route path="/app/onboarding">
+        <ProtectedRoute>
+          <Onboarding />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/app/dashboard">
         <ProtectedRoute>
-          <Dashboard />
+          <RequiresWorkspaceActivation>
+            <Dashboard />
+          </RequiresWorkspaceActivation>
         </ProtectedRoute>
       </Route>
 
       <Route path="/app/campaigns/new">
         <ProtectedRoute>
-          <NewCampaign />
+          <RequiresWorkspaceActivation>
+            <NewCampaign />
+          </RequiresWorkspaceActivation>
         </ProtectedRoute>
       </Route>
 

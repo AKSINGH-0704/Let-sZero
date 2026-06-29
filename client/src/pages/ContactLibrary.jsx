@@ -90,8 +90,8 @@ export default function ContactLibrary() {
           <div className="flex items-center gap-3">
             <BookUser className="w-7 h-7 text-primary" />
             <div>
-              <h1 className="text-2xl font-bold">Contact Library</h1>
-              <p className="text-muted-foreground text-sm">Reusable named lists for your campaigns</p>
+              <h1 className="text-2xl font-bold">Contacts</h1>
+              <p className="text-muted-foreground text-sm">Manage reusable contact lists for your email campaigns</p>
             </div>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
@@ -108,9 +108,11 @@ export default function ContactLibrary() {
           <Card className="text-center py-16">
             <CardContent>
               <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h2 className="text-lg font-semibold mb-2">No contact lists yet</h2>
+              <h2 className="text-lg font-semibold mb-2">Your contacts live here</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Create a named list and import contacts to reuse across campaigns.
+                Create a named list and import recipients from a CSV or Excel file.
+                Each list can be used across multiple campaigns — RepMail tracks sends,
+                bounces, and unsubscribes per contact automatically.
               </p>
               <Button onClick={() => setCreateOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
