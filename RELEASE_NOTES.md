@@ -2,26 +2,34 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-06-27
+**Last updated:** 2026-06-30
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.0 (2026-06-27)
+## Current Release — v1.0 (2026-06-30)
 
 ### New Features
 
 #### Custom Sending Domains
-Starter plan and above can now send campaigns from their own verified domain instead of the shared RepMail address.
+All plans now send campaigns from a verified customer-owned domain. Shared RepMail campaign sending has been removed to protect sender reputation and customer trust.
 
 - Add your domain (e.g. `hello@acme.com`) from the **Domains** page under your account settings
-- RepMail generates the DNS records you need to add — three CNAME records for DKIM signing and one TXT record to confirm domain ownership
+- RepMail generates the DNS records you need to add — three CNAME records for DKIM signing
 - AWS Easy DKIM is configured automatically; no cryptographic keys to manage
 - RepMail polls for verification automatically every 10 minutes; or click **Check Now** any time
 - Once verified, select your custom domain when creating a campaign — each email is signed and delivered from your own domain
 - If a domain is suspended or removed, any campaign using it stops immediately with a clear audit log entry; no emails are silently rerouted to a different address
 - Campaign history preserves the original sending address permanently, even if you later remove the domain
+
+#### Workspace Activation
+New users are guided through a custom-domain setup flow before they can send campaigns.
+
+- The onboarding flow now focuses only on domain ownership and DNS verification
+- The campaign confirmation screen requires a verified sending domain before launch
+- Sender health now clearly reports whether the account is ready to send or still waiting on DNS verification
+- Team members inherit the parent workspace plan for plan limits and sending capabilities
 
 #### Contact Library
 Create, name, and reuse contact lists independently of your campaigns.
@@ -170,7 +178,7 @@ Users can now view and delete their suppression list entries from the dashboard.
 | No multi-currency billing | Planned | INR only via Razorpay. USD and other currencies are planned. |
 | Account deletion is manual | Partial | Requesting account deletion sends an email to the support team who handles it manually. Self-service deletion is planned. |
 | IDN (internationalised) domain display | Known | Internationalised domain names (e.g. `münchen.de`) are stored and displayed in punycode (`xn--mnchen-3ya.de`). Functionally correct; display-layer conversion is planned. |
-| Custom domains require Starter plan | By design | The Free Plan uses the shared RepMail sending address. Custom sending domains require Starter plan or above. |
+| Custom domain required before sending | By design | Campaign sending requires a verified domain owned by the sender. Shared RepMail campaign sending is no longer available. |
 
 ---
 
@@ -181,4 +189,4 @@ Users can now view and delete their suppression list entries from the dashboard.
 | Dec 2025 – May 2026 | Platform foundation: Express + PostgreSQL + BullMQ + SES/SNS + Razorpay + 3-tier auth + AI template generation. 58-audit hardening programme. 9.6/10 production launch score. |
 | June 2026 (early) | M1–M5: Correctness hardening (credit logic, deliverability thresholds), server-side security (sender gate, CRLF injection), campaign reliability (CANCELLED status, atomic completion, checkpoint saves), campaign architecture extraction, production safety (SNS hardening, header injection, suppression management) |
 | June 2026 (mid) | M6–M7: Contact Library (named lists, CSV import/export, contact edit), Duplicate Campaign, Contact Management completion |
-| June 2026 (late) | M8–M9: Launch Readiness Hardening (Helmet, Sentry, password reset, xlsx CVE, drizzle-orm fix), Custom Sending Domains (AWS Easy DKIM, verification polling, campaign integration, admin controls) |
+| June 2026 (late) | M8–M15: Launch Readiness Hardening (Helmet, Sentry, password reset, xlsx CVE, drizzle-orm fix), Custom Sending Domains (AWS Easy DKIM, verification polling, campaign integration, admin controls), first-run onboarding, custom-domain-only sending, plan inheritance, sender health fixes |
