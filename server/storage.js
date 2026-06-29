@@ -2661,6 +2661,13 @@ const dbStorage = {
     return row || null;
   },
 
+  async hasVerifiedDomainForUser(userId) {
+    const [row] = await db.select({ id: senderDomains.id }).from(senderDomains)
+      .where(and(eq(senderDomains.userId, userId), eq(senderDomains.status, "VERIFIED")))
+      .limit(1);
+    return !!row;
+  },
+
   // ── M10: Email Analytics Tracking Tokens ──────────────────────────────────────
 
   async createTrackingTokensForEmail({ campaignEmailId, campaignId, templateLinks, retentionDays }) {

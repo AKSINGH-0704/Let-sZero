@@ -137,7 +137,7 @@ export async function recordFirstSend(userId) {
  */
 export async function getSenderHealthReport(user) {
   const [identityResult, settings] = await Promise.all([
-    _checkIdentity({ user, mode: SEND_MODES.IMMEDIATE, senderDomainId: null }),
+    _checkAccountReadiness(user),
     _getWarmupSettings(),
   ]);
   const reputationResult = _checkReputation({ user });
@@ -191,6 +191,49 @@ export async function getSenderHealthReport(user) {
 }
 
 // ── Dimension checks (private) ────────────────────────────────────────────────
+
+/**
+ * Account-level identity readiness — used by getSenderHealthReport only.
+ * Answers "is this account configured to send?" without requiring a specific campaign context.
+ * Checks: active, email verified, custom domain configured, sender name set,
+ * at least one VERIFIED domain exists in the account.
+ *
+ * _checkIdentity is the campaign-specific counterpart that validates a particular senderDomainId.
+ */
+async function _checkAccountReadiness(user) {
+  if (!user.isActive) {
+    return _deny("IDENTITY", "ACCOUNT_INACTIVE",
+      "Your account has been deactivated. Contact support.",
+      "isActive=false", "CONTACT_SUPPORT");
+  }
+
+  if (!user.emailVerified) {
+    return _deny("IDENTITY", "EMAIL_NOT_VERIFIED",
+      "Verify your email address to enable sending.",
+      "emailVerified=false", "VERIFY_EMAIL");
+  }
+
+  if (!user.sendingIdentityType || user.sendingIdentityType !== "custom_domain") {
+    return _deny("IDENTITY", "SENDING_IDENTITY_NOT_SET",
+      "Verify a custom domain in Settings → Domains before sending campaigns.",
+      `sendingIdentityType=${user.sendingIdentityType ?? "null"} — custom_domain required`, "SETUP_IDENTITY");
+  }
+
+  if (!user.senderName?.trim()) {
+    return _deny("IDENTITY", "SENDER_NAME_MISSING",
+      "Add your sender name in Profile settings before sending.",
+      "senderName empty or null", "SETUP_IDENTITY");
+  }
+
+  const hasVerified = await storage.hasVerifiedDomainForUser(user.id);
+  if (!hasVerified) {
+    return _deny("IDENTITY", "SENDER_DOMAIN_REQUIRED",
+      "Add and verify a custom domain in Settings → Domains to enable sending.",
+      `userId=${user.id} has no VERIFIED domains`, "SETUP_IDENTITY");
+  }
+
+  return { allowed: true };
+}
 
 async function _checkIdentity({ user, senderDomainId }) {
   if (!user.isActive) {
