@@ -894,18 +894,6 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Reply-to email must be a valid email address" });
       }
 
-      // Brand impersonation guard — platform-identity senders may not use major brand names
-      if (senderName !== undefined) {
-        const user = await storage.getUserById(req.user.id);
-        const { blocked, matchedTerm } = checkBrandImpersonation(senderName.trim(), user.sendingIdentityType);
-        if (blocked) {
-          return res.status(400).json({
-            error: "BRAND_IMPERSONATION_DETECTED",
-            message: `The sender name "${senderName.trim()}" is not permitted because it includes a protected brand name ("${matchedTerm}"). Use a name that clearly identifies your own organization.`,
-          });
-        }
-      }
-
       await storage.updateUser(req.user.id, {
         senderName:    senderName    !== undefined ? (senderName.trim()    || null) : undefined,
         senderTitle:   senderTitle   !== undefined ? (senderTitle.trim()   || null) : undefined,
@@ -936,33 +924,6 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  // Set sending identity type — only custom_domain is accepted (platform identity removed)
-  app.post("/api/user/sending-identity", authMiddleware, async (req, res) => {
-    try {
-      const { sendingIdentityType } = req.body;
-      if (sendingIdentityType !== "custom_domain") {
-        return res.status(400).json({
-          error: "INVALID_IDENTITY_TYPE",
-          message: "All users must verify a custom domain. Platform sending identity is not available.",
-        });
-      }
-
-      await storage.updateUser(req.user.id, { sendingIdentityType: "custom_domain" });
-
-      await storage.createAuditLog({
-        userId: req.user.id,
-        action: AUDIT_ACTIONS.SENDING_IDENTITY_SET,
-        details: { sendingIdentityType: "custom_domain" },
-      });
-
-      const updatedUser = await storage.getUserById(req.user.id);
-      res.json({ message: "Sending identity updated.", user: updatedUser });
-    } catch (error) {
-      console.error("[SENDING_IDENTITY] error:", error.message);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
   // Sender health report — dimensions: identity, reputation, policy (TRUST-013)
   app.get("/api/sender-health", authMiddleware, async (req, res) => {
     try {
@@ -977,15 +938,12 @@ export async function registerRoutes(httpServer, app) {
   // Platform configuration — read-only authenticated endpoint for client-side UI (M14)
   app.get("/api/platform-config", authMiddleware, async (req, res) => {
     try {
-      const [platformLimit, customLimit, duration] = await Promise.all([
-        storage.getPlatformSetting("warmup_platform_identity_daily_limit"),
+      const [customLimit, duration] = await Promise.all([
         storage.getPlatformSetting("warmup_custom_domain_daily_limit"),
         storage.getPlatformSetting("warmup_duration_days"),
       ]);
       return res.json({
-        platformFromAddress: process.env.SES_FROM_EMAIL || null,
         warmup: {
-          platformDailyLimit: parseInt(platformLimit?.value ?? "100", 10),
           customDomainDailyLimit: parseInt(customLimit?.value ?? "200", 10),
           durationDays: parseInt(duration?.value ?? "30", 10),
         },

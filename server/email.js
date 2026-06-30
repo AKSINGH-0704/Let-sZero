@@ -113,6 +113,10 @@ function sanitizeHeaderValue(str) {
 // trackingTokens: { openToken, clickTokenMap } from storage.createTrackingTokensForEmail; null disables tracking
 // campaignId: UUID passed through to the unsubscribe URL for exact per-campaign attribution (M11)
 export async function sendCampaignEmail(contact, template, userId, campaignEmailId, senderProfile = {}, trackingTokens = null, campaignId = null) {
+  if (!senderProfile.customFromEmail) {
+    throw new Error("Invariant Violation: Campaign must be sent from a verified custom domain. customFromEmail is null.");
+  }
+
   const subject = sanitizeHtml(
     replacePlaceholders(template.subject || "", contact, senderProfile),
     { allowedTags: [], allowedAttributes: {} }
@@ -166,7 +170,7 @@ ${unsubscribeFooter.html}
     : (process.env.SES_FROM_NAME || "RepMail");
 
   const mailOptions = {
-    from: `"${fromName}" <${senderProfile.customFromEmail || process.env.SES_FROM_EMAIL}>`,
+    from: `"${fromName}" <${senderProfile.customFromEmail}>`,
     to: contact.email,
     subject,
     html,

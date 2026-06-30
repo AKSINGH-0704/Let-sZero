@@ -53,18 +53,19 @@ export async function canSend(ctx) {
   const { user, mode } = ctx;
   if (!user) return _deny("IDENTITY", "NO_USER", "Authorization context missing user.", "assertCanSend called without user", "CONTACT_SUPPORT");
 
-  // ROOT_ADMIN and secondary roots bypass trust checks — they operate the platform.
-  if (user.role === USER_ROLES.ROOT_ADMIN || user.isSecondaryRoot) {
-    return { allowed: true };
-  }
-
-  // Dimension 1 — Identity
+  // Dimension 1 — Identity (Every customer campaign must be sent through a verified custom domain)
   const identity = await _checkIdentity(ctx);
   if (!identity.allowed) return identity;
 
   // For scheduled campaigns at creation time, only identity is verified.
   // Reputation and policy are re-checked at scheduled_fire time when the campaign actually runs.
   if (mode === SEND_MODES.SCHEDULED) return { allowed: true };
+
+  // ROOT_ADMIN and secondary roots bypass operational controls (reputation, policy, warm-up)
+  if (user.role === USER_ROLES.ROOT_ADMIN || user.isSecondaryRoot) {
+    return { allowed: true };
+  }
+
 
   // Dimension 2 — Reputation
   const reputation = _checkReputation(ctx);
@@ -213,11 +214,6 @@ async function _checkAccountReadiness(user) {
       "emailVerified=false", "VERIFY_EMAIL");
   }
 
-  if (!user.sendingIdentityType || user.sendingIdentityType !== "custom_domain") {
-    return _deny("IDENTITY", "SENDING_IDENTITY_NOT_SET",
-      "Verify a custom domain in Settings → Domains before sending campaigns.",
-      `sendingIdentityType=${user.sendingIdentityType ?? "null"} — custom_domain required`, "SETUP_IDENTITY");
-  }
 
   if (!user.senderName?.trim()) {
     return _deny("IDENTITY", "SENDER_NAME_MISSING",
@@ -248,11 +244,6 @@ async function _checkIdentity({ user, senderDomainId }) {
       "emailVerified=false", "VERIFY_EMAIL");
   }
 
-  if (!user.sendingIdentityType || user.sendingIdentityType !== "custom_domain") {
-    return _deny("IDENTITY", "SENDING_IDENTITY_NOT_SET",
-      "Verify a custom domain in Settings → Domains before sending campaigns.",
-      `sendingIdentityType=${user.sendingIdentityType ?? "null"} — custom_domain required`, "SETUP_IDENTITY");
-  }
 
   if (!user.senderName?.trim()) {
     return _deny("IDENTITY", "SENDER_NAME_MISSING",
