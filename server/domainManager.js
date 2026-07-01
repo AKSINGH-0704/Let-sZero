@@ -12,6 +12,7 @@
  */
 
 import { SESv2Client, CreateEmailIdentityCommand, GetEmailIdentityCommand, DeleteEmailIdentityCommand } from "@aws-sdk/client-sesv2";
+import { getAwsRegion } from "./awsConfig.js";
 import { resolveCname } from "dns/promises";
 import { storage } from "./storage.js";
 import { sendTransactionalEmail } from "./email.js";
@@ -36,33 +37,23 @@ export function getDomainPollHealth() {
   };
 }
 
-// Derive SES region from AWS_REGION env var, falling back to SES_SMTP_HOST.
-// SES_SMTP_HOST format: email-smtp.{region}.amazonaws.com — always present in production.
-// This avoids requiring a separate AWS_REGION env var when SES_SMTP_HOST already encodes the region.
-function getSesRegion() {
-  if (process.env.AWS_REGION) return process.env.AWS_REGION;
-  const smtpHost = process.env.SES_SMTP_HOST || "";
-  const match = smtpHost.match(/^email-smtp\.(.+)\.amazonaws\.com$/);
-  if (match) return match[1];
-  throw new Error("Cannot determine SES region: set AWS_REGION or SES_SMTP_HOST environment variable");
-}
-
 let ses = null;
 function getSesClient() {
   if (!ses) {
     const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
     const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
     if (!accessKeyId || !secretAccessKey) {
-      // Fail fast with a structured code rather than letting the AWS SDK throw its
-      // internal "Resolved credential object is not valid" message to the client.
       const err = new Error("SES API credentials not configured: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Railway");
       err.code = "CREDENTIALS_NOT_CONFIGURED";
       throw err;
     }
-    ses = new SESv2Client({
-      region: getSesRegion(),
-      credentials: { accessKeyId, secretAccessKey },
-    });
+    const region = getAwsRegion();
+    if (!region) {
+      const err = new Error("AWS region not configured: set AWS_REGION or SES_SMTP_HOST in Railway");
+      err.code = "CREDENTIALS_NOT_CONFIGURED";
+      throw err;
+    }
+    ses = new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } });
   }
   return ses;
 }
