@@ -1,8 +1,10 @@
+import { useState } from "react";
+import { Link } from "wouter";
 import Navbar from "./Navbar";
 import { PageScrollIndicator } from "@/components/ui/scroll-indicator";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 
 function SubtleBackground() {
   return (
@@ -55,12 +57,50 @@ function PauseBanners() {
   );
 }
 
+function PreviewModeBanner() {
+  const { user, isAdmin } = useAuth();
+  const [dismissed, setDismissed] = useState(
+    () => sessionStorage.getItem("repmail_preview_dismissed") === "1"
+  );
+
+  if (!user || isAdmin || user.sendingIdentityType || dismissed) return null;
+
+  const handleDismiss = () => {
+    sessionStorage.setItem("repmail_preview_dismissed", "1");
+    setDismissed(true);
+  };
+
+  return (
+    <div className="border-b bg-background">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl py-2">
+        <div className="flex items-center gap-2 text-sm bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+          <span className="text-amber-200/90 flex-1">
+            <span className="font-medium">Preview Mode</span> — add a verified sending domain to unlock campaigns.{" "}
+            <Link href="/app/onboarding" className="underline underline-offset-2 font-medium">
+              Set up domain →
+            </Link>
+          </span>
+          <button
+            onClick={handleDismiss}
+            className="ml-2 p-0.5 rounded hover:bg-amber-500/20 text-amber-400/70 hover:text-amber-300 transition-colors flex-shrink-0"
+            aria-label="Dismiss"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AppLayout({ children, showScrollIndicator = true }) {
   return (
     <div className="min-h-screen bg-background relative">
       <SubtleBackground />
       <Navbar />
       <PauseBanners />
+      <PreviewModeBanner />
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-7xl relative">
         {children}
       </main>

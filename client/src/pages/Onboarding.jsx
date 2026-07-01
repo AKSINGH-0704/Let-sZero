@@ -183,7 +183,7 @@ export default function Onboarding() {
           color: C.muted, fontWeight: 500, fontSize: 12, cursor: "pointer",
         }}
       >
-        Explore RepMail first — add domain later in Settings
+        I'll add my domain later
       </button>
     </>
   );
@@ -231,7 +231,7 @@ export default function Onboarding() {
 
         <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
           <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
-            ⏳ DNS is propagating. We check automatically every 30 minutes and unlock sending once verified.
+            ⏳ DNS is propagating. Head to Domains in Settings to check manually — sending unlocks automatically once verified.
           </p>
           <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
             View DNS records in Settings → Domains →

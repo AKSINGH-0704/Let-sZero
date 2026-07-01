@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
@@ -161,7 +162,7 @@ function DomainCard({ domain, onCheck, onDelete, isChecking, isDeleting }) {
                 )}
                 {domain.status === "PENDING_VERIFICATION" && (
                   <p className="text-xs text-muted-foreground">
-                    Add all DNS records below in your DNS provider, then click "Check Now". DKIM records may take up to 48 hours to propagate.
+                    Add all 3 DNS records to your provider, then click Check Now. Most records propagate within minutes — if Check Now still shows pending after 2 hours, verify the records match exactly.
                   </p>
                 )}
 
@@ -266,9 +267,13 @@ function AddDomainForm({ onSuccess, onCancel }) {
 export default function Domains() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [adding, setAdding] = useState(false);
   const [checkingId, setCheckingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+
+  // Read returnTo from URL so we can redirect back after successful domain verification
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo") || null;
 
   const isEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
 
@@ -283,8 +288,15 @@ export default function Domains() {
     mutationFn: (id) => apiRequest("POST", `/api/domains/${id}/check`).then(r => r.json()),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
       if (data.status === "VERIFIED") {
-        toast({ title: "Domain verified!", description: `${data.domain} is now verified and ready to use.` });
+        toast({
+          title: "Domain verified!",
+          description: returnTo
+            ? `${data.domain} is verified — returning you to your campaign.`
+            : `${data.domain} is now verified and ready to use.`,
+        });
+        if (returnTo) navigate(returnTo);
       } else if (data.status === "FAILED") {
         toast({ variant: "destructive", title: "Verification failed", description: "The verification window has expired. Delete and re-register to try again." });
       } else {
@@ -298,7 +310,7 @@ export default function Domains() {
               : `${resolved} of ${total} CNAME records detected. DNS propagation may take a few hours.`,
           });
         } else {
-          toast({ description: "DNS records not yet detected. Try again in a few hours." });
+          toast({ description: "DNS records not yet detected. If you just added them, try again in a few minutes." });
         }
       }
       setCheckingId(null);

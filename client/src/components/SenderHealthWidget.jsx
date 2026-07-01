@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { Link } from "wouter";
@@ -34,6 +35,10 @@ function Step({ done, label, action, actionLabel }) {
 export default function SenderHealthWidget() {
   const { user, isAdmin } = useAuth();
 
+  const prevHealthRef = useRef(null);
+  const initializedRef = useRef(false);
+  const [justVerified, setJustVerified] = useState(false);
+
   if (isAdmin) return null;
 
   const profileComplete = !!user?.senderName?.trim();
@@ -51,6 +56,24 @@ export default function SenderHealthWidget() {
     },
   });
 
+  useEffect(() => {
+    if (!health) return;
+    const newVerified = health.identity?.ok === true;
+
+    if (!initializedRef.current) {
+      // First load — establish baseline without triggering celebration
+      initializedRef.current = true;
+      prevHealthRef.current = newVerified;
+      return;
+    }
+
+    // Subsequent polling update: domain just flipped to verified
+    if (prevHealthRef.current === false && newVerified === true) {
+      setJustVerified(true);
+    }
+    prevHealthRef.current = newVerified;
+  }, [health]);
+
   if (!health) return null;
 
   const { identity, reputation, policy, readiness } = health;
@@ -61,11 +84,10 @@ export default function SenderHealthWidget() {
   const isDomainPending = domainRegistered && !domainVerified
     && (identity?.code === "SENDER_DOMAIN_REQUIRED" || identity?.code === "DOMAIN_NOT_VERIFIED");
 
-  // ── Preview Mode setup progress ────────────────────────────────────────────
-  // Show setup steps whenever user is not yet able to send (not warm-up, not operational block).
   const isOperationalBlock = readiness === "blocked"
     && (reputation?.code === "ACCOUNT_PAUSED" || reputation?.code === "ACCOUNT_DORMANT");
 
+  // ── Preview Mode setup progress ────────────────────────────────────────────
   if (!domainVerified && !isWarmupActive && !isOperationalBlock) {
     return (
       <div
@@ -84,19 +106,19 @@ export default function SenderHealthWidget() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <Step
             done={profileComplete}
-            label="Complete sender profile (name required)"
+            label="Set your sender name"
             action="/app/profile"
             actionLabel="Go to Profile →"
           />
           <Step
             done={domainRegistered}
-            label="Register a custom sending domain"
-            action="/app/domains"
+            label="Connect your sending domain"
+            action={domainRegistered ? "/app/domains" : "/app/onboarding"}
             actionLabel="Add Domain →"
           />
           <Step
             done={domainVerified}
-            label={isDomainPending ? "DNS verification in progress…" : "Verify your domain's DNS records"}
+            label={isDomainPending ? "DNS verification in progress…" : "Verify DNS records"}
             action={domainRegistered ? "/app/domains" : null}
             actionLabel="View DNS records →"
           />
@@ -104,15 +126,48 @@ export default function SenderHealthWidget() {
 
         {isDomainPending && (
           <p style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
-            We check DNS every 10 minutes and unlock sending automatically once verified.
+            Head to{" "}
+            <Link href="/app/domains" style={{ color: C.primary, textDecoration: "none" }}>
+              Settings → Domains
+            </Link>
+            {" "}to check DNS manually at any time.
           </p>
         )}
       </div>
     );
   }
 
-  // ── Ready ──────────────────────────────────────────────────────────────────
+  // ── Ready (with optional just-verified celebration) ─────────────────────────
   if (readiness === "ready" && !isWarmupActive) {
+    if (justVerified) {
+      return (
+        <div
+          style={{
+            borderRadius: 12, padding: "16px 18px",
+            background: "rgba(0,229,200,0.06)",
+            border: "1px solid rgba(0,229,200,0.25)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <CheckCircle size={16} style={{ color: C.primary }} />
+            <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>
+              Domain verified — you're ready to send
+            </span>
+          </div>
+          <Link
+            href="/app/campaigns/new"
+            style={{
+              display: "inline-block", padding: "8px 14px", borderRadius: 8,
+              background: C.primary, color: "#06060B", fontSize: 12,
+              fontWeight: 700, textDecoration: "none",
+            }}
+          >
+            Create your first campaign →
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div
         style={{

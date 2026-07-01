@@ -39,7 +39,7 @@ import {
 import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePersonalizationStats } from "@/lib/utils";
 
 export default function CampaignConfirmation() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, refetch: refetchUser } = useAuth();
   const { toast } = useToast();
   const {
@@ -361,7 +361,7 @@ export default function CampaignConfirmation() {
                     <AlertTriangle className="h-4 w-4 text-amber-500" />
                     <AlertDescription className="text-amber-200">
                       <span className="font-semibold">You're in Preview Mode.</span> A verified sending domain is required to launch campaigns.{" "}
-                      <Link href="/app/domains" className="underline font-medium text-amber-300">
+                      <Link href={`/app/domains?returnTo=${encodeURIComponent(location)}`} className="underline font-medium text-amber-300">
                         Add your domain →
                       </Link>
                       <span className="block mt-1 text-xs text-amber-400/70">
@@ -656,7 +656,7 @@ export default function CampaignConfirmation() {
           <AlertDescription className="space-y-2">
             <p>{sasBlocked.message}</p>
             {sasBlocked.remediationAction === "SETUP_IDENTITY" && (
-              <Link href="/app/domains">
+              <Link href={`/app/domains?returnTo=${encodeURIComponent(location)}`}>
                 <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
                   Add and verify a domain in Settings → Domains <ArrowRight className="h-3 w-3" />
                 </span>

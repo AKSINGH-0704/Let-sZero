@@ -30,7 +30,8 @@ import {
   PieChart,
   Target,
   UserPlus,
-  Sparkles
+  Sparkles,
+  Globe,
 } from "lucide-react";
 import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils";
 import { getStatusConfig } from "@/lib/campaignStatus";
@@ -717,22 +718,52 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <div className="relative mb-6">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-20 w-20 rounded-full bg-gradient-to-br from-cyan-900/20 to-slate-700/20" />
-                </div>
-                <Send className="relative h-10 w-10 mx-auto text-muted-foreground/40" />
-              </div>
-              <p className="text-lg font-medium mb-1">No campaigns yet</p>
-              <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                Start engaging with your audience by creating your first email campaign
-              </p>
-              <Link href="/app/campaigns/new">
-                <Button className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-create-first-campaign">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create your first campaign
-                </Button>
-              </Link>
+              {!isAdmin && !user?.sendingIdentityType ? (
+                <>
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-20 w-20 rounded-full bg-gradient-to-br from-amber-900/10 to-slate-700/20" />
+                    </div>
+                    <Globe className="relative h-10 w-10 mx-auto text-amber-500/50" />
+                  </div>
+                  <p className="text-lg font-medium mb-1">Set up your sending domain</p>
+                  <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                    RepMail sends from your domain — not ours. This protects your deliverability and ensures contacts see your brand.
+                  </p>
+                  <Link href="/app/onboarding">
+                    <Button className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]">
+                      <Globe className="mr-2 h-4 w-4" />
+                      Add Your Domain →
+                    </Button>
+                  </Link>
+                  <p className="text-xs text-muted-foreground mt-4">
+                    or{" "}
+                    <Link href="/app/campaigns/new" className="underline underline-offset-2">
+                      start building a campaign
+                    </Link>
+                    {" "}to prepare while DNS propagates
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-20 w-20 rounded-full bg-gradient-to-br from-cyan-900/20 to-slate-700/20" />
+                    </div>
+                    <Send className="relative h-10 w-10 mx-auto text-muted-foreground/40" />
+                  </div>
+                  <p className="text-lg font-medium mb-1">No campaigns yet</p>
+                  <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                    Start engaging with your audience by creating your first email campaign
+                  </p>
+                  <Link href="/app/campaigns/new">
+                    <Button className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-create-first-campaign">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create your first campaign
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           )}
         </motion.div>
