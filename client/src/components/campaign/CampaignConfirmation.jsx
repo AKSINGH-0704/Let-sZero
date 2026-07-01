@@ -357,14 +357,16 @@ export default function CampaignConfirmation() {
                   Sending Domain <span className="text-destructive">*</span>
                 </Label>
                 {verifiedDomains.length === 0 ? (
-                  <Alert className="border-destructive/40 bg-destructive/10">
-                    <AlertTriangle className="h-4 w-4 text-destructive" />
-                    <AlertDescription className="text-destructive">
-                      No verified domains found.{" "}
-                      <Link href="/app/domains" className="underline font-medium">
-                        Add and verify a domain in Settings → Domains
-                      </Link>{" "}
-                      before sending campaigns.
+                  <Alert className="border-amber-500/40 bg-amber-500/10">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <AlertDescription className="text-amber-200">
+                      <span className="font-semibold">You're in Preview Mode.</span> A verified sending domain is required to launch campaigns.{" "}
+                      <Link href="/app/domains" className="underline font-medium text-amber-300">
+                        Add your domain →
+                      </Link>
+                      <span className="block mt-1 text-xs text-amber-400/70">
+                        You can save this campaign as a draft and send it once your domain is verified.
+                      </span>
                     </AlertDescription>
                   </Alert>
                 ) : (

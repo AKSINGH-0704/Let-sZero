@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Redirect, Link } from "wouter";
+import { Redirect, Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -42,6 +42,7 @@ function StepIndicator({ step }) {
 
 export default function Onboarding() {
   const { user, isRootAdmin, refetch } = useAuth();
+  const [, navigate] = useLocation();
   const [step, setStep] = useState(STEP.DOMAIN);
   const [domainName, setDomainName] = useState("");
   const [fromEmail, setFromEmail] = useState("");
@@ -74,11 +75,12 @@ export default function Onboarding() {
     },
   });
 
-  // ROOT_ADMIN and isSecondaryRoot skip onboarding — they bypass SAS entirely
-  // Users who have already set up a custom domain go to dashboard
+  // ROOT_ADMIN, isSecondaryRoot, and users who already have a domain skip onboarding
   if (!justCompleted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
     return <Redirect to="/app/dashboard" />;
   }
+
+  const handlePreviewMode = () => navigate("/app/dashboard");
 
   const customLimit = config?.warmup?.customDomainDailyLimit ?? 200;
   const durationDays = config?.warmup?.durationDays ?? 30;
@@ -95,11 +97,11 @@ export default function Onboarding() {
           <Globe size={22} color={C.primary} />
         </div>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          Verify Your Sending Domain
+          Set Up Your Sending Domain
         </h2>
         <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
-          All email must come from your own verified domain.<br />
-          Add DNS records and sending unlocks automatically once verified.
+          RepMail sends email from <em>your</em> domain — not ours.<br />
+          Better deliverability, professional From address, reputation you own.
         </p>
       </div>
 
@@ -150,7 +152,7 @@ export default function Onboarding() {
       )}
 
       <p style={{ color: C.muted, fontSize: 11, marginBottom: 16, textAlign: "center" }}>
-        You can build your first campaign while DNS propagates. Sending unlocks once verified.
+        Add your domain now and build campaigns while DNS propagates — sending unlocks once verified.
       </p>
 
       <button
@@ -171,6 +173,17 @@ export default function Onboarding() {
       >
         {domainMutation.isPending && <Loader2 size={14} className="animate-spin" />}
         Add Domain — Verify Later
+      </button>
+
+      <button
+        onClick={handlePreviewMode}
+        style={{
+          width: "100%", marginTop: 10, padding: "11px", borderRadius: 10,
+          border: `1px solid ${C.border}`, background: "transparent",
+          color: C.muted, fontWeight: 500, fontSize: 12, cursor: "pointer",
+        }}
+      >
+        Explore RepMail first — add domain later in Settings
       </button>
     </>
   );

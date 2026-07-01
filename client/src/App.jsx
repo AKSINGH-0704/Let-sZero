@@ -107,13 +107,10 @@ function ProtectedRoute({ children, requiredRole }) {
   return children;
 }
 
-// Redirects users who haven't verified a custom domain to the Workspace Activation wizard.
-// ROOT_ADMIN and isSecondaryRoot bypass SAS entirely — they never need onboarding.
+// Preview Mode: users can access the full product before completing domain verification.
+// Sending is blocked by SAS + CampaignConfirmation — no upstream redirect needed.
+// This component is kept as a pass-through so route structure is preserved for future use.
 function RequiresWorkspaceActivation({ children }) {
-  const { user, isRootAdmin } = useAuth();
-  if (user && !isRootAdmin && !user.isSecondaryRoot && !user.sendingIdentityType) {
-    return <Redirect to="/app/onboarding" />;
-  }
   return children;
 }
 
