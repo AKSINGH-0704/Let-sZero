@@ -1731,6 +1731,20 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "domain and fromEmail are required" });
       }
       const result = await registerDomain(req.user.id, domain, fromEmail);
+      // Domain registration is the canonical workspace activation event (M16-A).
+      // Sets sendingIdentityType on first domain registration; idempotent on subsequent domains.
+      // Sequential (not transactional): registerDomain involves an external SES call, making
+      // full ACID atomicity impossible without holding a DB connection across network I/O.
+      // On partial failure the retry path is safe: registerDomain returns the existing PENDING
+      // record, and this update runs again to completion.
+      if (req.user.sendingIdentityType !== "custom_domain") {
+        await storage.updateUser(req.user.id, { sendingIdentityType: "custom_domain" });
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.SENDING_IDENTITY_SET,
+          details: { sendingIdentityType: "custom_domain", triggeredBy: "domain_registration", domainId: result.id },
+        });
+      }
       res.status(201).json(result);
     } catch (err) {
       if (err.code === "PLAN_LIMIT") return res.status(403).json({ error: err.code, message: err.message });

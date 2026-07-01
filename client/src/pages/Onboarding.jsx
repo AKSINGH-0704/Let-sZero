@@ -57,9 +57,7 @@ export default function Onboarding() {
 
   const domainMutation = useMutation({
     mutationFn: async ({ domain, fromEmail: email }) => {
-      const data = await apiRequest("POST", "/api/domains", { domain, fromEmail: email }).then(r => r.json());
-      await apiRequest("POST", "/api/user/sending-identity", { sendingIdentityType: "custom_domain" });
-      return data;
+      return await apiRequest("POST", "/api/domains", { domain, fromEmail: email }).then(r => r.json());
     },
     onSuccess: (data) => {
       setDnsResult(data);
