@@ -97,11 +97,11 @@ export default function Onboarding() {
           <Globe size={22} color={C.primary} />
         </div>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          Set Up Your Sending Domain
+          Connect Your Sending Domain
         </h2>
         <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
-          RepMail sends email from <em>your</em> domain — not ours.<br />
-          Better deliverability, professional From address, reputation you own.
+          Your campaigns send from your domain, not ours.<br />
+          Your deliverability. Your sender reputation.
         </p>
       </div>
 
@@ -139,9 +139,7 @@ export default function Onboarding() {
 
       <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
         <p style={{ color: C.subtle, fontSize: 11, margin: 0 }}>
-          Custom domains start at <strong style={{ color: C.text }}>{customLimit} emails/day</strong> during
-          the first {durationDays}-day warm-up, then unlimited. Your domain builds sender reputation
-          that belongs to you.
+          Starts at <strong style={{ color: C.text }}>{customLimit} emails/day</strong> for the first {durationDays} days while your sending reputation builds, then unlimited.
         </p>
       </div>
 
@@ -150,10 +148,6 @@ export default function Onboarding() {
           {domainError}
         </div>
       )}
-
-      <p style={{ color: C.muted, fontSize: 11, marginBottom: 16, textAlign: "center" }}>
-        Add your domain now and build campaigns while DNS propagates — sending unlocks once verified.
-      </p>
 
       <button
         onClick={() => {
@@ -172,7 +166,7 @@ export default function Onboarding() {
         }}
       >
         {domainMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-        Add Domain — Verify Later
+        Add Domain
       </button>
 
       <button
@@ -206,7 +200,7 @@ export default function Onboarding() {
           Domain added — verification in progress.
         </h2>
         <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-          Build your campaign while DNS propagates — sending unlocks automatically when verified.
+          Build your campaign while DNS propagates. Sending unlocks automatically once verified.
         </p>
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px", marginBottom: 20 }}>
@@ -231,10 +225,10 @@ export default function Onboarding() {
 
         <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
           <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
-            ⏳ DNS is propagating. Head to Domains in Settings to check manually — sending unlocks automatically once verified.
+            ⏳ DNS is propagating. Visit your Domains page to check manually. Sending unlocks automatically once verified.
           </p>
           <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
-            View DNS records in Settings → Domains →
+            View DNS records →
           </Link>
         </div>
 
@@ -292,8 +286,8 @@ export default function Onboarding() {
           {step === STEP.SUMMARY && StepSummary()}
         </div>
 
-        <p style={{ color: "#2A2A4A", fontSize: 11, textAlign: "center", marginTop: 20 }}>
-          RepMail · Workspace Activation · Secure &amp; Private
+        <p style={{ color: "#555575", fontSize: 11, textAlign: "center", marginTop: 20 }}>
+          RepMail · Secure &amp; Private
         </p>
       </div>
     </div>

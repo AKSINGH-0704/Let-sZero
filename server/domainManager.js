@@ -50,12 +50,18 @@ function getSesRegion() {
 let ses = null;
 function getSesClient() {
   if (!ses) {
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if (!accessKeyId || !secretAccessKey) {
+      // Fail fast with a structured code rather than letting the AWS SDK throw its
+      // internal "Resolved credential object is not valid" message to the client.
+      const err = new Error("SES API credentials not configured: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Railway");
+      err.code = "CREDENTIALS_NOT_CONFIGURED";
+      throw err;
+    }
     ses = new SESv2Client({
       region: getSesRegion(),
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      },
+      credentials: { accessKeyId, secretAccessKey },
     });
   }
   return ses;

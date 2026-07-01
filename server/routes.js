@@ -1751,6 +1751,11 @@ export async function registerRoutes(httpServer, app) {
       if (err.code === "ALREADY_VERIFIED") return res.status(409).json({ error: err.code, message: err.message });
       if (err.code === "DOMAIN_SUSPENDED") return res.status(403).json({ error: err.code, message: err.message });
       if (err.code === "DOMAIN_CONFLICT") return res.status(409).json({ error: err.code, message: err.message });
+      if (err.code === "CREDENTIALS_NOT_CONFIGURED" || err.$metadata != null || err.name === "CredentialsProviderError") {
+        console.error("[DOMAIN][REGISTER] Infrastructure error — check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Railway:", err.code || err.name, err.message);
+        return res.status(503).json({ message: "Domain registration is temporarily unavailable. Please try again or contact support." });
+      }
+      // Validation errors from normalizeDomain / validateFromEmail are user-safe
       res.status(400).json({ message: err.message });
     }
   });
@@ -1790,6 +1795,10 @@ export async function registerRoutes(httpServer, app) {
       const updated = await checkDomainVerification(domain, { logTag: "[DOMAIN][CHECK]" });
       res.json(updated);
     } catch (err) {
+      if (err.code === "CREDENTIALS_NOT_CONFIGURED" || err.$metadata != null || err.name === "CredentialsProviderError") {
+        console.error("[DOMAIN][CHECK] Infrastructure error:", err.code || err.name, err.message);
+        return res.status(503).json({ message: "Domain check is temporarily unavailable. Please try again or contact support." });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -1805,6 +1814,10 @@ export async function registerRoutes(httpServer, app) {
       await removeDomain(domain, req.user.id);
       res.json({ message: "Domain removed" });
     } catch (err) {
+      if (err.code === "CREDENTIALS_NOT_CONFIGURED" || err.$metadata != null || err.name === "CredentialsProviderError") {
+        console.error("[DOMAIN][DELETE] Infrastructure error:", err.code || err.name, err.message);
+        return res.status(503).json({ message: "Domain removal is temporarily unavailable. Please try again or contact support." });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -1894,6 +1907,10 @@ export async function registerRoutes(httpServer, app) {
       const updated = await unsuspendDomain(domain, req.user.id);
       res.json(updated);
     } catch (err) {
+      if (err.code === "CREDENTIALS_NOT_CONFIGURED" || err.$metadata != null || err.name === "CredentialsProviderError") {
+        console.error("[DOMAIN][UNSUSPEND] Infrastructure error:", err.code || err.name, err.message);
+        return res.status(503).json({ message: "Domain operation is temporarily unavailable. Please try again or contact support." });
+      }
       res.status(500).json({ message: err.message });
     }
   });
