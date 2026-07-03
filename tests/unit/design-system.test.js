@@ -12,6 +12,7 @@ import Banner from "@/components/common/Banner";
 import StatCard from "@/components/common/StatCard";
 import DnsRecordRow from "@/components/common/DnsRecordRow";
 import DangerZone from "@/components/common/DangerZone";
+import DesignPreview from "@/pages/_DesignPreview";
 
 // Phase A verification: every shared primitive must compile and render without throwing.
 // renderToStaticMarkup needs no DOM/jsdom — it catches import errors, JSX errors, and
@@ -32,6 +33,7 @@ describe("M19 design-system primitives render", () => {
     StatCard: h(StatCard, { label: "Sent", value: "1,204", delta: { direction: "up", label: "+12%" }, icon: CheckCircle2 }),
     DnsRecordRow: h(DnsRecordRow, { record: { type: "CNAME", name: "x._domainkey.acme.com", value: "x.dkim.amazonses.com" }, status: "pending" }),
     DangerZone: h(DangerZone, { title: "Remove domain", description: "Cannot be undone" }),
+    "_DesignPreview (dev harness)": h(DesignPreview),
   };
 
   for (const [name, el] of Object.entries(cases)) {
