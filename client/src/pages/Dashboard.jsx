@@ -37,6 +37,7 @@ import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils
 import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 import SenderHealthWidget from "@/components/SenderHealthWidget";
+import PageHeader from "@/components/common/PageHeader";
 
 // Animation variants
 const containerVariants = {
@@ -237,34 +238,36 @@ export default function Dashboard() {
         )}
 
         {/* Header */}
-        <motion.div className="flex flex-wrap items-start justify-between gap-4" variants={itemVariants}>
-          <div>
-            <div className="flex flex-wrap items-center gap-3 mb-2">
-              <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Dashboard</h1>
-              {user?.plan && (
-                <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
-                  {PLAN_LABELS[user.plan] || "Free Plan"}
-                </span>
-              )}
-            </div>
-            <p className="text-muted-foreground">
-              {statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
-              <option>Last 30 days</option>
-              <option>Last 90 days</option>
-              <option>This year</option>
-            </select>
-            <Link href="/app/campaigns/new">
-              <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Campaign</span>
-                <span className="sm:hidden">New</span>
-              </Button>
-            </Link>
-          </div>
+        <motion.div variants={itemVariants}>
+          <PageHeader
+            title={
+              <span className="flex flex-wrap items-center gap-3">
+                Dashboard
+                {user?.plan && (
+                  <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
+                    {PLAN_LABELS[user.plan] || "Free Plan"}
+                  </span>
+                )}
+              </span>
+            }
+            description={statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
+            actions={
+              <>
+                <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
+                  <option>Last 30 days</option>
+                  <option>Last 90 days</option>
+                  <option>This year</option>
+                </select>
+                <Link href="/app/campaigns/new">
+                  <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">New Campaign</span>
+                    <span className="sm:hidden">New</span>
+                  </Button>
+                </Link>
+              </>
+            }
+          />
         </motion.div>
 
         {/* Credit Balance Card */}

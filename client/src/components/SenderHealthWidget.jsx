@@ -127,15 +127,15 @@ export default function SenderHealthWidget() {
           />
         </div>
 
-        {isDomainPending && (
-          <p style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
-            Open the{" "}
-            <Link href="/app/domains" style={{ color: C.primary, textDecoration: "none" }}>
-              Domains page
-            </Link>
-            {" "}to review DNS records and re-check verification at any time.
-          </p>
-        )}
+        <Link
+          href="/app/domains"
+          style={{ display: "inline-block", marginTop: 12, color: C.primary, fontSize: 12, fontWeight: 600, textDecoration: "none" }}
+        >
+          Manage domains →
+        </Link>
+        <p style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>
+          Review DNS records and re-check verification any time.
+        </p>
       </div>
     );
   }

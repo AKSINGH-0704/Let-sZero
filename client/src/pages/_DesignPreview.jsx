@@ -9,7 +9,9 @@ import Banner from "@/components/common/Banner";
 import StatCard from "@/components/common/StatCard";
 import DnsRecordRow from "@/components/common/DnsRecordRow";
 import DangerZone from "@/components/common/DangerZone";
-import { Globe, Send, Trash2, RefreshCw } from "lucide-react";
+import Breadcrumb from "@/components/common/Breadcrumb";
+import NavMenu from "@/components/layout/NavMenu";
+import { Globe, Send, Trash2, RefreshCw, ShieldOff, CreditCard, SlidersHorizontal } from "lucide-react";
 
 // DEV-ONLY visual QA harness for the M19 design-system primitives.
 // Reachable at /_design in `npm run dev`. Excluded from production builds
@@ -123,6 +125,26 @@ export default function DesignPreview() {
             title="Remove domain"
             description="Deletes the domain and its SES identity. This cannot be undone."
             action={<Button variant="ghost" className="text-muted-foreground hover:text-destructive"><Trash2 className="mr-1.5 h-4 w-4" />Remove…</Button>}
+          />
+        </Block>
+
+        <Block title="Breadcrumb — detail-page pattern">
+          <Breadcrumb items={[{ label: "Domains", href: "/app/domains" }, { label: "acme.com" }]} />
+        </Block>
+
+        <Block title="NavMenu — reusable grouped 'Manage' menu (click to open)">
+          <NavMenu
+            trigger="Manage"
+            icon={SlidersHorizontal}
+            active="/app/domains"
+            triggerActive
+            groups={[
+              { label: "Sending", items: [
+                { href: "/app/domains", label: "Domains", icon: Globe, badge: "1" },
+                { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
+              ] },
+              { label: "Account", items: [{ href: "/app/payments", label: "Payments", icon: CreditCard }] },
+            ]}
           />
         </Block>
 
