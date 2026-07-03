@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import * as Sentry from "@sentry/node";
 import { storage } from "./storage.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { sendPaymentReceiptEmail } from "./email.js";
@@ -8,6 +9,8 @@ export async function razorpayWebhookHandler(req, res) {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret) {
     console.error("[RZP-WEBHOOK] RAZORPAY_WEBHOOK_SECRET not set — rejecting webhook");
+    // Misconfiguration: every real payment webhook will be rejected → silent revenue loss.
+    Sentry.captureMessage("PAYMENT_WEBHOOK_NOT_CONFIGURED: RAZORPAY_WEBHOOK_SECRET missing", "fatal");
     return res.status(500).json({ message: "Webhook not configured" });
   }
 
@@ -32,6 +35,10 @@ export async function razorpayWebhookHandler(req, res) {
 
   if (!sigValid) {
     console.warn("[RZP-WEBHOOK] Signature mismatch — possible replay or wrong secret");
+    // A wrong/rotated RAZORPAY_WEBHOOK_SECRET makes EVERY legitimate webhook fail here,
+    // silently blocking credit fulfillment. Alert so a config drift is caught immediately.
+    // (Sentry groups by fingerprint, so a burst collapses to one issue rather than spamming.)
+    Sentry.captureMessage("PAYMENT_WEBHOOK_VERIFY_FAILED: Razorpay signature mismatch", "warning");
     return res.status(400).json({ message: "Invalid signature" });
   }
 
@@ -57,6 +64,12 @@ export async function razorpayWebhookHandler(req, res) {
       const repPayment = await storage.getPaymentByRazorpayOrderId(order.id);
       if (!repPayment) {
         console.warn(`[RZP-WEBHOOK] order.paid — no RepMail payment for order ${order.id}`);
+        // Reconciliation gap: Razorpay confirms a paid order we have no record of.
+        // Money moved but no local payment row exists to fulfill — needs manual review.
+        Sentry.captureMessage("PAYMENT_WEBHOOK_ORPHAN_ORDER: order.paid with no matching RepMail payment", {
+          level: "error",
+          extra: { razorpayOrderId: order.id },
+        });
         return res.status(200).json({ received: true });
       }
 
@@ -114,6 +127,10 @@ export async function razorpayWebhookHandler(req, res) {
     } else if (eventType === "payment.dispute.lost") {
       const dispute = event.payload?.dispute?.entity;
       console.warn(`[RZP-WEBHOOK] Dispute LOST — id=${dispute?.id} — credits may need manual adjustment`);
+      Sentry.captureMessage("PAYMENT_DISPUTE_LOST: manual credit adjustment may be required", {
+        level: "warning",
+        extra: { disputeId: dispute?.id, amount: dispute?.amount },
+      });
 
     } else if (eventType === "payment.dispute.closed") {
       const dispute = event.payload?.dispute?.entity;
@@ -125,6 +142,15 @@ export async function razorpayWebhookHandler(req, res) {
     }
   } catch (err) {
     console.error(`[RZP-WEBHOOK] Error handling ${eventType}:`, err.message);
+    // Core financial-integrity alert (OPS-007): a fulfillment write failed after a
+    // verified webhook. For order.paid this means the customer paid but credits were
+    // not delivered. Razorpay retries on the 500 below (up to ~24h), but a persistent
+    // failure needs an operator now, not a delayed discovery from a support ticket.
+    Sentry.captureException(err, {
+      level: "fatal",
+      tags: { subsystem: "payments", alert: "PAYMENT_WEBHOOK_FULFILLMENT_FAILED" },
+      extra: { eventType },
+    });
     // Return 500 so Razorpay will retry — only for unexpected server errors
     return res.status(500).json({ message: "Internal error" });
   }

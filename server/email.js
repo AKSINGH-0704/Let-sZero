@@ -108,6 +108,47 @@ function sanitizeHeaderValue(str) {
   return String(str).replace(/[\r\n]/g, "");
 }
 
+// Classifies an SMTP send failure as transient (worth retrying) or permanent.
+// Transient: network/socket/DNS errors (no SMTP reply code) and 4xx SMTP replies
+// (greylisting, throttling, temporary local errors — the server invites a retry).
+// Permanent: 5xx replies (bad recipient, policy rejection) and malformed-envelope/
+// message errors — retrying cannot succeed and would only delay the thrown error.
+function isTransientSmtpError(err) {
+  if (!err) return false;
+  const code = err.responseCode; // numeric SMTP reply code when the server responded
+  if (typeof code === "number") return code >= 400 && code < 500;
+  // No SMTP reply → connection-level failure (ECONNECTION/ETIMEDOUT/ESOCKET/ECONNRESET/
+  // EDNS). EENVELOPE/EMESSAGE with no reply code are malformed-input errors — do not retry.
+  return err.code !== "EENVELOPE" && err.code !== "EMESSAGE";
+}
+
+// Retry wrapper for TRANSACTIONAL email only (receipts, invites, notifications).
+// Campaign sends use their own retry + rate-limiter path in campaignLoop.js and must
+// NOT be routed through here (double-retry would fight the token bucket and per-contact
+// idempotency). Preserves the throw-on-failure contract: after exhausting retries the
+// last error is rethrown so awaiting callers still observe failure. Bounded linear
+// backoff (500ms, 1000ms) keeps request-path callers (invite, admin-create) from
+// blocking more than ~1.5s beyond the transport timeout on a hard SMTP outage. (DEBT-004)
+const TRANSACTIONAL_MAX_ATTEMPTS = 3;
+async function sendMailWithRetry(mailOptions, label = "transactional") {
+  let lastErr;
+  for (let attempt = 1; attempt <= TRANSACTIONAL_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await transport.sendMail(mailOptions);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= TRANSACTIONAL_MAX_ATTEMPTS || !isTransientSmtpError(err)) break;
+      const delayMs = attempt * 500;
+      console.warn(
+        `[EMAIL] ${label} attempt ${attempt} failed (transient: ${err.code || err.responseCode || err.message}) — retrying in ${delayMs}ms`
+      );
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  console.error(`[EMAIL] ${label} send failed (permanent or retries exhausted): ${lastErr?.message}`);
+  throw lastErr;
+}
+
 // senderProfile: { name, title, company, phone, replyToEmail, customFromEmail } — from user.sender* fields
 // customFromEmail: verified custom domain address (e.g. hello@acme.com); null = use SES_FROM_EMAIL
 // trackingTokens: { openToken, clickTokenMap } from storage.createTrackingTokensForEmail; null disables tracking
@@ -313,22 +354,22 @@ Questions? Email support@letszero.in
 
 This is a receipt for your RepMail purchase.`;
 
-  await transport.sendMail({
+  await sendMailWithRetry({
     from: `"RepMail" <${process.env.SES_FROM_EMAIL}>`,
     to,
     subject,
     html,
     text,
-  });
+  }, "payment-receipt");
 }
 
 export async function sendTransactionalEmail(to, subject, text) {
-  await transport.sendMail({
+  await sendMailWithRetry({
     from: `"${process.env.SES_FROM_NAME || "RepMail"}" <${process.env.SES_FROM_EMAIL}>`,
     to,
     subject,
     text,
-  });
+  }, "transactional");
 }
 
 export async function verifySesConnection() {
