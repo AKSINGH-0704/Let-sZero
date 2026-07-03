@@ -97,11 +97,11 @@ export default function Onboarding() {
           <Globe size={22} color={C.primary} />
         </div>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          Connect Your Sending Domain
+          Connect your sending domain
         </h2>
         <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
-          Your campaigns send from your domain, not ours.<br />
-          Your deliverability. Your sender reputation.
+          Campaigns send from your own domain, so your deliverability and sender
+          reputation stay with you.
         </p>
       </div>
 
@@ -139,7 +139,7 @@ export default function Onboarding() {
 
       <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
         <p style={{ color: C.subtle, fontSize: 11, margin: 0 }}>
-          Starts at <strong style={{ color: C.text }}>{customLimit} emails/day</strong> for the first {durationDays} days while your sending reputation builds, then unlimited.
+          New domains send up to <strong style={{ color: C.text }}>{customLimit} emails/day</strong> for the first {durationDays} days while your reputation builds. The daily cap then lifts, and your total volume is governed by your credit balance.
         </p>
       </div>
 
@@ -188,19 +188,20 @@ export default function Onboarding() {
 
     const rows = [
       { icon: "📧", label: "Who recipients see", value: `"${user?.senderName?.trim() || "Your Name"}" <${fromAddr}>` },
-      { icon: "💳", label: "Emails you can send today", value: `${customLimit} (warm-up limit — grows to unlimited after Day ${durationDays})` },
-      { icon: "📈", label: "Why there's a daily limit", value: "Inbox providers trust senders who build reputation gradually. This protects your deliverability." },
-      { icon: "🚀", label: "Recommended next step", value: "Create your first campaign with your most engaged contacts." },
+      { icon: "💳", label: "Daily send limit", value: `Up to ${customLimit}/day for your first ${durationDays} days. After that the cap lifts and your credit balance governs total volume.` },
+      { icon: "📈", label: "Why the daily limit exists", value: "Inbox providers trust senders who ramp up gradually. The warm-up protects your deliverability." },
+      { icon: "🚀", label: "Recommended next step", value: "Draft your first campaign now. It will send once your domain is verified." },
     ];
 
     return (
       <>
         <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>✅</div>
         <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 4, textAlign: "center" }}>
-          Domain added — verification in progress.
+          Domain added
         </h2>
         <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-          Build your campaign while DNS propagates. Sending unlocks automatically once verified.
+          Add the DNS records below to your provider. Sending unlocks automatically once
+          verification completes. You can keep building in the meantime.
         </p>
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px", marginBottom: 20 }}>
@@ -223,29 +224,32 @@ export default function Onboarding() {
           ))}
         </div>
 
-        <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
-          <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
-            ⏳ DNS is propagating. Visit your Domains page to check manually. Sending unlocks automatically once verified.
-          </p>
-          <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
-            View DNS records →
-          </Link>
-        </div>
-
-        {dnsResult?.dnsRecords?.length > 0 && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
-            <p style={{ color: C.muted, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>DNS RECORDS TO ADD</p>
-            {dnsResult.dnsRecords.map((rec, i) => (
-              <div key={i} style={{ marginBottom: i < dnsResult.dnsRecords.length - 1 ? 10 : 0 }}>
+        {dnsResult?.dkimTokens?.length > 0 && (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+            <p style={{ color: C.muted, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>
+              DNS RECORDS TO ADD ({dnsResult.dkimTokens.length} CNAME{dnsResult.dkimTokens.length !== 1 ? "s" : ""})
+            </p>
+            {dnsResult.dkimTokens.map((rec, i) => (
+              <div key={i} style={{ marginBottom: i < dnsResult.dkimTokens.length - 1 ? 10 : 0 }}>
                 <div style={{ display: "flex", gap: 6, marginBottom: 2 }}>
                   <span style={{ background: "rgba(0,229,200,0.12)", color: C.primary, fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>{rec.type}</span>
-                  <span style={{ color: C.muted, fontSize: 11 }}>{rec.name}</span>
+                  <span style={{ color: C.muted, fontSize: 11, wordBreak: "break-all" }}>{rec.name}</span>
                 </div>
                 <div style={{ color: C.subtle, fontSize: 10, wordBreak: "break-all", fontFamily: "monospace" }}>{rec.value}</div>
               </div>
             ))}
           </div>
         )}
+
+        <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
+          <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
+            Records usually propagate within an hour, though some providers take up to 48 hours.
+            The Domains page tracks status and lets you re-check verification at any time.
+          </p>
+          <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
+            Open Domains page →
+          </Link>
+        </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Link href="/app/dashboard" style={{

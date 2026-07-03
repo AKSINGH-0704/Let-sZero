@@ -39,15 +39,17 @@ export default function SenderHealthWidget() {
   const initializedRef = useRef(false);
   const [justVerified, setJustVerified] = useState(false);
 
-  if (isAdmin) return null;
-
   const profileComplete = !!user?.senderName?.trim();
   const domainRegistered = user?.sendingIdentityType === "custom_domain";
 
+  // Admins have no sending identity of their own — the widget renders nothing for them.
+  // The query is disabled in that case so no hook order changes between renders
+  // (previously an early `return null` before these hooks violated the Rules of Hooks
+  // and could crash the whole app on auth-state transitions — M16-E root cause).
   const { data: health } = useQuery({
     queryKey: ["/api/sender-health"],
     staleTime: 30_000,
-    enabled: !!user,
+    enabled: !!user && !isAdmin,
     refetchInterval: (query) => {
       const d = query.state.data;
       // Poll while DNS is pending verification
@@ -74,6 +76,7 @@ export default function SenderHealthWidget() {
     prevHealthRef.current = newVerified;
   }, [health]);
 
+  if (isAdmin) return null;
   if (!health) return null;
 
   const { identity, reputation, policy, readiness } = health;
@@ -126,11 +129,11 @@ export default function SenderHealthWidget() {
 
         {isDomainPending && (
           <p style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
-            Head to{" "}
+            Open the{" "}
             <Link href="/app/domains" style={{ color: C.primary, textDecoration: "none" }}>
-              Settings → Domains
+              Domains page
             </Link>
-            {" "}to check DNS manually at any time.
+            {" "}to review DNS records and re-check verification at any time.
           </p>
         )}
       </div>
@@ -221,7 +224,7 @@ export default function SenderHealthWidget() {
         </div>
 
         <p style={{ color: C.muted, fontSize: 11 }}>
-          Sending limits grow to unlimited once warm-up completes.
+          Daily limits ease as warm-up progresses. After warm-up, sending is bounded only by your available credits.
         </p>
       </div>
     );

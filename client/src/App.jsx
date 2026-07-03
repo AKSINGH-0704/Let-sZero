@@ -77,6 +77,7 @@ import Domains from "@/pages/Domains";
 import LinkExpired from "@/pages/LinkExpired";
 import Onboarding from "@/pages/Onboarding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
 
 function LoadingScreen() {
@@ -127,7 +128,7 @@ function AppRoutes() {
   }
 
   return (
-    <>
+    <ErrorBoundary resetKey={location}>
       <BrandingManager />
       <Switch>
         <Route path="/">
@@ -282,7 +283,7 @@ function AppRoutes() {
 
       <Route component={NotFound} />
     </Switch>
-    </>
+    </ErrorBoundary>
   );
 }
 

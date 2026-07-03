@@ -272,8 +272,10 @@ export default function Domains() {
   const [checkingId, setCheckingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  // Read returnTo from URL so we can redirect back after successful domain verification
-  const returnTo = new URLSearchParams(window.location.search).get("returnTo") || null;
+  // Read returnTo from URL so we can redirect back after successful domain verification.
+  // Only accept internal app paths — guards against open-redirect via a crafted URL.
+  const rawReturnTo = new URLSearchParams(window.location.search).get("returnTo");
+  const returnTo = rawReturnTo && rawReturnTo.startsWith("/app/") ? rawReturnTo : null;
 
   const isEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
 
@@ -281,7 +283,11 @@ export default function Domains() {
     queryKey: ["/api/domains"],
     queryFn: () => apiRequest("GET", "/api/domains").then(r => r.json()),
     enabled: isEligible,
-    refetchInterval: (data) => data?.some(d => d.status === "PENDING_VERIFICATION") ? 30000 : false,
+    // React Query v5 passes the Query object (not data) to this callback — read state.data.
+    // The previous `(data) => data?.some(...)` always resolved to false, so pending domains
+    // never auto-refreshed and "Pending" appeared frozen (M16-E fix).
+    refetchInterval: (query) =>
+      query.state.data?.some(d => d.status === "PENDING_VERIFICATION") ? 30000 : false,
   });
 
   const checkMutation = useMutation({
@@ -351,6 +357,18 @@ export default function Domains() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-3xl">
+        {returnTo && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+            <p className="text-sm text-foreground">
+              Verify your domain to continue. You'll return to your campaign automatically once it's
+              verified — or head back now to save it as a draft.
+            </p>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => navigate(returnTo)}>
+              Back to campaign
+            </Button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">

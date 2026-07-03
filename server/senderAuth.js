@@ -170,6 +170,9 @@ export async function getSenderHealthReport(user) {
       ok: identityResult.allowed,
       code: identityResult.code ?? null,
       message: identityResult.userMessage ?? null,
+      // Remediation hint drives the client's recovery CTA (Profile / SenderHealthWidget).
+      // The server owns remediation semantics; clients only render the corresponding action.
+      remediationAction: identityResult.remediationAction ?? null,
       emailVerified: user.emailVerified ?? false,
       sendingIdentityType: user.sendingIdentityType ?? null,
       senderName: user.senderName?.trim() || null,

@@ -658,7 +658,7 @@ export default function CampaignConfirmation() {
             {sasBlocked.remediationAction === "SETUP_IDENTITY" && (
               <Link href={`/app/domains?returnTo=${encodeURIComponent(location)}`}>
                 <span className="inline-flex items-center gap-1 text-sm font-medium underline cursor-pointer">
-                  Add and verify a domain in Settings → Domains <ArrowRight className="h-3 w-3" />
+                  Add and verify a domain on the Domains page <ArrowRight className="h-3 w-3" />
                 </span>
               </Link>
             )}

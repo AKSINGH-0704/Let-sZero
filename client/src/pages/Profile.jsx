@@ -53,7 +53,25 @@ const ROLE_CONFIG = {
 
 // ── Sender Health / SAS Status section ───────────────────────────────────────
 
+// Maps an identity remediation code to a concrete recovery action. Keeps the Profile,
+// SenderHealthWidget, and CampaignConfirmation CTAs consistent (M16-E). The Domains page
+// is the canonical verification center; onboarding is used only before a domain exists.
+function identityRecoveryCta({ code, domainRegistered }) {
+  switch (code) {
+    case "SENDER_DOMAIN_REQUIRED":
+    case "DOMAIN_NOT_VERIFIED":
+      return domainRegistered
+        ? { label: "Continue verification", href: "/app/domains" }
+        : { label: "Verify domain", href: "/app/onboarding" };
+    default:
+      return null;
+  }
+}
+
 function SenderHealthSection() {
+  const { user } = useAuth();
+  const domainRegistered = user?.sendingIdentityType === "custom_domain";
+
   const { data: health, isLoading } = useQuery({
     queryKey: ["/api/sender-health"],
     staleTime: 30_000,
@@ -137,12 +155,22 @@ function SenderHealthSection() {
               code={health.identity.code}
               message={health.identity.message}
             >
-              {health.identity.ok && (
+              {health.identity.ok ? (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Using custom domain
                   {health.identity.senderName ? ` · ${health.identity.senderName}` : ""}
                 </p>
-              )}
+              ) : (() => {
+                const cta = identityRecoveryCta({ code: health.identity.code, domainRegistered });
+                return cta ? (
+                  <Link href={cta.href}>
+                    <Button size="sm" className="mt-2 gap-1.5">
+                      {cta.label}
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </Link>
+                ) : null;
+              })()}
             </DimRow>
 
             <DimRow
@@ -185,7 +213,7 @@ function SenderHealthSection() {
                 </div>
               ) : health.policy.ok ? (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  No warm-up restrictions — sending at full capacity.
+                  No warm-up limits. Sending volume is governed by your available credits.
                 </p>
               ) : (
                 health.policy.code && (
