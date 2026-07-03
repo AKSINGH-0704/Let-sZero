@@ -28,13 +28,13 @@ function CopyButton({ value, field }) {
   );
 }
 
-export default function DnsRecordRow({ record, status, className }) {
+export default function DnsRecordRow({ record, status, statusLabel, className }) {
   const type = record?.type || "CNAME";
   return (
     <div className={cn("rounded-md border border-border bg-muted/30 p-3", className)}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{type}</span>
-        {status && <StatusChip status={status} size="sm" />}
+        {status && <StatusChip status={status} label={statusLabel} size="sm" />}
       </div>
       <dl className="space-y-1.5 font-mono text-[13px]">
         <div className="flex items-center justify-between gap-2">

@@ -74,6 +74,7 @@ import ContactListDetail from "@/pages/ContactListDetail";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetByToken from "@/pages/ResetByToken";
 import Domains from "@/pages/Domains";
+import DomainDetail from "@/pages/DomainDetail";
 import LinkExpired from "@/pages/LinkExpired";
 import Onboarding from "@/pages/Onboarding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
@@ -241,6 +242,12 @@ function AppRoutes() {
       <Route path="/app/contacts">
         <ProtectedRoute>
           <ContactLibrary />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/domains/:id">
+        <ProtectedRoute>
+          <DomainDetail />
         </ProtectedRoute>
       </Route>
 
