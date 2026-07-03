@@ -26,11 +26,12 @@ export default function NavMenu({ trigger = "Manage", icon: TriggerIcon, groups 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+        {/* Visual active state only — aria-current belongs on the current page's link
+            inside the menu, not on the menu trigger itself. */}
         <Button
           variant={triggerActive ? "secondary" : "ghost"}
           size="sm"
           className="gap-1.5"
-          aria-current={triggerActive ? "true" : undefined}
         >
           {TriggerIcon && <TriggerIcon className="h-4 w-4" aria-hidden="true" />}
           {trigger}

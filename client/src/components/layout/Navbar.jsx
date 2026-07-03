@@ -90,18 +90,18 @@ export default function Navbar() {
           <nav className="hidden lg:flex items-center gap-1">
             {workflowItems.map((item) => {
               const active = isActive(item.href);
+              // Button asChild → single <a> styled as a button (no nested interactive elements)
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  <Button variant={active ? "secondary" : "ghost"} size="sm" className="gap-2">
+                <Button key={item.href} asChild variant={active ? "secondary" : "ghost"} size="sm" className="gap-2">
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
                     <item.icon className="h-4 w-4" aria-hidden="true" />
                     {item.label}
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               );
             })}
             <NavMenu
@@ -199,17 +199,19 @@ export default function Navbar() {
         <div className="border-t border-border px-4 py-3 space-y-1">
           {workflowItems.map((item) => {
             const active = isActive(item.href);
+            // Styled anchor (Link renders <a>) — no nested interactive elements
             return (
-              <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
-                <button
-                  onClick={() => setMobileOpen(false)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  {item.label}
-                </button>
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                onClick={() => setMobileOpen(false)}
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                  active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {item.label}
               </Link>
             );
           })}
@@ -221,16 +223,17 @@ export default function Navbar() {
               {group.items.map((item) => {
                 const active = isActive(item.href);
                 return (
-                  <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
-                    <button
-                      onClick={() => setMobileOpen(false)}
-                      className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                        active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      }`}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      {item.label}
-                    </button>
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {item.label}
                   </Link>
                 );
               })}
@@ -250,14 +253,13 @@ export default function Navbar() {
                 <span className="text-xs text-muted-foreground truncate">{user?.email}</span>
               </div>
             </div>
-            <Link href="/app/profile">
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <User className="h-4 w-4 shrink-0" />
-                Profile
-              </button>
+            <Link
+              href="/app/profile"
+              onClick={() => setMobileOpen(false)}
+              className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <User className="h-4 w-4 shrink-0" />
+              Profile
             </Link>
             <button
               onClick={() => { setMobileOpen(false); logout(); }}
