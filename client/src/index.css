@@ -65,6 +65,21 @@ html, body {
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* M19 design system — semantic status tokens (danger = --destructive) */
+  --success: 142 72% 29%;
+  --success-foreground: 0 0% 100%;
+  --warning: 30 90% 38%;
+  --warning-foreground: 0 0% 100%;
+  --info: 217 91% 45%;
+  --info-foreground: 0 0% 100%;
+
+  /* M19 design system — motion tokens (theme-independent) */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+
 /* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -143,6 +158,14 @@ html, body {
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4);
   --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+
+  /* M19 design system — semantic status tokens (dark) */
+  --success: 142 69% 55%;
+  --success-foreground: 222 47% 6%;
+  --warning: 38 95% 60%;
+  --warning-foreground: 222 47% 6%;
+  --info: 213 94% 68%;
+  --info-foreground: 222 47% 6%;
 
 /* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
