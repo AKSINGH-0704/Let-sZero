@@ -2,13 +2,38 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-06-30
+**Last updated:** 2026-07-04
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.0 (2026-06-30)
+## Current Release — v1.1 (2026-07-04)
+
+### A Redesigned Domains Experience
+
+Managing your sending domain is now a first-class part of RepMail.
+
+- **Domains in the navigation.** Your sending domains now have a dedicated home, reachable from the new **Manage** menu in the top navigation — no more hunting for where to verify or manage a domain.
+- **Guided verification.** Each domain has its own page with a clear three-step progress view (Registered → Add DNS records → Verified), one-click copy for every DNS record, and per-record detection status when you run a check — so you can see exactly which records are in place and which are still propagating.
+- **Automatic status updates.** The page checks verification in the background and updates on its own; a manual "Check now" is available at any time.
+- **Clear guidance and recovery.** Propagation timing, the verification window, and provider-specific tips (Cloudflare, GoDaddy, Route 53) are shown where you need them. If a verification window expires, one click re-registers the domain with fresh records.
+- **Sender identity in one place.** Your From name, job title, company, phone, and reply-to address are now managed alongside your domains — everything recipients see about you lives on one page. Profile is now focused purely on your account.
+
+### Simpler First-Time Setup
+
+- Onboarding is now a single step: enter your name and domain, and you land directly in the guided verification view. Building your first campaign while DNS propagates remains fully supported.
+- The dashboard shows one clear sending-status line — Preview Mode, verifying, ready, or attention needed — that always links to the right next step.
+
+### A More Polished, More Accessible RepMail
+
+- A refreshed visual foundation: consistent typography, spacing, status indicators, and dialogs across the app, in both light and dark themes.
+- Accessibility improvements throughout, including stronger colour contrast (WCAG AA), full keyboard navigation, screen-reader labelling, and reduced-motion support.
+- Faster, cleaner navigation that works properly on tablets and small laptops.
+
+---
+
+## v1.0 (2026-06-30)
 
 ### New Features
 
