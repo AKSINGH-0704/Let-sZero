@@ -138,13 +138,23 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
   );
 }
 
-// ── Sender identity — the From display name, managed alongside domains (design: this
-// page is the sending-identity home; Profile stays account-only from Phase E). ──
+// ── Sender identity — the full From identity (name/title/company/phone/reply-to),
+// managed alongside domains: this page is the sending-identity home; Profile is
+// account-only (Phase E). Fields beyond the name feed template placeholders
+// ({{sender_title}} etc.) and Reply-To routing — they must stay editable here. ──
+const IDENTITY_FIELDS = [
+  { key: "senderName", label: "From name", placeholder: "e.g. Priya Sharma", help: "Shown as the From name recipients see", required: true },
+  { key: "senderTitle", label: "Job title", placeholder: "Founder", help: "Used in signatures via {{sender_title}}" },
+  { key: "senderCompany", label: "Company", placeholder: "Acme", help: "Used in signatures via {{sender_company}}" },
+  { key: "senderPhone", label: "Phone", placeholder: "+91 98xxx xxxxx", help: "Used in signatures via {{sender_phone}}" },
+];
+
 function SenderIdentityCard() {
   const { user, refetch } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+  const [form, setForm] = useState({});
+  const [warnings, setWarnings] = useState([]);
 
   // Warn (non-blocking) when clearing the sender name while campaigns are active —
   // senderName is read at send time, so queued sends would fall back to the platform name.
@@ -154,17 +164,22 @@ function SenderIdentityCard() {
   });
   const hasActiveCampaigns = Array.isArray(campaigns)
     && campaigns.some(c => ["RUNNING", "PENDING", "PAUSED"].includes(c.status));
-  const clearingWithActive = open && hasActiveCampaigns && !name.trim() && !!user?.senderName;
+  const clearingWithActive = open && hasActiveCampaigns && !form.senderName?.trim() && !!user?.senderName;
 
   const mutation = useMutation({
-    // PUT /api/profile is partial-safe: undefined fields are left untouched.
-    mutationFn: () => apiRequest("PUT", "/api/profile", { senderName: name }).then(r => r.json()),
-    onSuccess: () => {
+    mutationFn: () => apiRequest("PUT", "/api/profile", form).then(r => r.json()),
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
       refetch();
-      toast({ description: "Sender name updated" });
-      setOpen(false);
+      const w = data?.senderWarnings ?? [];
+      setWarnings(w);
+      if (w.length) {
+        toast({ description: "Saved — review the warnings below" });
+      } else {
+        toast({ description: "Sender identity updated" });
+        setOpen(false);
+      }
     },
     onError: (err) => {
       let msg = err.message;
@@ -173,7 +188,19 @@ function SenderIdentityCard() {
     },
   });
 
-  const openDialog = () => { setName(user?.senderName || ""); setOpen(true); };
+  const openDialog = () => {
+    setForm({
+      senderName:    user?.senderName    || "",
+      senderTitle:   user?.senderTitle   || "",
+      senderCompany: user?.senderCompany || "",
+      senderPhone:   user?.senderPhone   || "",
+      replyToEmail:  user?.replyToEmail  || "",
+    });
+    setWarnings([]);
+    setOpen(true);
+  };
+  const setField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const subtitle = [user?.senderTitle, user?.senderCompany].filter(Boolean).join(", ");
 
   return (
     <section aria-label="Sender identity">
@@ -188,7 +215,9 @@ function SenderIdentityCard() {
               <p className="text-sm font-medium text-foreground truncate">
                 {user?.senderName?.trim() || <span className="text-muted-foreground font-normal">Not set</span>}
               </p>
-              <p className="text-xs text-muted-foreground">From name — shown in recipients' inboxes</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {subtitle || "From name — shown in recipients' inboxes"}
+              </p>
             </div>
           </div>
           <Button variant="outline" size="sm" onClick={openDialog}>Edit</Button>
@@ -196,23 +225,44 @@ function SenderIdentityCard() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Sender name</DialogTitle>
+            <DialogTitle>Sender identity</DialogTitle>
             <DialogDescription>
-              The display name recipients see next to your from address.
+              How you appear in recipients' inboxes and email signatures. Use your real
+              personal name — not a product, team, or platform name.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <Label htmlFor="sender-name-input">From name</Label>
-              <Input
-                id="sender-name-input"
-                placeholder="e.g. Priya from Acme"
-                value={name}
-                autoFocus
-                onChange={e => setName(e.target.value)}
-              />
+          <div className="space-y-4 py-1">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {IDENTITY_FIELDS.map((f, i) => (
+                <div key={f.key} className="space-y-1.5">
+                  <Label htmlFor={`identity-${f.key}`}>
+                    {f.label}{f.required && <span className="text-destructive"> *</span>}
+                  </Label>
+                  <Input
+                    id={`identity-${f.key}`}
+                    placeholder={f.placeholder}
+                    value={form[f.key] || ""}
+                    autoFocus={i === 0}
+                    onChange={e => setField(f.key, e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">{f.help}</p>
+                </div>
+              ))}
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="identity-replyToEmail">Reply-to email</Label>
+                <Input
+                  id="identity-replyToEmail"
+                  type="email"
+                  placeholder="you@yourcompany.com"
+                  value={form.replyToEmail || ""}
+                  onChange={e => setField("replyToEmail", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Replies go here instead of the sending address. Leave blank to use your account email.
+                </p>
+              </div>
             </div>
             {clearingWithActive && (
               <Banner variant="warning">
@@ -220,6 +270,11 @@ function SenderIdentityCard() {
                 sends fall back to the platform name.
               </Banner>
             )}
+            {warnings.map(w => (
+              <Banner key={w.code} variant={w.severity === "error" ? "danger" : "warning"}>
+                {w.message}
+              </Banner>
+            ))}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

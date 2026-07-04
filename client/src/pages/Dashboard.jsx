@@ -176,22 +176,21 @@ export default function Dashboard() {
         {creditsInfo?.isFreePlan && (
           <motion.div
             variants={itemVariants}
-            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-4 py-3 text-sm"
-            style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.14)" }}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm"
           >
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
-              style={{ background: "#00E5C8", boxShadow: "0 0 6px rgba(0,229,200,0.6)" }}
+              className="w-2 h-2 rounded-full bg-primary flex-shrink-0 animate-pulse motion-reduce:animate-none"
+              aria-hidden="true"
             />
-            <span className="font-semibold" style={{ color: "#00E5C8" }}>Free Plan</span>
-            <span style={{ color: "#55556A" }}>·</span>
-            <span style={{ color: "#D1D5DB" }}>
+            <span className="font-semibold text-primary">Free Plan</span>
+            <span className="text-muted-foreground" aria-hidden="true">·</span>
+            <span className="text-foreground">
               {formatNumber(creditsInfo.total ?? 0)} credits available
             </span>
             {creditsInfo.freeResetDate && (
               <>
-                <span style={{ color: "#55556A" }}>·</span>
-                <span style={{ color: "#7878A0" }}>
+                <span className="text-muted-foreground" aria-hidden="true">·</span>
+                <span className="text-muted-foreground">
                   Credits refresh:{" "}
                   {new Date(creditsInfo.freeResetDate).toLocaleDateString("en-IN", {
                     day: "numeric",
@@ -202,13 +201,11 @@ export default function Dashboard() {
               </>
             )}
             <div className="flex-1" />
-            <Link href="/app/payments">
-              <span
-                className="text-xs font-semibold cursor-pointer flex-shrink-0"
-                style={{ color: "#00E5C8" }}
-              >
-                Upgrade →
-              </span>
+            <Link
+              href="/app/payments"
+              className="text-xs font-semibold text-primary flex-shrink-0 rounded hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Upgrade →
             </Link>
           </motion.div>
         )}
