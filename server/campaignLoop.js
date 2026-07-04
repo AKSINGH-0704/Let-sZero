@@ -586,14 +586,23 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   const currentState = await storage.getCampaign(campaignId);
   if (currentState?.status === "FAILED") {
     console.warn(`${logTag} Campaign ${campaignId} externally terminated (FAILED) — not overwriting to COMPLETED`);
+    await storage.updateCampaign(campaignId, {
+      sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+    });
     return;
   }
   if (currentState?.status === "PAUSED") {
     console.warn(`${logTag} Campaign ${campaignId} externally paused — not overwriting to COMPLETED`);
+    await storage.updateCampaign(campaignId, {
+      sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+    });
     return;
   }
   if (currentState?.status === CAMPAIGN_STATUS.CANCELLED) {
     console.warn(`${logTag} Campaign ${campaignId} cancelled — not overwriting to COMPLETED`);
+    await storage.updateCampaign(campaignId, {
+      sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+    });
     return;
   }
 

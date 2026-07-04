@@ -226,6 +226,14 @@ export default function SpamAnalyzer() {
     !acceptedSuggestions.has(s.original)
   );
 
+  // Reconciles the AI summary against suggestions actually accepted from this same
+  // analysis, with zero additional AI calls. Counts only real acceptances — not items
+  // hidden from aiRecommendations for being a keyword-list duplicate — so this can
+  // never claim progress the user hasn't actually made by clicking Accept.
+  const aiActionableSuggestions = (aiAnalysis?.suggestions || []).filter(s => s.actionable !== false);
+  const aiActionableTotal       = aiActionableSuggestions.length;
+  const aiActionableResolved    = aiActionableSuggestions.filter(s => acceptedSuggestions.has(s.original)).length;
+
   const isApplicableToTemplate = (originalText) => {
     const combined = ((template.subject || "") + " " + (template.body || "")).toLowerCase();
     return combined.includes((originalText || "").toLowerCase());
@@ -688,9 +696,21 @@ export default function SpamAnalyzer() {
             ) : (
               <>
                 {aiAnalysis?.summary && (
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {aiAnalysis.summary}
-                  </p>
+                  aiActionableResolved === 0 ? (
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {aiAnalysis.summary}
+                    </p>
+                  ) : aiActionableResolved >= aiActionableTotal ? (
+                    <p className="text-sm text-green-700 dark:text-green-400 leading-relaxed flex items-center gap-1.5">
+                      <CheckCircle className="h-4 w-4 shrink-0" />
+                      All AI-flagged issues from this review have been addressed.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {aiActionableResolved} of {aiActionableTotal} AI-flagged issue{aiActionableTotal === 1 ? "" : "s"} addressed
+                      — {aiActionableTotal - aiActionableResolved} still shown below.
+                    </p>
+                  )
                 )}
                 {aiObservations.length > 0 && (
                   <div className="space-y-2">
