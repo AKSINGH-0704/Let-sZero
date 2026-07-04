@@ -1,298 +1,177 @@
 import { useState } from "react";
-import { Redirect, Link, useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Globe, CheckCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Globe, Loader2 } from "lucide-react";
 
-const STEP = { DOMAIN: 1, SUMMARY: 2 };
-
-const C = {
-  bg: "#06060B",
-  card: "#0C0C14",
-  border: "#1A1A2E",
-  primary: "#00E5C8",
-  text: "#F0F0F5",
-  muted: "#7878A0",
-  subtle: "#A0A0C0",
-  surface: "rgba(255,255,255,0.03)",
-};
-
-function StepIndicator({ step }) {
-  const dot = (n) => (
-    <div key={n} style={{
-      width: 8, height: 8, borderRadius: "50%",
-      background: step >= n ? C.primary : "#2A2A4A",
-      transition: "background 0.3s",
-    }} />
-  );
-  const line = () => (
-    <div style={{
-      width: 32, height: 1,
-      background: step >= 2 ? C.primary : "#2A2A4A",
-      transition: "background 0.3s",
-    }} />
-  );
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 28 }}>
-      {dot(1)}{line()}{dot(2)}
-    </div>
-  );
-}
-
+// First-run activation: a single capture step (sender name if missing + domain +
+// from email) that routes straight into the canonical guided verification at
+// /app/domains/:id. No separate summary screen, no second DNS rendering — the
+// detail page owns verification (M19 IA). "Explore first" = Preview Mode escape.
 export default function Onboarding() {
   const { user, isRootAdmin, refetch } = useAuth();
   const [, navigate] = useLocation();
-  const [step, setStep] = useState(STEP.DOMAIN);
-  const [domainName, setDomainName] = useState("");
+  const [senderName, setSenderName] = useState("");
+  const [domain, setDomain] = useState("");
   const [fromEmail, setFromEmail] = useState("");
-  const [domainError, setDomainError] = useState("");
-  const [dnsResult, setDnsResult] = useState(null);
-  const [justCompleted, setJustCompleted] = useState(false);
+  const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const needsSenderName = !!user && !user.senderName?.trim();
 
   const { data: config } = useQuery({
     queryKey: ["/api/platform-config"],
     enabled: !!user,
     staleTime: 60_000,
   });
-
-  const domainMutation = useMutation({
-    mutationFn: async ({ domain, fromEmail: email }) => {
-      return await apiRequest("POST", "/api/domains", { domain, fromEmail: email }).then(r => r.json());
-    },
-    onSuccess: (data) => {
-      setDnsResult(data);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
-      refetch();
-      setJustCompleted(true);
-      setStep(STEP.SUMMARY);
-    },
-    onError: (err) => {
-      let msg = err.message || "Failed to add domain";
-      try { const p = JSON.parse(msg); msg = p.message || msg; } catch {}
-      setDomainError(msg);
-    },
-  });
-
-  // ROOT_ADMIN, isSecondaryRoot, and users who already have a domain skip onboarding
-  if (!justCompleted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
-    return <Redirect to="/app/dashboard" />;
-  }
-
-  const handlePreviewMode = () => navigate("/app/dashboard");
-
   const customLimit = config?.warmup?.customDomainDailyLimit ?? 200;
   const durationDays = config?.warmup?.durationDays ?? 30;
 
-  // ── Step 1: Domain registration ───────────────────────────────────────────────
-  const StepDomain = () => (
-    <>
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: 12, margin: "0 auto 12px",
-          background: "rgba(0,229,200,0.10)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <Globe size={22} color={C.primary} />
-        </div>
-        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 6 }}>
-          Connect your sending domain
-        </h2>
-        <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.55 }}>
-          Campaigns send from your own domain, so your deliverability and sender
-          reputation stay with you.
-        </p>
-      </div>
+  const mutation = useMutation({
+    mutationFn: async () => {
+      // Sender name first (cheap, idempotent); PUT /api/profile is partial-safe.
+      if (needsSenderName && senderName.trim()) {
+        await apiRequest("PUT", "/api/profile", { senderName: senderName.trim() });
+      }
+      return apiRequest("POST", "/api/domains", {
+        domain: domain.trim(),
+        fromEmail: fromEmail.trim(),
+      }).then(r => r.json());
+    },
+    onSuccess: (data) => {
+      if (!data.id) {
+        setError(data.message || "Failed to add domain");
+        return;
+      }
+      setSubmitted(true); // suppress the redirect guard while we navigate
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
+      refetch();
+      navigate(`/app/domains/${data.id}`);
+    },
+    onError: (err) => {
+      let msg = err.message || "Failed to add domain";
+      try { msg = JSON.parse(msg).message || msg; } catch {}
+      setError(msg);
+    },
+  });
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-        <div>
-          <label style={{ color: C.muted, fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>
-            SENDING DOMAIN
-          </label>
-          <input
-            value={domainName}
-            onChange={e => { setDomainName(e.target.value); setDomainError(""); }}
-            placeholder="yourcompany.com"
-            style={{
-              width: "100%", padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 8, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box",
-            }}
-          />
-        </div>
-        <div>
-          <label style={{ color: C.muted, fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>
-            FROM EMAIL ADDRESS
-          </label>
-          <input
-            value={fromEmail}
-            onChange={e => { setFromEmail(e.target.value); setDomainError(""); }}
-            placeholder={`hello@${domainName || "yourcompany.com"}`}
-            style={{
-              width: "100%", padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`,
-              borderRadius: 8, color: C.text, fontSize: 13, outline: "none", boxSizing: "border-box",
-            }}
-          />
-          <p style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Contacts see this in the From field.</p>
-        </div>
-      </div>
+  // Users who already activated (or admins, who have no sending identity of their own)
+  // skip onboarding entirely.
+  if (!submitted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
+    return <Redirect to="/app/dashboard" />;
+  }
 
-      <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-        <p style={{ color: C.subtle, fontSize: 11, margin: 0 }}>
-          New domains send up to <strong style={{ color: C.text }}>{customLimit} emails/day</strong> for the first {durationDays} days while your reputation builds. The daily cap then lifts, and your total volume is governed by your credit balance.
-        </p>
-      </div>
-
-      {domainError && (
-        <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 16, color: "#F87171", fontSize: 12 }}>
-          {domainError}
-        </div>
-      )}
-
-      <button
-        onClick={() => {
-          if (!domainName.trim() || !fromEmail.trim()) {
-            setDomainError("Both domain and from-email are required");
-            return;
-          }
-          domainMutation.mutate({ domain: domainName.trim(), fromEmail: fromEmail.trim() });
-        }}
-        disabled={domainMutation.isPending}
-        style={{
-          width: "100%", padding: "12px", borderRadius: 10, border: "none",
-          background: `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
-          color: "#06060B", fontWeight: 700, fontSize: 13, cursor: domainMutation.isPending ? "not-allowed" : "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-        }}
-      >
-        {domainMutation.isPending && <Loader2 size={14} className="animate-spin" />}
-        Add Domain
-      </button>
-
-      <button
-        onClick={handlePreviewMode}
-        style={{
-          width: "100%", marginTop: 10, padding: "11px", borderRadius: 10,
-          border: `1px solid ${C.border}`, background: "transparent",
-          color: C.muted, fontWeight: 500, fontSize: 12, cursor: "pointer",
-        }}
-      >
-        I'll add my domain later
-      </button>
-    </>
-  );
-
-  // ── Step 2: Activation summary ────────────────────────────────────────────────
-  const StepSummary = () => {
-    const fromAddr = dnsResult?.fromEmail || fromEmail || "you@yourdomain.com";
-
-    const rows = [
-      { icon: "📧", label: "Who recipients see", value: `"${user?.senderName?.trim() || "Your Name"}" <${fromAddr}>` },
-      { icon: "💳", label: "Daily send limit", value: `Up to ${customLimit}/day for your first ${durationDays} days. After that the cap lifts and your credit balance governs total volume.` },
-      { icon: "📈", label: "Why the daily limit exists", value: "Inbox providers trust senders who ramp up gradually. The warm-up protects your deliverability." },
-      { icon: "🚀", label: "Recommended next step", value: "Draft your first campaign now. It will send once your domain is verified." },
-    ];
-
-    return (
-      <>
-        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 12 }}>✅</div>
-        <h2 style={{ color: C.text, fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 4, textAlign: "center" }}>
-          Domain added
-        </h2>
-        <p style={{ color: C.muted, fontSize: 12, marginBottom: 24, textAlign: "center" }}>
-          Add the DNS records below to your provider. Sending unlocks automatically once
-          verification completes. You can keep building in the meantime.
-        </p>
-
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px", marginBottom: 20 }}>
-          {rows.map(({ icon, label, value }, i) => (
-            <div
-              key={label}
-              style={{
-                display: "flex", gap: 12,
-                ...(i < rows.length - 1 ? { paddingBottom: 12, marginBottom: 12, borderBottom: "1px solid rgba(255,255,255,0.04)" } : {})
-              }}
-            >
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{icon}</span>
-              <div>
-                <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, marginBottom: 3, letterSpacing: "0.05em" }}>
-                  {label.toUpperCase()}
-                </div>
-                <div style={{ color: C.text, fontSize: 12, lineHeight: 1.55 }}>{value}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {dnsResult?.dkimTokens?.length > 0 && (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-            <p style={{ color: C.muted, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>
-              DNS RECORDS TO ADD ({dnsResult.dkimTokens.length} CNAME{dnsResult.dkimTokens.length !== 1 ? "s" : ""})
-            </p>
-            {dnsResult.dkimTokens.map((rec, i) => (
-              <div key={i} style={{ marginBottom: i < dnsResult.dkimTokens.length - 1 ? 10 : 0 }}>
-                <div style={{ display: "flex", gap: 6, marginBottom: 2 }}>
-                  <span style={{ background: "rgba(0,229,200,0.12)", color: C.primary, fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>{rec.type}</span>
-                  <span style={{ color: C.muted, fontSize: 11, wordBreak: "break-all" }}>{rec.name}</span>
-                </div>
-                <div style={{ color: C.subtle, fontSize: 10, wordBreak: "break-all", fontFamily: "monospace" }}>{rec.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.12)", borderRadius: 10, padding: "12px 14px", marginBottom: 20 }}>
-          <p style={{ color: C.subtle, fontSize: 11, margin: 0, marginBottom: 6 }}>
-            Records usually propagate within an hour, though some providers take up to 48 hours.
-            The Domains page tracks status and lets you re-check verification at any time.
-          </p>
-          <Link href="/app/domains" style={{ color: C.primary, fontSize: 11, textDecoration: "none" }}>
-            Open Domains page →
-          </Link>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Link href="/app/dashboard" style={{
-            padding: "12px", borderRadius: 10, background: C.surface, border: `1px solid ${C.border}`,
-            color: C.muted, fontSize: 13, textAlign: "center", textDecoration: "none", display: "block",
-          }}>
-            Go to Dashboard
-          </Link>
-          <Link href="/app/campaigns/new" style={{
-            padding: "12px", borderRadius: 10,
-            background: `linear-gradient(135deg, ${C.primary} 0%, #00B8A3 100%)`,
-            color: "#06060B", fontSize: 13, fontWeight: 700, textAlign: "center", textDecoration: "none", display: "block",
-          }}>
-            Build First Campaign →
-          </Link>
-        </div>
-      </>
-    );
+  const handleDomainChange = (val) => {
+    setDomain(val);
+    setError("");
+    if (val && !fromEmail) {
+      setFromEmail(`hello@${val}`);
+    } else if (fromEmail && val) {
+      const atIdx = fromEmail.indexOf("@");
+      const localPart = atIdx >= 0 ? fromEmail.slice(0, atIdx) : fromEmail;
+      setFromEmail(`${localPart}@${val}`);
+    }
   };
 
+  const canSubmit = !mutation.isPending
+    && !!domain.trim()
+    && !!fromEmail.trim()
+    && (!needsSenderName || !!senderName.trim());
+
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
-      <div style={{ width: "100%", maxWidth: 460 }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <span style={{ color: C.primary, fontWeight: 700, fontSize: 18 }}>RepMail</span>
-        </div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-6">
+      <div className="w-full max-w-md space-y-6">
+        <p className="text-center text-lg font-bold tracking-tight text-primary">RepMail</p>
 
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: 32, position: "relative", overflow: "hidden" }}>
-          <div aria-hidden style={{
-            position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)",
-            width: "70%", height: 1,
-            background: `linear-gradient(90deg, transparent, ${C.primary}, transparent)`,
-          }} />
+        <Card className="border-card-border">
+          <CardContent className="space-y-5 p-6 sm:p-8">
+            <div className="space-y-2 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <Globe className="h-6 w-6 text-primary" aria-hidden="true" />
+              </div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Connect your sending domain
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Campaigns send from your own domain, so deliverability and sender
+                reputation stay with you.
+              </p>
+            </div>
 
-          <StepIndicator step={step} />
+            <div className="space-y-4">
+              {needsSenderName && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="ob-sender-name">Your name</Label>
+                  <Input
+                    id="ob-sender-name"
+                    placeholder="e.g. Priya Sharma"
+                    value={senderName}
+                    autoFocus
+                    onChange={e => { setSenderName(e.target.value); setError(""); }}
+                  />
+                  <p className="text-xs text-muted-foreground">Shown as the From name in recipients' inboxes.</p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="ob-domain">Sending domain</Label>
+                <Input
+                  id="ob-domain"
+                  placeholder="yourcompany.com"
+                  value={domain}
+                  autoFocus={!needsSenderName}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  onChange={e => handleDomainChange(e.target.value.trim().toLowerCase())}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ob-from">From email</Label>
+                <Input
+                  id="ob-from"
+                  placeholder={`hello@${domain || "yourcompany.com"}`}
+                  value={fromEmail}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  onChange={e => { setFromEmail(e.target.value.trim().toLowerCase()); setError(""); }}
+                />
+                <p className="text-xs text-muted-foreground">Recipients see this in the From field.</p>
+              </div>
+            </div>
 
-          {step === STEP.DOMAIN && StepDomain()}
-          {step === STEP.SUMMARY && StepSummary()}
-        </div>
+            <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              New domains send up to <span className="font-medium text-foreground">{customLimit} emails/day</span> for
+              the first {durationDays} days while your reputation builds. After that, your credit
+              balance governs volume.
+            </p>
 
-        <p style={{ color: "#555575", fontSize: 11, textAlign: "center", marginTop: 20 }}>
-          RepMail · Secure &amp; Private
-        </p>
+            {error && (
+              <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+
+            <div className="space-y-2">
+              <Button className="w-full" onClick={() => mutation.mutate()} disabled={!canSubmit}>
+                {mutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                Add domain
+              </Button>
+              <Button variant="ghost" className="w-full text-muted-foreground" onClick={() => navigate("/app/dashboard")}>
+                I'll explore RepMail first
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-xs text-muted-foreground">RepMail · Secure &amp; Private</p>
       </div>
     </div>
   );
