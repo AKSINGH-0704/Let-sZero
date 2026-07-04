@@ -103,7 +103,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   // ── Load owner ───────────────────────────────────────────────────────────────
   const owner = await storage.getUserById(userId);
   if (!owner) {
-    await storage.updateCampaign(campaignId, { status: "FAILED" });
     await storage.createAuditLog({
       userId,
       action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
@@ -111,6 +110,12 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       targetId: campaignId,
       details: { reason: "Campaign owner account not found", name: campaign.name },
     });
+    // PAR-TRUST-017 §7.3/§7.5/§7.6 — every terminal transition, including these
+    // pre-loop aborts (no campaign_emails rows exist yet, so counts derive to
+    // zero), must route through finalizeCampaign so finalized_at is set. Without
+    // it, a concurrent reclaim-gate poll (§7.6) would time out and could
+    // overwrite this status via its fallback finalize call, losing the real reason.
+    await storage.finalizeCampaign(campaignId, "FAILED");
     console.warn(`${logTag} Campaign ${campaignId} aborted — owner ${userId} not found`);
     return;
   }
@@ -130,7 +135,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   if (!isRetry) {
     const canStart = await storage.canStartCampaign(userId, campaign.totalEmails);
     if (!canStart.allowed) {
-      await storage.updateCampaign(campaignId, { status: "FAILED" });
       await storage.createAuditLog({
         userId,
         action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
@@ -138,6 +142,13 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
         targetId: campaignId,
         details: canStart,
       });
+      // PAR-TRUST-017 §7.3/§7.5/§7.6 — finalize before throwing. The BullMQ worker
+      // path calls runCampaignLoop directly (not through routes.js's executeCampaign
+      // wrapper), so without this, finalized_at would stay unset until all of
+      // BullMQ's retries are exhausted and worker.js's failed handler eventually
+      // fires — idempotent and safe to call here regardless of which path re-catches
+      // the throw below.
+      await storage.finalizeCampaign(campaignId, "FAILED");
       throw new Error(canStart.reason);
     }
   }
@@ -190,7 +201,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       sendPausedReason: `auto_paused: bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`,
       sendPausedAt: new Date(),
     });
-    await storage.updateCampaign(campaignId, { status: "FAILED" });
     await storage.createAuditLog({
       userId,
       action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
@@ -203,6 +213,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
         threshold: { bounce: BOUNCE_RATE_PAUSE_THRESHOLD, complaint: COMPLAINT_RATE_PAUSE_THRESHOLD },
       },
     });
+    await storage.finalizeCampaign(campaignId, "FAILED");
     console.warn(`${logTag} User ${userId} auto-paused — bounce=${(senderHealth.bounceRate * 100).toFixed(1)}% complaint=${(senderHealth.complaintRate * 100).toFixed(2)}%`);
     return;
   }
@@ -222,7 +233,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       senderDomainId: campaign.senderDomainId ?? null,
     });
   } catch (authErr) {
-    await storage.updateCampaign(campaignId, { status: "FAILED" });
     await storage.createAuditLog({
       userId,
       action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
@@ -230,6 +240,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       targetId: campaignId,
       details: { reason: "send_not_authorized", code: authErr.code, dimension: authErr.dimension, message: authErr.message },
     });
+    await storage.finalizeCampaign(campaignId, "FAILED");
     console.warn(`${logTag} Campaign ${campaignId} failed — SAS denied [${authErr.dimension}/${authErr.code}]: ${authErr.message}`);
     return;
   }
@@ -245,7 +256,14 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     if (!campaign.senderEmailSnapshot) {
       // Data integrity error — senderEmailSnapshot must be set when senderDomainId is set.
       console.error(`${logTag} Campaign ${campaignId} — ABORT: senderDomainId=${campaign.senderDomainId} but senderEmailSnapshot is null`);
-      await storage.updateCampaign(campaignId, { status: "FAILED" });
+      await storage.createAuditLog({
+        userId,
+        action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+        targetType: "campaign",
+        targetId: campaignId,
+        details: { reason: "data_integrity_error", detail: "senderDomainId set but senderEmailSnapshot is null" },
+      });
+      await storage.finalizeCampaign(campaignId, "FAILED");
       return;
     }
     customFromEmail = campaign.senderEmailSnapshot;
@@ -285,7 +303,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   let globalPausedMidLoop  = false;
   let senderPausedMidLoop  = false;
   let firstSendRecorded    = false;
-  let cancelledMidLoop     = false;
 
   console.log(`${logTag} Campaign ${campaignId} — ${contactIds.length} contacts`);
 
@@ -299,22 +316,38 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   const contactMap  = new Map(contactList.map(c => [c.id, c]));
 
   for (let i = 0; i < contactIds.length; i++) {
-    // Re-check global pause and per-user sendPaused every PAUSE_CHECK_INTERVAL contacts.
-    // Allows admin pause or auto-pause (fired by a concurrent campaign start) to take effect
-    // mid-campaign without a DB query on every single contact. Skip i=0 (checked pre-loop).
-    if (i > 0 && i % PAUSE_CHECK_INTERVAL === 0) {
-      // Check for user-initiated cancellation first — highest priority.
-      const midLoopStatus = await storage.getCampaignStatus(campaignId);
-      if (midLoopStatus === CAMPAIGN_STATUS.CANCELLED) {
+    // PAR-TRUST-017 §7.2 — every iteration, unconditionally: has someone else
+    // already decided this campaign should stop? Cheap, single-column, PK-indexed
+    // lookup. Deliberately status-agnostic (checks "not RUNNING", not an enumerated
+    // list of specific triggers) so it catches CANCELLED, an externally-forced
+    // FAILED (e.g. user deactivation — the original TRUST-017 report), or any future
+    // trigger no one has invented yet, without needing a new special case each time.
+    // This replaces the old CANCELLED-only check that used to live inside the
+    // PAUSE_CHECK_INTERVAL-gated block below — that check only ever caught
+    // cancellation, and only every 50 contacts.
+    const liveStatus = await storage.getCampaignStatus(campaignId);
+    if (liveStatus !== CAMPAIGN_STATUS.RUNNING) {
+      if (liveStatus === CAMPAIGN_STATUS.CANCELLED || liveStatus === CAMPAIGN_STATUS.FAILED) {
+        await storage.finalizeCampaign(campaignId, liveStatus);
+      } else {
+        // PAUSED (or any other non-terminal state) — resumable, flush without
+        // finalizing (§7.5: PAUSED is never a legal finalization target).
         await storage.updateCampaign(campaignId, {
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
         });
-        console.warn(`${logTag} Campaign ${campaignId} cancelled at contact ${i} — stopping`);
-        cancelledMidLoop = true;
-        break;
       }
+      console.warn(`${logTag} Campaign ${campaignId} externally left RUNNING (now ${liveStatus}) at contact ${i} — stopping`);
+      return;
+    }
 
+    // Re-check global pause and per-user sendPaused every PAUSE_CHECK_INTERVAL contacts.
+    // Allows admin pause or auto-pause (fired by a concurrent campaign start) to take effect
+    // mid-campaign without a DB query on every single contact. Skip i=0 (checked pre-loop).
+    // Unlike the check above, these DECIDE a new status rather than detect one someone
+    // else already decided — so they stay on the periodic cadence, not every iteration.
+    if (i > 0 && i % PAUSE_CHECK_INTERVAL === 0) {
       if (await isGlobalSendPaused()) {
+        // PAUSED — not terminal, flush directly (no finalizeCampaign, matches §7.5).
         await storage.updateCampaign(campaignId, {
           status: "PAUSED",
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
@@ -336,10 +369,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       if (campaign.senderDomainId) {
         const freshDomain = await storage.getSenderDomainById(campaign.senderDomainId);
         if (!freshDomain || freshDomain.status !== "VERIFIED") {
-          await storage.updateCampaign(campaignId, {
-            status: "FAILED",
-            sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
-          });
+          // Decision + audit log first (I7 — exactly one entry, at the point of decision).
           await storage.createAuditLog({
             userId,
             action: AUDIT_ACTIONS.CAMPAIGN_DOMAIN_REVOKED,
@@ -347,6 +377,8 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
             targetId: campaignId,
             details: { reason: "sender_domain_no_longer_verified", domainId: campaign.senderDomainId, pausedAtContact: i },
           });
+          // Finalization second — counts + orphan cleanup + finalized_at, in one place.
+          await storage.finalizeCampaign(campaignId, "FAILED");
           console.warn(`${logTag} Campaign ${campaignId} failed at contact ${i} — sender domain revoked mid-loop`);
           senderPausedMidLoop = true;
           break;
@@ -357,10 +389,6 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       // Sender-health pause is not resumable by global action — use FAILED (not PAUSED).
       const freshOwner = await storage.getUserById(userId);
       if (freshOwner?.sendPaused) {
-        await storage.updateCampaign(campaignId, {
-          status: "FAILED",
-          sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
-        });
         await storage.createAuditLog({
           userId,
           action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
@@ -368,6 +396,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
           targetId: campaignId,
           details: { reason: "sender_paused_mid_loop", pausedAtContact: i },
         });
+        await storage.finalizeCampaign(campaignId, "FAILED");
         console.warn(`${logTag} Campaign ${campaignId} failed at contact ${i} — sender paused mid-loop`);
         senderPausedMidLoop = true;
         break;
@@ -377,32 +406,39 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     const contactId = contactIds[i];
     const contact   = contactMap.get(contactId) || null;
 
-    // On retry: skip contacts already processed to prevent duplicate sends.
-    if (isRetry && contact) {
-      const existing = await storage.getCampaignEmailByContact(campaignId, contactId);
-      if (existing?.status === CAMPAIGN_EMAIL_STATUS.SENT) { sentCount++; continue; }
-      if (existing?.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED) { skippedCount++; continue; }
-      // BOUNCED and COMPLAINED are set by the SNS handler after a confirmed delivery.
-      // They must never be re-sent to, even on retry — the address is permanently unsafe.
-      if (existing?.status === CAMPAIGN_EMAIL_STATUS.BOUNCED)    { skippedCount++; continue; }
-      if (existing?.status === CAMPAIGN_EMAIL_STATUS.COMPLAINED) { skippedCount++; continue; }
-      if (existing?.status === CAMPAIGN_EMAIL_STATUS.FAILED) {
-        const isPermanent = existing.failureReason && [
-          "hard_bounce", "invalid_recipient", "complaint", "suppressed",
-        ].includes(existing.failureReason);
-        if (isPermanent) { failedCount++; continue; }
-      }
-      // PENDING or transient FAILED: fall through and re-process
-    }
-
-    // Create PENDING audit record before any send attempt.
-    const campaignEmailRecord = await storage.createCampaignEmail({
+    // PAR-TRUST-017 §7.1 — atomic at-most-once claim, replacing the previous
+    // SELECT-then-INSERT (check-then-act, not atomic — the actual mechanism the
+    // whole PAR exists to close). Runs unconditionally (not gated on isRetry):
+    // on a first run no row exists yet, so the claim always succeeds via INSERT;
+    // on a retry, claimCampaignEmail atomically reclaims an existing PENDING/
+    // transient-FAILED row or is a no-op if the row is already terminal. Either
+    // way, exactly one execution ever wins the claim for a given contact, no
+    // matter how many are concurrently attempting it or why.
+    const campaignEmailRecord = await storage.claimCampaignEmail({
       campaignId,
       userId,
       contactId:      contact ? contactId : null,
       recipientEmail: contact?.email || "unknown",
-      status: CAMPAIGN_EMAIL_STATUS.PENDING,
     });
+
+    if (!campaignEmailRecord) {
+      // Someone else already claimed (or terminally owns) this contact. Read the
+      // outcome to keep local counters accurate; never send. This covers both a
+      // legitimate whole-campaign retry finding prior terminal work, and — the
+      // scenario this PAR is about — a residual overlap from another concurrent
+      // execution: either way, this execution must not process this contact again.
+      const existing = contact ? await storage.getCampaignEmailByContact(campaignId, contactId) : null;
+      if (existing?.status === CAMPAIGN_EMAIL_STATUS.SENT) sentCount++;
+      else if (existing?.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED) skippedCount++;
+      // BOUNCED and COMPLAINED are set by the SNS handler after a confirmed delivery.
+      else if (existing?.status === CAMPAIGN_EMAIL_STATUS.BOUNCED)    skippedCount++;
+      else if (existing?.status === CAMPAIGN_EMAIL_STATUS.COMPLAINED) skippedCount++;
+      else if (existing?.status === CAMPAIGN_EMAIL_STATUS.FAILED)     failedCount++;
+      // PENDING here means another execution is actively claiming/processing it
+      // right now — not ours to count either way; leave it to whichever
+      // execution actually holds the claim.
+      continue;
+    }
 
     // M10: generate per-contact tracking tokens if TRACK_BASE_URL is configured.
     // Failure is non-fatal — email delivers without analytics rather than blocking.
@@ -550,8 +586,10 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   }
 
   // ── Post-loop: mid-loop break handling ──────────────────────────────────────
-  // Cancel/pause/sender-pause already wrote their own counts during the break.
-  // Credit exhaustion uses the atomic terminal write below.
+  // Pause/sender-pause already wrote their own counts + finalization (where
+  // applicable) during the break. Credit exhaustion uses the atomic terminal
+  // write below (it does not change status itself — the campaign completes,
+  // just with notReached > 0).
 
   if (outOfCredits) {
     await storage.createAuditLog({
@@ -576,19 +614,16 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     console.warn(`${logTag} Campaign ${campaignId} failed mid-loop — sender paused`);
     return;
   }
-  if (cancelledMidLoop) {
-    console.warn(`${logTag} Campaign ${campaignId} cancelled mid-loop — counts flushed`);
-    return;
-  }
 
-  // Re-read status to catch any external state change (e.g., admin action during the loop's
-  // last batch of contacts that didn't land on a PAUSE_CHECK_INTERVAL boundary).
+  // Re-read status to catch any external state change in the window between the
+  // last per-iteration check (§7.2, above) and now — specifically, a stop decision
+  // that arrived while the *final* contact was still being processed, which has no
+  // "next iteration" to catch it. Also the only check reached at all when
+  // contactIds.length === 0.
   const currentState = await storage.getCampaign(campaignId);
-  if (currentState?.status === "FAILED") {
-    console.warn(`${logTag} Campaign ${campaignId} externally terminated (FAILED) — not overwriting to COMPLETED`);
-    await storage.updateCampaign(campaignId, {
-      sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
-    });
+  if (currentState?.status === "FAILED" || currentState?.status === CAMPAIGN_STATUS.CANCELLED) {
+    console.warn(`${logTag} Campaign ${campaignId} externally ${currentState.status.toLowerCase()} — not overwriting to COMPLETED`);
+    await storage.finalizeCampaign(campaignId, currentState.status);
     return;
   }
   if (currentState?.status === "PAUSED") {
@@ -598,37 +633,30 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     });
     return;
   }
-  if (currentState?.status === CAMPAIGN_STATUS.CANCELLED) {
-    console.warn(`${logTag} Campaign ${campaignId} cancelled — not overwriting to COMPLETED`);
-    await storage.updateCampaign(campaignId, {
-      sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
-    });
-    return;
-  }
 
-  // Atomic terminal transition: only writes COMPLETED if status is still RUNNING.
-  // Prevents a TOCTOU race where status changed between the currentState read above
-  // and this write (e.g., two concurrent executions on the inline fallback path).
-  const completed = await storage.updateCampaignIfRunning(campaignId, {
-    sentEmails:   sentCount,
-    failedEmails: failedCount,
-    skippedEmails: skippedCount,
-    creditsUsed:  sentCount,
-    status:       "COMPLETED",
-    completedAt:  new Date(),
-  });
+  // Atomic terminal transition: only finalizes to COMPLETED if status is still
+  // RUNNING and not yet finalized. Prevents a TOCTOU race where status changed
+  // between the currentState read above and this write (e.g., two concurrent
+  // executions on the inline fallback path) — same guarantee updateCampaignIfRunning
+  // used to provide, now folded into finalizeCampaign's own guard (PAR-TRUST-017 §7.3).
+  const completed = await storage.finalizeCampaign(campaignId, "COMPLETED");
 
   if (!completed) {
     console.warn(`${logTag} Campaign ${campaignId} status changed before COMPLETED write — skipping`);
     return;
   }
 
+  // Read back the just-finalized counts rather than this execution's own local
+  // sentCount/failedCount — under the two-executions-racing scenario (§7.5),
+  // this execution's local counters only reflect what *it* personally sent,
+  // not the true total finalizeCampaign just recorded.
+  const finalizedCampaign = await storage.getCampaign(campaignId);
   await storage.createAuditLog({
     userId,
     action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
     targetType: "campaign",
     targetId: campaignId,
-    details: { name: campaign.name, sentEmails: sentCount, failedEmails: failedCount },
+    details: { name: campaign.name, sentEmails: finalizedCampaign?.sentEmails ?? sentCount, failedEmails: finalizedCampaign?.failedEmails ?? failedCount },
   });
 
   if (owner && owner.role !== USER_ROLES.ROOT_ADMIN && !owner.isSecondaryRoot) {

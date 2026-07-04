@@ -12,7 +12,7 @@ import { db, isDevMode } from "./db.js";
 import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { MIN_SENDER_HEALTH_SENT } from "./campaignConfig.js";
+import { MIN_SENDER_HEALTH_SENT, PERMANENT_FAILURE_REASONS } from "./campaignConfig.js";
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
 
@@ -28,7 +28,7 @@ import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
 
 // Use imports only when not in dev mode
-const { eq, and, desc, gte, sql, lt, inArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
+const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
 const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
@@ -1125,16 +1125,6 @@ const dbStorage = {
     return campaign || null;
   },
 
-  // Atomic: only updates if campaign is currently RUNNING.
-  // Used for the terminal COMPLETED write to prevent TOCTOU races.
-  async updateCampaignIfRunning(id, updates) {
-    const [campaign] = await db.update(campaigns)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(and(eq(campaigns.id, id), eq(campaigns.status, "RUNNING")))
-      .returning();
-    return campaign || null;
-  },
-
   // Lightweight status-only read — avoids fetching the full campaign row (35+ columns)
   // for the mid-loop cancellation check.
   async getCampaignStatus(id) {
@@ -1153,6 +1143,93 @@ const dbStorage = {
     return campaign || null;
   },
 
+  // PAR-TRUST-017 — DB-derived source of truth for a campaign's final counts.
+  // Used by finalizeCampaign() whenever the caller has no trusted local counters
+  // (i.e. it is not the loop execution that actually processed the contacts).
+  async deriveCountsFromCampaignEmails(campaignId) {
+    const rows = await db.select({
+      status: campaignEmails.status,
+      count: sql`count(*)`,
+    }).from(campaignEmails)
+      .where(eq(campaignEmails.campaignId, campaignId))
+      .groupBy(campaignEmails.status);
+
+    const byStatus = Object.fromEntries(rows.map(r => [r.status, parseInt(r.count, 10)]));
+    const sentEmails = byStatus[CAMPAIGN_EMAIL_STATUS.SENT] || 0;
+    return {
+      sentEmails,
+      failedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.FAILED] || 0,
+      skippedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.SUPPRESSED] || 0,
+      creditsUsed: sentEmails,
+    };
+  },
+
+  // PAR-TRUST-017 §7.3/§7.5 — the sole authoritative owner of campaign finalization.
+  // Idempotent: gated on `finalized_at IS NULL` using the same "WHERE <flag> IS NULL
+  // ... RETURNING" claim pattern already established for SNS event dedup elsewhere in
+  // this file. Any number of concurrent/duplicate calls are safe — only the first to
+  // reach the DB performs the work; every other call is a pure no-op.
+  //
+  // Always derives counts from campaign_emails — never trusts a caller-supplied
+  // local counter, even from the loop execution that is finalizing. A concurrency
+  // test caught exactly why this matters: when two executions of the loop are
+  // racing (the R1 scenario this whole PAR exists for), each one's local counter
+  // only reflects the contacts *it* personally won via claimCampaignEmail (§7.1) —
+  // the other execution's contribution is invisible to it. Trusting either one's
+  // local count would silently under-report the true total by however many
+  // contacts the other execution processed. campaign_emails is the only source
+  // that is correct regardless of how many executions contributed.
+  //
+  // Does NOT decide *that* a campaign should stop or *why* — that remains the
+  // responsibility of whichever component made the decision (cancel endpoint,
+  // deactivation handler, mid-loop pause/domain/warm-up checks), which already wrote
+  // its own status + exactly one audit log at the point of decision. This function
+  // only ever records *that* a campaign stopped and *what its true final counts were*.
+  //
+  // toStatus is required and must be one of COMPLETED/CANCELLED/FAILED — PAUSED is
+  // never a legal finalization target (it is resumable; finalizing it would be a
+  // one-way trip a resume could never undo).
+  async finalizeCampaign(campaignId, toStatus) {
+    if (!["COMPLETED", "CANCELLED", "FAILED"].includes(toStatus)) {
+      throw new Error(`finalizeCampaign: illegal toStatus "${toStatus}" — PAUSED is not a terminal state`);
+    }
+
+    const counts = await this.deriveCountsFromCampaignEmails(campaignId);
+
+    const finalized = await db.transaction(async (tx) => {
+      // COMPLETED additionally requires status still be RUNNING at the moment of
+      // finalization — this preserves the pre-existing TOCTOU protection (an
+      // externally-decided CANCELLED/FAILED must never be overwritten to COMPLETED).
+      // CANCELLED/FAILED finalization does not re-check status: the caller already
+      // confirmed (via its own decision + write) that this is the correct terminal
+      // status; finalizeCampaign is only reconciling counts for a decision already made.
+      const whereClause = toStatus === "COMPLETED"
+        ? and(eq(campaigns.id, campaignId), isNull(campaigns.finalizedAt), eq(campaigns.status, "RUNNING"))
+        : and(eq(campaigns.id, campaignId), isNull(campaigns.finalizedAt));
+
+      const [row] = await tx.update(campaigns)
+        .set({
+          ...counts,
+          status: toStatus,
+          finalizedAt: new Date(),
+          ...(toStatus === "COMPLETED" ? { completedAt: new Date() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(whereClause)
+        .returning({ id: campaigns.id });
+
+      if (!row) return null;
+
+      await tx.update(campaignEmails)
+        .set({ status: CAMPAIGN_EMAIL_STATUS.FAILED, failureReason: "campaign_terminated" })
+        .where(and(eq(campaignEmails.campaignId, campaignId), eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.PENDING)));
+
+      return row;
+    });
+
+    return !!finalized;
+  },
+
   // Bulk-update orphaned PENDING campaign_emails to FAILED during crash recovery.
   // Prevents History from showing permanent "Pending" records for FAILED campaigns.
   async bulkFailOrphanedCampaignEmails(campaignId) {
@@ -1162,62 +1239,6 @@ const dbStorage = {
         eq(campaignEmails.campaignId, campaignId),
         eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.PENDING)
       ));
-  },
-
-  async startCampaign(campaignId, userId) {
-    const campaign = await this.getCampaign(campaignId);
-    if (!campaign) throw new Error("Campaign not found");
-    
-    const canStart = await this.canStartCampaign(userId, campaign.totalEmails);
-    if (!canStart.allowed) {
-      await this.createAuditLog({
-        userId,
-        action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
-        targetType: "campaign",
-        targetId: campaignId,
-        details: canStart
-      });
-      throw new Error(canStart.reason);
-    }
-    
-    const [updated] = await db.update(campaigns)
-      .set({ 
-        status: CAMPAIGN_STATUS.RUNNING, 
-        startedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(campaigns.id, campaignId))
-      .returning();
-    
-    await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
-      targetType: "campaign",
-      targetId: campaignId
-    });
-    
-    return updated;
-  },
-
-  async completeCampaign(campaignId, userId) {
-    const [campaign] = await db.update(campaigns)
-      .set({ 
-        status: CAMPAIGN_STATUS.COMPLETED, 
-        completedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(campaigns.id, campaignId))
-      .returning();
-    
-    await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
-      targetType: "campaign",
-      targetId: campaignId,
-      details: { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails }
-    });
-    
-    return campaign;
   },
 
   async getCampaignsByStatus(status) {
@@ -1838,6 +1859,65 @@ const dbStorage = {
       status: data.status || CAMPAIGN_EMAIL_STATUS.PENDING,
     }).returning();
     return record;
+  },
+
+  // PAR-TRUST-017 §7.1 — atomic at-most-once claim for a (campaign, contact) pair.
+  // Replaces the previous SELECT-then-INSERT (check-then-act, not atomic) in the
+  // send loop. Two atomic steps, either of which can be the one that "wins":
+  //
+  //  1. Reclaim: if a row already exists in FAILED state with a transient,
+  //     non-permanent reason, atomically flip it back to PENDING via a single
+  //     WHERE-guarded UPDATE. This is genuinely exclusive: the guard requires
+  //     status='FAILED', and the update itself changes status away from FAILED,
+  //     so a second concurrent attempt against the same row no longer matches
+  //     the WHERE clause once the first commits — real mutual exclusion.
+  //
+  //     Deliberately does NOT reclaim a row that is already PENDING. Caught by
+  //     this PAR's own verification (a concurrency test proved it): an UPDATE
+  //     guarded on status='PENDING' that sets status back to PENDING is a
+  //     no-op transition — the guarded value never changes, so it provides no
+  //     exclusion at all, and every concurrent claimant would "win" the same
+  //     row. A PENDING row is either being actively processed by whoever holds
+  //     it (must not be touched), or is orphaned from a dead process — in which
+  //     case finalizeCampaign's orphan cleanup (§7.3) will convert it to
+  //     FAILED("campaign_terminated", not a permanent reason) once this
+  //     campaign is finalized, making it legitimately reclaimable afterward.
+  //  2. Create: if no row exists yet, INSERT ... ON CONFLICT DO NOTHING. The
+  //     conflict target is the two partial unique indexes on campaign_emails —
+  //     if a row already exists in ANY other state (PENDING, SENT, SUPPRESSED,
+  //     BOUNCED, COMPLAINED, or FAILED with a permanent reason), this is a
+  //     no-op and the contact is correctly never sent to again.
+  //
+  // Either way, exactly one caller ever wins the claim for a given contact at a
+  // given moment, regardless of how many executions are concurrently attempting
+  // it or why — this is what makes double-send structurally impossible.
+  async claimCampaignEmail(data) {
+    const matchTarget = data.contactId
+      ? eq(campaignEmails.contactId, data.contactId)
+      : and(isNull(campaignEmails.contactId), eq(campaignEmails.recipientEmail, data.recipientEmail));
+
+    const [reclaimed] = await db.update(campaignEmails)
+      .set({ status: CAMPAIGN_EMAIL_STATUS.PENDING, failureReason: null })
+      .where(and(
+        eq(campaignEmails.campaignId, data.campaignId),
+        matchTarget,
+        eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.FAILED),
+        or(
+          isNull(campaignEmails.failureReason),
+          notInArray(campaignEmails.failureReason, PERMANENT_FAILURE_REASONS)
+        )
+      ))
+      .returning();
+    if (reclaimed) return reclaimed;
+
+    const [created] = await db.insert(campaignEmails).values({
+      campaignId: data.campaignId,
+      userId: data.userId,
+      contactId: data.contactId || null,
+      recipientEmail: data.recipientEmail,
+      status: CAMPAIGN_EMAIL_STATUS.PENDING,
+    }).onConflictDoNothing().returning();
+    return created || null; // null means someone else already claimed (or terminally owns) this contact
   },
 
   async updateCampaignEmail(id, updates) {

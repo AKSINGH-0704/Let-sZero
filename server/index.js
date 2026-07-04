@@ -639,8 +639,13 @@ async function diagnoseSMTPPath() {
 
       for (const c of running) {
         // Rule 1: completedAt set means the campaign finished; status column is stale.
+        // This narrow race (completedAt written but status write lost) should no
+        // longer be reachable for new campaigns — finalizeCampaign now writes both
+        // in the same transaction (PAR-TRUST-017 §7.3) — kept as a defensive
+        // backstop for any pre-existing data. finalizedAt is backfilled here too,
+        // for consistency with "terminal implies finalized" going forward.
         if (c.completedAt) {
-          await storage.updateCampaign(c.id, { status: "COMPLETED" });
+          await storage.updateCampaign(c.id, { status: "COMPLETED", finalizedAt: c.finalizedAt || c.completedAt });
           console.log(`[RECOVERY] Campaign ${c.id} → COMPLETED (completedAt already set)`);
           continue;
         }
@@ -662,12 +667,18 @@ async function diagnoseSMTPPath() {
         }
 
         // Rule 3: No completedAt, no live BullMQ job → mark FAILED so the UI unblocks.
-        await storage.updateCampaign(c.id, { status: "FAILED" });
-        // Bulk-update any PENDING campaign_emails to FAILED — prevents History from showing
-        // permanent "Pending" records for campaigns that crashed before the send completed.
-        await storage.bulkFailOrphanedCampaignEmails(c.id).catch(err =>
-          console.warn(`[RECOVERY] bulkFailOrphanedCampaignEmails failed for ${c.id}:`, err.message)
-        );
+        // PAR-TRUST-017 §7.3/§7.5 — finalizeCampaign re-derives true counts from
+        // campaign_emails (this recovery pass has no local counters to trust) and
+        // marks orphaned PENDING rows FAILED in the same transaction — replacing
+        // the separate updateCampaign + bulkFailOrphanedCampaignEmails calls.
+        await storage.createAuditLog({
+          userId: c.userId,
+          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+          targetType: "campaign",
+          targetId: c.id,
+          details: { reason: "crash_recovery_no_live_job" },
+        }).catch(err => console.warn(`[RECOVERY] audit log failed for ${c.id}:`, err.message));
+        await storage.finalizeCampaign(c.id, "FAILED");
         console.log(`[RECOVERY] Campaign ${c.id} → FAILED (no live job found)`);
       }
     } catch (err) {

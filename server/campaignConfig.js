@@ -27,3 +27,10 @@ export const CHECKPOINT_INTERVAL = 25;
 export const PAUSE_CHECK_INTERVAL = 50;
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// campaign_emails.failure_reason values that mean "never retry this contact,
+// the address is permanently unsafe" — as opposed to a transient send error,
+// which a whole-campaign retry is allowed to re-attempt. Read by both the loop's
+// own retry-skip logic and storage's claimCampaignEmail (PAR-TRUST-017 §7.1) —
+// a single source of truth so the two can never drift out of sync.
+export const PERMANENT_FAILURE_REASONS = ["hard_bounce", "invalid_recipient", "complaint", "suppressed"];

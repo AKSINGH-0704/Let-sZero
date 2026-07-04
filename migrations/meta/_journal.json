@@ -29,6 +29,13 @@
       "when": 1782612887611,
       "tag": "0003_m13b_trust_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783198689978,
+      "tag": "0004_campaign_execution_integrity",
+      "breakpoints": true
     }
   ]
 }
