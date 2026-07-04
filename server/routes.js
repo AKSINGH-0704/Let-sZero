@@ -9,7 +9,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { sendCampaignEmail, sendTransactionalEmail, sendPaymentReceiptEmail, verifySesConnection } from "./email.js";
 import { uploadFile } from "./s3.js";
 import express from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { addCampaignJob, getCampaignQueue, getRedisConnection } from "./queue.js";
 import { verifyUnsubscribeToken } from "./unsubscribe.js";
 import { verifySnsMessage } from "./sns.js";
@@ -109,7 +109,10 @@ const domainRegisterLimiter = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `domain_register:${req.user?.id ?? req.ip}`,
+  // req.ip fallback wrapped in ipKeyGenerator for IPv6 safety (DEV-001). These limiters
+  // always run after authMiddleware, so req.user is set in practice — the fallback is
+  // defensive only, but express-rate-limit's static keyGenerator validation still requires it.
+  keyGenerator: (req) => `domain_register:${req.user?.id ?? ipKeyGenerator(req.ip)}`,
   skip: (req) => req.isRootAdmin === true,
   message: { message: "Domain registration limit reached. You can register up to 3 domains per day." },
 });
@@ -120,7 +123,7 @@ const domainCheckLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `domain_check:${req.user?.id ?? req.ip}:${req.params.id ?? ""}`,
+  keyGenerator: (req) => `domain_check:${req.user?.id ?? ipKeyGenerator(req.ip)}:${req.params.id ?? ""}`,
   skip: (req) => req.isRootAdmin === true,
   message: { message: "Too many verification checks. Please wait before checking again." },
 });
@@ -131,7 +134,7 @@ const domainDeleteLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `domain_delete:${req.user?.id ?? req.ip}`,
+  keyGenerator: (req) => `domain_delete:${req.user?.id ?? ipKeyGenerator(req.ip)}`,
   skip: (req) => req.isRootAdmin === true,
   message: { message: "Domain deletion limit reached. Please try again tomorrow." },
 });
@@ -1335,6 +1338,66 @@ export async function registerRoutes(httpServer, app) {
       });
 
       res.json({ message: "User deactivated successfully" });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Restores a deactivated account. Mirrors DELETE's authorization guards exactly
+  // (same admin can reverse their own deactivation). Does NOT restore reclaimed
+  // credits, create a session, or force a password reset — deactivation never
+  // touched the password, and auto-login would be an authorization violation
+  // (the admin would effectively be logging in as the user). Re-checks the plan's
+  // team-seat limit because getChildUserCount only counts isActive=true rows, so
+  // seats freed by deactivation may since have been filled by new invites/creates —
+  // mirrors the identical re-check already done in POST /api/users and
+  // /api/invites/accept for the same reason.
+  app.post("/api/users/:id/reactivate", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const target = await storage.getUserById(id);
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (target.role === "ROOT_ADMIN" && req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Cannot reactivate root admin" });
+      }
+      if (target.isSecondaryRoot && req.user.role !== USER_ROLES.ROOT_ADMIN) {
+        return res.status(403).json({ message: "Cannot reactivate a secondary root admin" });
+      }
+      if (req.user.role === "SUB_ADMIN" && target.parentId !== req.user.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      if (target.isActive) {
+        return res.status(400).json({ message: "User is already active" });
+      }
+
+      // Seat-limit re-check — identical pattern to POST /api/users (line ~1139)
+      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
+      if (memberLimit !== Infinity) {
+        const activeCount = await storage.getChildUserCount(req.user.id);
+        if (activeCount >= memberLimit) {
+          return res.status(403).json({
+            error: "PLAN_LIMIT",
+            message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade or deactivate another member before reactivating this one.`,
+            currentPlan: req.user.effectivePlan || "free",
+            limit: memberLimit,
+            current: activeCount,
+          });
+        }
+      }
+
+      await storage.updateUser(id, { isActive: true });
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.USER_REACTIVATED_BY_ADMIN,
+        targetType: "user",
+        targetId: id,
+        details: { username: target.username, role: target.role },
+      });
+
+      const updatedUser = await storage.getUserById(id);
+      res.json(updatedUser);
     } catch (error) {
       res.status(500).json({ message: error.message });
     }

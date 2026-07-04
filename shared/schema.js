@@ -55,6 +55,13 @@ export const AUDIT_ACTIONS = {
   USER_CREATED: "USER_CREATED",
   USER_UPDATED: "USER_UPDATED",
   USER_DELETED: "USER_DELETED",
+  // Distinct from USER_REACTIVATED (below) — that action is reserved for the inactivity
+  // governance system auto-clearing isDormant (self/system-triggered, userId===targetId in
+  // every existing call site). This one is an explicit admin action flipping isActive back
+  // to true on someone else's account (userId=admin, targetId=reactivated user). Kept
+  // separate per the codebase's own convention (see EMERGENCY_RECOVERY_TRIGGERED, which is
+  // likewise distinct from USER_REACTIVATED despite also flipping isActive).
+  USER_REACTIVATED_BY_ADMIN: "USER_REACTIVATED_BY_ADMIN",
   PASSWORD_CHANGED: "PASSWORD_CHANGED",
   PASSWORD_RESET_FORCED: "PASSWORD_RESET_FORCED",
   CREDITS_ALLOCATED: "CREDITS_ALLOCATED",

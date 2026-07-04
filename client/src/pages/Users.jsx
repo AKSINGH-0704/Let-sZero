@@ -209,16 +209,34 @@ export default function Users() {
     },
   });
 
-  const deleteMutation = useMutation({
+  // Backend performs a soft deactivation (DELETE /api/users/:id) — the account is
+  // reversible via reactivateMutation below, not permanently removed.
+  const deactivateMutation = useMutation({
     mutationFn: async (userId) => {
       await apiRequest("DELETE", `/api/users/${userId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "User deleted successfully" });
+      toast({ title: "User deactivated" });
     },
     onError: (err) => {
-      toast({ title: "Failed to delete user", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to deactivate user", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const reactivateMutation = useMutation({
+    mutationFn: async (userId) => {
+      const res = await apiRequest("POST", `/api/users/${userId}/reactivate`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: "User reactivated" });
+    },
+    onError: (err) => {
+      let msg = err.message;
+      try { msg = JSON.parse(err.message).message || msg; } catch {}
+      toast({ title: "Failed to reactivate user", description: msg, variant: "destructive" });
     },
   });
 
@@ -589,9 +607,15 @@ export default function Users() {
                               <div className="font-medium text-gray-900 dark:text-white">{user.username}</div>
                               <div className="text-sm text-gray-500 dark:text-slate-400">{user.email}</div>
                               <div className="flex flex-wrap gap-1 mt-0.5">
-                                <Badge className={cn("text-xs px-1.5 py-0", user.isActiveThisWeek ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500")}>
-                                  {user.isActiveThisWeek ? "Active" : "Inactive"}
-                                </Badge>
+                                {/* Deactivated takes precedence over the activity-recency badge below —
+                                    they answer different questions and showing both is confusing/redundant. */}
+                                {!user.isActive ? (
+                                  <Badge className="text-xs px-1.5 py-0 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" title="Access revoked — reactivate to restore login">Deactivated</Badge>
+                                ) : (
+                                  <Badge className={cn("text-xs px-1.5 py-0", user.isActiveThisWeek ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500")}>
+                                    {user.isActiveThisWeek ? "Active" : "Inactive"}
+                                  </Badge>
+                                )}
                                 {user.isDormant && (
                                   <Badge className="text-xs px-1.5 py-0 bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">Dormant</Badge>
                                 )}
@@ -746,37 +770,75 @@ export default function Users() {
                               </Button>
                             )}
 
-                            {/* Delete */}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  disabled={isCurrentUser || user.role === "ROOT_ADMIN"}
-                                  className="text-destructive hover:text-destructive"
-                                  data-testid={`button-delete-${user.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete User</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to delete {user.username}? This will terminate all their active campaigns and reclaim allocated credits. This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteMutation.mutate(user.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            {/* Deactivate / Reactivate — reversible account-access toggle */}
+                            {user.isActive ? (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={isCurrentUser || user.role === "ROOT_ADMIN"}
+                                    className="text-destructive hover:text-destructive"
+                                    title="Deactivate user"
+                                    data-testid={`button-delete-${user.id}`}
                                   >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Deactivate {user.username}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This revokes their access immediately, terminates any active campaigns, and
+                                      reclaims their unspent credits. You can reactivate this account later to
+                                      restore access — but reclaimed credits are not automatically returned.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deactivateMutation.mutate(user.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Deactivate
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            ) : (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
+                                    title="Reactivate user"
+                                    data-testid={`button-reactivate-${user.id}`}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Reactivate {user.username}?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This restores their login access with the same role and permissions they had
+                                      before. Credits reclaimed at deactivation are not automatically restored —
+                                      allocate new credits separately if needed.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => reactivateMutation.mutate(user.id)}
+                                      className="bg-green-600 text-white hover:bg-green-700"
+                                    >
+                                      Reactivate
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
