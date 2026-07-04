@@ -36,9 +36,13 @@ html, body {
   --primary: 243 54% 34%;
   --primary-foreground: 0 0% 100%;
   --secondary: 215 20% 65%;
-  --secondary-foreground: 210 40% 98%;
+  /* M19 a11y: was 210 40% 98% (white-on-slate = 2.45:1, WCAG AA fail on every
+     secondary button / active nav item). Dark text on the light slate = ~7:1. */
+  --secondary-foreground: 222 47% 11%;
   --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
+  /* M19 a11y: was 215 16% 47% (4.48:1 — misses AA 4.5:1 by 0.02 app-wide).
+     Slightly darker keeps the muted look with a comfortable ~5:1 margin. */
+  --muted-foreground: 215 19% 43%;
   --accent: 187 85% 43%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
@@ -65,12 +69,14 @@ html, body {
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  /* M19 design system — semantic status tokens (danger = --destructive) */
-  --success: 142 72% 29%;
+  /* M19 design system — semantic status tokens (danger = --destructive).
+     Light-mode lightness values chosen for >=4.5:1 as small text on the
+     tinted /10 backgrounds over --background (axe-verified in Phase F). */
+  --success: 142 72% 26%;
   --success-foreground: 0 0% 100%;
-  --warning: 30 90% 38%;
+  --warning: 28 92% 30%;
   --warning-foreground: 0 0% 100%;
-  --info: 217 91% 45%;
+  --info: 217 91% 40%;
   --info-foreground: 0 0% 100%;
 
   /* M19 design system — motion tokens (theme-independent) */
@@ -141,8 +147,11 @@ html, body {
   --muted-foreground: 215 16% 59%;
   --accent: 187 92% 69%;
   --accent-foreground: 222 47% 6%;
-  --destructive: 0 62% 55%;
-  --destructive-foreground: 210 40% 98%;
+  /* M19 a11y: was 0 62% 55% / near-white fg (3.83:1 as text, 4.26:1 as button).
+     Lighter red + dark fg matches the app's dark-mode accent pattern (see
+     --primary-foreground) and passes AA in both text and button roles. */
+  --destructive: 0 66% 62%;
+  --destructive-foreground: 222 47% 6%;
   --input: 222 47% 13%;
   --ring: 187 92% 69%;
   --chart-1: 263 70% 60%;

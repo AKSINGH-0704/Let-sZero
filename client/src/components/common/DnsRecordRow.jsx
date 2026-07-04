@@ -36,16 +36,22 @@ export default function DnsRecordRow({ record, status, statusLabel, className })
         <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{type}</span>
         {status && <StatusChip status={status} label={statusLabel} size="sm" />}
       </div>
+      {/* Copy buttons live INSIDE the <dd> — a <dl> group div may only contain
+          dt/dd elements directly (axe: definition-list, WCAG 1.3.1). */}
       <dl className="space-y-1.5 font-mono text-[13px]">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <dt className="w-12 shrink-0 text-muted-foreground">Name</dt>
-          <dd className="flex-1 truncate text-foreground">{record?.name}</dd>
-          <CopyButton value={record?.name} field="name" />
+          <dd className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="truncate text-foreground">{record?.name}</span>
+            <CopyButton value={record?.name} field="name" />
+          </dd>
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <dt className="w-12 shrink-0 text-muted-foreground">Value</dt>
-          <dd className="flex-1 truncate text-foreground">{record?.value}</dd>
-          <CopyButton value={record?.value} field="value" />
+          <dd className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="truncate text-foreground">{record?.value}</span>
+            <CopyButton value={record?.value} field="value" />
+          </dd>
         </div>
       </dl>
     </div>
