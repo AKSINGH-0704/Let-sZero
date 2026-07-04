@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import NavMenu from "@/components/layout/NavMenu";
 import {
   Mail,
   Sun,
@@ -30,33 +31,50 @@ import {
   BookUser,
   Menu,
   X,
-  Shield
+  Shield,
+  Globe,
+  SlidersHorizontal,
 } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 
+// Desktop nav reveals at `lg` (>=1024). Browser measurement (Phase B) showed that 5
+// workflow items + the Manage menu need ~959px, which fits at lg but clips at md; the
+// full 8–10-item flat nav clipped through 1024–1280. Below lg, everything moves into the
+// mobile sheet. Config/admin areas live in the grouped "Manage" menu — the seed of the
+// future settings/operations hub — so the top bar stays uncluttered and future-scalable.
 export default function Navbar() {
   const { user, logout, isAdmin, isRootAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navItems = [
+  const workflowItems = [
     { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/app/campaigns/new", label: "New Campaign", icon: Send },
     { href: "/app/history", label: "History", icon: History },
     { href: "/app/contacts", label: "Contacts", icon: BookUser },
     { href: "/app/templates", label: "Templates", icon: FileText },
-    { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
-    { href: "/app/payments", label: "Payments", icon: CreditCard },
   ];
 
-  if (isAdmin) {
-    navItems.push({ href: "/app/users", label: "Users", icon: Users });
+  const manageGroups = [
+    { label: "Sending", items: [
+      { href: "/app/domains", label: "Domains", icon: Globe },
+      { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
+    ] },
+    { label: "Account", items: [
+      { href: "/app/payments", label: "Payments", icon: CreditCard },
+    ] },
+  ];
+  if (isAdmin || isRootAdmin) {
+    const adminItems = [];
+    if (isAdmin) adminItems.push({ href: "/app/users", label: "Users", icon: Users });
+    if (isRootAdmin) adminItems.push({ href: "/app/audit", label: "Audit Logs", icon: Settings });
+    if (adminItems.length) manageGroups.push({ label: "Admin", items: adminItems });
   }
 
-  if (isRootAdmin) {
-    navItems.push({ href: "/app/audit", label: "Audit Logs", icon: Settings });
-  }
+  const isActive = (href) => location === href || location.startsWith(href + "/");
+  const manageHrefs = manageGroups.flatMap(g => g.items.map(i => i.href));
+  const manageActive = manageHrefs.some(h => isActive(h));
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 overflow-hidden">
@@ -68,33 +86,41 @@ export default function Navbar() {
             <img src="/repmail-logo-black.png" alt="RepMail" className="h-9 w-auto block dark:hidden" style={{ objectFit: "contain" }} />
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
-              const isActive = location === item.href || location.startsWith(item.href + "/");
+          {/* Desktop nav (>=lg) */}
+          <nav className="hidden lg:flex items-center gap-1">
+            {workflowItems.map((item) => {
+              const active = isActive(item.href);
+              // Button asChild → single <a> styled as a button (no nested interactive elements)
               return (
-                <Link key={item.href} href={item.href}>
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    size="sm"
-                    className="gap-2"
+                <Button key={item.href} asChild variant={active ? "secondary" : "ghost"} size="sm" className="gap-2">
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
                     data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
                   >
-                    <item.icon className="h-4 w-4" />
+                    <item.icon className="h-4 w-4" aria-hidden="true" />
                     {item.label}
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               );
             })}
+            <NavMenu
+              trigger="Manage"
+              icon={SlidersHorizontal}
+              groups={manageGroups}
+              active={location}
+              triggerActive={manageActive}
+            />
           </nav>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mobile hamburger */}
+          {/* Mobile hamburger (<lg) */}
           <button
-            className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
+            className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label="Toggle menu"
+            aria-expanded={mobileOpen}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -103,13 +129,10 @@ export default function Navbar() {
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
+            aria-label="Toggle theme"
             data-testid="button-theme-toggle"
           >
-            {theme === "light" ? (
-              <Moon className="h-5 w-5" />
-            ) : (
-              <Sun className="h-5 w-5" />
-            )}
+            {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
           </Button>
 
           {/* Desktop user dropdown */}
@@ -121,11 +144,11 @@ export default function Navbar() {
                     {getInitials(user?.username)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="hidden md:flex flex-col items-start">
+                <div className="hidden lg:flex flex-col items-start">
                   <span className="text-sm font-medium">{user?.username}</span>
                   <span className="text-xs text-muted-foreground">{user?.role}</span>
                 </div>
-                <ChevronDown className="hidden md:block h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="hidden lg:block h-4 w-4 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
@@ -169,29 +192,53 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile slide-down menu */}
-      <div className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-        mobileOpen ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0'
+      {/* Mobile slide-down menu (<lg) */}
+      <div className={`lg:hidden overflow-hidden transition-all duration-300 ease-in-out ${
+        mobileOpen ? 'max-h-[640px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
         <div className="border-t border-border px-4 py-3 space-y-1">
-          {navItems.map((item) => {
-            const isActive = location === item.href || location.startsWith(item.href + "/");
+          {workflowItems.map((item) => {
+            const active = isActive(item.href);
+            // Styled anchor (Link renders <a>) — no nested interactive elements
             return (
-              <Link key={item.href} href={item.href}>
-                <button
-                  onClick={() => setMobileOpen(false)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </button>
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                onClick={() => setMobileOpen(false)}
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                  active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {item.label}
               </Link>
             );
           })}
+
+          {/* Manage groups */}
+          {manageGroups.map((group) => (
+            <div key={group.label} className="pt-2">
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</p>
+              {group.items.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileOpen(false)}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      active ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
 
           {/* Profile + Logout section */}
           <div className="pt-2 border-t border-border mt-2 space-y-1">
@@ -206,14 +253,13 @@ export default function Navbar() {
                 <span className="text-xs text-muted-foreground truncate">{user?.email}</span>
               </div>
             </div>
-            <Link href="/app/profile">
-              <button
-                onClick={() => setMobileOpen(false)}
-                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <User className="h-4 w-4 shrink-0" />
-                Profile
-              </button>
+            <Link
+              href="/app/profile"
+              onClick={() => setMobileOpen(false)}
+              className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <User className="h-4 w-4 shrink-0" />
+              Profile
             </Link>
             <button
               onClick={() => { setMobileOpen(false); logout(); }}

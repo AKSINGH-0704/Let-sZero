@@ -37,6 +37,7 @@ import { formatNumber, formatDate, calculateCreditsRemaining } from "@/lib/utils
 import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 import SenderHealthWidget from "@/components/SenderHealthWidget";
+import PageHeader from "@/components/common/PageHeader";
 
 // Animation variants
 const containerVariants = {
@@ -175,22 +176,21 @@ export default function Dashboard() {
         {creditsInfo?.isFreePlan && (
           <motion.div
             variants={itemVariants}
-            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-4 py-3 text-sm"
-            style={{ background: "rgba(0,229,200,0.04)", border: "1px solid rgba(0,229,200,0.14)" }}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm"
           >
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0 animate-pulse"
-              style={{ background: "#00E5C8", boxShadow: "0 0 6px rgba(0,229,200,0.6)" }}
+              className="w-2 h-2 rounded-full bg-primary flex-shrink-0 animate-pulse motion-reduce:animate-none"
+              aria-hidden="true"
             />
-            <span className="font-semibold" style={{ color: "#00E5C8" }}>Free Plan</span>
-            <span style={{ color: "#55556A" }}>·</span>
-            <span style={{ color: "#D1D5DB" }}>
+            <span className="font-semibold text-primary">Free Plan</span>
+            <span className="text-muted-foreground" aria-hidden="true">·</span>
+            <span className="text-foreground">
               {formatNumber(creditsInfo.total ?? 0)} credits available
             </span>
             {creditsInfo.freeResetDate && (
               <>
-                <span style={{ color: "#55556A" }}>·</span>
-                <span style={{ color: "#7878A0" }}>
+                <span className="text-muted-foreground" aria-hidden="true">·</span>
+                <span className="text-muted-foreground">
                   Credits refresh:{" "}
                   {new Date(creditsInfo.freeResetDate).toLocaleDateString("en-IN", {
                     day: "numeric",
@@ -201,13 +201,11 @@ export default function Dashboard() {
               </>
             )}
             <div className="flex-1" />
-            <Link href="/app/payments">
-              <span
-                className="text-xs font-semibold cursor-pointer flex-shrink-0"
-                style={{ color: "#00E5C8" }}
-              >
-                Upgrade →
-              </span>
+            <Link
+              href="/app/payments"
+              className="text-xs font-semibold text-primary flex-shrink-0 rounded hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Upgrade →
             </Link>
           </motion.div>
         )}
@@ -237,34 +235,36 @@ export default function Dashboard() {
         )}
 
         {/* Header */}
-        <motion.div className="flex flex-wrap items-start justify-between gap-4" variants={itemVariants}>
-          <div>
-            <div className="flex flex-wrap items-center gap-3 mb-2">
-              <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Dashboard</h1>
-              {user?.plan && (
-                <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
-                  {PLAN_LABELS[user.plan] || "Free Plan"}
-                </span>
-              )}
-            </div>
-            <p className="text-muted-foreground">
-              {statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
-              <option>Last 30 days</option>
-              <option>Last 90 days</option>
-              <option>This year</option>
-            </select>
-            <Link href="/app/campaigns/new">
-              <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Campaign</span>
-                <span className="sm:hidden">New</span>
-              </Button>
-            </Link>
-          </div>
+        <motion.div variants={itemVariants}>
+          <PageHeader
+            title={
+              <span className="flex flex-wrap items-center gap-3">
+                Dashboard
+                {user?.plan && (
+                  <span className={`text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${PLAN_BADGE_STYLES[user.plan] || PLAN_BADGE_STYLES.free}`}>
+                    {PLAN_LABELS[user.plan] || "Free Plan"}
+                  </span>
+                )}
+              </span>
+            }
+            description={statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
+            actions={
+              <>
+                <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
+                  <option>Last 30 days</option>
+                  <option>Last 90 days</option>
+                  <option>This year</option>
+                </select>
+                <Link href="/app/campaigns/new">
+                  <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">New Campaign</span>
+                    <span className="sm:hidden">New</span>
+                  </Button>
+                </Link>
+              </>
+            }
+          />
         </motion.div>
 
         {/* Credit Balance Card */}

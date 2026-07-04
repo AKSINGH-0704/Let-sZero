@@ -74,11 +74,17 @@ import ContactListDetail from "@/pages/ContactListDetail";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetByToken from "@/pages/ResetByToken";
 import Domains from "@/pages/Domains";
+import DomainDetail from "@/pages/DomainDetail";
 import LinkExpired from "@/pages/LinkExpired";
 import Onboarding from "@/pages/Onboarding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
+import { lazy, Suspense } from "react";
+
+// Dev-only design-system preview. Gated on import.meta.env.DEV so Rollup drops the
+// dynamic import (and its chunk) entirely from production builds.
+const DesignPreview = import.meta.env.DEV ? lazy(() => import("@/pages/_DesignPreview")) : null;
 
 function LoadingScreen() {
   return (
@@ -131,6 +137,12 @@ function AppRoutes() {
     <ErrorBoundary resetKey={location}>
       <BrandingManager />
       <Switch>
+        {import.meta.env.DEV && DesignPreview && (
+          <Route path="/_design">
+            <Suspense fallback={null}><DesignPreview /></Suspense>
+          </Route>
+        )}
+
         <Route path="/">
           {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <LandingExperience />}
         </Route>
@@ -230,6 +242,12 @@ function AppRoutes() {
       <Route path="/app/contacts">
         <ProtectedRoute>
           <ContactLibrary />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/app/domains/:id">
+        <ProtectedRoute>
+          <DomainDetail />
         </ProtectedRoute>
       </Route>
 
