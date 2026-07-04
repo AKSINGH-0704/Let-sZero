@@ -17,7 +17,7 @@ import {
 } from "../shared/schema.js";
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
-import { PERMANENT_FAILURE_REASONS } from "./campaignConfig.js";
+import { PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -1028,6 +1028,29 @@ export const memoryStorage = {
     return store.campaigns.get(id)?.status || null;
   },
 
+  // PAR-TRUST-017 §7.7 — mirrors storage.js's renewLeaseAndGetStatus.
+  async renewLeaseAndGetStatus(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign) return null;
+    if (campaign.status === "RUNNING") {
+      campaign.executionLeaseExpiresAt = new Date(Date.now() + EXECUTION_LEASE_DURATION_MS);
+    }
+    return campaign.status;
+  },
+
+  async renewExecutionLease(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign && campaign.status === "RUNNING") {
+      campaign.executionLeaseExpiresAt = new Date(Date.now() + EXECUTION_LEASE_DURATION_MS);
+    }
+  },
+
+  async getExecutionLeaseExpiry(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign) return null;
+    return { executionLeaseExpiresAt: campaign.executionLeaseExpiresAt || null, finalizedAt: campaign.finalizedAt || null };
+  },
+
   async cancelCampaign(id, allowedStatuses) {
     const campaign = store.campaigns.get(id);
     if (!campaign || !allowedStatuses.includes(campaign.status)) return null;
@@ -1084,6 +1107,7 @@ export const memoryStorage = {
     // claim is durably recorded on the in-memory row.
     campaign.status = toStatus;
     campaign.finalizedAt = new Date();
+    campaign.executionLeaseExpiresAt = null; // §7.7 — ownership released
     if (toStatus === "COMPLETED") campaign.completedAt = new Date();
     campaign.updatedAt = new Date();
 

@@ -12,7 +12,7 @@ import { db, isDevMode } from "./db.js";
 import { memoryStorage } from "./memoryStorage.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { MIN_SENDER_HEALTH_SENT, PERMANENT_FAILURE_REASONS } from "./campaignConfig.js";
+import { MIN_SENDER_HEALTH_SENT, PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
 
@@ -1132,6 +1132,46 @@ const dbStorage = {
     return row?.status || null;
   },
 
+  // PAR-TRUST-017 §7.7 — combined liveness check + lease renewal for the loop's
+  // every-iteration check. One atomic UPDATE: if the campaign is still RUNNING,
+  // this both confirms it AND extends the lease in the same round trip (no extra
+  // query versus the old plain-SELECT check). If it's no longer RUNNING, the
+  // WHERE clause simply doesn't match — nothing to renew — and a fallback SELECT
+  // fetches the real status for the caller to act on (only on the rare stopping
+  // path, never in the steady state).
+  async renewLeaseAndGetStatus(campaignId) {
+    const [row] = await db.update(campaigns)
+      .set({ executionLeaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_DURATION_MS) })
+      .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "RUNNING")))
+      .returning({ status: campaigns.status });
+    if (row) return row.status;
+    return await this.getCampaignStatus(campaignId);
+  },
+
+  // Lightweight, best-effort renewal called from inside sendWithRetry's own
+  // retry loop — so a single slow contact (SES throttling, transient retries)
+  // keeps renewing during its own retries, not just once per whole contact.
+  // Never throws — a failed renewal should never abort a send; worst case the
+  // lease naturally lapses and the reclaim gate/recovery correctly treat that
+  // as "no longer owned", which is the intended fallback behavior anyway.
+  async renewExecutionLease(campaignId) {
+    try {
+      await db.update(campaigns)
+        .set({ executionLeaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_DURATION_MS) })
+        .where(and(eq(campaigns.id, campaignId), eq(campaigns.status, "RUNNING")));
+    } catch {
+      // Swallowed by design — see comment above.
+    }
+  },
+
+  // Read-only lease check for the reclaim gate (routes.js) — returns the
+  // expiry timestamp (or null if never set / already cleared by finalization).
+  async getExecutionLeaseExpiry(campaignId) {
+    const [row] = await db.select({ executionLeaseExpiresAt: campaigns.executionLeaseExpiresAt, finalizedAt: campaigns.finalizedAt })
+      .from(campaigns).where(eq(campaigns.id, campaignId));
+    return row || null;
+  },
+
   // Atomic cancellation: transitions PENDING/RUNNING/PAUSED → CANCELLED in one statement.
   // Returns the updated campaign row, or null if no eligible campaign matched
   // (already CANCELLED, COMPLETED, FAILED, or not found).
@@ -1212,6 +1252,7 @@ const dbStorage = {
           ...counts,
           status: toStatus,
           finalizedAt: new Date(),
+          executionLeaseExpiresAt: null, // §7.7 — ownership released, nothing left to renew
           ...(toStatus === "COMPLETED" ? { completedAt: new Date() } : {}),
           updatedAt: new Date(),
         })

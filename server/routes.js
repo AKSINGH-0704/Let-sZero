@@ -16,7 +16,7 @@ import { verifySnsMessage } from "./sns.js";
 import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
-import { runCampaignLoop } from "./campaignLoop.js";
+import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
 import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
@@ -1310,29 +1310,13 @@ export async function registerRoutes(httpServer, app) {
         }
       }
 
-      // b2. PAR-TRUST-017 §7.6 — reclaim gate: wait for every cancelled campaign
-      // to confirm ownership fully relinquished (finalized_at set) before reading
-      // any balance below. Bounded poll — §7.2 guarantees a genuinely-running
-      // loop notices within roughly one send's latency, so this is generous
-      // headroom, not an open-ended wait. A campaign that was PENDING and never
-      // actually started (no loop ever ran, nothing will ever finalize it on its
-      // own) is self-finalized here after the timeout — finalizeCampaign is
-      // idempotent and safe to call from any component.
-      // Parallel across campaigns — worst case is one 3s wait total, not one per
-      // campaign, when an admin has several simultaneously-active campaigns.
-      await Promise.all(activeCampaigns.map(async (campaign) => {
-        const deadline = Date.now() + 3000;
-        let finalized = false;
-        while (Date.now() < deadline) {
-          const current = await storage.getCampaign(campaign.id);
-          if (current?.finalizedAt) { finalized = true; break; }
-          await new Promise(r => setTimeout(r, 250));
-        }
-        if (!finalized) {
-          console.warn(`[DELETE_USER] Campaign ${campaign.id} did not self-finalize within timeout — forcing finalization`);
-          await storage.finalizeCampaign(campaign.id, "CANCELLED");
-        }
-      }));
+      // b2. PAR-TRUST-017 §7.6/§7.7 — reclaim gate: wait for every cancelled
+      // campaign to confirm ownership fully relinquished before reading any
+      // balance below. See waitForCampaignReleaseAndFinalize (campaignLoop.js)
+      // for the lease-based mechanics. Parallel across campaigns.
+      await Promise.all(activeCampaigns.map(campaign =>
+        waitForCampaignReleaseAndFinalize(campaign.id, "CANCELLED", "[DELETE_USER]")
+      ));
 
       // c. Cascade reclaim and reassign children (SUB_ADMIN deactivation only)
       let reassignedChildCount = 0;

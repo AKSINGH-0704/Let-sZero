@@ -101,6 +101,9 @@ const REQUIRED_COLUMNS = [
   { table: "campaigns", column: "scheduled_at",   critical: false },
   // PAR-TRUST-017: gates credit reclaim sequencing — critical, financial integrity.
   { table: "campaigns", column: "finalized_at",   critical: true  },
+  // PAR-TRUST-017 §7.7: execution liveness lease — critical, the reclaim gate's
+  // and recovery's sole non-guessed signal that no execution currently owns a campaign.
+  { table: "campaigns", column: "execution_lease_expires_at", critical: true },
 
   // ── campaign_emails ──────────────────────────────────────────────────────
   { table: "campaign_emails", column: "id",              critical: true  },

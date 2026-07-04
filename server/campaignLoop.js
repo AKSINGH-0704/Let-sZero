@@ -17,6 +17,7 @@ import {
   SEND_RATE_MS, sleep,
   BOUNCE_RATE_PAUSE_THRESHOLD, COMPLAINT_RATE_PAUSE_THRESHOLD,
   MIN_SENDER_HEALTH_SENT, CHECKPOINT_INTERVAL, PAUSE_CHECK_INTERVAL,
+  EXECUTION_LEASE_DURATION_MS, RECLAIM_GATE_MAX_WAIT_MS, RECLAIM_GATE_POLL_MS,
 } from "./campaignConfig.js";
 import {
   AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, USER_ROLES,
@@ -63,17 +64,78 @@ export async function sendWithRetry(contact, template, userId, campaignId, rateL
         const delay  = 2000 + jitter;
         console.warn(`[RATE] [${campaignId}] SES throttle at ${new Date().toISOString()} — retry ${throttleRetries}/${maxThrottleRetries} in ${delay}ms`);
         if (rateLimiter) await rateLimiter.release(campaignId).catch(() => {});
+        // PAR-TRUST-017 §7.7 — renew the execution lease before waiting out this
+        // retry. A single heavily-throttled contact can legitimately take up to
+        // ~30s across all its retries; without this, the lease (25s) could lapse
+        // mid-contact even though the execution is genuinely still alive and
+        // making progress. Best-effort — see storage.renewExecutionLease.
+        await storage.renewExecutionLease(campaignId);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
 
       attempts++;
       if (attempts < maxAttempts) {
+        await storage.renewExecutionLease(campaignId);
         await new Promise(r => setTimeout(r, 1000 * attempts));
       }
     }
   }
   throw lastErr;
+}
+
+/**
+ * PAR-TRUST-017 §7.6/§7.7 — waits for a campaign's execution ownership to be
+ * released (finalized_at set) before returning, then guarantees finalization
+ * has happened by the time it returns. Extracted as its own function so it is
+ * independently testable, not just reachable via a full HTTP round trip.
+ *
+ * Waits on the execution lease's own declared expiry rather than a fixed
+ * elapsed-time guess: a genuinely slow-but-alive execution (e.g. mid SES-
+ * throttle-retry) keeps renewing its lease, and this function keeps waiting
+ * for the *new* expiry each time it observes one, for as long as the owner
+ * keeps proving it's alive. It only concludes "safe to force-finalize" when
+ * the lease has actually lapsed (unset, or its expiry is in the past) — never
+ * on a blind timer. RECLAIM_GATE_MAX_WAIT_MS is a last-resort circuit breaker
+ * against a pathological non-terminating renewal loop, not the normal
+ * correctness mechanism. A campaign that was PENDING and never actually
+ * started (no loop ever ran to set a lease at all) is recognized immediately
+ * (lease was never set) and finalized without waiting.
+ *
+ * @param {string} campaignId
+ * @param {string} toStatus     terminal status to finalize to if forced (CANCELLED/FAILED)
+ * @param {string} [logTag]
+ */
+export async function waitForCampaignReleaseAndFinalize(campaignId, toStatus, logTag = "[RECLAIM-GATE]") {
+  // Two independent concerns, deliberately not conflated: how *often* we check
+  // (RECLAIM_GATE_POLL_MS — frequent, for responsiveness in the common case
+  // where the owner finishes and finalizes quickly) vs. how *long* we're
+  // willing to wait before concluding "dead" (the lease's own declared expiry
+  // — not a fixed guess). An earlier draft slept for the full remaining lease
+  // duration between checks, which meant it could miss an actual finalization
+  // by nearly the whole lease window; caught by this PAR's own adversarial
+  // tests, fixed here.
+  const overallDeadline = Date.now() + RECLAIM_GATE_MAX_WAIT_MS;
+  while (true) {
+    const current = await storage.getExecutionLeaseExpiry(campaignId);
+    if (!current) return; // campaign vanished — nothing to wait for
+    if (current.finalizedAt) return; // done — released and finalized already
+
+    const leaseExpiresAt = current.executionLeaseExpiresAt ? new Date(current.executionLeaseExpiresAt).getTime() : 0;
+    const leaseLapsed     = leaseExpiresAt <= Date.now();
+    const ceilingReached  = Date.now() >= overallDeadline;
+    if (leaseLapsed || ceilingReached) break; // safe to conclude dead (or last-resort ceiling)
+
+    const waitMs = Math.min(RECLAIM_GATE_POLL_MS, leaseExpiresAt - Date.now(), overallDeadline - Date.now());
+    if (waitMs > 0) await new Promise(r => setTimeout(r, waitMs));
+  }
+
+  // Either the lease genuinely lapsed, or the overall ceiling was hit (the
+  // rare, last-resort recovery path) — safe to force finalization.
+  const finalCheck = await storage.getCampaign(campaignId);
+  if (finalCheck?.finalizedAt) return; // finalized during the last wait
+  console.warn(`${logTag} Campaign ${campaignId} — execution lease lapsed (or ceiling reached) without self-finalizing — forcing finalization`);
+  await storage.finalizeCampaign(campaignId, toStatus);
 }
 
 /**
@@ -158,7 +220,14 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   // Overwriting startedAt on retry would shift the delivery health window anchor and
   // exclude bounce/complaint events from the initial run.
   const startedAtUpdate = campaign.startedAt ? {} : { startedAt: new Date() };
-  await storage.updateCampaign(campaignId, { status: "RUNNING", ...startedAtUpdate });
+  // PAR-TRUST-017 §7.7 — acquire the execution lease on taking ownership. Renewed
+  // every iteration below (and inside sendWithRetry's own retry loop); cleared on
+  // finalization. This is the reclaim gate's and recovery's non-guessed signal
+  // that a live execution currently owns this campaign.
+  await storage.updateCampaign(campaignId, {
+    status: "RUNNING", ...startedAtUpdate,
+    executionLeaseExpiresAt: new Date(Date.now() + EXECUTION_LEASE_DURATION_MS),
+  });
   await storage.createAuditLog({
     userId,
     action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
@@ -174,7 +243,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
 
   // ── Pre-loop: global platform pause check ────────────────────────────────────
   if (await isGlobalSendPaused()) {
-    await storage.updateCampaign(campaignId, { status: "PAUSED" });
+    await storage.updateCampaign(campaignId, { status: "PAUSED", executionLeaseExpiresAt: null });
     await storage.createAuditLog({
       userId,
       action: AUDIT_ACTIONS.CAMPAIGN_PAUSED,
@@ -316,24 +385,25 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   const contactMap  = new Map(contactList.map(c => [c.id, c]));
 
   for (let i = 0; i < contactIds.length; i++) {
-    // PAR-TRUST-017 §7.2 — every iteration, unconditionally: has someone else
+    // PAR-TRUST-017 §7.2/§7.7 — every iteration, unconditionally: has someone else
     // already decided this campaign should stop? Cheap, single-column, PK-indexed
     // lookup. Deliberately status-agnostic (checks "not RUNNING", not an enumerated
     // list of specific triggers) so it catches CANCELLED, an externally-forced
     // FAILED (e.g. user deactivation — the original TRUST-017 report), or any future
     // trigger no one has invented yet, without needing a new special case each time.
-    // This replaces the old CANCELLED-only check that used to live inside the
-    // PAUSE_CHECK_INTERVAL-gated block below — that check only ever caught
-    // cancellation, and only every 50 contacts.
-    const liveStatus = await storage.getCampaignStatus(campaignId);
+    // Also renews the execution lease in the same atomic UPDATE when still RUNNING —
+    // zero extra round trips versus the old plain-status-read version of this check.
+    const liveStatus = await storage.renewLeaseAndGetStatus(campaignId);
     if (liveStatus !== CAMPAIGN_STATUS.RUNNING) {
       if (liveStatus === CAMPAIGN_STATUS.CANCELLED || liveStatus === CAMPAIGN_STATUS.FAILED) {
         await storage.finalizeCampaign(campaignId, liveStatus);
       } else {
         // PAUSED (or any other non-terminal state) — resumable, flush without
-        // finalizing (§7.5: PAUSED is never a legal finalization target).
+        // finalizing (§7.5: PAUSED is never a legal finalization target), and
+        // release the lease since this execution is stopping (§7.7).
         await storage.updateCampaign(campaignId, {
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+          executionLeaseExpiresAt: null,
         });
       }
       console.warn(`${logTag} Campaign ${campaignId} externally left RUNNING (now ${liveStatus}) at contact ${i} — stopping`);
@@ -351,6 +421,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
         await storage.updateCampaign(campaignId, {
           status: "PAUSED",
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+          executionLeaseExpiresAt: null,
         });
         await storage.createAuditLog({
           userId,
@@ -505,6 +576,7 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
           await storage.updateCampaign(campaignId, {
             status: "PAUSED",
             sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
+            executionLeaseExpiresAt: null,
           });
           await storage.createAuditLog({
             userId,

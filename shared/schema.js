@@ -401,6 +401,13 @@ export const campaigns = pgTable("campaigns", {
   // campaign_emails cleanup have been written. NULL means "not yet finalized" — the
   // gate credit reclaim must wait on (PAR-TRUST-017 §7.5/§7.6). Never set for PAUSED.
   finalizedAt: timestamp("finalized_at"),
+  // PAR-TRUST-017 §7.7 — execution liveness lease. Set on acquiring RUNNING and
+  // renewed periodically by the live execution (every loop iteration, and inside
+  // sendWithRetry's own retry loop so a single slow contact keeps renewing).
+  // NULL or in the past means no execution currently owns this campaign — the
+  // only condition under which the reclaim gate or recovery may safely assume
+  // "dead" without waiting further. Cleared on finalization and on PAUSED.
+  executionLeaseExpiresAt: timestamp("execution_lease_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   listId:       uuid("list_id").references(() => contactLists.id, { onDelete: "set null" }),

@@ -36,6 +36,13 @@
       "when": 1783198689978,
       "tag": "0004_campaign_execution_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783202069015,
+      "tag": "0005_execution_liveness_lease",
+      "breakpoints": true
     }
   ]
 }

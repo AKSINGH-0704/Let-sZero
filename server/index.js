@@ -666,6 +666,20 @@ async function diagnoseSMTPPath() {
           }
         }
 
+        // Rule 2.5: PAR-TRUST-017 §7.7 — cross-check the execution lease independent
+        // of BullMQ's own job-state, which is itself an internally timeout-based
+        // heuristic (stalledInterval/maxStalledCount) with the same class of blind
+        // spot this whole PAR was about. Not expected to matter at today's
+        // single-instance scale (this recovery pass runs before this process's own
+        // worker starts, so nothing *here* can be alive) — but costs nothing and
+        // future-proofs the check if the worker is ever scaled horizontally
+        // (SCALE-001-adjacent), where a *different* instance's execution could
+        // still legitimately hold the lease.
+        if (c.executionLeaseExpiresAt && new Date(c.executionLeaseExpiresAt).getTime() > Date.now()) {
+          console.log(`[RECOVERY] Campaign ${c.id} — execution lease still live, leaving RUNNING`);
+          continue;
+        }
+
         // Rule 3: No completedAt, no live BullMQ job → mark FAILED so the UI unblocks.
         // PAR-TRUST-017 §7.3/§7.5 — finalizeCampaign re-derives true counts from
         // campaign_emails (this recovery pass has no local counters to trust) and

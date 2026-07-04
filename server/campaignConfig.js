@@ -34,3 +34,23 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // own retry-skip logic and storage's claimCampaignEmail (PAR-TRUST-017 §7.1) —
 // a single source of truth so the two can never drift out of sync.
 export const PERMANENT_FAILURE_REASONS = ["hard_bounce", "invalid_recipient", "complaint", "suppressed"];
+
+// PAR-TRUST-017 §7.7 — execution liveness lease. Deliberately NOT derived from
+// sendWithRetry's retry constants (maxAttempts/maxThrottleRetries) — the whole
+// point is that this number never needs to be kept in sync with those. Renewal
+// happens at the retry-*attempt* grain (inside sendWithRetry's own retry loop),
+// so this only needs to comfortably dominate a single retry/throttle wait
+// (currently up to ~3s), not the full worst-case chain of retries.
+export const EXECUTION_LEASE_DURATION_MS = 25_000;
+
+// Outer ceiling for the reclaim gate's wait-until-lease-expiry loop — a last-
+// resort circuit breaker against a pathological renewal loop that never
+// terminates, not the normal correctness mechanism (that's the lease itself).
+export const RECLAIM_GATE_MAX_WAIT_MS = 30_000;
+
+// How often the reclaim gate re-checks for finalization — independent of how
+// long it's willing to wait before concluding "dead" (that's the lease expiry,
+// above). Frequent polling here only affects responsiveness in the common case
+// (the owner finishes quickly); it never affects the "how long until we give
+// up" decision, which is always the lease's own declared expiry.
+export const RECLAIM_GATE_POLL_MS = 250;
