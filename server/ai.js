@@ -235,20 +235,29 @@ export async function analyzeSpam(subject, body, opts = {}) {
 
   const client = getClient();
 
+  // Scoring itself is deliberately NOT requested here — the client's own
+  // deterministic calculateSpamScore() is the sole scoring authority (it was,
+  // in effect, already the case: the LLM used to also return a score/riskyWords
+  // pair that the client silently discarded on every call, wasting output
+  // tokens on a value nothing ever read). This makes that split explicit and
+  // load-bearing instead of an accidental byproduct: a deterministic score is
+  // free, instant, reproducible, and auditable — the LLM's value here is
+  // qualitative judgment (which exact phrases to change, and why), not a
+  // number duplicating what the deterministic layer already computes.
   const systemPrompt = `You are a senior email deliverability expert who has analyzed millions of email campaigns. You understand exactly why emails land in spam folders and how to fix them.
 
-EVALUATE ALL FIVE DIMENSIONS — the score must reflect combined risk across:
+EVALUATE ALL FIVE DIMENSIONS when identifying issues to flag:
 1. Spam trigger words: flag exact phrases from subject and body (free, win, guaranteed, urgent, limited time, click here, act now, etc.)
 2. Subject line issues: ALL CAPS, length over 50 characters, excessive punctuation, misleading preview text
-3. Reply-rate signals: is there a clear question or single CTA that invites a response? Penalize if missing or if multiple CTAs compete
+3. Reply-rate signals: is there a clear question or single CTA that invites a response? Flag if missing or if multiple CTAs compete
 4. Mobile rendering: flag if body exceeds 200 words — long emails are truncated on mobile and hurt engagement
-5. Sender reputation: does this read like a legitimate individual reaching out, or a mass-blast template? Penalize promotional tone, generic openers, passive voice, and pressure language
+5. Sender reputation: does this read like a legitimate individual reaching out, or a mass-blast template? Flag promotional tone, generic openers, passive voice, and pressure language
 
 RULES:
 - Be precise and actionable, not generic
 - Identify ACTUAL phrases/words from the email that are problematic (not hypothetical ones)
-- Score should reflect REAL deliverability risk: 0-20 is excellent, 21-40 is good, 41-65 is needs work, 66-100 is high risk
 - Suggestions must reference exact text from the email
+- Every suggestion needs a short, specific reason — not a restatement of the suggestion itself
 - Output ONLY valid JSON, no markdown, no explanation`;
 
   const acceptedContext = Array.isArray(acceptedSuggestions) && acceptedSuggestions.length > 0
@@ -271,10 +280,8 @@ Evaluate these five dimensions:
 
 Return this exact JSON:
 {
-  "score": <integer 0-100>,
-  "riskyWords": ["exact phrase found in email", ...],
   "suggestions": [
-    { "original": "exact phrase from email", "suggestion": "professional alternative" }
+    { "original": "exact phrase from email", "suggestion": "professional alternative", "reason": "one short sentence on why this specifically hurts deliverability" }
   ],
   "summary": "One clear sentence explaining the primary deliverability concern and main recommendation"
 }`;
@@ -306,9 +313,9 @@ Return this exact JSON:
 
     const parsed = JSON.parse(content);
     const result = {
-      score: Math.min(Math.max(parseInt(parsed.score) || 0, 0), 100),
-      riskyWords: Array.isArray(parsed.riskyWords) ? parsed.riskyWords : [],
-      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+      suggestions: Array.isArray(parsed.suggestions)
+        ? parsed.suggestions.map(s => ({ original: s.original, suggestion: s.suggestion, reason: s.reason || null }))
+        : [],
       summary: parsed.summary || null
     };
 

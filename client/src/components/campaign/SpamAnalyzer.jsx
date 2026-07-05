@@ -64,9 +64,11 @@ export default function SpamAnalyzer() {
     templateIsAiGenerated,
     acceptedSuggestions: contextAcceptedSuggestions,
     acceptedDetails:     contextAcceptedDetails,
+    rejectedSuggestions: contextRejectedSuggestions,
     aiAnalysis:          contextAiAnalysis,
     setAcceptedSuggestions: setContextAcceptedSuggestions,
     setAcceptedDetails:     setContextAcceptedDetails,
+    setRejectedSuggestions: setContextRejectedSuggestions,
     setAiAnalysis:          setContextAiAnalysis,
   } = useCampaign();
   const { user } = useAuth();
@@ -85,6 +87,13 @@ export default function SpamAnalyzer() {
   const [acceptedDetails, setAcceptedDetailsLocal] = useState(
     () => new Map(Object.entries(contextAcceptedDetails))
   );
+  const [rejectedSuggestions, setRejectedSuggestionsLocal] = useState(
+    () => new Set(contextRejectedSuggestions)
+  );
+  // Which suggestion (by `original` text) currently has its manual-edit input
+  // open, and the in-progress edited value — cleared on accept/reject/cancel.
+  const [editingSuggestion, setEditingSuggestion] = useState(null);
+  const [editedText, setEditedText] = useState("");
 
   const [aiQuota,          setAiQuota]          = useState(null);
   const [quotaError,       setQuotaError]       = useState(null);
@@ -96,6 +105,15 @@ export default function SpamAnalyzer() {
     setAcceptedDetailsLocal(newMap);
     setContextAcceptedSuggestions([...newSet]);
     setContextAcceptedDetails(Object.fromEntries(newMap));
+  };
+
+  const syncRejected = (newSet) => {
+    setRejectedSuggestionsLocal(newSet);
+    setContextRejectedSuggestions([...newSet]);
+  };
+
+  const rejectSuggestion = (suggestion) => {
+    syncRejected(new Set([...rejectedSuggestions, suggestion.original]));
   };
 
   // ── Quota helpers (needed before useEffect) ────────────────────────────────
@@ -156,8 +174,9 @@ export default function SpamAnalyzer() {
       setDisplayAnalysis(currentKeywords);
       setSpamAnalysis(currentKeywords);
 
-      // Reset accepted state — fresh analysis, prior accepts no longer apply
+      // Reset accepted/rejected state — fresh analysis, prior decisions no longer apply
       syncAccepted(new Set(), new Map());
+      syncRejected(new Set());
     },
     onError: (err) => {
       try {
@@ -175,12 +194,17 @@ export default function SpamAnalyzer() {
     analyzeMutation.mutate();
   };
 
-  const acceptSuggestion = (suggestion) => {
+  // replacementText defaults to the suggested text, but the Manual-Edit flow
+  // below can pass a user-edited alternative instead — accepting a suggestion
+  // and manually adjusting its wording are the same underlying action (replace
+  // `original` with some text and record it as addressed), not two features.
+  const acceptSuggestion = (suggestion, replacementText) => {
     if (suggestion.actionable === false) return;
+    const finalText = replacementText ?? suggestion.suggestion;
 
     const pattern    = new RegExp(escapeRegex(suggestion.original), "gi");
-    const newSubject = template.subject.replace(pattern, suggestion.suggestion);
-    const newBody    = template.body.replace(pattern, suggestion.suggestion);
+    const newSubject = template.subject.replace(pattern, finalText);
+    const newBody    = template.body.replace(pattern, finalText);
 
     setTemplate({ subject: newSubject, body: newBody });
 
@@ -191,10 +215,16 @@ export default function SpamAnalyzer() {
     const newSet = new Set([...acceptedSuggestions, suggestion.original]);
     const newMap = new Map([...acceptedDetails, [suggestion.original, changedFields]]);
     syncAccepted(newSet, newMap);
+    setEditingSuggestion(null);
 
     const newAnalysis = calculateSpamScore(newSubject, newBody);
     setLocalAnalysisLive(newAnalysis);
     setSpamAnalysis(newAnalysis);
+  };
+
+  const startManualEdit = (suggestion) => {
+    setEditingSuggestion(suggestion.original);
+    setEditedText(suggestion.suggestion);
   };
 
   // Auto-run AI analysis on mount.
@@ -212,7 +242,7 @@ export default function SpamAnalyzer() {
 
   const scoreDelta = prevScore !== null && prevScore !== score ? score - prevScore : null;
 
-  const keywordSuggestions = (suggestions || []).filter(s => s.actionable !== false);
+  const keywordSuggestions = (suggestions || []).filter(s => s.actionable !== false && !rejectedSuggestions.has(s.original));
   const structuralTips     = (suggestions || []).filter(s => s.actionable === false);
 
   const aiObservations = (aiAnalysis?.suggestions || []).filter(s => s.actionable === false);
@@ -223,8 +253,11 @@ export default function SpamAnalyzer() {
   const aiRecommendations = (aiAnalysis?.suggestions || []).filter(s =>
     s.actionable !== false &&
     !localKeywordOriginals.has((s.original || "").toLowerCase()) &&
-    !acceptedSuggestions.has(s.original)
+    !acceptedSuggestions.has(s.original) &&
+    !rejectedSuggestions.has(s.original)
   );
+
+  const dismissedCount = rejectedSuggestions.size;
 
   // Reconciles the AI summary against suggestions actually accepted from this same
   // analysis, with zero additional AI calls. Counts only real acceptances — not items
@@ -752,49 +785,84 @@ export default function SpamAnalyzer() {
                     <div className="space-y-2">
                       {keywordSuggestions.map((suggestion, i) => {
                         const isAccepted = acceptedSuggestions.has(suggestion.original);
+                        const isEditing  = editingSuggestion === suggestion.original;
                         return (
                           <div
                             key={i}
                             className={cn(
-                              "flex items-center justify-between p-4 rounded-md border",
+                              "p-4 rounded-md border",
                               isAccepted
                                 ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
                                 : "bg-muted/30 border-border"
                             )}
                           >
-                            <div className="flex items-center gap-4">
-                              <div className="text-sm">
-                                <span className="text-red-600 line-through font-medium">
-                                  {suggestion.original}
-                                </span>
-                                <span className="mx-2 text-muted-foreground">&rarr;</span>
-                                <span className="text-green-600 font-medium">
-                                  {suggestion.suggestion}
-                                </span>
-                              </div>
-                            </div>
-                            {isAccepted ? (
-                              <div className="flex flex-col items-end gap-0.5">
-                                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Applied
-                                </Badge>
-                                {acceptedDetails.get(suggestion.original)?.length > 0 && (
-                                  <span className="text-xs text-muted-foreground">
-                                    in {acceptedDetails.get(suggestion.original).join(" & ")}
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-4">
+                                <div className="text-sm">
+                                  <span className="text-red-600 line-through font-medium">
+                                    {suggestion.original}
                                   </span>
-                                )}
+                                  <span className="mx-2 text-muted-foreground">&rarr;</span>
+                                  <span className="text-green-600 font-medium">
+                                    {suggestion.suggestion}
+                                  </span>
+                                </div>
                               </div>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => acceptSuggestion(suggestion)}
-                                data-testid={`button-accept-${i}`}
-                              >
-                                <ThumbsUp className="h-3 w-3 mr-1" />
-                                Accept
-                              </Button>
+                              {isAccepted ? (
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Applied
+                                  </Badge>
+                                  {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                                    <span className="text-xs text-muted-foreground">
+                                      in {acceptedDetails.get(suggestion.original).join(" & ")}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => acceptSuggestion(suggestion)}
+                                    data-testid={`button-accept-${i}`}
+                                  >
+                                    <ThumbsUp className="h-3 w-3 mr-1" />
+                                    Accept
+                                  </Button>
+                                  <Button variant="ghost" size="sm" onClick={() => startManualEdit(suggestion)} data-testid={`button-edit-${i}`}>
+                                    Edit
+                                  </Button>
+                                  <Button variant="ghost" size="sm" onClick={() => rejectSuggestion(suggestion)} data-testid={`button-reject-${i}`} className="text-muted-foreground">
+                                    Dismiss
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            {!isAccepted && (
+                              <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1">
+                                <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
+                                Common spam trigger word — flagged by pattern matching, not AI
+                              </p>
+                            )}
+                            {isEditing && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={editedText}
+                                  onChange={(e) => setEditedText(e.target.value)}
+                                  className="flex-1 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                                  aria-label="Edit suggested replacement text"
+                                  autoFocus
+                                />
+                                <Button size="sm" onClick={() => acceptSuggestion(suggestion, editedText)} disabled={!editedText.trim()}>
+                                  Apply edited
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingSuggestion(null)}>
+                                  Cancel
+                                </Button>
+                              </div>
                             )}
                           </div>
                         );
@@ -834,51 +902,96 @@ export default function SpamAnalyzer() {
                     {aiRecommendations.map((suggestion, i) => {
                       const isAccepted = acceptedSuggestions.has(suggestion.original);
                       const canApply   = isApplicableToTemplate(suggestion.original);
+                      const isEditing  = editingSuggestion === suggestion.original;
                       return (
                         <div
                           key={i}
                           className={cn(
-                            "flex items-center justify-between p-4 rounded-md border",
+                            "p-4 rounded-md border",
                             isAccepted
                               ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
                               : "bg-muted/30 border-border"
                           )}
                         >
-                          <div className="flex items-center gap-4 min-w-0">
-                            <div className="text-sm min-w-0">
-                              <span className="text-muted-foreground font-medium">
-                                &ldquo;{suggestion.original}&rdquo;
-                              </span>
-                              <span className="mx-2 text-muted-foreground">&rarr;</span>
-                              <span className="text-foreground">
-                                {suggestion.suggestion}
-                              </span>
-                            </div>
-                          </div>
-                          {isAccepted ? (
-                            <div className="flex flex-col items-end gap-0.5 shrink-0 ml-3">
-                              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Applied
-                              </Badge>
-                              {acceptedDetails.get(suggestion.original)?.length > 0 && (
-                                <span className="text-xs text-muted-foreground">
-                                  in {acceptedDetails.get(suggestion.original).join(" & ")}
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 min-w-0">
+                              <div className="text-sm min-w-0">
+                                <span className="text-muted-foreground font-medium">
+                                  &ldquo;{suggestion.original}&rdquo;
                                 </span>
-                              )}
+                                <span className="mx-2 text-muted-foreground">&rarr;</span>
+                                <span className="text-foreground">
+                                  {suggestion.suggestion}
+                                </span>
+                              </div>
                             </div>
-                          ) : canApply ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => acceptSuggestion(suggestion)}
-                              data-testid={`button-ai-accept-${i}`}
-                              className="shrink-0 ml-3"
-                            >
-                              <ThumbsUp className="h-3 w-3 mr-1" />
-                              Apply
-                            </Button>
-                          ) : null}
+                            {isAccepted ? (
+                              <div className="flex flex-col items-end gap-0.5 shrink-0 ml-3">
+                                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Applied
+                                </Badge>
+                                {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    in {acceptedDetails.get(suggestion.original).join(" & ")}
+                                  </span>
+                                )}
+                              </div>
+                            ) : canApply ? (
+                              <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => acceptSuggestion(suggestion)}
+                                  data-testid={`button-ai-accept-${i}`}
+                                >
+                                  <ThumbsUp className="h-3 w-3 mr-1" />
+                                  Apply
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => startManualEdit(suggestion)}
+                                  data-testid={`button-ai-edit-${i}`}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => rejectSuggestion(suggestion)}
+                                  data-testid={`button-ai-reject-${i}`}
+                                  className="text-muted-foreground"
+                                >
+                                  Dismiss
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
+                          {suggestion.reason && (
+                            <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1">
+                              <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
+                              {suggestion.reason}
+                            </p>
+                          )}
+                          {isEditing && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editedText}
+                                onChange={(e) => setEditedText(e.target.value)}
+                                className="flex-1 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                                aria-label="Edit suggested replacement text"
+                                autoFocus
+                              />
+                              <Button size="sm" onClick={() => acceptSuggestion(suggestion, editedText)} disabled={!editedText.trim()}>
+                                Apply edited
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingSuggestion(null)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -888,6 +1001,17 @@ export default function SpamAnalyzer() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {dismissedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => syncRejected(new Set())}
+          className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+          data-testid="button-restore-dismissed-suggestions"
+        >
+          {dismissedCount} suggestion{dismissedCount === 1 ? "" : "s"} dismissed — show again
+        </button>
       )}
 
       {score > 60 && (

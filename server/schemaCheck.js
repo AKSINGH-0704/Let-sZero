@@ -193,6 +193,11 @@ const REQUIRED_INDEXES = [
   // structurally possible again.
   { index: "campaign_emails_contact_uq",            critical: true  },
   { index: "campaign_emails_recipient_uq",           critical: true  },
+  // Perf, not correctness: deriveCountsFromCampaignEmails sums credit_transactions
+  // filtered by campaign_id on every finalizeCampaign/reconcileCampaignCounters
+  // call. Missing this means a full seq scan of an unboundedly-growing table, not
+  // wrong results — warn only.
+  { index: "credit_transactions_campaign_id_idx",    critical: false },
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────────

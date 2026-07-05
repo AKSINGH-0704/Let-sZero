@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -153,9 +154,7 @@ export default function Users() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("creditsChanged");
       setIsCreateOpen(false);
       setNewUser({ username: "", email: "", password: "", role: createUserRoles[0], credits: 0 });
       setCreatedUser(data);
@@ -199,9 +198,7 @@ export default function Users() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("creditsChanged");
       setAllocateUserId(null);
       setAllocateCredits("");
       toast({ title: "Credits allocated successfully" });
@@ -218,9 +215,7 @@ export default function Users() {
       await apiRequest("DELETE", `/api/users/${userId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("creditsChanged");
       toast({ title: "User deactivated" });
     },
     onError: (err) => {
@@ -234,9 +229,7 @@ export default function Users() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("creditsChanged");
       toast({ title: "User reactivated" });
     },
     onError: (err) => {

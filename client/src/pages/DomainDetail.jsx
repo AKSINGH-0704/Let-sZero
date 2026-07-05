@@ -3,6 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,8 +94,7 @@ export default function DomainDetail() {
     if (!status) return;
     if (prevStatusRef.current === "PENDING_VERIFICATION" && status === "VERIFIED") {
       setJustVerified(true);
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
+      invalidateAfter("domainChanged");
       if (returnTo) {
         toast({ title: "Domain verified!", description: "Returning you to your campaign." });
         navigate(returnTo);
@@ -110,7 +110,7 @@ export default function DomainDetail() {
       setLastCheck({ at: new Date(), records: data.dnsResults?.dkimRecords || [] });
       // Merge the check result into the cached record so the status effect sees transitions.
       queryClient.setQueryData(queryKey, (old) => ({ ...(old || {}), ...data }));
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      invalidateAfter("domainChanged");
       if (data.status !== "VERIFIED" && data.status !== "FAILED") {
         const recs = data.dnsResults?.dkimRecords || [];
         const found = recs.filter(r => r.resolved).length;
@@ -142,7 +142,7 @@ export default function DomainDetail() {
   const deleteMutation = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/domains/${id}`).then(r => r.json()),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
+      invalidateAfter("domainChanged");
       if (variables?.reRegister) {
         // FAILED recovery: straight back into a prefilled Add dialog. New registration
         // issues fresh DNS records — the expired ones are gone with the old identity.

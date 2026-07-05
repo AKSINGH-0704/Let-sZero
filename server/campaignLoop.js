@@ -400,8 +400,12 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
       } else {
         // PAUSED (or any other non-terminal state) — resumable, flush without
         // finalizing (§7.5: PAUSED is never a legal finalization target), and
-        // release the lease since this execution is stopping (§7.7).
-        await storage.updateCampaign(campaignId, {
+        // release the lease since this execution is stopping (§7.7). Guarded
+        // (not plain updateCampaign): a concurrently-overlapping execution may
+        // have already finalized this campaign by the time this write runs —
+        // finalized_at IS NULL keeps this a clean no-op rather than clobbering
+        // the true final counts with this execution's own local snapshot.
+        await storage.updateCampaignProgress(campaignId, {
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
           executionLeaseExpiresAt: null,
         });
@@ -417,8 +421,9 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
     // else already decided — so they stay on the periodic cadence, not every iteration.
     if (i > 0 && i % PAUSE_CHECK_INTERVAL === 0) {
       if (await isGlobalSendPaused()) {
-        // PAUSED — not terminal, flush directly (no finalizeCampaign, matches §7.5).
-        await storage.updateCampaign(campaignId, {
+        // PAUSED — not terminal, flush directly (no finalizeCampaign, matches
+        // §7.5). Guarded — see the comment on the other PAUSED write above.
+        await storage.updateCampaignProgress(campaignId, {
           status: "PAUSED",
           sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
           executionLeaseExpiresAt: null,
@@ -573,7 +578,8 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
 
         // Claim a warm-up slot before each send — atomic WHERE guard prevents concurrent overshoot.
         if (!(await claimWarmupSlot(owner))) {
-          await storage.updateCampaign(campaignId, {
+          // Guarded — see the comment on the PAUSED write above.
+          await storage.updateCampaignProgress(campaignId, {
             status: "PAUSED",
             sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
             executionLeaseExpiresAt: null,
@@ -635,8 +641,13 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
 
     // Checkpoint every effectiveCheckpoint emails — dynamic to ensure incremental UI progress.
     // Terminal exits (cancel, pause, credit exhaustion) always flush final counts separately.
+    // Guarded: production-equivalence testing against real Postgres caught this
+    // exact write clobbering a correct COMPLETED finalization — under two
+    // overlapping executions, this execution can still be mid-loop (and hit
+    // this checkpoint with its own stale, partial local sentCount) *after* the
+    // other execution already finalized the campaign with the true counts.
     if ((i + 1) % effectiveCheckpoint === 0) {
-      await storage.updateCampaign(campaignId, {
+      await storage.updateCampaignProgress(campaignId, {
         sentEmails:   sentCount,
         failedEmails: failedCount,
         skippedEmails: skippedCount,
@@ -700,9 +711,26 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   }
   if (currentState?.status === "PAUSED") {
     console.warn(`${logTag} Campaign ${campaignId} externally paused — not overwriting to COMPLETED`);
-    await storage.updateCampaign(campaignId, {
+    // Guarded — see the comment on the checkpoint write above.
+    await storage.updateCampaignProgress(campaignId, {
       sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
     });
+    return;
+  }
+
+  // This execution has finished iterating its own copy of the contact list —
+  // but under two genuinely-overlapping executions, that says nothing about
+  // whether the *other* execution has finished writing its own last claimed
+  // row (a contact this execution saw as "someone else's, not mine to count"
+  // and moved past without waiting). A PENDING row is exactly that signal:
+  // some execution still holds unfinished work. Finalizing while one exists
+  // would derive counts before that write lands — production-equivalence
+  // testing against real Postgres (not memoryStorage) caught this undercounting
+  // sentEmails/creditsUsed in exactly this scenario. If the true last writer
+  // crashes instead of reaching this point, the execution lease expiry /
+  // reclaim gate (§7.7) is the existing safety net that force-finalizes later.
+  if (await storage.hasOutstandingClaims(campaignId)) {
+    console.warn(`${logTag} Campaign ${campaignId} — another execution still has an outstanding claim, not finalizing`);
     return;
   }
 

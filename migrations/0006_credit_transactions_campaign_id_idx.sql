@@ -1,0 +1,1 @@
+CREATE INDEX "credit_transactions_campaign_id_idx" ON "credit_transactions" USING btree ("campaign_id") WHERE "credit_transactions"."campaign_id" IS NOT NULL;

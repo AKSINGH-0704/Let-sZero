@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import ImportErrorSummary from "@/components/common/ImportErrorSummary";
 import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download, Loader2 } from "lucide-react";
 
 const CONTACT_FIELDS = ["email", "name", "company", "category"];
@@ -49,30 +50,6 @@ const CONTACT_FIELDS = ["email", "name", "company", "category"];
 function formatDate(ts) {
   if (!ts) return "—";
   return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-// Row-level import diagnostics — used for both the total-failure (no valid rows)
-// and partial-failure (some rows rejected) outcomes, so a raw JSON dump never
-// reaches the user while still preserving every row/reason the backend reported.
-function RowErrorList({ rowErrors, totalFailed }) {
-  if (!rowErrors || rowErrors.length === 0) return null;
-  return (
-    <div className="rounded-md border border-border">
-      <div className="px-3 py-2 border-b bg-muted/40 text-xs font-medium text-muted-foreground">
-        {totalFailed > rowErrors.length
-          ? `Showing first ${rowErrors.length} of ${totalFailed.toLocaleString()} failed rows`
-          : `${rowErrors.length} failed row${rowErrors.length === 1 ? "" : "s"}`}
-      </div>
-      <div className="max-h-56 overflow-y-auto divide-y divide-border">
-        {rowErrors.map((e, i) => (
-          <div key={i} className="px-3 py-2 text-sm flex items-start gap-2">
-            <span className="font-mono text-xs text-muted-foreground shrink-0 mt-0.5">Row {e.row}</span>
-            <span className="text-foreground">{e.reason}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 // ── Import sheet ──────────────────────────────────────────────────────────────
@@ -390,7 +367,11 @@ function ImportSheet({ listId, open, onClose }) {
                 </Card>
               ))}
             </div>
-            <RowErrorList rowErrors={importResult.rowErrors} totalFailed={importResult.failedRows} />
+            <ImportErrorSummary
+              totalRows={importResult.totalRows}
+              failedRows={importResult.failedRows}
+              rowErrors={importResult.rowErrors}
+            />
             <SheetFooter>
               <Button onClick={handleClose}>Done</Button>
             </SheetFooter>
@@ -399,15 +380,14 @@ function ImportSheet({ listId, open, onClose }) {
 
         {step === "preview" && importError && (
           <div className="py-6 space-y-4">
-            <div className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 px-3 py-3">
-              <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                {importError.message || "No valid email addresses found in the import file."}
-              </p>
-              {importError.hint && (
-                <p className="text-xs text-red-700 dark:text-red-400 mt-1">{importError.hint}</p>
-              )}
-            </div>
-            <RowErrorList rowErrors={importError.rowErrors} totalFailed={importError.failedRows} />
+            <ImportErrorSummary
+              allFailed
+              message={importError.message || "No valid email addresses found in the import file."}
+              hint={importError.hint}
+              totalRows={importError.totalRows}
+              failedRows={importError.failedRows}
+              rowErrors={importError.rowErrors}
+            />
             <SheetFooter className="flex gap-2">
               <Button
                 variant="outline"

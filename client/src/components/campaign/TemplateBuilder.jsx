@@ -92,6 +92,7 @@ export default function TemplateBuilder() {
   const [error,                  setError]                  = useState("");
   const [activeTab,              setActiveTab]              = useState("edit");
   const [aiGenerationWarnings,   setAiGenerationWarnings]   = useState([]);
+  const [preGenerationSnapshot,  setPreGenerationSnapshot]  = useState(null);
   const [aiOpen,         setAiOpen]         = useState(false);
   const [aiIntake,       setAiIntake]       = useState({
     recipientDescription: "",
@@ -229,6 +230,15 @@ export default function TemplateBuilder() {
 
   // ── AI generator ──────────────────────────────────────────────────────────
   const generateTemplateMutation = useMutation({
+    // Snapshot whatever the user had written *before* this generation call
+    // overwrites it — previously there was no way back at all: a handwritten
+    // draft was simply gone the moment Generate succeeded, with only the
+    // pre-click disclaimer text as warning. One level of undo, not a full
+    // history stack — matches what a "did I just lose my draft" moment
+    // actually needs without the complexity of versioning every keystroke.
+    onMutate: () => {
+      setPreGenerationSnapshot({ template: { ...localTemplate }, isAiGenerated: localIsAiGenerated });
+    },
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/ai/generate-template", {
         intake: aiIntake,
@@ -252,7 +262,15 @@ export default function TemplateBuilder() {
       setAiOpen(false);
       setAiError("");
       setActiveTab("edit");
-      setAiGenerationWarnings(data.warnings?.length > 0 ? data.warnings : []);
+      // senderWarnings was computed server-side (validateSenderProfile — platform-
+      // like sender names, all-caps, suspicious titles) and returned on every
+      // generate-template call, but had no client consumer at all — merged into
+      // the same review-warnings banner as the template-content warnings rather
+      // than silently discarded.
+      setAiGenerationWarnings([
+        ...(data.warnings || []),
+        ...(data.senderWarnings || []),
+      ]);
     },
     onError: (err) => {
       try {
@@ -384,6 +402,25 @@ export default function TemplateBuilder() {
       )}
 
       {/* ── AI generation validation warnings ──────────────────────────────────── */}
+      {preGenerationSnapshot && localIsAiGenerated && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLocalTemplate(preGenerationSnapshot.template);
+              setLocalIsAiGenerated(preGenerationSnapshot.isAiGenerated);
+              setAiGenerationWarnings([]);
+              setPreGenerationSnapshot(null);
+            }}
+            className="text-muted-foreground"
+            data-testid="button-undo-ai-generate"
+          >
+            Undo — restore what I had before
+          </Button>
+        </div>
+      )}
+
       {aiGenerationWarnings.length > 0 && (
         <Alert className="border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/20">
           <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />

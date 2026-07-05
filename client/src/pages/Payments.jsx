@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { useToast } from "@/hooks/use-toast";
 import {
   Check, X, Sparkles, Mail, Shield, CreditCard, Zap, Users, ArrowRight,
@@ -865,9 +866,7 @@ function ProcessPayment({ paymentId }) {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("creditsChanged", { extraKeys: [["/api/payments"]] });
       toast({
         title: "Payment successful!",
         description: `${formatNumber(data.payment.credits)} credits added to your account.`,
@@ -1195,9 +1194,7 @@ export default function Payments() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      invalidateAfter("creditsChanged", { extraKeys: [["/api/payments"]] });
       setShowConfirmModal(false);
       setSelectedTier(null);
       setLocation(data.redirectUrl || "/app/payments");
