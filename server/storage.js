@@ -895,9 +895,37 @@ const dbStorage = {
   async importContactsToList(userId, listId, rows, source = "library_import", fileName = null) {
     const BATCH = 1000;
     let newContacts = 0, updatedContacts = 0, addedToList = 0, alreadyInList = 0, failedRows = 0;
+    const duplicateRows = [];
 
     for (let i = 0; i < rows.length; i += BATCH) {
-      const batch = rows.slice(i, i + BATCH);
+      const rawBatch = rows.slice(i, i + BATCH);
+
+      // Dedupe by normalized email *within this batch* before insert. Without
+      // this, two rows sharing an email in the same 1000-row batch reach a
+      // single INSERT ... ON CONFLICT DO UPDATE statement targeting the same
+      // row twice, which Postgres rejects outright ("ON CONFLICT DO UPDATE
+      // command cannot affect row a second time") — that raw exception used to
+      // propagate all the way to the user as an unhandled 500 with a Postgres
+      // error string in the response body. Last occurrence wins (matches the
+      // intuitive "later row in the file overrides an earlier one" behavior a
+      // user would expect from a CSV with a repeated address), and every
+      // dropped earlier occurrence is reported back as a first-class row
+      // error instead of silently vanishing or crashing.
+      const lastIndexByEmail = new Map();
+      rawBatch.forEach((r, idx) => lastIndexByEmail.set(r.email.toLowerCase().trim(), idx));
+      const batch = [];
+      const seen = new Set();
+      for (let j = rawBatch.length - 1; j >= 0; j--) {
+        const r = rawBatch[j];
+        const normalizedEmail = r.email.toLowerCase().trim();
+        if (seen.has(normalizedEmail)) {
+          duplicateRows.push({ row: r._row, email: r.email, keptRow: rawBatch[lastIndexByEmail.get(normalizedEmail)]._row });
+          continue;
+        }
+        seen.add(normalizedEmail);
+        batch.unshift(r);
+      }
+
       const emails = batch.map((r) => r.email.toLowerCase().trim());
 
       const existingContacts = await db
@@ -908,7 +936,10 @@ const dbStorage = {
 
       const upserted = await db
         .insert(contacts)
-        .values(batch.map((r) => ({ ...r, email: r.email.toLowerCase().trim(), userId, updatedAt: new Date() })))
+        .values(batch.map((r) => {
+          const { _row, ...contactFields } = r;
+          return { ...contactFields, email: r.email.toLowerCase().trim(), userId, updatedAt: new Date() };
+        }))
         .onConflictDoUpdate({
           target: [contacts.userId, contacts.email],
           set: {
@@ -944,6 +975,8 @@ const dbStorage = {
       }
     }
 
+    failedRows += duplicateRows.length;
+
     const [importRecord] = await db
       .insert(contactImports)
       .values({
@@ -959,10 +992,12 @@ const dbStorage = {
       action: AUDIT_ACTIONS.CONTACTS_IMPORTED_TO_LIST,
       targetType: "contact_list",
       targetId: listId,
-      details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows, fileName },
+      details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows, duplicatesInBatch: duplicateRows.length, fileName },
     });
 
-    return importRecord;
+    // duplicateRows is consumed by the route handler to build user-facing
+    // rowErrors — not a column on contact_imports, so not part of the insert above.
+    return { ...importRecord, duplicateRows };
   },
 
   async exportContactList(listId, userId) {
@@ -1186,22 +1221,91 @@ const dbStorage = {
   // PAR-TRUST-017 — DB-derived source of truth for a campaign's final counts.
   // Used by finalizeCampaign() whenever the caller has no trusted local counters
   // (i.e. it is not the loop execution that actually processed the contacts).
-  async deriveCountsFromCampaignEmails(campaignId) {
-    const rows = await db.select({
-      status: campaignEmails.status,
-      count: sql`count(*)`,
-    }).from(campaignEmails)
-      .where(eq(campaignEmails.campaignId, campaignId))
-      .groupBy(campaignEmails.status);
+  // dbClient defaults to the module-level db, but callers that need this to
+  // see their own uncommitted writes (e.g. finalizeCampaign's orphan-flip,
+  // which must be counted, not snapshotted before it happens) pass their `tx`.
+  async deriveCountsFromCampaignEmails(campaignId, dbClient = db) {
+    const [statusRows, engagementRows, ledgerRows] = await Promise.all([
+      dbClient.select({
+        status: campaignEmails.status,
+        count: sql`count(*)`,
+      }).from(campaignEmails)
+        .where(eq(campaignEmails.campaignId, campaignId))
+        .groupBy(campaignEmails.status),
+      dbClient.select({
+        delivered: sql`count(*) filter (where ${campaignEmails.deliveredAt} is not null)`,
+        opened: sql`count(*) filter (where ${campaignEmails.openedAt} is not null)`,
+        clicked: sql`count(*) filter (where ${campaignEmails.clickedAt} is not null)`,
+        unsubscribed: sql`count(*) filter (where ${campaignEmails.unsubscribedAt} is not null)`,
+      }).from(campaignEmails)
+        .where(eq(campaignEmails.campaignId, campaignId)),
+      // creditsUsed is derived from the ledger directly, not proxied through a
+      // campaign_emails row count. deductCreditAtomic() marks an email SENT
+      // *before* deducting (comment at its call site: "If deduction fails, the
+      // email record correctly shows SENT — not FAILED"), and a deduction can
+      // fail for a genuine infrastructure reason after a successful send (the
+      // code's own pre-existing comment calls this "accounting drift" and
+      // deliberately does not fail the email record for it). That means a SENT
+      // row is not unconditionally proof a credit was charged — counting rows
+      // to infer credits would silently overstate creditsUsed by exactly the
+      // number of such (rare, already-disclosed) drift events. credit_transactions
+      // is the only source that cannot be wrong about what was actually charged:
+      // campaignId is set exclusively by the three deduction paths (paid/free/
+      // trial usage, confirmed by direct code read — no other transaction type
+      // ever sets it), so summing it is exact, not a proxy.
+      dbClient.select({
+        total: sql`coalesce(sum(${creditTransactions.amount}), 0)`,
+      }).from(creditTransactions)
+        .where(eq(creditTransactions.campaignId, campaignId)),
+    ]);
 
-    const byStatus = Object.fromEntries(rows.map(r => [r.status, parseInt(r.count, 10)]));
-    const sentEmails = byStatus[CAMPAIGN_EMAIL_STATUS.SENT] || 0;
+    const byStatus = Object.fromEntries(statusRows.map(r => [r.status, parseInt(r.count, 10)]));
+    // BOUNCED and COMPLAINED are states a campaign_email reaches only *after* a
+    // successful send (the SNS handler only ever transitions a SENT row to one of
+    // these) — they are not an alternative to having been sent, they are what
+    // happened to a message that was sent. Counting only status===SENT here was
+    // the root cause of a real drift: a legitimately-sent, legitimately-charged
+    // email that later bounced or triggered a complaint would silently disappear
+    // from sentEmails the next time this ran, even though the credit_transactions
+    // ledger never reverses that charge.
+    const sentEmails = (byStatus[CAMPAIGN_EMAIL_STATUS.SENT] || 0)
+      + (byStatus[CAMPAIGN_EMAIL_STATUS.BOUNCED] || 0)
+      + (byStatus[CAMPAIGN_EMAIL_STATUS.COMPLAINED] || 0);
+    const engagement = engagementRows[0] || {};
+    // credit_transactions.amount is negative for usage rows (-1 each); flip sign
+    // for a positive "credits used" count.
+    const creditsUsed = -(parseInt(ledgerRows[0]?.total, 10) || 0);
     return {
       sentEmails,
       failedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.FAILED] || 0,
       skippedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.SUPPRESSED] || 0,
-      creditsUsed: sentEmails,
+      creditsUsed,
+      bouncedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.BOUNCED] || 0,
+      complainedEmails: byStatus[CAMPAIGN_EMAIL_STATUS.COMPLAINED] || 0,
+      deliveredEmails: parseInt(engagement.delivered, 10) || 0,
+      openedEmails: parseInt(engagement.opened, 10) || 0,
+      clickedEmails: parseInt(engagement.clicked, 10) || 0,
+      unsubscribedEmails: parseInt(engagement.unsubscribed, 10) || 0,
     };
+  },
+
+  // Production-equivalence validation (real Postgres) caught a real bug here:
+  // runCampaignLoop's periodic checkpoint and its mid-loop PAUSED/warm-up-limit
+  // transitions all wrote local (per-execution) counters via a plain, unguarded
+  // updateCampaign call. Under two genuinely-overlapping executions, one of
+  // them can still be mid-loop — and reach one of these writes — *after* the
+  // other has already finalized the campaign with the true derived counts.
+  // An unguarded write would silently clobber those correct final counts with
+  // this execution's own stale, partial local snapshot, with nothing left to
+  // ever correct it (finalizeCampaign itself would already have run). Gating
+  // on finalized_at IS NULL makes every such write a clean no-op once the
+  // campaign is terminal — the same principle finalizeCampaign and
+  // reconcileCampaignCounters already apply, extended to cover the loop's own
+  // in-flight progress writes.
+  async updateCampaignProgress(campaignId, updates) {
+    await db.update(campaigns)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(campaigns.id, campaignId), isNull(campaigns.finalizedAt)));
   },
 
   // PAR-TRUST-017 §13 / TRUST-018 — finds campaigns whose sentEmails/creditsUsed
@@ -1233,15 +1337,35 @@ const dbStorage = {
     if (!campaign?.finalizedAt) return false; // only ever corrects already-finalized rows
 
     const derived = await this.deriveCountsFromCampaignEmails(campaignId);
-    const drifted = campaign.sentEmails !== derived.sentEmails
-      || campaign.failedEmails !== derived.failedEmails
-      || campaign.skippedEmails !== derived.skippedEmails
-      || campaign.creditsUsed !== derived.creditsUsed;
+    // Covers every counter this function is now responsible for, not just the
+    // original four — bouncedEmails/complainedEmails/deliveredEmails/openedEmails/
+    // clickedEmails/unsubscribedEmails were previously trust-the-increment with no
+    // reconciliation backstop at all; this closes that gap using the same
+    // already-scheduled job rather than adding a new mechanism.
+    const fields = ["sentEmails", "failedEmails", "skippedEmails", "creditsUsed", "bouncedEmails", "complainedEmails", "deliveredEmails", "openedEmails", "clickedEmails", "unsubscribedEmails"];
+    const drifted = fields.some(f => campaign[f] !== derived[f]);
     if (!drifted) return false;
 
-    await db.update(campaigns)
+    // Compare-and-swap on the exact stale snapshot just diffed against — not
+    // just "still finalized". Two horizontally-scaled instances' independent
+    // reconciliation timers could otherwise both read the same drifted row,
+    // both compute the same `derived`, and both proceed to write: the
+    // campaigns row update would be idempotent (same final values either way),
+    // but each would still append its own CAMPAIGN_COUNTERS_RECONCILED audit
+    // entry — a duplicate audit record for one drift event. Gating the UPDATE
+    // on every field still matching what we read means only the first writer
+    // gets a matched row; the second finds 0 rows affected and no-ops instead
+    // of writing a second entry.
+    const [updated] = await db.update(campaigns)
       .set({ ...derived, updatedAt: new Date() })
-      .where(and(eq(campaigns.id, campaignId), isNotNull(campaigns.finalizedAt)));
+      .where(and(
+        eq(campaigns.id, campaignId),
+        isNotNull(campaigns.finalizedAt),
+        ...fields.map(f => eq(campaigns[f], campaign[f])),
+      ))
+      .returning({ id: campaigns.id });
+
+    if (!updated) return false; // lost the race — another instance already reconciled this exact drift
 
     await this.createAuditLog({
       userId: campaign.userId,
@@ -1250,7 +1374,7 @@ const dbStorage = {
       targetId: campaignId,
       details: {
         reason: "overlapping_execution_drift",
-        before: { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails, skippedEmails: campaign.skippedEmails, creditsUsed: campaign.creditsUsed },
+        before: Object.fromEntries(fields.map(f => [f, campaign[f]])),
         after: derived,
       },
     });
@@ -1287,8 +1411,7 @@ const dbStorage = {
       throw new Error(`finalizeCampaign: illegal toStatus "${toStatus}" — PAUSED is not a terminal state`);
     }
 
-    const counts = await this.deriveCountsFromCampaignEmails(campaignId);
-
+    let counts;
     const finalized = await db.transaction(async (tx) => {
       // COMPLETED additionally requires status still be RUNNING at the moment of
       // finalization — this preserves the pre-existing TOCTOU protection (an
@@ -1300,9 +1423,12 @@ const dbStorage = {
         ? and(eq(campaigns.id, campaignId), isNull(campaigns.finalizedAt), eq(campaigns.status, "RUNNING"))
         : and(eq(campaigns.id, campaignId), isNull(campaigns.finalizedAt));
 
-      const [row] = await tx.update(campaigns)
+      // Phase 1: claim exclusively, atomically, before touching anything else.
+      // A losing/ineligible caller (already finalized, or COMPLETED attempted
+      // on a non-RUNNING campaign) must get row=null here and do nothing
+      // further — in particular it must NOT flip any campaign_emails rows.
+      const [claimedRow] = await tx.update(campaigns)
         .set({
-          ...counts,
           status: toStatus,
           finalizedAt: new Date(),
           executionLeaseExpiresAt: null, // §7.7 — ownership released, nothing left to renew
@@ -1310,16 +1436,47 @@ const dbStorage = {
           updatedAt: new Date(),
         })
         .where(whereClause)
-        .returning({ id: campaigns.id });
+        .returning({ id: campaigns.id, userId: campaigns.userId });
 
-      if (!row) return null;
+      if (!claimedRow) return null;
 
+      // Phase 2: now that this call exclusively owns finalization (any
+      // concurrent finalizeCampaign call blocks on this row until we commit,
+      // then loses the claim above), flip orphaned PENDING rows to FAILED and
+      // derive counts *after* the flip — these rows are becoming FAILED in
+      // this very call, so the counts written to campaigns and to the
+      // CAMPAIGN_FINALIZED audit entry must reflect that, not a pre-flip
+      // snapshot. (Previously counts were derived before the flip ran, so a
+      // claimed-but-never-resolved row would silently vanish from both the
+      // campaigns row and the audit trail — an intermediate snapshot
+      // masquerading as final truth.)
       await tx.update(campaignEmails)
         .set({ status: CAMPAIGN_EMAIL_STATUS.FAILED, failureReason: "campaign_terminated" })
         .where(and(eq(campaignEmails.campaignId, campaignId), eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.PENDING)));
 
-      return row;
+      counts = await this.deriveCountsFromCampaignEmails(campaignId, tx);
+
+      await tx.update(campaigns)
+        .set({ ...counts, updatedAt: new Date() })
+        .where(eq(campaigns.id, campaignId));
+
+      return claimedRow;
     });
+
+    if (finalized) {
+      // The authoritative "what actually happened" record — written once, here,
+      // after the true final counts are known. Complements (does not replace)
+      // the decision-time CAMPAIGN_CANCELLED/CAMPAIGN_FAILED entry, which
+      // necessarily can only record a snapshot as of the moment the decision was
+      // made and cannot see sends still in flight at that instant.
+      await this.createAuditLog({
+        userId: finalized.userId,
+        action: AUDIT_ACTIONS.CAMPAIGN_FINALIZED,
+        targetType: "campaign",
+        targetId: campaignId,
+        details: { toStatus, ...counts },
+      });
+    }
 
     return !!finalized;
   },
@@ -1408,11 +1565,16 @@ const dbStorage = {
     const totalClicks     = campaignsList.reduce((s, c) => s + (c.clickedEmails   || 0), 0);
     const totalDelivered  = campaignsList.reduce((s, c) => s + (c.deliveredEmails || 0), 0);
 
-    // Rates expressed as 0-100 numbers; null when denominator is zero.
-    const avgOpenRate  = totalSent > 0 ? (totalOpens     / totalSent)      * 100 : null;
-    const avgClickRate = totalSent > 0 ? (totalClicks    / totalSent)      * 100 : null;
-    const deliveryRate = totalSent > 0 ? (totalDelivered / totalSent)      * 100 : null;
-    const successRate  = totalAttempted > 0 ? (totalSent / totalAttempted) * 100 : null;
+    // Rates expressed as 0-100 numbers; null when denominator is zero. Clamped
+    // at the source (not just where each is displayed) as defense-in-depth —
+    // engagement counters (opened/clicked/delivered) are now reconciled against
+    // ground truth (reconcileCampaignCounters, extended above to cover them),
+    // but a formula-level clamp costs nothing and guarantees no future
+    // increment-site bug can ever surface as a displayed value over 100%.
+    const avgOpenRate  = totalSent > 0 ? Math.min(100, (totalOpens     / totalSent)      * 100) : null;
+    const avgClickRate = totalSent > 0 ? Math.min(100, (totalClicks    / totalSent)      * 100) : null;
+    const deliveryRate = totalSent > 0 ? Math.min(100, (totalDelivered / totalSent)      * 100) : null;
+    const successRate  = totalAttempted > 0 ? Math.min(100, (totalSent / totalAttempted) * 100) : null;
 
     // Active contacts count for this user.
     let activeContacts = 0;
@@ -2054,6 +2216,25 @@ const dbStorage = {
     return Boolean(record);
   },
 
+  // Production-equivalence validation (real Postgres, not memoryStorage) caught
+  // a genuine race the in-memory backend's cooperative scheduling was masking:
+  // when two executions of runCampaignLoop race the same campaign to natural
+  // completion, each iterates the *entire* contact list itself and treats a
+  // contact claimed by the other as "not mine to count" — but reaching the end
+  // of its own iteration does not mean the other execution has finished
+  // writing its own last claimed row. A PENDING row is exactly the signal that
+  // some execution still holds unfinished work; only once none remain
+  // campaign-wide is it safe to derive final counts and finalize as COMPLETED.
+  async hasOutstandingClaims(campaignId) {
+    const [record] = await db.select().from(campaignEmails)
+      .where(and(
+        eq(campaignEmails.campaignId, campaignId),
+        eq(campaignEmails.status, CAMPAIGN_EMAIL_STATUS.PENDING)
+      ))
+      .limit(1);
+    return Boolean(record);
+  },
+
   // ── Suppressions ───────────────────────────────────────────────────────────
 
   async addSuppression(userId, email, source, reason = null) {
@@ -2242,6 +2423,37 @@ const dbStorage = {
       .where(and(
         eq(campaignEmails.id, campaignEmailId),
         sql`${campaignEmails.deliveredAt} IS NULL`
+      ))
+      .returning({ id: campaignEmails.id });
+    return { wasFirst: rows.length > 0 };
+  },
+
+  // Atomically transitions a row to BOUNCED only if it isn't already — unlike
+  // delivered/opened/clicked (separate timestamp columns), bounce/complaint share
+  // the single `status` column, so the guard is "not already this terminal status"
+  // rather than "column IS NULL". Prevents a real double-count: SES/SNS can emit
+  // more than one bounce notification for the same recipient (e.g. a soft-then-hard
+  // bounce sequence), and without this gate each one incremented bouncedEmails
+  // again — inflating the Bounce Rate KPI and, since that KPI also feeds the
+  // auto-pause threshold, capable of triggering auto-pause earlier than warranted.
+  async updateCampaignEmailBounced(campaignEmailId) {
+    const rows = await db.update(campaignEmails)
+      .set({ status: CAMPAIGN_EMAIL_STATUS.BOUNCED })
+      .where(and(
+        eq(campaignEmails.id, campaignEmailId),
+        sql`${campaignEmails.status} != ${CAMPAIGN_EMAIL_STATUS.BOUNCED}`
+      ))
+      .returning({ id: campaignEmails.id });
+    return { wasFirst: rows.length > 0 };
+  },
+
+  // Same idempotency fix as updateCampaignEmailBounced, for complaints.
+  async updateCampaignEmailComplained(campaignEmailId) {
+    const rows = await db.update(campaignEmails)
+      .set({ status: CAMPAIGN_EMAIL_STATUS.COMPLAINED })
+      .where(and(
+        eq(campaignEmails.id, campaignEmailId),
+        sql`${campaignEmails.status} != ${CAMPAIGN_EMAIL_STATUS.COMPLAINED}`
       ))
       .returning({ id: campaignEmails.id });
     return { wasFirst: rows.length > 0 };
@@ -2745,8 +2957,12 @@ const dbStorage = {
       period: '30d',
       totals: { sent, bounced, complained },
       rates: {
-        bounceRate: parseFloat((bounceRate * 100).toFixed(2)),
-        complaintRate: parseFloat((complaintRate * 100).toFixed(4)),
+        // Clamped for display only — the raw bounceRate/complaintRate fractions
+        // above are left untouched for the auto-pause threshold comparison, so
+        // this doesn't change when auto-pause fires, only guarantees the
+        // printed KPI can never read over 100%.
+        bounceRate: parseFloat((Math.min(1, bounceRate) * 100).toFixed(2)),
+        complaintRate: parseFloat((Math.min(1, complaintRate) * 100).toFixed(4)),
       },
       thresholds: {
         bounce: { warning: parseFloat((bounceWarn * 100).toFixed(2)), critical: parseFloat((bouncePause * 100).toFixed(2)), unit: '%' },
@@ -2758,7 +2974,7 @@ const dbStorage = {
         sent: Number(u.totalSent),
         bounced: Number(u.totalBounced),
         bounceRate: Number(u.totalSent) > 0
-          ? parseFloat((Number(u.totalBounced) / Number(u.totalSent) * 100).toFixed(2))
+          ? parseFloat((Math.min(100, Number(u.totalBounced) / Number(u.totalSent) * 100)).toFixed(2))
           : 0,
       })),
       suppression: {

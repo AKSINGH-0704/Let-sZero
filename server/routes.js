@@ -774,10 +774,10 @@ export async function registerRoutes(httpServer, app) {
           if (!r.emailAddress) continue;
           const bounceReason = r.diagnosticCode || r.status || null;
           await storage.addSuppression(userId, r.emailAddress, "bounce", bounceReason);
-          await storage.updateCampaignEmail(campaignEmailId, {
-            status: CAMPAIGN_EMAIL_STATUS.BOUNCED,
-          });
-          if (campaignId) await storage.incrementCampaignBounced(campaignId);
+          // Idempotent per campaign_email row — SES/SNS can emit more than one bounce
+          // notification for the same recipient; only the first actually counts.
+          const { wasFirst } = await storage.updateCampaignEmailBounced(campaignEmailId);
+          if (wasFirst && campaignId) await storage.incrementCampaignBounced(campaignId);
           console.log(`[SNS] Permanent bounce — suppressed: ${r.emailAddress}`);
         }
       } else if (eventType === "Complaint") {
@@ -785,10 +785,8 @@ export async function registerRoutes(httpServer, app) {
           if (!r.emailAddress) continue;
           const complaintReason = complaint.complaintFeedbackType || null;
           await storage.addSuppression(userId, r.emailAddress, "complaint", complaintReason);
-          await storage.updateCampaignEmail(campaignEmailId, {
-            status: CAMPAIGN_EMAIL_STATUS.COMPLAINED,
-          });
-          if (campaignId) await storage.incrementCampaignComplained(campaignId);
+          const { wasFirst } = await storage.updateCampaignEmailComplained(campaignEmailId);
+          if (wasFirst && campaignId) await storage.incrementCampaignComplained(campaignId);
           console.log(`[SNS] Complaint — suppressed: ${r.emailAddress}`);
         }
       } else if (eventType === "Open") {
@@ -1686,6 +1684,7 @@ export async function registerRoutes(httpServer, app) {
           continue;
         }
         validRows.push({
+          _row: i + 1, // consumed by importContactsToList for duplicate reporting, stripped before insert
           email,
           name: sanitizeContactTextField(row.name),
           company: sanitizeContactTextField(row.company),
@@ -1713,9 +1712,17 @@ export async function registerRoutes(httpServer, app) {
         fileName ? String(fileName).slice(0, 500) : null
       );
       // Patch failedRows to include pre-validation rejects (storage only counts insert-level failures)
-      importRecord.failedRows = (importRecord.failedRows || 0) + rowErrors.length;
-      if (rowErrors.length > 0) importRecord.rowErrors = rowErrors.slice(0, 20);
+      // and in-batch duplicate emails (storage.importContactsToList reports these via duplicateRows —
+      // previously this case reached Postgres unguarded and surfaced as a raw "ON CONFLICT DO UPDATE
+      // command cannot affect row a second time" error to the user).
+      const duplicateRowErrors = (importRecord.duplicateRows || []).map(d => ({
+        row: d.row, value: d.email, reason: `Duplicate of row ${d.keptRow} — only the last occurrence was imported`,
+      }));
+      const allRowErrors = [...rowErrors, ...duplicateRowErrors];
+      importRecord.failedRows = (importRecord.failedRows || 0) + rowErrors.length + duplicateRowErrors.length;
+      if (allRowErrors.length > 0) importRecord.rowErrors = allRowErrors.slice(0, 20);
       importRecord.totalRows = rows.length;
+      delete importRecord.duplicateRows; // internal detail, folded into rowErrors above
       res.status(201).json(importRecord);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -2411,6 +2418,33 @@ export async function registerRoutes(httpServer, app) {
           }
         }
       }
+
+      // MAINT-005 fix, corrected during self-review — an earlier draft branched
+      // on `campaign.status` (PENDING/PAUSED → finalize immediately, RUNNING →
+      // let the loop self-finalize), but that status was read at the *top* of
+      // this handler, before cancelCampaign()'s own atomic UPDATE ran. A
+      // scheduled or queued campaign can transition PENDING → RUNNING in that
+      // window (BullMQ picks up the job, or the scheduler poll fires) — acting
+      // on the stale read would call finalizeCampaign() while a loop might now
+      // genuinely be alive, racing its claims and its bulk-PENDING→FAILED sweep
+      // against the very execution ADR-013's lease mechanism exists to protect.
+      //
+      // Fixed by reusing waitForCampaignReleaseAndFinalize() — the same
+      // lease-aware gate the deactivation cascade already uses — for every
+      // cancellable status uniformly, rather than guessing from a stale read.
+      // It checks the *current*, atomic lease state: PENDING (lease never set)
+      // and PAUSED (lease cleared on pause) both resolve instantly and safely;
+      // RUNNING correctly waits for the lease to lapse or the loop to
+      // self-finalize. Not awaited here — this customer-facing endpoint has
+      // always returned immediately (unlike the deactivation cascade, which
+      // must know the final balance before reclaiming credits), and blocking
+      // the HTTP response for up to RECLAIM_GATE_MAX_WAIT_MS would be a real
+      // regression for a campaign that's mid-throttle-retry. finalized_at
+      // lands in the background, and the frontend now polls for it directly
+      // (ProgressTracker) instead of assuming it's already set.
+      waitForCampaignReleaseAndFinalize(campaign.id, "CANCELLED", "[CANCEL]").catch(err =>
+        console.error(`[CANCEL] Background finalization failed for campaign ${campaign.id}:`, err.message)
+      );
 
       return res.json({ message: "Campaign cancelled", status: "CANCELLED" });
     } catch (err) {

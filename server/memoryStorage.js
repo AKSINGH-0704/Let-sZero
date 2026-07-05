@@ -1024,6 +1024,13 @@ export const memoryStorage = {
     return campaign;
   },
 
+  // Mirrors storage.js — see its comment for why this guarded write exists.
+  async updateCampaignProgress(campaignId, updates) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign || campaign.finalizedAt) return;
+    Object.assign(campaign, updates, { updatedAt: new Date() });
+  },
+
   async getCampaignStatus(id) {
     return store.campaigns.get(id)?.status || null;
   },
@@ -1069,15 +1076,36 @@ export const memoryStorage = {
   },
 
   // PAR-TRUST-017 — mirrors storage.js's deriveCountsFromCampaignEmails.
+  // BOUNCED/COMPLAINED count as sent — they are states a message reaches only
+  // after a successful send, not an alternative to having been sent (see
+  // storage.js's comment for the financial-correctness reasoning).
   async deriveCountsFromCampaignEmails(campaignId) {
     let sentEmails = 0, failedEmails = 0, skippedEmails = 0;
+    let bouncedEmails = 0, complainedEmails = 0, deliveredEmails = 0, openedEmails = 0, clickedEmails = 0, unsubscribedEmails = 0;
     for (const record of store.campaignEmails.values()) {
       if (record.campaignId !== campaignId) continue;
       if (record.status === CAMPAIGN_EMAIL_STATUS.SENT) sentEmails++;
       else if (record.status === CAMPAIGN_EMAIL_STATUS.FAILED) failedEmails++;
       else if (record.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED) skippedEmails++;
+      else if (record.status === CAMPAIGN_EMAIL_STATUS.BOUNCED) { sentEmails++; bouncedEmails++; }
+      else if (record.status === CAMPAIGN_EMAIL_STATUS.COMPLAINED) { sentEmails++; complainedEmails++; }
+      if (record.deliveredAt) deliveredEmails++;
+      if (record.openedAt) openedEmails++;
+      if (record.clickedAt) clickedEmails++;
+      if (record.unsubscribedAt) unsubscribedEmails++;
     }
-    return { sentEmails, failedEmails, skippedEmails, creditsUsed: sentEmails };
+    // Mirrors storage.js — derive creditsUsed from the ledger, not a row-count
+    // proxy. See storage.js's comment for the exact reasoning (deductCreditAtomic
+    // can fail after a send already succeeded; campaignId on credit_transactions
+    // is set exclusively by the three deduction paths).
+    let creditsUsed = 0;
+    for (const tx of store.creditTransactions.values()) {
+      if (tx.campaignId === campaignId) creditsUsed += -tx.amount;
+    }
+    return {
+      sentEmails, failedEmails, skippedEmails, creditsUsed,
+      bouncedEmails, complainedEmails, deliveredEmails, openedEmails, clickedEmails, unsubscribedEmails,
+    };
   },
 
   // PAR-TRUST-017 §13 / TRUST-018 — mirrors storage.js's equivalents.
@@ -1094,14 +1122,20 @@ export const memoryStorage = {
     const campaign = store.campaigns.get(campaignId);
     if (!campaign?.finalizedAt) return false;
 
+    const fields = ["sentEmails", "failedEmails", "skippedEmails", "creditsUsed", "bouncedEmails", "complainedEmails", "deliveredEmails", "openedEmails", "clickedEmails", "unsubscribedEmails"];
+    const before = Object.fromEntries(fields.map(f => [f, campaign[f]])); // snapshot before the await below yields
+
     const derived = await this.deriveCountsFromCampaignEmails(campaignId);
-    const drifted = campaign.sentEmails !== derived.sentEmails
-      || campaign.failedEmails !== derived.failedEmails
-      || campaign.skippedEmails !== derived.skippedEmails
-      || campaign.creditsUsed !== derived.creditsUsed;
+    const drifted = fields.some(f => before[f] !== derived[f]);
     if (!drifted) return false;
 
-    const before = { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails, skippedEmails: campaign.skippedEmails, creditsUsed: campaign.creditsUsed };
+    // Re-verify nothing else already reconciled this exact drift while the
+    // await above yielded control — mirrors storage.js's compare-and-swap.
+    // Without this, two concurrent callers could both pass the drift check
+    // before either has mutated `campaign`, and both append an audit entry.
+    const stillMatchesSnapshot = fields.every(f => campaign[f] === before[f]);
+    if (!stillMatchesSnapshot) return false;
+
     Object.assign(campaign, derived, { updatedAt: new Date() });
 
     await this.createAuditLog({
@@ -1145,15 +1179,32 @@ export const memoryStorage = {
     if (toStatus === "COMPLETED") campaign.completedAt = new Date();
     campaign.updatedAt = new Date();
 
-    const counts = await this.deriveCountsFromCampaignEmails(campaignId);
-    Object.assign(campaign, counts);
-
+    // Flip orphaned PENDING rows to FAILED *before* deriving counts — these
+    // rows are becoming FAILED in this very call, so the counts written to
+    // campaign and to the CAMPAIGN_FINALIZED audit entry must reflect that,
+    // not a pre-flip snapshot. Mirrors the storage.js fix (previously this ran
+    // after counts were derived, so a claimed-but-never-resolved row would
+    // silently vanish from both the campaign row and the audit trail).
     for (const record of store.campaignEmails.values()) {
       if (record.campaignId === campaignId && record.status === CAMPAIGN_EMAIL_STATUS.PENDING) {
         record.status = CAMPAIGN_EMAIL_STATUS.FAILED;
         record.failureReason = "campaign_terminated";
       }
     }
+
+    const counts = await this.deriveCountsFromCampaignEmails(campaignId);
+    Object.assign(campaign, counts);
+
+    // Mirrors storage.js — the authoritative "what actually happened" record,
+    // written once here with the true final counts.
+    await this.createAuditLog({
+      userId: campaign.userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_FINALIZED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { toStatus, ...counts },
+    });
+
     return true;
   },
 
@@ -1784,6 +1835,14 @@ export const memoryStorage = {
     return false;
   },
 
+  // Mirrors storage.js — see its comment for why this check exists.
+  async hasOutstandingClaims(campaignId) {
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId === campaignId && record.status === CAMPAIGN_EMAIL_STATUS.PENDING) return true;
+    }
+    return false;
+  },
+
   // ── Suppressions ───────────────────────────────────────────────────────────
 
   async addSuppression(userId, email, source, reason = null) {
@@ -1913,6 +1972,28 @@ export const memoryStorage = {
     const record = store.campaignEmails.get(campaignEmailId);
     if (!record || record.clickedAt != null) return { wasFirst: false };
     record.clickedAt = new Date();
+    return { wasFirst: true };
+  },
+
+  // Mirrors storage.js — previously missing entirely from this backend.
+  async updateCampaignEmailDelivered(campaignEmailId) {
+    const record = store.campaignEmails.get(campaignEmailId);
+    if (!record || record.deliveredAt != null) return { wasFirst: false };
+    record.deliveredAt = new Date();
+    return { wasFirst: true };
+  },
+
+  async updateCampaignEmailBounced(campaignEmailId) {
+    const record = store.campaignEmails.get(campaignEmailId);
+    if (!record || record.status === CAMPAIGN_EMAIL_STATUS.BOUNCED) return { wasFirst: false };
+    record.status = CAMPAIGN_EMAIL_STATUS.BOUNCED;
+    return { wasFirst: true };
+  },
+
+  async updateCampaignEmailComplained(campaignEmailId) {
+    const record = store.campaignEmails.get(campaignEmailId);
+    if (!record || record.status === CAMPAIGN_EMAIL_STATUS.COMPLAINED) return { wasFirst: false };
+    record.status = CAMPAIGN_EMAIL_STATUS.COMPLAINED;
     return { wasFirst: true };
   },
 

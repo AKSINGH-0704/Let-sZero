@@ -51,6 +51,7 @@ import { Link } from "wouter";
 import { getStatusConfig } from "@/lib/campaignStatus";
 import CancelCampaignDialog from "@/components/campaign/CancelCampaignDialog";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 
 export default function History() {
   const { isRootAdmin, user } = useAuth();
@@ -75,12 +76,10 @@ export default function History() {
       }
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, campaignId) => {
       setCancelTarget(null);
       setCancelError(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+      invalidateAfter("campaignTerminalStateChanged", { extraKeys: [["/api/campaigns", campaignId]] });
       toast({
         title: data.alreadyCancelled ? "Campaign was already cancelled" : "Campaign cancelled",
         description: data.alreadyCancelled
@@ -88,13 +87,11 @@ export default function History() {
           : "The campaign has been stopped. Credits for sent emails are not refunded.",
       });
     },
-    onError: (err) => {
+    onError: (err, campaignId) => {
       if (err.status === 409) {
         setCancelTarget(null);
         setCancelError(null);
-        queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
+        invalidateAfter("campaignTerminalStateChanged", { extraKeys: [["/api/campaigns", campaignId]] });
         toast({
           title: err.campaignStatus === "COMPLETED" ? "Campaign already completed" : "Campaign already stopped",
           description: err.message,
@@ -113,6 +110,16 @@ export default function History() {
   // Fetch per-contact email records when a campaign dialog is open
   const { data: campaignDetail, isLoading: detailLoading } = useQuery({
     queryKey: ["/api/campaigns", viewCampaign?.id],
+    enabled: !!viewCampaign?.id,
+  });
+
+  // The backend has always recorded a full, ordered timeline of every decision
+  // point in a campaign's lifecycle (created/started/cancelled/completed,
+  // reconciliation corrections) via this exact endpoint — it just had no
+  // frontend consumer until now, despite being the most direct answer to
+  // "why does my campaign show what it shows."
+  const { data: campaignAudit } = useQuery({
+    queryKey: ["/api/campaigns", viewCampaign?.id, "audit"],
     enabled: !!viewCampaign?.id,
   });
 
@@ -213,13 +220,13 @@ export default function History() {
                       const config = getStatusConfig(campaign.status);
                       const StatusIcon = config.icon;
                       const reachRate = (campaign.totalEmails ?? 0) > 0
-                        ? (((campaign.sentEmails + (campaign.skippedEmails ?? 0)) / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
+                        ? Math.min(100, ((campaign.sentEmails + (campaign.skippedEmails ?? 0)) / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
                         : null;
                       const openRate = campaign.sentEmails > 0
-                        ? ((campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
+                        ? Math.min(100, (campaign.openedEmails / campaign.sentEmails) * 100).toFixed(1)
                         : null;
                       const clickRate = campaign.sentEmails > 0
-                        ? ((campaign.clickedEmails / campaign.sentEmails) * 100).toFixed(1)
+                        ? Math.min(100, (campaign.clickedEmails / campaign.sentEmails) * 100).toFixed(1)
                         : null;
 
                       return (
@@ -498,7 +505,7 @@ export default function History() {
                         <Send className="h-4 w-4 text-blue-500" aria-hidden="true" />
                         <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
                           {(viewCampaign.totalEmails ?? 0) > 0
-                            ? (((viewCampaign.sentEmails + (viewCampaign.skippedEmails ?? 0)) / (viewCampaign.totalEmails ?? 1)) * 100).toFixed(1)
+                            ? Math.min(100, ((viewCampaign.sentEmails + (viewCampaign.skippedEmails ?? 0)) / (viewCampaign.totalEmails ?? 1)) * 100).toFixed(1)
                             : "0.0"}%
                         </div>
                       </div>
@@ -510,7 +517,7 @@ export default function History() {
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">
                         <CheckCircle className="h-4 w-4 text-emerald-500" aria-hidden="true" />
                         <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-                          {((viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                          {Math.min(100, (viewCampaign.deliveredEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -521,7 +528,7 @@ export default function History() {
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">
                         <TrendingUp className="h-4 w-4 text-violet-500" aria-hidden="true" />
                         <div className="text-2xl font-semibold text-violet-600 dark:text-violet-400">
-                          {((viewCampaign.openedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                          {Math.min(100, (viewCampaign.openedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -542,7 +549,7 @@ export default function History() {
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">
                         <MousePointerClick className="h-4 w-4 text-blue-500" aria-hidden="true" />
                         <div className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
-                          {((viewCampaign.clickedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
+                          {Math.min(100, (viewCampaign.clickedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(1)}%
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -553,7 +560,7 @@ export default function History() {
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">
                         <UserMinus className="h-4 w-4 text-rose-500" aria-hidden="true" />
                         <div className="text-2xl font-semibold text-rose-600 dark:text-rose-400">
-                          {((viewCampaign.unsubscribedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(2)}%
+                          {Math.min(100, (viewCampaign.unsubscribedEmails ?? 0) / viewCampaign.sentEmails * 100).toFixed(2)}%
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -562,6 +569,68 @@ export default function History() {
                     </div>
                   </div>
                 )}
+
+                {/* Lifecycle timeline — the "why does this show what it shows" answer.
+                    Filters the raw audit feed down to campaign-level decisions only;
+                    the endpoint also returns one CREDITS_USED entry per send, which
+                    would otherwise bury the actually-interesting events (a 80-contact
+                    campaign would show ~80 near-identical lines). */}
+                {(() => {
+                  const LIFECYCLE_ACTIONS = new Set([
+                    "CAMPAIGN_CREATED", "CAMPAIGN_STARTED", "CAMPAIGN_PAUSED",
+                    "CAMPAIGN_CANCELLED", "CAMPAIGN_COMPLETED", "CAMPAIGN_FAILED",
+                    "CAMPAIGN_FINALIZED", "CAMPAIGN_COUNTERS_RECONCILED",
+                  ]);
+                  const ACTION_LABEL = {
+                    CAMPAIGN_CREATED: "Campaign created",
+                    CAMPAIGN_STARTED: "Sending started",
+                    CAMPAIGN_PAUSED: "Paused",
+                    CAMPAIGN_CANCELLED: "Cancellation requested",
+                    CAMPAIGN_COMPLETED: "Completed",
+                    CAMPAIGN_FAILED: "Stopped (failed)",
+                    // "Finalized" is the true-outcome record — written after any
+                    // in-flight send at the moment of the request above has
+                    // landed, so its counts (shown below) are authoritative even
+                    // when the request-time entry above could not yet know them.
+                    CAMPAIGN_FINALIZED: "Finalized — true final counts confirmed",
+                    CAMPAIGN_COUNTERS_RECONCILED: "Counts corrected by reconciliation",
+                  };
+                  const events = (campaignAudit || [])
+                    .filter(l => LIFECYCLE_ACTIONS.has(l.action))
+                    .slice()
+                    .reverse(); // API returns newest-first; timeline reads best oldest-first
+                  if (events.length === 0) return null;
+                  return (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Timeline</p>
+                      <div className="rounded-md border divide-y">
+                        {events.map((e) => (
+                          <div key={e.id} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
+                            <div>
+                              <span className="font-medium">{ACTION_LABEL[e.action] || e.action}</span>
+                              {e.action === "CAMPAIGN_CANCELLED" && e.details?.cancelledBy && (
+                                <span className="text-muted-foreground"> &middot; by {e.details.cancelledBy}</span>
+                              )}
+                              {e.action === "CAMPAIGN_COUNTERS_RECONCILED" && e.details?.reason && (
+                                <span className="text-muted-foreground"> &middot; {e.details.reason.replace(/_/g, " ")}</span>
+                              )}
+                              {e.action === "CAMPAIGN_FINALIZED" && (
+                                <span className="text-muted-foreground"> &middot; {e.details?.sentEmails ?? 0} sent, {e.details?.creditsUsed ?? 0} credits used</span>
+                              )}
+                            </div>
+                            <span className="text-muted-foreground shrink-0">{formatDate(e.createdAt)}</span>
+                          </div>
+                        ))}
+                        {["COMPLETED", "CANCELLED", "FAILED"].includes(viewCampaign.status) && !viewCampaign.finalizedAt && (
+                          <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground">
+                            <Info className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            Final counts are still being confirmed — this may update once more.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Per-contact email records */}
                 {detailLoading ? (
@@ -587,7 +656,22 @@ export default function History() {
                           {campaignDetail.campaignEmails.map((r) => (
                             <TableRow key={r.id}>
                               <TableCell className="text-xs font-mono truncate max-w-[160px]">{r.recipientEmail}</TableCell>
-                              <TableCell className="text-xs">{r.status}</TableCell>
+                              <TableCell className="text-xs">
+                                {r.status === "FAILED" && r.failureReason === "campaign_terminated" ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Badge variant="outline" className="text-[10px] h-4 px-1 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700">
+                                      NOT SENT
+                                    </Badge>
+                                    <span className="text-muted-foreground" title="Campaign was cancelled before this contact was reached">
+                                      cancelled
+                                    </span>
+                                  </span>
+                                ) : r.status === "FAILED" && r.failureReason ? (
+                                  <span title={r.failureReason}>{r.status}</span>
+                                ) : (
+                                  r.status
+                                )}
+                              </TableCell>
                               <TableCell className="text-xs">
                                 {r.status === "SUPPRESSED" ? (
                                   r.suppressionDetail ? (

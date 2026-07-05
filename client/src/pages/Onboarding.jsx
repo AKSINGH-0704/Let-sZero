@@ -3,6 +3,7 @@ import { Redirect, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,9 +50,7 @@ export default function Onboarding() {
         return;
       }
       setSubmitted(true); // suppress the redirect guard while we navigate
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
+      invalidateAfter("domainIdentityChanged");
       refetch();
       navigate(`/app/domains/${data.id}`);
     },

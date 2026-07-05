@@ -20,6 +20,8 @@ export const INITIAL_STATE = {
   spamAnalysis: null,
   acceptedSuggestions: [],
   acceptedDetails: {},
+  rejectedSuggestions: [], // dismissed, not applied — kept separate so a rejected
+                           // suggestion doesn't keep reappearing every render
   aiAnalysis: null,
   campaignName: "",
   campaignId: null,
@@ -80,6 +82,10 @@ export function CampaignProvider({ children, initialState: overrideState }) {
     setCampaignState(prev => ({ ...prev, acceptedDetails: details }));
   };
 
+  const setRejectedSuggestions = (suggestions) => {
+    setCampaignState(prev => ({ ...prev, rejectedSuggestions: suggestions }));
+  };
+
   const setAiAnalysis = (analysis) => {
     setCampaignState(prev => ({ ...prev, aiAnalysis: analysis }));
   };
@@ -128,6 +134,7 @@ export function CampaignProvider({ children, initialState: overrideState }) {
     setSpamAnalysis,
     setAcceptedSuggestions,
     setAcceptedDetails,
+    setRejectedSuggestions,
     setAiAnalysis,
     setCampaignName,
     setCampaignId,

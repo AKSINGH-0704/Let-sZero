@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import Banner from "@/components/common/Banner";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ArrowLeft,
@@ -224,6 +225,26 @@ export default function CampaignConfirmation() {
         toast({
           title: "Saved to Contacts",
           description: `"${saveToLibraryAs}" was added to your Contacts. Recipients will appear shortly.`,
+        });
+      }
+
+      // contactStats (duplicatesRemoved/invalidFormat/roleAddresses/suppressed)
+      // was computed server-side and returned on every campaign creation but had
+      // no consumer anywhere in the client — a user uploading 500 contacts with
+      // 50 silently dropped (duplicates, bad format, role addresses, or already
+      // suppressed) would never learn their campaign was actually going to 450
+      // people, only see a smaller "Total" number later with no explanation.
+      const stats = data.contactStats;
+      const droppedTotal = (stats?.duplicatesRemoved || 0) + (stats?.invalidFormat || 0) + (stats?.roleAddresses || 0) + (stats?.suppressed || 0);
+      if (droppedTotal > 0) {
+        const parts = [];
+        if (stats.duplicatesRemoved) parts.push(`${stats.duplicatesRemoved} duplicate${stats.duplicatesRemoved === 1 ? "" : "s"}`);
+        if (stats.invalidFormat) parts.push(`${stats.invalidFormat} invalid`);
+        if (stats.roleAddresses) parts.push(`${stats.roleAddresses} role address${stats.roleAddresses === 1 ? "" : "es"}`);
+        if (stats.suppressed) parts.push(`${stats.suppressed} suppressed`);
+        toast({
+          title: `${droppedTotal} contact${droppedTotal === 1 ? "" : "s"} won't receive this campaign`,
+          description: `${parts.join(", ")} — removed before sending. ${stats.valid} of ${stats.total} contacts will be sent to.`,
         });
       }
 
@@ -681,15 +702,12 @@ export default function CampaignConfirmation() {
       )}
 
       {validationErrors.length > 0 && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            <p className="font-medium mb-2">Cannot send campaign — fix these issues first:</p>
-            <ul className="list-disc pl-4 space-y-1 text-sm">
-              {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
-          </AlertDescription>
-        </Alert>
+        <Banner variant="danger">
+          <p className="font-medium mb-2">Cannot send campaign — fix these issues first:</p>
+          <ul className="list-disc pl-4 space-y-1 text-sm">
+            {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </Banner>
       )}
 
       <div className="flex justify-between pt-4">

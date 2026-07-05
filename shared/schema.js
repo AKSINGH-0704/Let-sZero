@@ -78,6 +78,16 @@ export const AUDIT_ACTIONS = {
   // PAR-TRUST-017 §13 / TRUST-018 — written only when reconcileCampaignCounters
   // actually corrects a drifted value, not on every no-op reconciliation pass.
   CAMPAIGN_COUNTERS_RECONCILED: "CAMPAIGN_COUNTERS_RECONCILED",
+  // Written once by finalizeCampaign() with the true derived final counts.
+  // Distinct from CAMPAIGN_CANCELLED/CAMPAIGN_FAILED, which record the decision
+  // to stop at the moment it was made — necessarily a snapshot that can be
+  // stale if a send was already in flight (confirmed by direct production
+  // reproduction: a cancel's own audit entry recorded sentEmailsAtCancel=0
+  // while one send that was already in flight landed ~750ms later and was
+  // never reflected in that now-immutable entry). This entry is the
+  // authoritative "what actually happened" record, written after the true
+  // outcome is known, not guessed at decision time.
+  CAMPAIGN_FINALIZED: "CAMPAIGN_FINALIZED",
   EMAIL_SENT: "EMAIL_SENT",
   EMAIL_FAILED: "EMAIL_FAILED",
   TEMPLATE_CREATED: "TEMPLATE_CREATED",
@@ -474,7 +484,13 @@ export const creditTransactions = pgTable("credit_transactions", {
   campaignId: uuid("campaign_id").references(() => campaigns.id),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull()
-});
+}, (table) => ({
+  // deriveCountsFromCampaignEmails() sums this column filtered by campaignId
+  // on every finalizeCampaign/reconcileCampaignCounters call — partial (most
+  // rows, e.g. subscription/referral grants, have no campaignId) so it stays
+  // small and cheap relative to this table's unbounded, per-send growth.
+  campaignIdIdx: index("credit_transactions_campaign_id_idx").on(table.campaignId).where(sql`${table.campaignId} IS NOT NULL`),
+}));
 
 export const suppressions = pgTable("suppressions", {
   id: uuid("id").defaultRandom().primaryKey(),

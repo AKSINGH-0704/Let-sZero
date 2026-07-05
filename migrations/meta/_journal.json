@@ -43,6 +43,13 @@
       "when": 1783202069015,
       "tag": "0005_execution_liveness_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783274607419,
+      "tag": "0006_credit_transactions_campaign_id_idx",
+      "breakpoints": true
     }
   ]
 }

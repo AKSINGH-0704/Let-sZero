@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useCampaign } from "@/context/CampaignContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { getStatusConfig } from "@/lib/campaignStatus";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -50,15 +51,36 @@ export default function ProgressTracker() {
   const { data: fetchedCampaign } = useQuery({
     queryKey: ["/api/campaigns", campaignId],
     enabled: !!campaignId,
+    // Keep polling until the campaign is truly settled (finalizedAt set), not
+    // merely until status looks terminal. Status flips to CANCELLED/COMPLETED
+    // synchronously, often well before finalizeCampaign() has actually derived
+    // the true final counts from campaign_emails (checkpointed counters can be
+    // stale by up to one checkpoint interval, and a cancel doesn't wait for the
+    // in-flight send to land) — stopping on status alone froze the UI on
+    // numbers that were about to change, with no further update ever arriving
+    // short of a manual navigate-away-and-back. Bounded: give up after 20s past
+    // terminal status even if finalizedAt still hasn't landed (the periodic
+    // reconciliation job is the ultimate backstop for that rare case), so this
+    // can never poll forever.
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (status === "COMPLETED" || status === "FAILED" || status === "CANCELLED") {
-        return false;
+      const data = query.state.data;
+      const status = data?.status;
+      const isTerminal = status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
+      if (isTerminal && data?.finalizedAt) return false;
+      if (isTerminal) {
+        const sinceTerminal = query.state.dataUpdatedAt ? Date.now() - query.state.dataUpdatedAt : 0;
+        if (sinceTerminal > 20_000) return false;
+        return 1000;
       }
       const elapsed = Date.now() - mountedAt.current;
       return elapsed < 30_000 ? 500 : 2000;
     },
   });
+
+  // True once the backend has actually finished deriving final counts from
+  // campaign_emails and cleared the execution lease — not just "status looks
+  // done." Drives the "pending reconciliation" affordance below.
+  const isSettled = !!fetchedCampaign?.finalizedAt;
 
   const currentCampaign = fetchedCampaign || campaignData || {
     status: "PENDING",
@@ -83,6 +105,11 @@ export default function ProgressTracker() {
   const isComplete  = currentCampaign.status === "COMPLETED";
   const isCancelled = currentCampaign.status === "CANCELLED";
   const canCancel   = statusConfig.canCancel && !!campaignId;
+  const isTerminal  = isComplete || isCancelled || currentCampaign.status === "FAILED";
+  // Backend has flipped status but hasn't yet derived final counts from
+  // campaign_emails (finalizeCampaign hasn't run) — counts on screen may still
+  // change. See the query's refetchInterval comment for why this window exists.
+  const pendingReconciliation = isTerminal && !fetchedCampaign?.finalizedAt;
 
   // Contacts not yet processed — used for "Pending" tile (RUNNING) and "Not Reached" tile (CANCELLED).
   const pendingEmails = Math.max(0, totalEmails - sentEmails - failedEmails - skippedEmails);
@@ -109,8 +136,12 @@ export default function ProgressTracker() {
     onSuccess: (data) => {
       setCancelDialogOpen(false);
       setCancelError(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", campaignId] });
+      // Same event, same blast radius as natural completion (invalidatePostCampaign
+      // below) — this used to invalidate only /api/campaigns, silently leaving
+      // dashboard/stats and credits/info stale until the user happened to
+      // navigate away and back. Cancelling is a campaignTerminalStateChanged
+      // event exactly like completing; it must invalidate the same set.
+      invalidateAfter("campaignTerminalStateChanged", { extraKeys: [["/api/campaigns", campaignId]] });
       toast({
         title: data.alreadyCancelled ? "Campaign was already cancelled" : "Campaign cancelled",
         description: data.alreadyCancelled
@@ -174,10 +205,18 @@ export default function ProgressTracker() {
             timestamp: record.sentAt,
           });
         } else if (record.status === "FAILED") {
+          // "campaign_terminated" means this contact was never attempted — the
+          // campaign was cancelled before the loop reached it, and the row was
+          // bulk-flipped to FAILED only so it isn't left PENDING forever. That
+          // is a fundamentally different fact from "SES rejected the send" and
+          // was previously indistinguishable in the UI (the reason was captured
+          // in data but never rendered) — surfaced here as its own status so
+          // customers don't read "cancelled, never reached" as "broke."
+          const isTerminatedByCancel = record.failureReason === "campaign_terminated";
           statuses.push({
             email:     record.recipientEmail || "—",
-            status:    "failed",
-            reason:    record.failureReason || "Send failed",
+            status:    isTerminatedByCancel ? "not-sent" : "failed",
+            reason:    isTerminatedByCancel ? "Not sent — campaign was cancelled" : (record.failureReason || "Send failed"),
             timestamp: record.createdAt,
           });
         }
@@ -210,28 +249,37 @@ export default function ProgressTracker() {
     ? Math.min(100, ((sentEmails + failedEmails + skippedEmails) / totalEmails) * 100)
     : 100;
 
-  const deliveryDenominator = sentEmails + failedEmails;
-  const deliveryRate = deliveryDenominator > 0
-    ? ((sentEmails / deliveryDenominator) * 100).toFixed(1)
-    : 100;
+  // Renamed from "delivery rate" — this measures whether an attempted send
+  // succeeded at the SES-accept step, not whether SES actually confirmed final
+  // delivery (that's deliveredEmails, a separate counter populated later via
+  // SNS, often after this banner is already showing). Dashboard and History
+  // both use deliveredEmails/sentEmails for "Delivery Rate" — this metric is a
+  // genuinely different thing and was incorrectly given the same name, so the
+  // same campaign could show two different "delivery rate" numbers depending
+  // on which screen you looked at. Zero-denominator now shows "no data" (null)
+  // instead of a misleadingly perfect 100% before any send has been attempted.
+  const sendAttempts = sentEmails + failedEmails;
+  const sendSuccessRate = sendAttempts > 0
+    ? Math.min(100, (sentEmails / sendAttempts) * 100).toFixed(1)
+    : null;
 
   const reachRate = totalEmails > 0
-    ? (((sentEmails + skippedEmails) / totalEmails) * 100).toFixed(1)
-    : 100;
+    ? Math.min(100, ((sentEmails + skippedEmails) / totalEmails) * 100).toFixed(1)
+    : null;
 
-  const invalidatePostCampaign = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
-  };
+  const invalidatePostCampaign = () => invalidateAfter("campaignTerminalStateChanged");
 
-  // Auto-invalidate credits and stats as soon as campaign completes (no click required)
+  // Auto-invalidate credits and stats as soon as the campaign is truly settled
+  // (finalizedAt set) — for either terminal outcome, not just completion. The
+  // cancel mutation above also invalidates immediately on the 200 response, but
+  // that response can land before finalizeCampaign() has actually run (see the
+  // query's own refetchInterval comment) — this effect is what catches the
+  // moment finalization actually lands, whichever path got there.
   useEffect(() => {
-    if (isComplete) {
+    if (isSettled) {
       invalidatePostCampaign();
     }
-  }, [isComplete]);
+  }, [isSettled]);
 
   const handleFinish = () => {
     invalidatePostCampaign();
@@ -269,6 +317,15 @@ export default function ProgressTracker() {
               {currentCampaign.status === "RUNNING" && (
                 <span className="text-sm text-muted-foreground animate-pulse">
                   Processing…
+                </span>
+              )}
+              {pendingReconciliation && (
+                <span
+                  className="text-sm text-muted-foreground animate-pulse flex items-center gap-1"
+                  title="Final counts are still being confirmed against what was actually sent — numbers below may update once more."
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  Finalizing counts…
                 </span>
               )}
             </div>
@@ -342,10 +399,10 @@ export default function ProgressTracker() {
                 Campaign Completed Successfully!
               </p>
               <p className="text-sm text-green-700 dark:text-green-500">
-                {deliveryRate}% delivery rate ({sentEmails} sent, {failedEmails} failed)
+                {sendSuccessRate != null ? `${sendSuccessRate}% send success rate` : "No sends attempted"} ({sentEmails} sent, {failedEmails} failed)
               </p>
               <p className="text-sm text-green-700 dark:text-green-500 mt-0.5">
-                Reach: {reachRate}% of list &middot;{" "}
+                Reach: {reachRate != null ? `${reachRate}%` : "—"} of list &middot;{" "}
                 {formatNumber(currentCampaign.creditsUsed || sentEmails)} credits used
               </p>
 
@@ -455,6 +512,8 @@ export default function ProgressTracker() {
                         <CheckCircle className="h-4 w-4 text-green-600" aria-hidden="true" />
                       ) : status.status === "suppressed" ? (
                         <Ban className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                      ) : status.status === "not-sent" ? (
+                        <Ban className="h-4 w-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-600" aria-hidden="true" />
                       )}
@@ -471,12 +530,14 @@ export default function ProgressTracker() {
                             ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
                             : status.status === "suppressed"
                             ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                            : status.status === "not-sent"
+                            ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                             : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                         )}
                       >
-                        {status.status === "suppressed" ? "SUPPRESSED" : status.status}
+                        {status.status === "suppressed" ? "SUPPRESSED" : status.status === "not-sent" ? "NOT SENT" : status.status}
                       </Badge>
-                      {status.reason && status.status === "suppressed" && (
+                      {status.reason && status.status !== "sent" && (
                         <span className="text-xs text-muted-foreground hidden sm:inline">
                           {status.reason}
                         </span>
