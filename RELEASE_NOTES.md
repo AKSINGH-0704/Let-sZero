@@ -2,13 +2,40 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-05
+**Last updated:** 2026-07-06
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.2 (2026-07-05)
+## Current Release — v1.3 (2026-07-06)
+
+### More Accurate Campaign Metrics
+
+- Fixed a display issue where emails that later bounced or triggered a spam complaint could disappear from your "sent" count on a dashboard refresh, even though they were genuinely delivered and correctly charged.
+- Consolidated three slightly different "Delivery Rate" calculations (dashboard, campaign progress, and history) into one consistent, correct formula everywhere.
+- Every percentage shown across campaigns and history is now guaranteed to stay within 0–100% — no more visually confusing values.
+- Cancelling a campaign no longer silently changes the displayed counts moments later without explanation — you'll see a brief "Finalizing counts…" state while the true final numbers are being confirmed.
+
+### Spam Analyzer: Accept, Reject, or Edit Suggestions
+
+- The Spam Analyzer now shows a reason alongside each suggestion, and gives you Accept, Reject, and Manual-edit controls with a before/after comparison — instead of only being able to accept every suggestion as-is.
+
+### Clearer Contact Import Failures
+
+- Failed contact-import rows are now summarised with an expandable detail view, so you can see exactly which rows failed and why, and retry.
+
+### AI Content Suggestions: Before/After and Undo
+
+- AI-generated content suggestions now show a before/after comparison with Accept, Reject, Manual-edit, Partial-apply, and Undo — giving you full control over what gets applied to your campaign.
+
+### Further Campaign Reliability Hardening
+
+- Following up on the previous release's campaign-execution safeguards, an additional, deeper engineering review — including validation against a production-equivalent database configuration — found and closed several narrow, low-frequency timing conditions that could, in rare cases, cause a campaign's displayed send/credit counts to be briefly out of date after completion. No customer-visible action is needed; your campaign records and credit balance were never at risk — this is an internal accuracy hardening for the numbers displayed on screen.
+
+---
+
+## v1.2 (2026-07-05)
 
 ### Strengthened Campaign Sending Reliability
 
