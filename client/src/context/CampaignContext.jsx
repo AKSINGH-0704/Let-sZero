@@ -20,6 +20,9 @@ export const INITIAL_STATE = {
   spamAnalysis: null,
   acceptedSuggestions: [],
   acceptedDetails: {},
+  acceptedSnapshots: {}, // suggestion.original -> { subject, body } captured just
+                         // before that suggestion was applied, so Undo can restore
+                         // exact prior text rather than reverse-guessing a regex
   rejectedSuggestions: [], // dismissed, not applied — kept separate so a rejected
                            // suggestion doesn't keep reappearing every render
   aiAnalysis: null,
@@ -82,6 +85,10 @@ export function CampaignProvider({ children, initialState: overrideState }) {
     setCampaignState(prev => ({ ...prev, acceptedDetails: details }));
   };
 
+  const setAcceptedSnapshots = (snapshots) => {
+    setCampaignState(prev => ({ ...prev, acceptedSnapshots: snapshots }));
+  };
+
   const setRejectedSuggestions = (suggestions) => {
     setCampaignState(prev => ({ ...prev, rejectedSuggestions: suggestions }));
   };
@@ -134,6 +141,7 @@ export function CampaignProvider({ children, initialState: overrideState }) {
     setSpamAnalysis,
     setAcceptedSuggestions,
     setAcceptedDetails,
+    setAcceptedSnapshots,
     setRejectedSuggestions,
     setAiAnalysis,
     setCampaignName,

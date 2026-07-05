@@ -258,6 +258,7 @@ RULES:
 - Identify ACTUAL phrases/words from the email that are problematic (not hypothetical ones)
 - Suggestions must reference exact text from the email
 - Every suggestion needs a short, specific reason — not a restatement of the suggestion itself
+- Every suggestion needs a confidence level: "high" for well-established deliverability rules (explicit spam trigger words, ALL CAPS, deceptive subject prefixes), "medium" for well-supported but context-dependent signals (tone, CTA count, mobile length), "low" for subjective judgment calls (sender-reputation/voice observations that reasonable senders could disagree on)
 - Output ONLY valid JSON, no markdown, no explanation`;
 
   const acceptedContext = Array.isArray(acceptedSuggestions) && acceptedSuggestions.length > 0
@@ -281,7 +282,7 @@ Evaluate these five dimensions:
 Return this exact JSON:
 {
   "suggestions": [
-    { "original": "exact phrase from email", "suggestion": "professional alternative", "reason": "one short sentence on why this specifically hurts deliverability" }
+    { "original": "exact phrase from email", "suggestion": "professional alternative", "reason": "one short sentence on why this specifically hurts deliverability", "confidence": "high" | "medium" | "low" }
   ],
   "summary": "One clear sentence explaining the primary deliverability concern and main recommendation"
 }`;
@@ -311,10 +312,16 @@ Return this exact JSON:
     });
     logUsageToDb(userId, "spam-analysis", model, usage.prompt_tokens, usage.completion_tokens, false, latencyMs, cacheKey);
 
+    const VALID_CONFIDENCE = new Set(["high", "medium", "low"]);
     const parsed = JSON.parse(content);
     const result = {
       suggestions: Array.isArray(parsed.suggestions)
-        ? parsed.suggestions.map(s => ({ original: s.original, suggestion: s.suggestion, reason: s.reason || null }))
+        ? parsed.suggestions.map(s => ({
+            original: s.original,
+            suggestion: s.suggestion,
+            reason: s.reason || null,
+            confidence: VALID_CONFIDENCE.has(s.confidence) ? s.confidence : null,
+          }))
         : [],
       summary: parsed.summary || null
     };

@@ -8,7 +8,19 @@ This document summarises what was built, improved, and hardened across the RepMa
 
 ---
 
-## Current Release — v1.3 (2026-07-06)
+## Current Release — v1.4 (2026-07-06)
+
+### Spam Analyzer, Redesigned
+
+The Spam Analyzer no longer leads with a bare risk number — it now reads more like a writing assistant reviewing your email with you.
+
+- **A clear headline instead of a score to interpret.** You'll see "Ready to send," "A few quick fixes recommended," or "This email needs attention" — with the underlying risk score still fully available (hover the Spam Risk indicator for the exact number and a full breakdown of what's contributing to it).
+- **One combined list of suggestions.** Pattern-matched fixes and AI-reviewed fixes now appear together in a single list instead of two separate sections, each labeled with where it came from and — for AI suggestions — how confident the recommendation is (high, medium, or low).
+- **Undo.** Applied a suggestion you want to reverse? Undo is now available right next to it.
+
+---
+
+## v1.3 (2026-07-05)
 
 ### More Accurate Campaign Metrics
 

@@ -6,8 +6,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   ArrowLeft,
@@ -64,10 +62,12 @@ export default function SpamAnalyzer() {
     templateIsAiGenerated,
     acceptedSuggestions: contextAcceptedSuggestions,
     acceptedDetails:     contextAcceptedDetails,
+    acceptedSnapshots:   contextAcceptedSnapshots,
     rejectedSuggestions: contextRejectedSuggestions,
     aiAnalysis:          contextAiAnalysis,
     setAcceptedSuggestions: setContextAcceptedSuggestions,
     setAcceptedDetails:     setContextAcceptedDetails,
+    setAcceptedSnapshots:   setContextAcceptedSnapshots,
     setRejectedSuggestions: setContextRejectedSuggestions,
     setAiAnalysis:          setContextAiAnalysis,
   } = useCampaign();
@@ -87,6 +87,12 @@ export default function SpamAnalyzer() {
   const [acceptedDetails, setAcceptedDetailsLocal] = useState(
     () => new Map(Object.entries(contextAcceptedDetails))
   );
+  // suggestion.original -> { subject, body } captured immediately before that
+  // suggestion was applied — lets Undo restore exact prior text rather than
+  // reverse-guessing a regex replacement.
+  const [acceptedSnapshots, setAcceptedSnapshotsLocal] = useState(
+    () => new Map(Object.entries(contextAcceptedSnapshots || {}))
+  );
   const [rejectedSuggestions, setRejectedSuggestionsLocal] = useState(
     () => new Set(contextRejectedSuggestions)
   );
@@ -100,11 +106,15 @@ export default function SpamAnalyzer() {
   const [aiAnalysisFailed, setAiAnalysisFailed] = useState(false);
 
   // Sync accepted state to both local and context in one call
-  const syncAccepted = (newSet, newMap) => {
+  const syncAccepted = (newSet, newMap, newSnapshots) => {
     setAcceptedSuggestionsLocal(newSet);
     setAcceptedDetailsLocal(newMap);
     setContextAcceptedSuggestions([...newSet]);
     setContextAcceptedDetails(Object.fromEntries(newMap));
+    if (newSnapshots) {
+      setAcceptedSnapshotsLocal(newSnapshots);
+      setContextAcceptedSnapshots(Object.fromEntries(newSnapshots));
+    }
   };
 
   const syncRejected = (newSet) => {
@@ -174,8 +184,11 @@ export default function SpamAnalyzer() {
       setDisplayAnalysis(currentKeywords);
       setSpamAnalysis(currentKeywords);
 
-      // Reset accepted/rejected state — fresh analysis, prior decisions no longer apply
-      syncAccepted(new Set(), new Map());
+      // Reset accepted/rejected state — fresh analysis, prior decisions no longer apply.
+      // Snapshots must also be cleared here: a stale snapshot left keyed by text
+      // that happens to reappear in the new analysis would otherwise attach to
+      // the wrong acceptance and corrupt the undo-ordering check below.
+      syncAccepted(new Set(), new Map(), new Map());
       syncRejected(new Set());
     },
     onError: (err) => {
@@ -206,18 +219,44 @@ export default function SpamAnalyzer() {
     const newSubject = template.subject.replace(pattern, finalText);
     const newBody    = template.body.replace(pattern, finalText);
 
-    setTemplate({ subject: newSubject, body: newBody });
-
     const changedFields = [];
     if (newSubject !== template.subject) changedFields.push("subject line");
     if (newBody    !== template.body)    changedFields.push("body");
 
+    // Snapshot the exact pre-change text so Undo can restore it precisely,
+    // rather than trying to reverse-apply a regex (fragile if two accepted
+    // suggestions' replacement text overlap).
+    const newSnapshots = new Map([...acceptedSnapshots, [suggestion.original, { subject: template.subject, body: template.body }]]);
+
+    setTemplate({ subject: newSubject, body: newBody });
+
     const newSet = new Set([...acceptedSuggestions, suggestion.original]);
     const newMap = new Map([...acceptedDetails, [suggestion.original, changedFields]]);
-    syncAccepted(newSet, newMap);
+    syncAccepted(newSet, newMap, newSnapshots);
     setEditingSuggestion(null);
 
     const newAnalysis = calculateSpamScore(newSubject, newBody);
+    setLocalAnalysisLive(newAnalysis);
+    setSpamAnalysis(newAnalysis);
+  };
+
+  // Restores the exact text captured just before this suggestion was applied,
+  // and removes it from every accepted-state map so it becomes actionable again.
+  const undoSuggestion = (suggestion) => {
+    const snapshot = acceptedSnapshots.get(suggestion.original);
+    if (!snapshot) return;
+
+    setTemplate(snapshot);
+
+    const newSet = new Set(acceptedSuggestions);
+    newSet.delete(suggestion.original);
+    const newMap = new Map(acceptedDetails);
+    newMap.delete(suggestion.original);
+    const newSnapshots = new Map(acceptedSnapshots);
+    newSnapshots.delete(suggestion.original);
+    syncAccepted(newSet, newMap, newSnapshots);
+
+    const newAnalysis = calculateSpamScore(snapshot.subject, snapshot.body);
     setLocalAnalysisLive(newAnalysis);
     setSpamAnalysis(newAnalysis);
   };
@@ -238,7 +277,7 @@ export default function SpamAnalyzer() {
   // ── Derived values ─────────────────────────────────────────────────────────
   const score     = localAnalysisLive.score;
   const breakdown = localAnalysisLive.breakdown || [];
-  const { riskyWords, suggestions } = displayAnalysis;
+  const { suggestions } = displayAnalysis;
 
   const scoreDelta = prevScore !== null && prevScore !== score ? score - prevScore : null;
 
@@ -259,6 +298,16 @@ export default function SpamAnalyzer() {
 
   const dismissedCount = rejectedSuggestions.size;
 
+  // Undo restores the whole template to its pre-accept snapshot — correct only
+  // for the *most recently* accepted suggestion. Undoing an earlier one while a
+  // later one is still applied would silently wipe out that later change too
+  // (its "Applied" badge would then be lying about the actual text). Map
+  // preserves insertion order and undoSuggestion always deletes on revert, so
+  // the last key really is the last (and only safely undoable) acceptance.
+  const lastAcceptedOriginal = acceptedSnapshots.size > 0
+    ? [...acceptedSnapshots.keys()].at(-1)
+    : null;
+
   // Reconciles the AI summary against suggestions actually accepted from this same
   // analysis, with zero additional AI calls. Counts only real acceptances — not items
   // hidden from aiRecommendations for being a keyword-list duplicate — so this can
@@ -272,9 +321,17 @@ export default function SpamAnalyzer() {
     return combined.includes((originalText || "").toLowerCase());
   };
 
-  const showAiPanel           = aiAnalysis !== null || analyzeMutation.isPending;
   const showAiRecommendations = aiRecommendations.length > 0;
-  const showSuggestionsCard   = keywordSuggestions.length > 0 || structuralTips.length > 0 || showAiRecommendations;
+
+  // One worklist instead of two parallel sections — a customer doesn't need to
+  // know internally whether a fix came from the deterministic pattern-matcher
+  // or the LLM to decide whether to apply it. Provenance is preserved per-row
+  // (source + confidence badge) for trust/transparency, not as an organizing axis.
+  const unifiedSuggestions = [
+    ...keywordSuggestions.map(s => ({ ...s, source: "pattern", confidence: "high" })),
+    ...aiRecommendations.map(s => ({ ...s, source: "ai", confidence: s.confidence || null })),
+  ];
+  const showSuggestionsCard = unifiedSuggestions.length > 0 || structuralTips.length > 0;
 
   // ── Objective quality signals — memoized on template content + contact data
   const personalizationStats = useMemo(
@@ -326,6 +383,19 @@ export default function SpamAnalyzer() {
     && invalidPlaceholders.length === 0
     && coverageSignal !== "bad";
 
+  // A qualitative headline replaces the old score-as-hero framing — same
+  // underlying gates as emailIsReady, extended to three tiers instead of a
+  // single boolean, so a customer sees "a couple of quick fixes" differently
+  // from "several things need attention" rather than one undifferentiated
+  // "not ready" state.
+  const outstandingIssueCount = pendingKeyFixes + aiRecommendations.length + invalidPlaceholders.length
+    + (coverageSignal === "bad" ? 1 : 0);
+  const readinessState =
+    (analyzeMutation.isPending && !aiAnalysis) ? "checking"
+    : emailIsReady ? "ready"
+    : (score > 60 || outstandingIssueCount >= 3) ? "attention"
+    : "minor";
+
   // ── Signal helpers ─────────────────────────────────────────────────────────
   const signalIcon = (sig) => {
     if (sig === "good")    return <CheckCircle   className="h-4 w-4 text-green-600 shrink-0" />;
@@ -339,6 +409,36 @@ export default function SpamAnalyzer() {
     : sig === "bad"     ? "text-red-600"
     : "text-muted-foreground";
 
+  // Provenance + confidence badge — "No black boxes": every suggestion shows
+  // where it came from and how sure we are, never fabricated for older cached
+  // AI results that predate the confidence field.
+  const SuggestionProvenance = ({ suggestion }) => {
+    if (suggestion.source === "pattern") {
+      return (
+        <Badge variant="outline" className="text-xs font-normal text-muted-foreground border-border">
+          Pattern match
+        </Badge>
+      );
+    }
+    if (!suggestion.confidence) {
+      return (
+        <Badge variant="outline" className="text-xs font-normal text-muted-foreground border-border">
+          <Sparkles className="h-3 w-3 mr-1" />AI
+        </Badge>
+      );
+    }
+    const confidenceStyle = {
+      high:   "border-primary/30 text-primary",
+      medium: "border-border text-muted-foreground",
+      low:    "border-border text-muted-foreground/70",
+    }[suggestion.confidence];
+    return (
+      <Badge variant="outline" className={cn("text-xs font-normal", confidenceStyle)}>
+        <Sparkles className="h-3 w-3 mr-1" />AI · {suggestion.confidence} confidence
+      </Badge>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
@@ -351,23 +451,48 @@ export default function SpamAnalyzer() {
         </p>
       </div>
 
-      {/* ── Email Ready banner ──────────────────────────────────────────────── */}
-      {emailIsReady && (
-        <Alert className="border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-900">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800 dark:text-green-400">
-            <span className="font-medium">Email ready to send.</span>{" "}
-            Low spam risk, clean formatting, no outstanding issues.
-            {coverageSignal === "caution" && (
-              <span className="block mt-1 text-sm text-green-700 dark:text-green-500">
-                {usedPlaceholders.length - coveredPlaceholders.length} of {usedPlaceholders.length} personalization{" "}
-                {(usedPlaceholders.length - coveredPlaceholders.length) === 1 ? "variable has" : "variables have"}{" "}
-                limited coverage — some recipients will receive a less personalized email.
-              </span>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* ── Headline state — replaces the old score-as-hero framing. The score
+           is still fully available (chip + breakdown tooltip below), but the
+           lead message is qualitative: what's the state, what should happen next. ── */}
+      <Alert className={cn(
+        readinessState === "ready"     && "border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-900",
+        readinessState === "minor"     && "border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900",
+        readinessState === "attention" && "border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900",
+        readinessState === "checking"  && "border-border bg-muted/30",
+      )}>
+        {readinessState === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        {readinessState === "ready"     && <CheckCircle   className="h-4 w-4 text-green-600" />}
+        {readinessState === "minor"     && <AlertTriangle className="h-4 w-4 text-amber-600" />}
+        {readinessState === "attention" && <AlertCircle   className="h-4 w-4 text-red-600" />}
+        <AlertDescription className={cn(
+          readinessState === "ready"     && "text-green-800 dark:text-green-400",
+          readinessState === "minor"     && "text-amber-800 dark:text-amber-400",
+          readinessState === "attention" && "text-red-800 dark:text-red-400",
+          readinessState === "checking"  && "text-muted-foreground",
+        )}>
+          <span className="font-medium">
+            {readinessState === "checking"  && "Checking your email…"}
+            {readinessState === "ready"     && "Email ready to send."}
+            {readinessState === "minor"     && "A few quick fixes recommended."}
+            {readinessState === "attention" && "This email needs attention before sending."}
+          </span>{" "}
+          {readinessState === "ready" && "Low spam risk, clean formatting, no outstanding issues."}
+          {(readinessState === "minor" || readinessState === "attention") && (
+            aiAnalysis?.summary
+              ? aiAnalysis.summary
+              : outstandingIssueCount > 0
+              ? `${outstandingIssueCount} item${outstandingIssueCount === 1 ? "" : "s"} below could improve deliverability.`
+              : "Keyword analysis looks clean, but an AI review hasn't completed yet — run one for a full check before sending."
+          )}
+          {readinessState === "ready" && coverageSignal === "caution" && (
+            <span className="block mt-1 text-sm text-green-700 dark:text-green-500">
+              {usedPlaceholders.length - coveredPlaceholders.length} of {usedPlaceholders.length} personalization{" "}
+              {(usedPlaceholders.length - coveredPlaceholders.length) === 1 ? "variable has" : "variables have"}{" "}
+              limited coverage — some recipients will receive a less personalized email.
+            </span>
+          )}
+        </AlertDescription>
+      </Alert>
 
       {/* ── AI-generated template notice ────────────────────────────────────── */}
       {templateIsAiGenerated && !aiAnalysis && !analyzeMutation.isPending && (
@@ -375,7 +500,7 @@ export default function SpamAnalyzer() {
           <Sparkles className="h-4 w-4 text-primary" />
           <AlertDescription className="text-sm">
             <span className="font-medium">AI-generated template.</span>{" "}
-            This content was written to minimize spam triggers. Review the score below,
+            This content was written to minimize spam triggers. Review the signals below,
             or click Reanalyze for an additional AI review.
           </AlertDescription>
         </Alert>
@@ -391,21 +516,57 @@ export default function SpamAnalyzer() {
         </Alert>
       )}
 
-      {/* ── Objective quality signals ─────────────────────────────────────── */}
+      {/* ── Objective quality signals — spam risk is now a chip with a full
+           breakdown on hover/focus rather than a giant hero number; the
+           qualitative headline above carries the primary message. ── */}
       <Card className="border-card-border">
         <CardContent className="pt-4 pb-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
 
-            {/* Spam Risk */}
-            <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
-              {signalIcon(score <= 30 ? "good" : score <= 60 ? "caution" : "bad")}
-              <div>
-                <p className="text-xs text-muted-foreground">Spam Risk</p>
-                <p className={cn("text-sm font-medium", getScoreColor(score))}>
-                  {getScoreLabel(score)}
-                </p>
-              </div>
-            </div>
+            {/* Spam Risk — with breakdown tooltip */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40 cursor-default">
+                    {signalIcon(score <= 30 ? "good" : score <= 60 ? "caution" : "bad")}
+                    <div>
+                      <p className="text-xs text-muted-foreground">Spam Risk</p>
+                      <p className={cn("text-sm font-medium", getScoreColor(score))}>
+                        {getScoreLabel(score)} <span className="tabular-nums text-xs opacity-70">({score}/100)</span>
+                      </p>
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs space-y-1.5 text-xs" sideOffset={6}>
+                  <p className="font-semibold mb-1">How this score is calculated</p>
+                  {breakdown.length === 0 ? (
+                    <p className="text-muted-foreground">No deterministic risk factors detected.</p>
+                  ) : (
+                    <>
+                      {breakdown.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3">
+                          <span>{item.label}</span>
+                          <span className="tabular-nums font-medium">+{item.points}</span>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between gap-3 font-semibold border-t border-border/50 pt-1 mt-1">
+                        <span>Total</span>
+                        <span className="tabular-nums">{score}</span>
+                      </div>
+                    </>
+                  )}
+                  {scoreDelta !== null && (
+                    <p className={cn("pt-1 border-t border-border/50 flex items-center gap-1", scoreDelta < 0 ? "text-green-600" : "text-amber-600")}>
+                      {scoreDelta < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
+                      Was {prevScore} → Now {score}
+                    </p>
+                  )}
+                  <p className="text-muted-foreground pt-1 border-t border-border/50">
+                    Based on rule-based pattern matching — always reproducible, never a black box.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             {/* Subject Length */}
             <div className="flex items-center gap-2 p-3 rounded-md bg-muted/40">
@@ -541,159 +702,36 @@ export default function SpamAnalyzer() {
         </CardContent>
       </Card>
 
-      {/* ── Spam Score + Risky Words ──────────────────────────────────────── */}
-      <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* Spam Score card */}
-        <Card className="border-card-border">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg">Spam Score</CardTitle>
-              <div className="flex flex-col items-end gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleReanalyze}
-                  disabled={analyzeMutation.isPending || aiExhausted}
-                  data-testid="button-reanalyze"
-                >
-                  {analyzeMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
-                {aiIsUnlimited ? (
-                  <span className="text-xs text-green-600 font-medium">Unlimited</span>
-                ) : aiExhausted ? (
-                  <span className="text-xs text-red-600 font-medium">Limit reached</span>
-                ) : (
-                  <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
-                    {aiRemaining} left today
-                  </span>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center">
-              <div className={cn("text-6xl font-bold mb-2", getScoreColor(score))}>
-                {score}
-              </div>
-              <Badge
-                variant="secondary"
-                className={cn(
-                  "text-sm",
-                  score <= 30 && "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-                  score > 30 && score <= 60 && "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-                  score > 60 && "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                )}
-              >
-                {getScoreLabel(score)}
-              </Badge>
-
-              {breakdown.length > 0 && (
-                <div className="mt-4 text-left space-y-1 border-t pt-3">
-                  {breakdown.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">{item.label}</span>
-                      <span className={cn("font-medium tabular-nums", getScoreColor(score))}>
-                        +{item.points}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between text-xs font-semibold border-t pt-1 mt-1">
-                    <span className="text-muted-foreground">Total</span>
-                    <span className={cn("tabular-nums", getScoreColor(score))}>{score}</span>
-                  </div>
-                </div>
-              )}
-
-              {scoreDelta !== null && (
-                <div className={cn(
-                  "flex items-center justify-center gap-1 mt-2 text-sm font-medium",
-                  scoreDelta < 0 ? "text-green-600" : "text-amber-600"
-                )}>
-                  {scoreDelta < 0
-                    ? <TrendingDown className="h-4 w-4" />
-                    : <TrendingUp className="h-4 w-4" />}
-                  <span>
-                    Was {prevScore} → Now {score} ({scoreDelta > 0 ? "+" : ""}{scoreDelta})
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Risk Level</span>
-                <span className={getScoreColor(score)}>{score}/100</span>
-              </div>
-              <Progress value={score} className="h-2" />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-center">
-              <div className="p-3 rounded-md bg-green-50 dark:bg-green-950/30">
-                <p className="text-lg font-bold text-green-600">0-30</p>
-                <p className="text-xs text-green-700 dark:text-green-400">Safe</p>
-              </div>
-              <div className="p-3 rounded-md bg-yellow-50 dark:bg-yellow-950/30">
-                <p className="text-lg font-bold text-yellow-600">31-60</p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-400">Caution</p>
-              </div>
-              <div className="p-3 rounded-md bg-red-50 dark:bg-red-950/30">
-                <p className="text-lg font-bold text-red-600">61-100</p>
-                <p className="text-xs text-red-700 dark:text-red-400">High Risk</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-muted-foreground leading-relaxed border-t pt-4">
-              Spam Score reflects keyword and structural analysis.
-              Inbox placement also depends on domain reputation,
-              authentication, sending behavior, and recipient engagement.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Risky Words card */}
-        <Card className="border-card-border">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              Risky Words Detected
-            </CardTitle>
-            <CardDescription>
-              {riskyWords.length === 0
-                ? "No spam trigger words found"
-                : `Found ${riskyWords.length} potential spam trigger${riskyWords.length > 1 ? "s" : ""}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {riskyWords.length === 0 ? (
-              <div className="text-center py-8">
-                <CheckCircle className="h-12 w-12 mx-auto text-green-600 mb-3" />
-                <p className="text-green-700 dark:text-green-400 font-medium">Your email looks clean!</p>
-                <p className="text-sm text-muted-foreground">No common spam trigger words detected</p>
-              </div>
+      {/* ── Reanalyze control ────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {aiAnalysis?.summary ? "AI review complete." : "Run an AI review for deeper writing guidance."}
+        </p>
+        <div className="flex items-center gap-2">
+          {aiIsUnlimited ? (
+            <span className="text-xs text-green-600 font-medium">Unlimited AI reviews</span>
+          ) : aiExhausted ? (
+            <span className="text-xs text-red-600 font-medium">Daily limit reached</span>
+          ) : (
+            <span className={cn("text-xs", aiWarning ? "text-yellow-600 font-medium" : "text-muted-foreground")}>
+              {aiRemaining} AI review{aiRemaining === 1 ? "" : "s"} left today
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReanalyze}
+            disabled={analyzeMutation.isPending || aiExhausted}
+            data-testid="button-reanalyze"
+          >
+            {analyzeMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {riskyWords.map((word, i) => (
-                  <Badge
-                    key={i}
-                    variant="secondary"
-                    className={cn(
-                      "text-sm",
-                      acceptedSuggestions.has(word)
-                        ? "bg-green-100 text-green-800 line-through"
-                        : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                    )}
-                  >
-                    {word}
-                  </Badge>
-                ))}
-              </div>
+              <RefreshCw className="h-4 w-4 mr-1.5" />
             )}
-          </CardContent>
-        </Card>
+            Reanalyze
+          </Button>
+        </div>
       </div>
 
       {quotaError && (
@@ -707,297 +745,176 @@ export default function SpamAnalyzer() {
         </Alert>
       )}
 
-      {/* ── AI Deliverability Review ─────────────────────────────────────────── */}
-      {showAiPanel && (
-        <Card className="border-card-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI Deliverability Review
-            </CardTitle>
-            <CardDescription>
-              GPT-4o-mini assessment of your rendered email content
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {analyzeMutation.isPending && !aiAnalysis ? (
-              <div className="space-y-3 animate-pulse">
-                <div className="h-4 bg-muted rounded w-full" />
-                <div className="h-4 bg-muted rounded w-5/6" />
-                <div className="h-4 bg-muted rounded w-4/6" />
-              </div>
-            ) : (
-              <>
-                {aiAnalysis?.summary && (
-                  aiActionableResolved === 0 ? (
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {aiAnalysis.summary}
-                    </p>
-                  ) : aiActionableResolved >= aiActionableTotal ? (
-                    <p className="text-sm text-green-700 dark:text-green-400 leading-relaxed flex items-center gap-1.5">
-                      <CheckCircle className="h-4 w-4 shrink-0" />
-                      All AI-flagged issues from this review have been addressed.
-                    </p>
-                  ) : (
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {aiActionableResolved} of {aiActionableTotal} AI-flagged issue{aiActionableTotal === 1 ? "" : "s"} addressed
-                      — {aiActionableTotal - aiActionableResolved} still shown below.
-                    </p>
-                  )
-                )}
-                {aiObservations.length > 0 && (
-                  <div className="space-y-2">
-                    {aiObservations.map((obs, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30"
-                      >
-                        <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                        <p className="text-sm text-muted-foreground">{obs.suggestion}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Suggested Improvements ──────────────────────────────────────────── */}
+      {/* ── Suggestions worklist — one unified list instead of separate
+           "Keyword Improvements" / "AI Recommendations" sections. Provenance
+           and confidence are shown per-row (SuggestionProvenance), not used to
+           split the page into parallel tracks the customer has to reconcile. ── */}
       {showSuggestionsCard && (
         <Card className="border-card-border">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Lightbulb className="h-4 w-4 text-primary" />
-              Suggested Improvements
+              Suggestions
             </CardTitle>
+            {aiAnalysis?.summary && aiActionableTotal > 0 && (
+              <CardDescription>
+                {aiActionableResolved >= aiActionableTotal
+                  ? "All AI-flagged issues from this review have been addressed."
+                  : `${aiActionableResolved} of ${aiActionableTotal} AI-flagged issue${aiActionableTotal === 1 ? "" : "s"} addressed.`}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Keyword improvements */}
-            {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
-              <div>
-                {keywordSuggestions.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                      Keyword Improvements
-                    </p>
-                    <div className="space-y-2">
-                      {keywordSuggestions.map((suggestion, i) => {
-                        const isAccepted = acceptedSuggestions.has(suggestion.original);
-                        const isEditing  = editingSuggestion === suggestion.original;
-                        return (
-                          <div
-                            key={i}
-                            className={cn(
-                              "p-4 rounded-md border",
-                              isAccepted
-                                ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
-                                : "bg-muted/30 border-border"
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="flex items-center gap-4">
-                                <div className="text-sm">
-                                  <span className="text-red-600 line-through font-medium">
-                                    {suggestion.original}
-                                  </span>
-                                  <span className="mx-2 text-muted-foreground">&rarr;</span>
-                                  <span className="text-green-600 font-medium">
-                                    {suggestion.suggestion}
-                                  </span>
-                                </div>
-                              </div>
-                              {isAccepted ? (
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Applied
-                                  </Badge>
-                                  {acceptedDetails.get(suggestion.original)?.length > 0 && (
-                                    <span className="text-xs text-muted-foreground">
-                                      in {acceptedDetails.get(suggestion.original).join(" & ")}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => acceptSuggestion(suggestion)}
-                                    data-testid={`button-accept-${i}`}
-                                  >
-                                    <ThumbsUp className="h-3 w-3 mr-1" />
-                                    Accept
-                                  </Button>
-                                  <Button variant="ghost" size="sm" onClick={() => startManualEdit(suggestion)} data-testid={`button-edit-${i}`}>
-                                    Edit
-                                  </Button>
-                                  <Button variant="ghost" size="sm" onClick={() => rejectSuggestion(suggestion)} data-testid={`button-reject-${i}`} className="text-muted-foreground">
-                                    Dismiss
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            {!isAccepted && (
-                              <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1">
-                                <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
-                                Common spam trigger word — flagged by pattern matching, not AI
-                              </p>
-                            )}
-                            {isEditing && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={editedText}
-                                  onChange={(e) => setEditedText(e.target.value)}
-                                  className="flex-1 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
-                                  aria-label="Edit suggested replacement text"
-                                  autoFocus
-                                />
-                                <Button size="sm" onClick={() => acceptSuggestion(suggestion, editedText)} disabled={!editedText.trim()}>
-                                  Apply edited
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setEditingSuggestion(null)}>
-                                  Cancel
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {structuralTips.length > 0 && (
-                  <div className={cn("space-y-2", keywordSuggestions.length > 0 && "mt-3")}>
-                    {structuralTips.map((tip, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-3 p-4 rounded-md border border-border bg-muted/30"
-                      >
-                        <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                        <p className="text-sm text-muted-foreground">{tip.suggestion}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {analyzeMutation.isPending && !aiAnalysis && (
+              <div className="space-y-3 animate-pulse">
+                <div className="h-4 bg-muted rounded w-full" />
+                <div className="h-4 bg-muted rounded w-5/6" />
               </div>
             )}
 
-            {/* AI Recommendations */}
-            {showAiRecommendations && (
-              <>
-                {(keywordSuggestions.length > 0 || structuralTips.length > 0) && (
-                  <Separator className="my-4" />
-                )}
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    AI Recommendations
-                  </p>
-                  <div className="space-y-2">
-                    {aiRecommendations.map((suggestion, i) => {
-                      const isAccepted = acceptedSuggestions.has(suggestion.original);
-                      const canApply   = isApplicableToTemplate(suggestion.original);
-                      const isEditing  = editingSuggestion === suggestion.original;
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "p-4 rounded-md border",
-                            isAccepted
-                              ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
-                              : "bg-muted/30 border-border"
+            {unifiedSuggestions.map((suggestion, i) => {
+              const isAccepted = acceptedSuggestions.has(suggestion.original);
+              const isEditing  = editingSuggestion === suggestion.original;
+              const canApply   = suggestion.source === "pattern" || isApplicableToTemplate(suggestion.original);
+              const testPrefix = suggestion.source === "ai" ? "button-ai" : "button";
+              return (
+                <div
+                  key={`${suggestion.source}-${suggestion.original}-${i}`}
+                  className={cn(
+                    "p-4 rounded-md border",
+                    isAccepted
+                      ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900"
+                      : "bg-muted/30 border-border"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-sm min-w-0">
+                        <span className={cn(
+                          "font-medium",
+                          suggestion.source === "pattern" ? "text-red-600 line-through" : "text-muted-foreground"
+                        )}>
+                          {suggestion.source === "pattern" ? suggestion.original : `"${suggestion.original}"`}
+                        </span>
+                        <span className="mx-2 text-muted-foreground">&rarr;</span>
+                        <span className={suggestion.source === "pattern" ? "text-green-600 font-medium" : "text-foreground"}>
+                          {suggestion.suggestion}
+                        </span>
+                      </div>
+                    </div>
+                    {isAccepted ? (
+                      <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
+                        <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Applied
+                        </Badge>
+                        <div className="flex items-center gap-2">
+                          {acceptedDetails.get(suggestion.original)?.length > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              in {acceptedDetails.get(suggestion.original).join(" & ")}
+                            </span>
                           )}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-4 min-w-0">
-                              <div className="text-sm min-w-0">
-                                <span className="text-muted-foreground font-medium">
-                                  &ldquo;{suggestion.original}&rdquo;
-                                </span>
-                                <span className="mx-2 text-muted-foreground">&rarr;</span>
-                                <span className="text-foreground">
-                                  {suggestion.suggestion}
-                                </span>
-                              </div>
-                            </div>
-                            {isAccepted ? (
-                              <div className="flex flex-col items-end gap-0.5 shrink-0 ml-3">
-                                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Applied
-                                </Badge>
-                                {acceptedDetails.get(suggestion.original)?.length > 0 && (
-                                  <span className="text-xs text-muted-foreground">
-                                    in {acceptedDetails.get(suggestion.original).join(" & ")}
-                                  </span>
-                                )}
-                              </div>
-                            ) : canApply ? (
-                              <div className="flex items-center gap-1.5 shrink-0 ml-3">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => acceptSuggestion(suggestion)}
-                                  data-testid={`button-ai-accept-${i}`}
-                                >
-                                  <ThumbsUp className="h-3 w-3 mr-1" />
-                                  Apply
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => startManualEdit(suggestion)}
-                                  data-testid={`button-ai-edit-${i}`}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => rejectSuggestion(suggestion)}
-                                  data-testid={`button-ai-reject-${i}`}
-                                  className="text-muted-foreground"
-                                >
-                                  Dismiss
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                          {suggestion.reason && (
-                            <p className="text-xs text-muted-foreground mt-1.5 flex items-start gap-1">
-                              <Info className="h-3 w-3 shrink-0 mt-0.5" aria-hidden="true" />
-                              {suggestion.reason}
-                            </p>
-                          )}
-                          {isEditing && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={editedText}
-                                onChange={(e) => setEditedText(e.target.value)}
-                                className="flex-1 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
-                                aria-label="Edit suggested replacement text"
-                                autoFocus
-                              />
-                              <Button size="sm" onClick={() => acceptSuggestion(suggestion, editedText)} disabled={!editedText.trim()}>
-                                Apply edited
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditingSuggestion(null)}>
-                                Cancel
-                              </Button>
-                            </div>
+                          {suggestion.original === lastAcceptedOriginal ? (
+                            <button
+                              type="button"
+                              onClick={() => undoSuggestion(suggestion)}
+                              data-testid={`${testPrefix}-undo-${i}`}
+                              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                            >
+                              Undo
+                            </button>
+                          ) : (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-disabled="true"
+                                    onClick={(e) => e.preventDefault()}
+                                    className="text-xs text-muted-foreground/50 cursor-default underline underline-offset-2 decoration-dotted"
+                                  >
+                                    Undo
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-xs max-w-[220px]">
+                                  Undo the most recently applied suggestion first — changes are undone in the order they were made.
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           )}
                         </div>
-                      );
-                    })}
+                      </div>
+                    ) : canApply ? (
+                      <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => acceptSuggestion(suggestion)}
+                          data-testid={`${testPrefix}-accept-${i}`}
+                        >
+                          <ThumbsUp className="h-3 w-3 mr-1" />
+                          Accept
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => startManualEdit(suggestion)} data-testid={`${testPrefix}-edit-${i}`}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => rejectSuggestion(suggestion)} data-testid={`${testPrefix}-reject-${i}`} className="text-muted-foreground">
+                          Dismiss
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
+
+                  <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                    <SuggestionProvenance suggestion={suggestion} />
+                    {(suggestion.reason || suggestion.source === "pattern") && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Info className="h-3 w-3 shrink-0" aria-hidden="true" />
+                        {suggestion.reason || "Common spam trigger word, matched exactly as written"}
+                      </p>
+                    )}
+                  </div>
+
+                  {isEditing && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="flex-1 min-w-0 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                        aria-label="Edit suggested replacement text"
+                        autoFocus
+                      />
+                      <Button size="sm" onClick={() => acceptSuggestion(suggestion, editedText)} disabled={!editedText.trim()}>
+                        Apply edited
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingSuggestion(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
                 </div>
-              </>
+              );
+            })}
+
+            {/* Non-actionable notes — structural tips (deterministic) and AI
+                observations (sender-reputation/tone judgment calls) that don't
+                map to a specific accept/reject text change. */}
+            {(structuralTips.length > 0 || aiObservations.length > 0) && (
+              <div className={cn("space-y-2", unifiedSuggestions.length > 0 && "pt-2 border-t border-border/50")}>
+                {structuralTips.map((tip, i) => (
+                  <div key={`tip-${i}`} className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30">
+                    <Lightbulb className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-sm text-muted-foreground">{tip.suggestion}</p>
+                  </div>
+                ))}
+                {aiObservations.map((obs, i) => (
+                  <div key={`ai-note-${i}`} className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/30">
+                    <Sparkles className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-sm text-muted-foreground">{obs.suggestion}</p>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1012,15 +929,6 @@ export default function SpamAnalyzer() {
         >
           {dismissedCount} suggestion{dismissedCount === 1 ? "" : "s"} dismissed — show again
         </button>
-      )}
-
-      {score > 60 && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            Your email has a high spam score. Consider accepting the suggestions above or revising your content to improve deliverability.
-          </AlertDescription>
-        </Alert>
       )}
 
       <div className="flex justify-between pt-4">
