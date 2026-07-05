@@ -79,6 +79,8 @@ export default function History() {
       setCancelTarget(null);
       setCancelError(null);
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
       toast({
         title: data.alreadyCancelled ? "Campaign was already cancelled" : "Campaign cancelled",
         description: data.alreadyCancelled
@@ -91,6 +93,8 @@ export default function History() {
         setCancelTarget(null);
         setCancelError(null);
         queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
         toast({
           title: err.campaignStatus === "COMPLETED" ? "Campaign already completed" : "Campaign already stopped",
           description: err.message,

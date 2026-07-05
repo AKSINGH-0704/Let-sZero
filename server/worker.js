@@ -17,7 +17,7 @@ import { getRedisConnection } from "./queue.js";
 import { storage } from "./storage.js";
 import { runCampaignLoop, sendWithRetry } from "./campaignLoop.js";
 import { SEND_RATE_MS } from "./campaignConfig.js";
-import { USER_ROLES } from "../shared/schema.js";
+import { USER_ROLES, AUDIT_ACTIONS } from "../shared/schema.js";
 
 // Re-export sendWithRetry so existing callers that import it from worker.js continue to work.
 export { sendWithRetry };
@@ -56,7 +56,19 @@ export function startWorker() {
     const userId = job?.data?.userId;
     console.error(`[WORKER] Campaign ${id} permanently failed:`, err.message);
     if (id) {
-      await storage.updateCampaign(id, { status: "FAILED" }).catch(() => {});
+      // PAR-TRUST-017 §7.3/§7.5 — this handler has no local sentCount/failedCount
+      // (the loop's counters live inside runCampaignLoop's own scope, not here),
+      // so finalizeCampaign re-derives true counts from campaign_emails rather
+      // than trusting a stale checkpoint. Idempotent — a no-op if the loop's own
+      // post-loop safety net already finalized this campaign first.
+      await storage.createAuditLog({
+        userId: userId || null,
+        action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+        targetType: "campaign",
+        targetId: id,
+        details: { reason: "bullmq_job_failed", message: err.message },
+      }).catch(() => {});
+      await storage.finalizeCampaign(id, "FAILED").catch(() => {});
       // Update activity only if execution genuinely started (at least one email attempted)
       if (userId) {
         const failed = await storage.getCampaign(id).catch(() => null);

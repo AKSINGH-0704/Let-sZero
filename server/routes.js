@@ -16,7 +16,7 @@ import { verifySnsMessage } from "./sns.js";
 import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
-import { runCampaignLoop } from "./campaignLoop.js";
+import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
 import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
@@ -245,8 +245,30 @@ function rootAdminMiddleware(req, res, next) {
 
 // Reusable campaign execution — called by immediate send (routes.js), scheduler,
 // and PENDING watchdog (index.js). Delegates to the shared runCampaignLoop.
+//
+// PAR-TRUST-017 §7.3/§7.5 — if the loop throws before reaching its own internal
+// finalization (e.g. a DB error during setup, before the per-contact loop even
+// starts), this is the single place that guarantees the campaign still gets
+// finalized rather than being left RUNNING/PENDING forever with no live job.
+// finalizeCampaign has no local counters to trust here, so it re-derives true
+// counts from campaign_emails; it is idempotent, so this is a safe no-op if the
+// loop already finalized itself before throwing. The error is re-thrown so each
+// call site's own catch handler still runs for its site-specific follow-up
+// (e.g. the activity-update check below).
 export async function executeCampaign(campaignId, userId) {
-  await runCampaignLoop(campaignId, userId, { logTag: "[CAMPAIGN][INLINE]" });
+  try {
+    await runCampaignLoop(campaignId, userId, { logTag: "[CAMPAIGN][INLINE]" });
+  } catch (err) {
+    await storage.createAuditLog({
+      userId: userId || null,
+      action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "inline_execution_threw", message: err.message },
+    }).catch(() => {});
+    await storage.finalizeCampaign(campaignId, "FAILED").catch(() => {});
+    throw err;
+  }
 }
 
 // ── Shared field sanitizer for contact text fields ────────────────────────────
@@ -1257,18 +1279,27 @@ export async function registerRoutes(httpServer, app) {
       }
 
       // b. Terminate active and pending campaigns
+      // PAR-TRUST-017 §7.4 — reuse the same cancellation primitive user-initiated
+      // cancel already uses (storage.cancelCampaign → CANCELLED) instead of
+      // forcing FAILED directly. Combined with the loop's every-iteration
+      // liveness check (§7.2), this guarantees any genuinely RUNNING execution
+      // notices and stops within roughly one send's latency, regardless of
+      // campaign size — closing the original TRUST-017 gap (deactivation used to
+      // force FAILED, which nothing in the loop ever rechecked for mid-loop).
       const allCampaigns = await storage.getCampaigns(id, false);
       const activeCampaigns = allCampaigns.filter(c => ["RUNNING", "PENDING"].includes(c.status));
       const queue = getCampaignQueue();
       for (const campaign of activeCampaigns) {
-        await storage.updateCampaign(campaign.id, { status: "FAILED" });
-        await storage.createAuditLog({
-          userId: req.user.id,
-          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
-          targetType: "campaign",
-          targetId: campaign.id,
-          details: { name: campaign.name, reason: "Campaign terminated — user account deactivated" },
-        });
+        const cancelled = await storage.cancelCampaign(campaign.id, ["RUNNING", "PENDING"]);
+        if (cancelled) {
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.CAMPAIGN_CANCELLED,
+            targetType: "campaign",
+            targetId: campaign.id,
+            details: { name: campaign.name, reason: "Campaign cancelled — user account deactivated" },
+          });
+        }
         if (queue) {
           try {
             const job = await queue.getJob(campaign.id);
@@ -1278,6 +1309,14 @@ export async function registerRoutes(httpServer, app) {
           }
         }
       }
+
+      // b2. PAR-TRUST-017 §7.6/§7.7 — reclaim gate: wait for every cancelled
+      // campaign to confirm ownership fully relinquished before reading any
+      // balance below. See waitForCampaignReleaseAndFinalize (campaignLoop.js)
+      // for the lease-based mechanics. Parallel across campaigns.
+      await Promise.all(activeCampaigns.map(campaign =>
+        waitForCampaignReleaseAndFinalize(campaign.id, "CANCELLED", "[DELETE_USER]")
+      ));
 
       // c. Cascade reclaim and reassign children (SUB_ADMIN deactivation only)
       let reassignedChildCount = 0;
@@ -1310,15 +1349,20 @@ export async function registerRoutes(httpServer, app) {
       }
 
       // d. Reclaim unspent credits to parent
-      const unspent = (target.creditsReceived || 0) - (target.creditsAllocated || 0) - (target.creditsUsed || 0);
-      if (unspent > 0 && target.parentId) {
-        await storage.reclaimCredits(id, target.parentId, unspent);
+      // PAR-TRUST-017 §7.6 step 5 — read the balance fresh, here, after every
+      // affected campaign is confirmed finalized above. Never from `target`
+      // (fetched at handler-entry, step a) — that snapshot could understate
+      // credits an in-flight campaign was still spending at the time of deactivation.
+      const freshTarget = await storage.getUserById(id);
+      const unspent = (freshTarget.creditsReceived || 0) - (freshTarget.creditsAllocated || 0) - (freshTarget.creditsUsed || 0);
+      if (unspent > 0 && freshTarget.parentId) {
+        await storage.reclaimCredits(id, freshTarget.parentId, unspent);
         await storage.createAuditLog({
           userId: req.user.id,
           action: AUDIT_ACTIONS.CREDITS_RECLAIMED,
           targetType: "user",
           targetId: id,
-          details: { amount: unspent, reclaimedTo: target.parentId, username: target.username },
+          details: { amount: unspent, reclaimedTo: freshTarget.parentId, username: freshTarget.username },
         });
       }
 
@@ -2249,7 +2293,6 @@ export async function registerRoutes(httpServer, app) {
         // Redis not configured — run inline (non-blocking) as fallback
         executeCampaign(campaign.id, req.user.id).catch(async (err) => {
           console.error(`[CAMPAIGN] Inline execution error for ${campaign.id}:`, err.message);
-          await storage.updateCampaign(campaign.id, { status: "FAILED" }).catch(() => {});
           if (req.user.role !== USER_ROLES.ROOT_ADMIN && !req.user.isSecondaryRoot) {
             const failed = await storage.getCampaign(campaign.id).catch(() => null);
             if (failed) {
@@ -3307,7 +3350,14 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: `Campaign is already ${campaign.status} — nothing to cancel` });
       }
 
-      await storage.updateCampaign(campaign.id, { status: "FAILED" });
+      // PAR-TRUST-017 §7.3/§7.5 — route through finalizeCampaign instead of a raw
+      // status write. This endpoint exists specifically for STUCK campaigns (no
+      // live loop to ever notice and finalize on its own), so without this, a
+      // force-cancelled campaign would have finalized_at permanently unset — the
+      // reclaim gate (§7.6) would eventually time out and self-finalize, but any
+      // orphaned PENDING campaign_emails rows would never get cleaned up, and the
+      // "terminal implies finalized" invariant would silently not hold for it.
+      await storage.finalizeCampaign(campaign.id, "FAILED");
 
       // Remove BullMQ job — best-effort; job may already be gone
       try {

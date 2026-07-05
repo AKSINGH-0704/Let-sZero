@@ -43,6 +43,7 @@ import { createServer } from "http";
 import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { runSchemaCheck } from "./schemaCheck.js";
+import { RECONCILIATION_MIN_AGE_MS, RECONCILIATION_MAX_AGE_MS } from "./campaignConfig.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import { runDomainVerificationPoll } from "./domainManager.js";
@@ -639,8 +640,13 @@ async function diagnoseSMTPPath() {
 
       for (const c of running) {
         // Rule 1: completedAt set means the campaign finished; status column is stale.
+        // This narrow race (completedAt written but status write lost) should no
+        // longer be reachable for new campaigns — finalizeCampaign now writes both
+        // in the same transaction (PAR-TRUST-017 §7.3) — kept as a defensive
+        // backstop for any pre-existing data. finalizedAt is backfilled here too,
+        // for consistency with "terminal implies finalized" going forward.
         if (c.completedAt) {
-          await storage.updateCampaign(c.id, { status: "COMPLETED" });
+          await storage.updateCampaign(c.id, { status: "COMPLETED", finalizedAt: c.finalizedAt || c.completedAt });
           console.log(`[RECOVERY] Campaign ${c.id} → COMPLETED (completedAt already set)`);
           continue;
         }
@@ -661,13 +667,33 @@ async function diagnoseSMTPPath() {
           }
         }
 
+        // Rule 2.5: PAR-TRUST-017 §7.7 — cross-check the execution lease independent
+        // of BullMQ's own job-state, which is itself an internally timeout-based
+        // heuristic (stalledInterval/maxStalledCount) with the same class of blind
+        // spot this whole PAR was about. Not expected to matter at today's
+        // single-instance scale (this recovery pass runs before this process's own
+        // worker starts, so nothing *here* can be alive) — but costs nothing and
+        // future-proofs the check if the worker is ever scaled horizontally
+        // (SCALE-001-adjacent), where a *different* instance's execution could
+        // still legitimately hold the lease.
+        if (c.executionLeaseExpiresAt && new Date(c.executionLeaseExpiresAt).getTime() > Date.now()) {
+          console.log(`[RECOVERY] Campaign ${c.id} — execution lease still live, leaving RUNNING`);
+          continue;
+        }
+
         // Rule 3: No completedAt, no live BullMQ job → mark FAILED so the UI unblocks.
-        await storage.updateCampaign(c.id, { status: "FAILED" });
-        // Bulk-update any PENDING campaign_emails to FAILED — prevents History from showing
-        // permanent "Pending" records for campaigns that crashed before the send completed.
-        await storage.bulkFailOrphanedCampaignEmails(c.id).catch(err =>
-          console.warn(`[RECOVERY] bulkFailOrphanedCampaignEmails failed for ${c.id}:`, err.message)
-        );
+        // PAR-TRUST-017 §7.3/§7.5 — finalizeCampaign re-derives true counts from
+        // campaign_emails (this recovery pass has no local counters to trust) and
+        // marks orphaned PENDING rows FAILED in the same transaction — replacing
+        // the separate updateCampaign + bulkFailOrphanedCampaignEmails calls.
+        await storage.createAuditLog({
+          userId: c.userId,
+          action: AUDIT_ACTIONS.CAMPAIGN_FAILED,
+          targetType: "campaign",
+          targetId: c.id,
+          details: { reason: "crash_recovery_no_live_job" },
+        }).catch(err => console.warn(`[RECOVERY] audit log failed for ${c.id}:`, err.message));
+        await storage.finalizeCampaign(c.id, "FAILED");
         console.log(`[RECOVERY] Campaign ${c.id} → FAILED (no live job found)`);
       }
     } catch (err) {
@@ -791,6 +817,41 @@ async function diagnoseSMTPPath() {
     runCampaignEmailCleanup();
     setInterval(runCampaignEmailCleanup, 7 * 24 * 60 * 60 * 1000);
   }, 12 * 60 * 1000);
+
+  // PAR-TRUST-017 §13 / TRUST-018 — campaign counter reconciliation. Heals the
+  // one narrow, named race the claim/finalize mechanism doesn't structurally
+  // prevent (two genuinely-overlapping executions racing to finalize when an
+  // external cancel causes each to return independently — see the PAR §12/§13).
+  // Never touches status/finalizedAt, only the sentEmails/failedEmails/
+  // skippedEmails/creditsUsed cache, and only for already-finalized campaigns.
+  // Every 15 minutes, 3-minute startup offset.
+  setTimeout(() => {
+    let running = false;
+    async function runCounterReconciliation() {
+      if (running) { console.warn("[RECONCILE] Counter reconciliation still in progress — skipping"); return; }
+      running = true;
+      try {
+        const candidates = await storage.getCampaignsPendingReconciliation(RECONCILIATION_MIN_AGE_MS, RECONCILIATION_MAX_AGE_MS);
+        let corrected = 0;
+        for (const c of candidates) {
+          try {
+            if (await storage.reconcileCampaignCounters(c.id)) corrected++;
+          } catch (err) {
+            console.warn(`[RECONCILE] Campaign ${c.id} reconciliation failed:`, err.message);
+          }
+        }
+        if (corrected > 0) {
+          console.log(`[RECONCILE] Corrected drifted counters for ${corrected}/${candidates.length} candidate campaign(s)`);
+        }
+      } catch (err) {
+        console.error("[RECONCILE] Counter reconciliation error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runCounterReconciliation();
+    setInterval(runCounterReconciliation, 15 * 60 * 1000);
+  }, 3 * 60 * 1000);
 
   // Expired inactivity tokens — weekly, 17-minute startup offset.
   setTimeout(() => {

@@ -155,6 +155,7 @@ export default function Users() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
       setIsCreateOpen(false);
       setNewUser({ username: "", email: "", password: "", role: createUserRoles[0], credits: 0 });
       setCreatedUser(data);
@@ -200,6 +201,7 @@ export default function Users() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
       setAllocateUserId(null);
       setAllocateCredits("");
       toast({ title: "Credits allocated successfully" });
@@ -217,6 +219,8 @@ export default function Users() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
       toast({ title: "User deactivated" });
     },
     onError: (err) => {
@@ -231,6 +235,8 @@ export default function Users() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/info"] });
       toast({ title: "User reactivated" });
     },
     onError: (err) => {

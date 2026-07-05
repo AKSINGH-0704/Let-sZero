@@ -17,6 +17,7 @@ import {
 } from "../shared/schema.js";
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
+import { PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -974,6 +975,12 @@ export const memoryStorage = {
       scheduledAt: campaignData.scheduledAt || null,
       startedAt: null,
       completedAt: null,
+      finalizedAt: null,
+      // Pre-existing gap fixed alongside PAR-TRUST-017: these were never copied,
+      // so any custom-domain campaign silently failed SAS's SENDER_DOMAIN_REQUIRED
+      // check in dev/test mode regardless of what the caller actually passed.
+      senderDomainId: campaignData.senderDomainId || null,
+      senderEmailSnapshot: campaignData.senderEmailSnapshot || null,
       createdAt: now,
       updatedAt: now
     };
@@ -1017,15 +1024,31 @@ export const memoryStorage = {
     return campaign;
   },
 
-  async updateCampaignIfRunning(id, updates) {
-    const campaign = store.campaigns.get(id);
-    if (!campaign || campaign.status !== "RUNNING") return null;
-    Object.assign(campaign, updates, { updatedAt: new Date() });
-    return campaign;
-  },
-
   async getCampaignStatus(id) {
     return store.campaigns.get(id)?.status || null;
+  },
+
+  // PAR-TRUST-017 §7.7 — mirrors storage.js's renewLeaseAndGetStatus.
+  async renewLeaseAndGetStatus(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign) return null;
+    if (campaign.status === "RUNNING") {
+      campaign.executionLeaseExpiresAt = new Date(Date.now() + EXECUTION_LEASE_DURATION_MS);
+    }
+    return campaign.status;
+  },
+
+  async renewExecutionLease(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (campaign && campaign.status === "RUNNING") {
+      campaign.executionLeaseExpiresAt = new Date(Date.now() + EXECUTION_LEASE_DURATION_MS);
+    }
+  },
+
+  async getExecutionLeaseExpiry(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign) return null;
+    return { executionLeaseExpiresAt: campaign.executionLeaseExpiresAt || null, finalizedAt: campaign.finalizedAt || null };
   },
 
   async cancelCampaign(id, allowedStatuses) {
@@ -1045,53 +1068,93 @@ export const memoryStorage = {
     }
   },
 
-  async startCampaign(campaignId, userId) {
-    const campaign = store.campaigns.get(campaignId);
-    if (!campaign) throw new Error("Campaign not found");
-    
-    const canStart = await this.canStartCampaign(userId, campaign.totalEmails);
-    if (!canStart.allowed) {
-      await this.createAuditLog({
-        userId,
-        action: AUDIT_ACTIONS.CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS,
-        targetType: "campaign",
-        targetId: campaignId,
-        details: canStart
-      });
-      throw new Error(canStart.reason);
+  // PAR-TRUST-017 — mirrors storage.js's deriveCountsFromCampaignEmails.
+  async deriveCountsFromCampaignEmails(campaignId) {
+    let sentEmails = 0, failedEmails = 0, skippedEmails = 0;
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId !== campaignId) continue;
+      if (record.status === CAMPAIGN_EMAIL_STATUS.SENT) sentEmails++;
+      else if (record.status === CAMPAIGN_EMAIL_STATUS.FAILED) failedEmails++;
+      else if (record.status === CAMPAIGN_EMAIL_STATUS.SUPPRESSED) skippedEmails++;
     }
-    
-    campaign.status = CAMPAIGN_STATUS.RUNNING;
-    campaign.startedAt = new Date();
-    campaign.updatedAt = new Date();
-    
-    await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_STARTED,
-      targetType: "campaign",
-      targetId: campaignId
-    });
-    
-    return campaign;
+    return { sentEmails, failedEmails, skippedEmails, creditsUsed: sentEmails };
   },
 
-  async completeCampaign(campaignId, userId) {
+  // PAR-TRUST-017 §13 / TRUST-018 — mirrors storage.js's equivalents.
+  async getCampaignsPendingReconciliation(minAgeMs, maxAgeMs) {
+    const now = Date.now();
+    return [...store.campaigns.values()].filter(c => {
+      if (!c.finalizedAt) return false;
+      const age = now - new Date(c.finalizedAt).getTime();
+      return age >= minAgeMs && age <= maxAgeMs;
+    });
+  },
+
+  async reconcileCampaignCounters(campaignId) {
     const campaign = store.campaigns.get(campaignId);
-    if (!campaign) throw new Error("Campaign not found");
-    
-    campaign.status = CAMPAIGN_STATUS.COMPLETED;
-    campaign.completedAt = new Date();
-    campaign.updatedAt = new Date();
-    
+    if (!campaign?.finalizedAt) return false;
+
+    const derived = await this.deriveCountsFromCampaignEmails(campaignId);
+    const drifted = campaign.sentEmails !== derived.sentEmails
+      || campaign.failedEmails !== derived.failedEmails
+      || campaign.skippedEmails !== derived.skippedEmails
+      || campaign.creditsUsed !== derived.creditsUsed;
+    if (!drifted) return false;
+
+    const before = { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails, skippedEmails: campaign.skippedEmails, creditsUsed: campaign.creditsUsed };
+    Object.assign(campaign, derived, { updatedAt: new Date() });
+
     await this.createAuditLog({
-      userId,
-      action: AUDIT_ACTIONS.CAMPAIGN_COMPLETED,
+      userId: campaign.userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_COUNTERS_RECONCILED,
       targetType: "campaign",
       targetId: campaignId,
-      details: { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails }
+      details: { reason: "overlapping_execution_drift", before, after: derived },
     });
-    
-    return campaign;
+    return true;
+  },
+
+  // PAR-TRUST-017 §7.3/§7.5 — mirrors storage.js's finalizeCampaign exactly
+  // (same idempotency contract, same legal-transition guard, always derives
+  // counts from campaign_emails rather than trusting a caller-supplied local
+  // counter — see storage.js's comment for why this matters under concurrency).
+  //
+  // The claim (finalizedAt + status) MUST be set synchronously, before the
+  // `await` below — a concurrency test caught this exact ordering bug: with the
+  // await for deriving counts sitting between the "already finalized?" check and
+  // the mutation, every concurrent caller passes the check before any of them
+  // mutates anything, so all of them would "win". In real Postgres this ordering
+  // doesn't matter (the row-level lock on the guarded UPDATE itself provides
+  // atomicity regardless of when counts are derived) — but memoryStorage's
+  // atomicity comes entirely from JS's synchronous execution, which requires the
+  // check-and-claim to complete in one unbroken synchronous stretch.
+  async finalizeCampaign(campaignId, toStatus) {
+    if (!["COMPLETED", "CANCELLED", "FAILED"].includes(toStatus)) {
+      throw new Error(`finalizeCampaign: illegal toStatus "${toStatus}" — PAUSED is not a terminal state`);
+    }
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign) return false;
+    if (campaign.finalizedAt) return false; // already finalized — idempotent no-op
+    if (toStatus === "COMPLETED" && campaign.status !== "RUNNING") return false;
+
+    // Claim synchronously — no await before this point, none after until the
+    // claim is durably recorded on the in-memory row.
+    campaign.status = toStatus;
+    campaign.finalizedAt = new Date();
+    campaign.executionLeaseExpiresAt = null; // §7.7 — ownership released
+    if (toStatus === "COMPLETED") campaign.completedAt = new Date();
+    campaign.updatedAt = new Date();
+
+    const counts = await this.deriveCountsFromCampaignEmails(campaignId);
+    Object.assign(campaign, counts);
+
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId === campaignId && record.status === CAMPAIGN_EMAIL_STATUS.PENDING) {
+        record.status = CAMPAIGN_EMAIL_STATUS.FAILED;
+        record.failureReason = "campaign_terminated";
+      }
+    }
+    return true;
   },
 
   // ==================== AUDIT LOG OPERATIONS ====================
@@ -1656,6 +1719,35 @@ export const memoryStorage = {
     };
     store.campaignEmails.set(id, record);
     return record;
+  },
+
+  // PAR-TRUST-017 §7.1 — mirrors storage.js's claimCampaignEmail exactly: only a
+  // FAILED row with a transient (non-permanent) reason is reclaimable, never a
+  // PENDING one. A concurrency test caught the reason directly: reclaiming
+  // PENDING→PENDING is a no-op transition, so it provides no exclusion at all —
+  // every concurrent claimant would "win" the same row. FAILED→PENDING is a
+  // genuine value change, so whichever call reaches it first correctly excludes
+  // every other one. A PENDING row is either actively held by whoever claimed it
+  // (must not be touched) or orphaned from a dead process, in which case
+  // finalizeCampaign's orphan cleanup (§7.3) converts it to
+  // FAILED("campaign_terminated") once the campaign finalizes, making it
+  // legitimately reclaimable afterward.
+  async claimCampaignEmail(data) {
+    for (const record of store.campaignEmails.values()) {
+      if (record.campaignId !== data.campaignId) continue;
+      const sameContact = data.contactId != null && record.contactId === data.contactId;
+      const sameRecipient = data.contactId == null && record.contactId == null && record.recipientEmail === data.recipientEmail;
+      if (!sameContact && !sameRecipient) continue;
+
+      const isReclaimable = record.status === CAMPAIGN_EMAIL_STATUS.FAILED
+        && (!record.failureReason || !PERMANENT_FAILURE_REASONS.includes(record.failureReason));
+      if (!isReclaimable) return null; // PENDING (held or orphaned) or terminal — already claimed
+
+      record.status = CAMPAIGN_EMAIL_STATUS.PENDING;
+      record.failureReason = null;
+      return record;
+    }
+    return await this.createCampaignEmail(data);
   },
 
   async updateCampaignEmail(id, updates) {

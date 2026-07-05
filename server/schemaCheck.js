@@ -99,6 +99,11 @@ const REQUIRED_COLUMNS = [
   { table: "campaigns", column: "contact_ids",    critical: true  },
   { table: "campaigns", column: "completed_at",   critical: false },
   { table: "campaigns", column: "scheduled_at",   critical: false },
+  // PAR-TRUST-017: gates credit reclaim sequencing — critical, financial integrity.
+  { table: "campaigns", column: "finalized_at",   critical: true  },
+  // PAR-TRUST-017 §7.7: execution liveness lease — critical, the reclaim gate's
+  // and recovery's sole non-guessed signal that no execution currently owns a campaign.
+  { table: "campaigns", column: "execution_lease_expires_at", critical: true },
 
   // ── campaign_emails ──────────────────────────────────────────────────────
   { table: "campaign_emails", column: "id",              critical: true  },
@@ -183,6 +188,11 @@ const REQUIRED_INDEXES = [
   { index: "sender_domains_user_domain_unique",     critical: false },
   // M10: tracking token lookup — hit on every open/click resolution
   { index: "idx_tracking_tokens_token",             critical: false },
+  // PAR-TRUST-017: at-most-once send enforcement — critical, the core financial-
+  // integrity guarantee. A missing index here means double-send/double-charge is
+  // structurally possible again.
+  { index: "campaign_emails_contact_uq",            critical: true  },
+  { index: "campaign_emails_recipient_uq",           critical: true  },
 ];
 
 // ── Runner ────────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { pgTable, text, integer, boolean, timestamp, jsonb, serial, uuid, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 // Plans that can register and use custom sending domains.
@@ -74,6 +75,9 @@ export const AUDIT_ACTIONS = {
   CAMPAIGN_COMPLETED: "CAMPAIGN_COMPLETED",
   CAMPAIGN_FAILED: "CAMPAIGN_FAILED",
   CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS: "CAMPAIGN_BLOCKED_INSUFFICIENT_CREDITS",
+  // PAR-TRUST-017 §13 / TRUST-018 — written only when reconcileCampaignCounters
+  // actually corrects a drifted value, not on every no-op reconciliation pass.
+  CAMPAIGN_COUNTERS_RECONCILED: "CAMPAIGN_COUNTERS_RECONCILED",
   EMAIL_SENT: "EMAIL_SENT",
   EMAIL_FAILED: "EMAIL_FAILED",
   TEMPLATE_CREATED: "TEMPLATE_CREATED",
@@ -395,6 +399,18 @@ export const campaigns = pgTable("campaigns", {
   scheduledAt: timestamp("scheduled_at"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
+  // Set exactly once, atomically, by finalizeCampaign() when a campaign reaches a
+  // terminal status (COMPLETED/CANCELLED/FAILED) and its final counters + orphaned
+  // campaign_emails cleanup have been written. NULL means "not yet finalized" — the
+  // gate credit reclaim must wait on (PAR-TRUST-017 §7.5/§7.6). Never set for PAUSED.
+  finalizedAt: timestamp("finalized_at"),
+  // PAR-TRUST-017 §7.7 — execution liveness lease. Set on acquiring RUNNING and
+  // renewed periodically by the live execution (every loop iteration, and inside
+  // sendWithRetry's own retry loop so a single slow contact keeps renewing).
+  // NULL or in the past means no execution currently owns this campaign — the
+  // only condition under which the reclaim gate or recovery may safely assume
+  // "dead" without waiting further. Cleared on finalization and on PAUSED.
+  executionLeaseExpiresAt: timestamp("execution_lease_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   listId:       uuid("list_id").references(() => contactLists.id, { onDelete: "set null" }),
@@ -434,6 +450,16 @@ export const campaignEmails = pgTable("campaign_emails", {
   sesMessageIdIdx: index("campaign_emails_ses_message_id_idx").on(table.sesMessageId),
   // fast suppression and analytics queries per user+email
   userEmailIdx: index("campaign_emails_user_email_idx").on(table.userId, table.recipientEmail),
+  // PAR-TRUST-017 §7.1 — at-most-once send enforcement. Two partial unique indexes
+  // (contact_id nullable) so the DB itself rejects a second claim attempt for the
+  // same contact within a campaign, regardless of which/how many application
+  // processes are concurrently executing that campaign's send loop.
+  contactUniqueIdx: uniqueIndex("campaign_emails_contact_uq")
+    .on(table.campaignId, table.contactId)
+    .where(sql`${table.contactId} IS NOT NULL`),
+  recipientUniqueIdx: uniqueIndex("campaign_emails_recipient_uq")
+    .on(table.campaignId, table.recipientEmail)
+    .where(sql`${table.contactId} IS NULL`),
 }));
 
 export const creditTransactions = pgTable("credit_transactions", {

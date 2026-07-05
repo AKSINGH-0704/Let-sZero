@@ -70,6 +70,9 @@ function formatDetails(details) {
   if (details.sentEmails) parts.push(`Sent: ${details.sentEmails}`);
   if (details.totalEmails) parts.push(`Total: ${details.totalEmails}`);
   if (details.count) parts.push(`Count: ${details.count}`);
+  if (details.creditsReclaimed) parts.push(`Credits reclaimed: ${details.creditsReclaimed}`);
+  if (details.childrenReassigned) parts.push(`Sub-accounts reassigned: ${details.childrenReassigned}`);
+  if (details.campaignsTerminated) parts.push(`Campaigns terminated: ${details.campaignsTerminated}`);
   return parts.length > 0 ? parts.join(", ") : JSON.stringify(details);
 }
 
