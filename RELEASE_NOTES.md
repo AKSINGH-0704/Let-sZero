@@ -2,13 +2,23 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-04
+**Last updated:** 2026-07-05
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.1 (2026-07-04)
+## Current Release — v1.2 (2026-07-05)
+
+### Strengthened Campaign Sending Reliability
+
+- Reinforced the internal safeguards that ensure every campaign email is sent exactly once and every credit is charged exactly once, even under rare timing conditions — for example, cancelling a campaign or deactivating an account at the same moment emails are actively sending.
+- Campaigns now recognise a cancellation or account change more immediately during send, rather than waiting for the current batch to finish.
+- No change to how you create, send, or monitor campaigns — this is an internal reliability hardening with no visible workflow change.
+
+---
+
+## v1.1 (2026-07-04)
 
 ### A Redesigned Domains Experience
 
