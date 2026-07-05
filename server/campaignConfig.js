@@ -54,3 +54,12 @@ export const RECLAIM_GATE_MAX_WAIT_MS = 30_000;
 // (the owner finishes quickly); it never affects the "how long until we give
 // up" decision, which is always the lease's own declared expiry.
 export const RECLAIM_GATE_POLL_MS = 250;
+
+// PAR-TRUST-017 §13 / TRUST-018 — reconciliation window for
+// reconcileCampaignCounters. A campaign must have been finalized at least
+// RECONCILIATION_MIN_AGE_MS ago (comfortably longer than sendWithRetry's own
+// worst-case single-contact latency, so any genuinely-overlapping execution's
+// straggling send has had time to land) and at most RECONCILIATION_MAX_AGE_MS
+// ago (reconciling ancient campaigns has no operational value).
+export const RECONCILIATION_MIN_AGE_MS = 2 * 60 * 1000;   // 2 minutes
+export const RECONCILIATION_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours

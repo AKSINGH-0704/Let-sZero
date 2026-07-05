@@ -1080,6 +1080,40 @@ export const memoryStorage = {
     return { sentEmails, failedEmails, skippedEmails, creditsUsed: sentEmails };
   },
 
+  // PAR-TRUST-017 §13 / TRUST-018 — mirrors storage.js's equivalents.
+  async getCampaignsPendingReconciliation(minAgeMs, maxAgeMs) {
+    const now = Date.now();
+    return [...store.campaigns.values()].filter(c => {
+      if (!c.finalizedAt) return false;
+      const age = now - new Date(c.finalizedAt).getTime();
+      return age >= minAgeMs && age <= maxAgeMs;
+    });
+  },
+
+  async reconcileCampaignCounters(campaignId) {
+    const campaign = store.campaigns.get(campaignId);
+    if (!campaign?.finalizedAt) return false;
+
+    const derived = await this.deriveCountsFromCampaignEmails(campaignId);
+    const drifted = campaign.sentEmails !== derived.sentEmails
+      || campaign.failedEmails !== derived.failedEmails
+      || campaign.skippedEmails !== derived.skippedEmails
+      || campaign.creditsUsed !== derived.creditsUsed;
+    if (!drifted) return false;
+
+    const before = { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails, skippedEmails: campaign.skippedEmails, creditsUsed: campaign.creditsUsed };
+    Object.assign(campaign, derived, { updatedAt: new Date() });
+
+    await this.createAuditLog({
+      userId: campaign.userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_COUNTERS_RECONCILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: { reason: "overlapping_execution_drift", before, after: derived },
+    });
+    return true;
+  },
+
   // PAR-TRUST-017 §7.3/§7.5 — mirrors storage.js's finalizeCampaign exactly
   // (same idempotency contract, same legal-transition guard, always derives
   // counts from campaign_emails rather than trusting a caller-supplied local

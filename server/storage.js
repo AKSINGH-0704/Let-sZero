@@ -1204,6 +1204,59 @@ const dbStorage = {
     };
   },
 
+  // PAR-TRUST-017 §13 / TRUST-018 — finds campaigns whose sentEmails/creditsUsed
+  // cache might have drifted from campaign_emails (the narrow overlapping-
+  // execution-plus-cancel race documented in the PAR). Bounded window: not
+  // finalized too recently (comfortably longer than sendWithRetry's own
+  // worst-case single-contact latency, so any genuinely-overlapping execution's
+  // straggling send has had time to land) and not finalized so long ago that
+  // reconciling it has no operational value.
+  async getCampaignsPendingReconciliation(minAgeMs, maxAgeMs) {
+    const now = Date.now();
+    return await db.select().from(campaigns).where(and(
+      isNotNull(campaigns.finalizedAt),
+      lt(campaigns.finalizedAt, new Date(now - minAgeMs)),
+      gte(campaigns.finalizedAt, new Date(now - maxAgeMs)),
+    ));
+  },
+
+  // PAR-TRUST-017 §13 / TRUST-018 — heals the one class of drift the finalize/
+  // claim mechanism doesn't structurally prevent: two genuinely-overlapping,
+  // both-alive executions racing to finalize when an external cancel causes
+  // each to return independently. Never touches status/finalizedAt (those are
+  // real state transitions, decided once, at the point of decision — this is
+  // purely a cache correction for an already-terminal row) and is a safe no-op
+  // if the cache is already correct. Idempotent, stateless — a crash mid-run
+  // just means the next scheduled pass corrects it.
+  async reconcileCampaignCounters(campaignId) {
+    const campaign = await this.getCampaign(campaignId);
+    if (!campaign?.finalizedAt) return false; // only ever corrects already-finalized rows
+
+    const derived = await this.deriveCountsFromCampaignEmails(campaignId);
+    const drifted = campaign.sentEmails !== derived.sentEmails
+      || campaign.failedEmails !== derived.failedEmails
+      || campaign.skippedEmails !== derived.skippedEmails
+      || campaign.creditsUsed !== derived.creditsUsed;
+    if (!drifted) return false;
+
+    await db.update(campaigns)
+      .set({ ...derived, updatedAt: new Date() })
+      .where(and(eq(campaigns.id, campaignId), isNotNull(campaigns.finalizedAt)));
+
+    await this.createAuditLog({
+      userId: campaign.userId,
+      action: AUDIT_ACTIONS.CAMPAIGN_COUNTERS_RECONCILED,
+      targetType: "campaign",
+      targetId: campaignId,
+      details: {
+        reason: "overlapping_execution_drift",
+        before: { sentEmails: campaign.sentEmails, failedEmails: campaign.failedEmails, skippedEmails: campaign.skippedEmails, creditsUsed: campaign.creditsUsed },
+        after: derived,
+      },
+    });
+    return true;
+  },
+
   // PAR-TRUST-017 §7.3/§7.5 — the sole authoritative owner of campaign finalization.
   // Idempotent: gated on `finalized_at IS NULL` using the same "WHERE <flag> IS NULL
   // ... RETURNING" claim pattern already established for SNS event dedup elsewhere in

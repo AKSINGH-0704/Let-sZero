@@ -43,6 +43,7 @@ import { createServer } from "http";
 import { startWorker } from "./worker.js";
 import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { runSchemaCheck } from "./schemaCheck.js";
+import { RECONCILIATION_MIN_AGE_MS, RECONCILIATION_MAX_AGE_MS } from "./campaignConfig.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import { runDomainVerificationPoll } from "./domainManager.js";
@@ -816,6 +817,41 @@ async function diagnoseSMTPPath() {
     runCampaignEmailCleanup();
     setInterval(runCampaignEmailCleanup, 7 * 24 * 60 * 60 * 1000);
   }, 12 * 60 * 1000);
+
+  // PAR-TRUST-017 §13 / TRUST-018 — campaign counter reconciliation. Heals the
+  // one narrow, named race the claim/finalize mechanism doesn't structurally
+  // prevent (two genuinely-overlapping executions racing to finalize when an
+  // external cancel causes each to return independently — see the PAR §12/§13).
+  // Never touches status/finalizedAt, only the sentEmails/failedEmails/
+  // skippedEmails/creditsUsed cache, and only for already-finalized campaigns.
+  // Every 15 minutes, 3-minute startup offset.
+  setTimeout(() => {
+    let running = false;
+    async function runCounterReconciliation() {
+      if (running) { console.warn("[RECONCILE] Counter reconciliation still in progress — skipping"); return; }
+      running = true;
+      try {
+        const candidates = await storage.getCampaignsPendingReconciliation(RECONCILIATION_MIN_AGE_MS, RECONCILIATION_MAX_AGE_MS);
+        let corrected = 0;
+        for (const c of candidates) {
+          try {
+            if (await storage.reconcileCampaignCounters(c.id)) corrected++;
+          } catch (err) {
+            console.warn(`[RECONCILE] Campaign ${c.id} reconciliation failed:`, err.message);
+          }
+        }
+        if (corrected > 0) {
+          console.log(`[RECONCILE] Corrected drifted counters for ${corrected}/${candidates.length} candidate campaign(s)`);
+        }
+      } catch (err) {
+        console.error("[RECONCILE] Counter reconciliation error:", err.message);
+      } finally {
+        running = false;
+      }
+    }
+    runCounterReconciliation();
+    setInterval(runCounterReconciliation, 15 * 60 * 1000);
+  }, 3 * 60 * 1000);
 
   // Expired inactivity tokens — weekly, 17-minute startup offset.
   setTimeout(() => {
