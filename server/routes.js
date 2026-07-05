@@ -2754,10 +2754,17 @@ export async function registerRoutes(httpServer, app) {
       if (takenEmail) return res.status(409).json({ message: "A user with that email already exists" });
 
       // Enforce inviter's team member limit at accept time — prevents over-provisioning
-      // if the admin's plan was downgraded after the invite was sent.
+      // if the admin's plan was downgraded after the invite was sent. Must use
+      // getEffectivePlan (inheritance-aware), matching the identical check at
+      // invite-creation time (POST /api/users/invite) — using the raw .plan
+      // column here instead would reject every accept for an inviter whose own
+      // .plan is still "free" (e.g. a freshly invite-accepted Sub-Admin who
+      // hasn't yet had credits separately allocated to them), even though their
+      // invite was correctly allowed to be created in the first place.
       const inviter = await storage.getUserById(invite.invitedBy);
       if (inviter) {
-        const limit = MAX_TEAM_MEMBERS[inviter.plan] ?? 0;
+        const inviterEffectivePlan = await storage.getEffectivePlan(inviter.id);
+        const limit = MAX_TEAM_MEMBERS[inviterEffectivePlan] ?? 0;
         if (limit !== Infinity) {
           const activeCount = await storage.getChildUserCount(inviter.id);
           if (activeCount >= limit) {
@@ -3170,6 +3177,11 @@ export async function registerRoutes(httpServer, app) {
           paymentId: payment.id,
           planName: plan.name
         });
+        // Matches the real Razorpay-verify/webhook completion paths exactly —
+        // without this, a simulated dev-mode purchase never updates .plan,
+        // so plan-gated behavior (team-member limits, AI quota, campaign/
+        // template limits) can never be exercised or tested locally.
+        await upgradePlanIfHigher(req.user.id, plan.name, payment.id);
         res.json({ payment, redirectUrl: `/app/payments` });
         return;
       }

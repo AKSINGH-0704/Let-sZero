@@ -1705,13 +1705,23 @@ export const memoryStorage = {
     };
   },
 
+  // Mirrors storage.js exactly — walks the FULL ancestor chain (not just one
+  // level) so a USER under a free-plan SUB_ADMIN still inherits the ROOT_ADMIN's
+  // plan (GAP-6 fix, storage.js). The previous single-level version here only
+  // checked the direct parent's raw plan, silently diverging from the real
+  // Postgres backend's behavior whenever an intermediate ancestor's own .plan
+  // was also "free" — a dev/test-only parity bug, never reachable in production.
   async getEffectivePlan(userId) {
-    const user = store.users.get(userId);
-    if (!user) return "free";
-    if (user.plan && user.plan !== "free") return user.plan;
-    if (user.parentId) {
-      const parent = store.users.get(user.parentId);
-      if (parent?.plan) return parent.plan;
+    const visited = new Set();
+    let currentId = userId;
+    while (currentId) {
+      if (visited.has(currentId)) break; // cycle guard
+      visited.add(currentId);
+      const user = store.users.get(currentId);
+      if (!user) break;
+      if (user.plan && user.plan !== "free") return user.plan;
+      if (!user.parentId) break;
+      currentId = user.parentId;
     }
     return "free";
   },
