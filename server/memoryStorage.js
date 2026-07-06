@@ -27,6 +27,24 @@ function generateUUID() {
   return crypto.randomUUID();
 }
 
+// Per-workspace async lock backing claimWorkspaceSeat — see its comment below.
+const _seatLocks = new Map();
+
+async function _claimWorkspaceSeatUnlocked(self, rootId, limit, writeFn) {
+  if (limit !== Infinity) {
+    const memberIds = await self.getWorkspaceMemberIds(rootId);
+    memberIds.delete(rootId);
+    let activeCount = 0;
+    for (const id of memberIds) {
+      const u = store.users.get(id);
+      if (u && u.isActive) activeCount++;
+    }
+    if (activeCount >= limit) return { allowed: false, current: activeCount };
+  }
+  const result = await writeFn(null);
+  return { allowed: true, result };
+}
+
 // In-memory data stores
 const store = {
   users: new Map(),
@@ -515,7 +533,9 @@ export const memoryStorage = {
     if (!user) throw new Error("User not found");
 
     const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
-    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+    // TRUST-025 (M20-B): effectivePlan, not the raw column — mirrors storage.js.
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
 
     // Compute balances at moment of write (single-threaded, no TOCTOU in memory)
     const paidRemaining = Math.max(0, (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0));
@@ -599,7 +619,9 @@ export const memoryStorage = {
     if (!user) return { allowed: false, reason: "User not found", blockReason: "user_not_found" };
 
     const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
-    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+    // TRUST-025 (M20-B): effectivePlan, not the raw column — mirrors storage.js.
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
     const paidRemaining = user.creditsRemaining || 0;
 
     let freeRemaining = 0;
@@ -1677,7 +1699,9 @@ export const memoryStorage = {
     if (!user) return { paid: 0, free: 0, trial: 0, total: 0, isTrialUser: false, isFreePlan: false };
 
     const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
-    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+    // TRUST-025 (M20-B): effectivePlan, not the raw column — mirrors storage.js.
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
     const paidRemaining = Math.max(0,
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
@@ -1762,6 +1786,42 @@ export const memoryStorage = {
       if (u.parentId && level1Set.has(u.parentId)) level2Ids.push(u.id);
     }
     return new Set([rootId, ...level1Ids, ...level2Ids]);
+  },
+
+  async getActiveWorkspaceMemberCount(rootId) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    memberIds.delete(rootId);
+    let count = 0;
+    for (const id of memberIds) {
+      const u = store.users.get(id);
+      if (u && u.isActive) count++;
+    }
+    return count;
+  },
+
+  // Mirrors storage.js's claimWorkspaceSeat. writeFn (createUser) contains a
+  // real await (bcrypt.hash), which yields the event loop between the count
+  // check and the write completing — so a naive check-then-write here would
+  // NOT actually be safe against concurrent calls for the same workspace,
+  // despite JS being single-threaded (interleaving, not parallelism, is the
+  // hazard). A simple per-rootId promise-chain lock closes that gap without
+  // needing a real transaction primitive, which this backend has none of.
+  async claimWorkspaceSeat(rootId, limit, writeFn) {
+    const prior = _seatLocks.get(rootId) || Promise.resolve();
+    const gate = prior.then(() => _claimWorkspaceSeatUnlocked(this, rootId, limit, writeFn));
+    // Chain the next caller behind this one regardless of outcome, but never
+    // propagate a rejection into the lock chain itself (that would jam every
+    // subsequent claim for this workspace forever).
+    _seatLocks.set(rootId, gate.catch(() => {}));
+    return gate;
+  },
+
+  async reactivateUserInTx(_tx, id) {
+    const user = store.users.get(id);
+    if (user) {
+      user.isActive = true;
+      user.updatedAt = new Date();
+    }
   },
 
   async checkAndIncrementAiQuota(userId) {
@@ -2145,6 +2205,10 @@ export const memoryStorage = {
     return count;
   },
 
+  async deleteInvite(id) {
+    store.invites.delete(id);
+  },
+
   async getChildUserCount(parentId) {
     let count = 0;
     for (const user of store.users.values()) {
@@ -2501,11 +2565,14 @@ export const memoryStorage = {
     return row;
   },
 
+  // TRUST-014 (M20-B) — mirrors storage.js's workspace-scoped resolution.
   async getSenderDomainsByUserId(userId) {
     if (!this._senderDomains) return [];
+    const rootId = await this.resolveWorkspaceRootId(userId);
     return [...this._senderDomains.values()]
-      .filter(d => d.userId === userId)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      .filter(d => d.userId === rootId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .map(d => ({ ...d, isInherited: d.userId !== userId }));
   },
 
   async getSenderDomainById(id) {
@@ -2551,9 +2618,16 @@ export const memoryStorage = {
 
   async getVerifiedDomainForUser(userId, domainId) {
     if (!this._senderDomains) return null;
+    const rootId = await this.resolveWorkspaceRootId(userId);
     const row = this._senderDomains.get(domainId);
-    if (!row || row.userId !== userId || row.status !== "VERIFIED") return null;
+    if (!row || row.userId !== rootId || row.status !== "VERIFIED") return null;
     return row;
+  },
+
+  async hasVerifiedDomainForUser(userId) {
+    if (!this._senderDomains) return false;
+    const rootId = await this.resolveWorkspaceRootId(userId);
+    return [...this._senderDomains.values()].some(d => d.userId === rootId && d.status === "VERIFIED");
   },
 
   // ── M10: Email Analytics Tracking Tokens ──────────────────────────────────────

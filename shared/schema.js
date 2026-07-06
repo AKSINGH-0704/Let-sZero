@@ -102,6 +102,7 @@ export const AUDIT_ACTIONS = {
   PAYMENT_CANCELLED: "PAYMENT_CANCELLED",
   CONTACT_FORM_SUBMITTED: "CONTACT_FORM_SUBMITTED",
   INVITE_SENT: "INVITE_SENT",
+  INVITE_REVOKED: "INVITE_REVOKED",
   CREDITS_RECLAIMED: "CREDITS_RECLAIMED",
   // Inactivity governance
   INACTIVITY_WARNING_SENT: "INACTIVITY_WARNING_SENT",
@@ -753,13 +754,6 @@ export const CREDIT_TIERS = [
   { min: 30000,  max: 99999,  perCredit: 0.11, prevRate: 0.12 },
   { min: 100000, max: 300000, perCredit: 0.10, prevRate: 0.11 },
 ];
-
-export const TEAM_PRICING = {
-  monthly: 129,  // INR per user per month
-  annual:  99,   // INR per user per month (billed annually)
-  minUsers: 3,
-  maxUsers: 15,
-};
 
 // Monthly credit grant per plan. Grant amount is derived from this map at runtime —
 // not stored per-user — so changing a value here takes effect on the next monthly refresh.

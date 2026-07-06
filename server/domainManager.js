@@ -61,7 +61,11 @@ function getSesClient() {
 // ── Plan gate ─────────────────────────────────────────────────────────────────
 
 export function assertDomainEligible(user) {
-  if (!DOMAIN_ELIGIBLE_PLANS.includes(user.plan?.toLowerCase())) {
+  // TRUST-025-adjacent (M20-B): use effectivePlan, not the raw column — a
+  // Sub-Admin/User's own .plan defaults to "free" until a separate event
+  // touches it, which would incorrectly block a paid workspace's own member.
+  const plan = (user.effectivePlan ?? user.plan)?.toLowerCase();
+  if (!DOMAIN_ELIGIBLE_PLANS.includes(plan)) {
     const err = new Error("Custom sending domains require a Starter plan or above");
     err.code = "PLAN_LIMIT";
     throw err;

@@ -1,7 +1,7 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { Readable } from "stream";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, TEAM_PRICING, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
 import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
@@ -224,6 +224,12 @@ async function authMiddleware(req, res, next) {
   req.user = user;
   req.token = token;
   req.isRootAdmin = user.role === "ROOT_ADMIN" || user.isSecondaryRoot === true;
+  // TRUST-027/TRUST-016 (M20-B) — mineRootAdmin: the single platform-operated
+  // account (identified the same way initializeRootAdmin() identifies it —
+  // ADMIN_USERNAME, not a DB flag), distinct from any customer ROOT_ADMIN.
+  // Gates true platform-wide operational routes (see platformOperatorMiddleware)
+  // that must never be reachable by a customer's own root admin.
+  req.isPlatformOperator = user.username === (process.env.ADMIN_USERNAME || "admin");
   // Resolve workspace plan — walks ancestor chain so SUB_ADMIN/USER inherit ROOT_ADMIN's plan
   req.user.effectivePlan = await storage.getEffectivePlan(user.id);
   next();
@@ -243,6 +249,18 @@ function rootAdminMiddleware(req, res, next) {
   next();
 }
 
+// TRUST-027 — gates genuinely platform-wide operational routes (domain
+// suspend/unsuspend, force-cancel any campaign, platform-wide send pause/
+// resume, per-user sender-health resume) to mineRootAdmin only. Previously
+// these used rootAdminMiddleware, which any customer's own ROOT_ADMIN also
+// satisfies — the exact gap TRUST-016 identified and TRUST-027 enumerated.
+function platformOperatorMiddleware(req, res, next) {
+  if (!req.isPlatformOperator) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  next();
+}
+
 // ── Tenant isolation ──────────────────────────────────────────────────────────
 // req.isRootAdmin means "this caller holds root-tier privileges," not "this
 // caller may reach any resource on the platform." Every per-resource ownership
@@ -254,6 +272,18 @@ function rootAdminMiddleware(req, res, next) {
 // preserving their existing (unchanged, self-only) access exactly as before.
 async function isSameWorkspaceAdmin(callerUser, targetUserId) {
   if (!(callerUser.role === USER_ROLES.ROOT_ADMIN || callerUser.isSecondaryRoot)) return false;
+  const rootId = await storage.resolveWorkspaceRootId(callerUser.id);
+  const memberIds = await storage.getWorkspaceMemberIds(rootId);
+  return memberIds.has(targetUserId);
+}
+
+// TRUST-014 (M20-B) — broader than isSameWorkspaceAdmin: any member of the same
+// workspace (not just root-tier callers), for read-only inherited-resource
+// access (viewing the workspace's sending domain). Management actions (delete,
+// re-verify, register) stay admin-only via isSameWorkspaceAdmin above —
+// "inherit, never manage" per the M20-A design.
+async function isSameWorkspaceMember(callerUser, targetUserId) {
+  if (callerUser.id === targetUserId) return true;
   const rootId = await storage.resolveWorkspaceRootId(callerUser.id);
   const memberIds = await storage.getWorkspaceMemberIds(rootId);
   return memberIds.has(targetUserId);
@@ -1174,21 +1204,9 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { username, email, password, role, credits } = req.body;
 
-      // Plan limit check — team members
-      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
-      if (memberLimit !== Infinity) {
-        const activeCount = await storage.getChildUserCount(req.user.id);
-        if (activeCount >= memberLimit) {
-          return res.status(403).json({
-            error: "PLAN_LIMIT",
-            message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade to add more.`,
-            currentPlan: req.user.effectivePlan || "free",
-            limit: memberLimit,
-            current: activeCount,
-          });
-        }
-      }
-
+      // Cheap, definite validations before the (transactional) seat claim below —
+      // a duplicate username or invalid role should surface as that specific
+      // error, not a misleading "upgrade your plan" if seats also happen to be full.
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(400).json({ message: "Username already exists" });
@@ -1202,7 +1220,14 @@ export async function registerRoutes(httpServer, app) {
         return res.status(403).json({ message: "Root admin can only create sub-admins" });
       }
 
-      const newUser = await storage.createUser({
+      // Organization-wide seat enforcement (TRUST-023) with an atomic claim
+      // (TRUST-026) — scoped to the whole workspace (root + all descendants),
+      // not just this admin's direct children, and the check+insert happen in
+      // one locked transaction so two concurrent creates for the same
+      // workspace cannot both slip past the limit.
+      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const claim = await storage.claimWorkspaceSeat(rootId, memberLimit, (tx) => storage.createUser({
         username,
         email,
         password,
@@ -1212,7 +1237,17 @@ export async function registerRoutes(httpServer, app) {
         mustResetPassword: true,
         plan: req.user.effectivePlan || "free",
         emailVerified: true, // Admin-provisioned accounts are considered verified by the creating admin
-      });
+      }, tx));
+      if (!claim.allowed) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade to add more.`,
+          currentPlan: req.user.effectivePlan || "free",
+          limit: memberLimit,
+          current: claim.current,
+        });
+      }
+      const newUser = claim.result;
 
       if (credits && credits > 0) {
         await storage.allocateCredits(req.user.id, newUser.id, credits, req.user.id);
@@ -1436,22 +1471,22 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "User is already active" });
       }
 
-      // Seat-limit re-check — identical pattern to POST /api/users (line ~1139)
+      // Organization-wide seat re-check (TRUST-023), atomic (TRUST-026) —
+      // identical pattern to POST /api/users. Scoped to the whole workspace,
+      // not just this caller's direct children, so a Sub-Admin reactivating
+      // their own child is still checked against the true org-wide cap.
       const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
-      if (memberLimit !== Infinity) {
-        const activeCount = await storage.getChildUserCount(req.user.id);
-        if (activeCount >= memberLimit) {
-          return res.status(403).json({
-            error: "PLAN_LIMIT",
-            message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade or deactivate another member before reactivating this one.`,
-            currentPlan: req.user.effectivePlan || "free",
-            limit: memberLimit,
-            current: activeCount,
-          });
-        }
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const claim = await storage.claimWorkspaceSeat(rootId, memberLimit, (tx) => storage.reactivateUserInTx(tx, id));
+      if (!claim.allowed) {
+        return res.status(403).json({
+          error: "PLAN_LIMIT",
+          message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade or deactivate another member before reactivating this one.`,
+          currentPlan: req.user.effectivePlan || "free",
+          limit: memberLimit,
+          current: claim.current,
+        });
       }
-
-      await storage.updateUser(id, { isActive: true });
 
       await storage.createAuditLog({
         userId: req.user.id,
@@ -1874,6 +1909,12 @@ export async function registerRoutes(httpServer, app) {
   // POST /api/domains — register a new custom sending domain
   app.post("/api/domains", authMiddleware, domainRegisterLimiter, async (req, res) => {
     try {
+      // TRUST-014 (M20-B): domains are workspace-owned and inherited by every
+      // member — only the workspace admin manages them, matching "Purchase
+      // credits"'s existing admin-only shape in the same product.
+      if (req.user.role !== USER_ROLES.ROOT_ADMIN && !req.user.isSecondaryRoot) {
+        return res.status(403).json({ message: "Only a workspace admin can register a sending domain." });
+      }
       assertDomainEligible(req.user);
       const { domain, fromEmail } = req.body;
       if (!domain || !fromEmail) {
@@ -1914,7 +1955,8 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
+      // Read-only — every workspace member inherits visibility (TRUST-014).
+      if (!(await isSameWorkspaceMember(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       res.json(domain);
@@ -1976,7 +2018,8 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
+      // Read-only — every workspace member inherits visibility (TRUST-014).
+      if (!(await isSameWorkspaceMember(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       res.json({
@@ -1996,7 +2039,7 @@ export async function registerRoutes(httpServer, app) {
   // GET /api/admin/domains — list all domains across all users
   app.get("/api/admin/domains", authMiddleware, async (req, res) => {
     try {
-      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      if (!req.isPlatformOperator) return res.status(403).json({ message: "Forbidden" }); // TRUST-027
       const allPending  = await storage.getSenderDomainsByStatus("PENDING_VERIFICATION");
       const allVerified = await storage.getSenderDomainsByStatus("VERIFIED");
       const allFailed   = await storage.getSenderDomainsByStatus("FAILED");
@@ -2010,7 +2053,7 @@ export async function registerRoutes(httpServer, app) {
   // POST /api/admin/domains/:id/suspend — admin suspend a verified domain
   app.post("/api/admin/domains/:id/suspend", authMiddleware, async (req, res) => {
     try {
-      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      if (!req.isPlatformOperator) return res.status(403).json({ message: "Forbidden" }); // TRUST-027
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
       const updated = await storage.updateSenderDomain(domain.id, {
@@ -2047,7 +2090,7 @@ export async function registerRoutes(httpServer, app) {
   // may have degraded while suspended (see unsuspendDomain in domainManager.js).
   app.post("/api/admin/domains/:id/unsuspend", authMiddleware, async (req, res) => {
     try {
-      if (!req.isRootAdmin) return res.status(403).json({ message: "Forbidden" });
+      if (!req.isPlatformOperator) return res.status(403).json({ message: "Forbidden" }); // TRUST-027
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
       if (domain.status !== "SUSPENDED") {
@@ -2684,10 +2727,14 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Invalid email address" });
       }
 
-      // Enforce team member limit
+      // Organization-wide seat pre-check (TRUST-023) — sending an invite doesn't
+      // itself consume a seat (accept does, via the atomic claim there), so a
+      // plain workspace-wide count is sufficient here; this is a courtesy check
+      // to avoid sending an invite that would be rejected at accept time.
       const limit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
       if (limit !== Infinity) {
-        const activeCount = await storage.getChildUserCount(req.user.id);
+        const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+        const activeCount = await storage.getActiveWorkspaceMemberCount(rootId);
         if (activeCount >= limit) {
           return res.status(403).json({
             error: "PLAN_LIMIT",
@@ -2808,29 +2855,40 @@ export async function registerRoutes(httpServer, app) {
       // hasn't yet had credits separately allocated to them), even though their
       // invite was correctly allowed to be created in the first place.
       const inviter = await storage.getUserById(invite.invitedBy);
+      let newUser;
       if (inviter) {
+        // Organization-wide (TRUST-023), atomic (TRUST-026) — scoped to the
+        // inviter's whole workspace, not just their direct children.
         const inviterEffectivePlan = await storage.getEffectivePlan(inviter.id);
         const limit = MAX_TEAM_MEMBERS[inviterEffectivePlan] ?? 0;
-        if (limit !== Infinity) {
-          const activeCount = await storage.getChildUserCount(inviter.id);
-          if (activeCount >= limit) {
-            return res.status(403).json({
-              error: "PLAN_LIMIT",
-              message: `The admin's plan limit has been reached. Ask your admin to upgrade before accepting this invite.`,
-            });
-          }
+        const rootId = await storage.resolveWorkspaceRootId(inviter.id);
+        const claim = await storage.claimWorkspaceSeat(rootId, limit, (tx) => storage.createUser({
+          username,
+          email: invite.email,
+          password,
+          role: invite.role,
+          parentId: invite.invitedBy,
+          mustResetPassword: false,
+          emailVerified: true, // Invite token acceptance proves ownership of the invite email address
+        }, tx));
+        if (!claim.allowed) {
+          return res.status(403).json({
+            error: "PLAN_LIMIT",
+            message: `The admin's plan limit has been reached. Ask your admin to upgrade before accepting this invite.`,
+          });
         }
+        newUser = claim.result;
+      } else {
+        newUser = await storage.createUser({
+          username,
+          email: invite.email,
+          password,
+          role: invite.role,
+          parentId: invite.invitedBy,
+          mustResetPassword: false,
+          emailVerified: true,
+        });
       }
-
-      const newUser = await storage.createUser({
-        username,
-        email: invite.email,
-        password,
-        role: invite.role,
-        parentId: invite.invitedBy,
-        mustResetPassword: false,
-        emailVerified: true, // Invite token acceptance proves ownership of the invite email address
-      });
 
       await storage.markInviteAccepted(invite.id);
 
@@ -2905,6 +2963,31 @@ export async function registerRoutes(httpServer, app) {
       res.status(204).end();
     } catch (error) {
       console.error("[INVITE] resend error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // MAINT-007 (M20-B) — revoke an unused invite before it's accepted.
+  app.post("/api/invites/:id/revoke", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const invite = await storage.getInviteById(req.params.id);
+
+      if (!invite) return res.status(404).json({ message: "Invite not found" });
+      if (invite.invitedBy !== req.user.id) return res.status(403).json({ message: "Forbidden" });
+      if (invite.acceptedAt) return res.status(409).json({ message: "This invite has already been accepted" });
+
+      await storage.deleteInvite(invite.id);
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.INVITE_REVOKED,
+        targetType: "invite",
+        targetId: invite.id,
+        details: { email: invite.email, role: invite.role },
+      });
+
+      res.status(204).end();
+    } catch (error) {
+      console.error("[INVITE] revoke error:", error.message);
       res.status(500).json({ message: error.message });
     }
   });
@@ -3126,7 +3209,6 @@ export async function registerRoutes(httpServer, app) {
         exchangeRate,
         currencies: SUPPORTED_CURRENCIES,
         creditTiers: CREDIT_TIERS,
-        teamPricing: TEAM_PRICING,
         freeTrialCredits: FREE_TRIAL_CREDITS,
         creditValidityMonths: null,
         minCreditPurchase: MIN_CREDIT_PURCHASE,
@@ -3432,7 +3514,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // ── Admin: force-cancel a stuck campaign ─────────────────────────────────────
-  app.post("/api/admin/campaigns/:id/cancel", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  app.post("/api/admin/campaigns/:id/cancel", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       const campaign = await storage.getCampaign(req.params.id);
       if (!campaign) {
@@ -3512,7 +3594,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // ── Platform send pause / resume ──────────────────────────────────────────
-  app.post("/api/admin/platform/pause-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  app.post("/api/admin/platform/pause-sending", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       await storage.setPlatformSetting("send_pause_enabled", "true", req.user.id);
       await storage.createAuditLog({
@@ -3528,7 +3610,7 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/admin/platform/resume-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  app.post("/api/admin/platform/resume-sending", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       await storage.setPlatformSetting("send_pause_enabled", "false", req.user.id);
 
@@ -3567,7 +3649,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // ── Per-user sender resume ─────────────────────────────────────────────────
-  app.post("/api/admin/users/:id/resume-sending", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  app.post("/api/admin/users/:id/resume-sending", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       await storage.updateUser(req.params.id, {
         sendPaused: false,

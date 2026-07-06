@@ -155,15 +155,18 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     expect(accept2.json.user.role).toBe("USER");
 
     // ── Team limits still enforce correctly (Starter/Growth/Scale caps) ─────
-    // Sub-Admin's inherited effective plan is "growth" (limit 10). Seed the
-    // remaining 8 direct children straight via storage (not through the real
-    // invite/accept HTTP round trip, deliberately — inviteLimiter is 5/admin/
-    // hour and registrationLimiter is 5/IP/24h; real invite creation and real
-    // acceptance are already proven above with the Sub-Admin's and User's own
-    // flow, and again below with the boundary-testing call itself, which IS
-    // a real HTTP request). This reaches the real limit without exhausting
-    // rate limits meant to protect this exact endpoint in production.
-    for (let i = 0; i < 8; i++) {
+    // TRUST-023 (M20-B): the seat cap is organization-wide, not per-node — the
+    // workspace's 10 seats are shared by Root Admin + Sub-Admin + every User,
+    // not a separate 10-seat allowance per admin (the pre-M20 model this test
+    // originally verified). Sub-Admin's inherited effective plan is "growth"
+    // (limit 10); the Sub-Admin itself already occupies one of those 10 seats,
+    // so only 7 more fill accounts are needed (1 real invite-accepted User + 7
+    // seeded + the Sub-Admin = 9 members) to reach the boundary. Seeded
+    // straight via storage (not the real invite/accept HTTP round trip,
+    // deliberately — inviteLimiter is 5/admin/hour and registrationLimiter is
+    // 5/IP/24h; real invite creation and acceptance are already proven above
+    // and again below at the boundary-testing call itself, which IS real HTTP).
+    for (let i = 0; i < 7; i++) {
       await storage.createUser({
         username: `e2e_fill_${i}_${Math.random().toString(36).slice(2)}`,
         email: `e2e_fill_${i}_${Math.random().toString(36).slice(2)}@example.com`,
@@ -173,12 +176,13 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
         plan: "free",
       });
     }
-    // Sub-Admin now has 1 (the earlier real invite-accepted User) + 8 (seeded) = 9 direct children.
-    const activeCountBeforeBoundary = await storage.getChildUserCount(subAdmin.id);
+    // Workspace now has: Sub-Admin (1) + 1 real invite-accepted User + 7 seeded = 9 members.
+    const rootId = await storage.resolveWorkspaceRootId(subAdmin.id);
+    const activeCountBeforeBoundary = await storage.getActiveWorkspaceMemberCount(rootId);
     expect(activeCountBeforeBoundary).toBe(9);
 
     // One more real invite (still a real HTTP call through the real route) —
-    // this is the 10th, exactly at the growth-plan limit, and MUST be allowed.
+    // this is the 10th workspace member, exactly at the growth-plan limit, and MUST be allowed.
     const lastSeatEmail = `e2e_lastseat_${Math.random().toString(36).slice(2)}@example.com`;
     const lastSeatInvite = await api("POST", "/api/users/invite", { cookie: subAdminCookie, body: { email: lastSeatEmail, role: "USER" } });
     expect(lastSeatInvite.status, `10th (limit) invite unexpectedly rejected: ${JSON.stringify(lastSeatInvite.json)}`).toBe(201);
@@ -188,7 +192,7 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
       body: { token: lastSeatToken, username: `e2e_lastseat_${Math.random().toString(36).slice(2)}`, password: "lastseat-pw-" + Math.random().toString(36).slice(2) },
     });
     expect(lastSeatAccept.status, `10th (limit) accept unexpectedly rejected: ${JSON.stringify(lastSeatAccept.json)}`).toBe(201);
-    // Sub-Admin now has exactly 10 direct children — at the growth limit.
+    // Workspace now has exactly 10 members — at the growth limit.
     const overLimitInvite = await api("POST", "/api/users/invite", {
       cookie: subAdminCookie,
       body: { email: `e2e_overlimit_${Math.random().toString(36).slice(2)}@example.com`, role: "USER" },
@@ -196,16 +200,21 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     expect(overLimitInvite.status).toBe(403);
     expect(overLimitInvite.json.error).toBe("PLAN_LIMIT");
 
-    // ── Root Admin's own flow is unaffected by everything the Sub-Admin did ──
+    // ── Root Admin shares the SAME workspace-wide seat pool as the Sub-Admin ──
+    // (TRUST-023's whole point — the pre-M20 per-node model let Root Admin and
+    // Sub-Admin each independently exhaust a "separate" 10-seat allowance,
+    // making true org size (admins) x (per-node limit) instead of the
+    // advertised cap). The workspace is already at 10/10, so Root Admin's own
+    // invite attempt is correctly rejected too, not silently allowed.
     const teamUsage = await api("GET", "/api/users/team-usage", { cookie: rootCookie });
     expect(teamUsage.status).toBe(200);
-    expect(teamUsage.json.totalMembers).toBe(1); // only the Sub-Admin is Root Admin's DIRECT child
-    // Root Admin can still invite under their own (separate) 10-seat allowance.
-    const rootStillWorks = await api("POST", "/api/users/invite", {
+    expect(teamUsage.json.totalMembers).toBe(1); // this view is direct-children-only by design (usage breakdown, not the seat cap)
+    const rootInviteAtCap = await api("POST", "/api/users/invite", {
       cookie: rootCookie,
       body: { email: `e2e_root_invite_${Math.random().toString(36).slice(2)}@example.com`, role: "SUB_ADMIN" },
     });
-    expect(rootStillWorks.status).toBe(201);
+    expect(rootInviteAtCap.status).toBe(403);
+    expect(rootInviteAtCap.json.error).toBe("PLAN_LIMIT");
   });
 
   it("Enterprise plan behavior is unchanged — unlimited team members, no plan-limit rejection", async () => {

@@ -67,7 +67,7 @@ function buildMonthlyChart(campaignsList) {
 
 // PostgreSQL-based storage implementation
 const dbStorage = {
-  async createUser(userData) {
+  async createUser(userData, tx = db) {
     const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
     // When FREE_PLAN_ENABLED, new users are free plan users, not legacy trial users.
     // Callers that pass isTrialUser=false explicitly (e.g. initializeRootAdmin) are respected.
@@ -75,7 +75,10 @@ const dbStorage = {
     const isTrialUser = "isTrialUser" in userData
       ? Boolean(userData.isTrialUser)
       : process.env.FREE_PLAN_ENABLED !== "true";
-    const [user] = await db.insert(users).values({
+    // Optional `tx` lets a caller (claimWorkspaceSeat) perform this insert inside
+    // the same locked transaction that verified seat capacity — defaults to the
+    // module-level db for every other (unaffected) caller.
+    const [user] = await tx.insert(users).values({
       username: userData.username,
       email: userData.email,
       passwordHash,
@@ -483,6 +486,12 @@ const dbStorage = {
     // Step B: deduct from free pool (balance WHERE clause — same pattern as FIN-2).
     // Both steps run in a single transaction so a send and a refresh are atomic.
     if (freePlanEnabled) {
+      // TRUST-025 (M20-B): gate the free-plan grant on effectivePlan, not the
+      // raw column — once a workspace is on a paid plan, no member should
+      // independently accrue a "free plan" trickle regardless of their own
+      // .plan (which defaults to "free" until a separate event touches it).
+      // Computed once, outside the transaction (getEffectivePlan does its own reads).
+      const effectivePlan = await this.getEffectivePlan(userId);
       await db.transaction(async (tx) => {
         const user = await tx.select({
           id: users.id, plan: users.plan,
@@ -494,7 +503,7 @@ const dbStorage = {
 
         if (!user || user.isTrialUser) return; // fall through to legacy trial path
 
-        const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+        const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
         if (monthlyGrant === 0) return; // paid PAYG plan — no free credits
 
         // Step A: refresh if stale — 1 month rolling from signup date (or last reset)
@@ -640,12 +649,16 @@ const dbStorage = {
 
     const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
     const paidRemaining = user.creditsRemaining || 0;
+    // TRUST-025 (M20-B): effectivePlan, not the raw column — this is the actual
+    // campaign-start authorization gate, so it must agree with deductCreditAtomic
+    // and getTotalCreditsAvailable (both already fixed the same way).
+    const effectivePlan = await this.getEffectivePlan(userId);
 
     // Free plan: lazy refresh before computing free balance (standalone transaction).
     // Race safety: the WHERE clause guard ensures at most one refresh per month per user.
     let freeRemaining = 0;
     if (freePlanEnabled && !user.isTrialUser) {
-      const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+      const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
       if (monthlyGrant > 0) {
         const [refreshed] = await db.update(users)
           .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
@@ -669,7 +682,7 @@ const dbStorage = {
       // Distinguish block reason so the frontend can show the right message and CTA
       let blockReason;
       if (freePlanEnabled && !user.isTrialUser && freeRemaining === 0 && paidRemaining === 0) {
-        const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+        const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
         blockReason = monthlyGrant > 0 ? "free_exhausted" : "paid_exhausted";
       } else if (paidRemaining === 0 && freeRemaining === 0) {
         blockReason = "both_exhausted";
@@ -2023,7 +2036,9 @@ const dbStorage = {
 
     let freeRemaining = 0;
     let isFreePlan = false;
-    const monthlyGrant = MONTHLY_CREDITS[user.plan] ?? 0;
+    // TRUST-025 (M20-B): effectivePlan, not the raw column — see deductCreditAtomic.
+    const effectivePlan = await this.getEffectivePlan(userId);
+    const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
 
     if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
       isFreePlan = true;
@@ -2113,6 +2128,65 @@ const dbStorage = {
       level2Ids = level2.map(u => u.id);
     }
     return new Set([rootId, ...level1Ids, ...level2Ids]);
+  },
+
+  // Read-only workspace-wide active-member count — for pre-checks that don't
+  // themselves consume a seat (e.g. sending an invite; the seat is actually
+  // claimed at accept time via claimWorkspaceSeat below, which is where the
+  // atomic guard matters). Reuses getWorkspaceMemberIds rather than
+  // duplicating the two-level walk.
+  async getActiveWorkspaceMemberCount(rootId) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    memberIds.delete(rootId);
+    if (memberIds.size === 0) return 0;
+    const [result] = await db.select({ count: sql`COUNT(*)` }).from(users)
+      .where(and(inArray(users.id, [...memberIds]), eq(users.isActive, true)));
+    return parseInt(result.count, 10);
+  },
+
+  // ── TRUST-023 + TRUST-026 (M20-B) — organization-wide seat enforcement ────
+  // Seat cap is enforced against the whole workspace (root + all descendants),
+  // not just the caller's direct children (the pre-M20 per-node model let each
+  // Sub-Admin independently invite up to the same limit — the M20-A PAR found
+  // this contradicts the product's own "up to N team members" promise).
+  //
+  // Combined with atomicity per the M20-A design directive: locks the root
+  // admin's own row for the transaction's duration (a serialization proxy —
+  // not a materialized counter, which would repeat the counter-drift class of
+  // bug ADR-013 already paid down once), re-counts live active members under
+  // that lock, then — only if still under limit — runs writeFn(tx) to perform
+  // the actual claiming write in the SAME transaction. This is what makes the
+  // lock meaningful: a lock around the read alone, with the write happening
+  // afterward in a separate round trip, would not close the race at all.
+  async claimWorkspaceSeat(rootId, limit, writeFn) {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${rootId} FOR UPDATE`);
+
+      if (limit !== Infinity) {
+        const level1 = await tx.select({ id: users.id }).from(users).where(eq(users.parentId, rootId));
+        const level1Ids = level1.map(u => u.id);
+        let level2Ids = [];
+        if (level1Ids.length > 0) {
+          const level2 = await tx.select({ id: users.id }).from(users).where(inArray(users.parentId, level1Ids));
+          level2Ids = level2.map(u => u.id);
+        }
+        const allIds = [...level1Ids, ...level2Ids];
+        let activeCount = 0;
+        if (allIds.length > 0) {
+          const [result] = await tx.select({ count: sql`COUNT(*)` }).from(users)
+            .where(and(inArray(users.id, allIds), eq(users.isActive, true)));
+          activeCount = parseInt(result.count, 10);
+        }
+        if (activeCount >= limit) return { allowed: false, current: activeCount };
+      }
+
+      const result = await writeFn(tx);
+      return { allowed: true, result };
+    });
+  },
+
+  async reactivateUserInTx(tx, id) {
+    await tx.update(users).set({ isActive: true, updatedAt: new Date() }).where(eq(users.id, id));
   },
 
   async checkAndIncrementAiQuota(userId) {
@@ -2613,6 +2687,13 @@ const dbStorage = {
     return deleted.length;
   },
 
+  // MAINT-007 (M20-B) — invite revocation. Hard-delete, matching the existing
+  // deleteExpiredInvites pattern, rather than a new revokedAt column — the
+  // token becomes invalid immediately since getInviteByTokenHash returns null.
+  async deleteInvite(id) {
+    await db.delete(invites).where(eq(invites.id, id));
+  },
+
   async getChildUserCount(parentId) {
     const [result] = await db.select({ count: sql`COUNT(*)` })
       .from(users)
@@ -3057,8 +3138,17 @@ const dbStorage = {
     return row;
   },
 
+  // TRUST-014 (M20-B) — domains belong to the workspace, not the individual
+  // user. Resolves to the workspace root before querying so every member
+  // (Sub-Admin/User) inherits the same sending identity as their Root Admin;
+  // no schema change (domains still keyed by the literal owning userId column,
+  // which is now always the root's). isInherited tells the frontend whether
+  // this domain belongs to the caller directly or was inherited from the
+  // workspace, for ownership labeling.
   async getSenderDomainsByUserId(userId) {
-    return db.select().from(senderDomains).where(eq(senderDomains.userId, userId)).orderBy(desc(senderDomains.createdAt));
+    const rootId = await this.resolveWorkspaceRootId(userId);
+    const domains = await db.select().from(senderDomains).where(eq(senderDomains.userId, rootId)).orderBy(desc(senderDomains.createdAt));
+    return domains.map(d => ({ ...d, isInherited: d.userId !== userId }));
   },
 
   async getSenderDomainById(id) {
@@ -3102,16 +3192,19 @@ const dbStorage = {
     await db.delete(senderDomains).where(eq(senderDomains.id, id));
   },
 
+  // TRUST-014 (M20-B) — workspace-scoped, same rationale as getSenderDomainsByUserId.
   async getVerifiedDomainForUser(userId, domainId) {
+    const rootId = await this.resolveWorkspaceRootId(userId);
     const [row] = await db.select().from(senderDomains).where(
-      and(eq(senderDomains.userId, userId), eq(senderDomains.id, domainId), eq(senderDomains.status, "VERIFIED"))
+      and(eq(senderDomains.userId, rootId), eq(senderDomains.id, domainId), eq(senderDomains.status, "VERIFIED"))
     );
     return row || null;
   },
 
   async hasVerifiedDomainForUser(userId) {
+    const rootId = await this.resolveWorkspaceRootId(userId);
     const [row] = await db.select({ id: senderDomains.id }).from(senderDomains)
-      .where(and(eq(senderDomains.userId, userId), eq(senderDomains.status, "VERIFIED")))
+      .where(and(eq(senderDomains.userId, rootId), eq(senderDomains.status, "VERIFIED")))
       .limit(1);
     return !!row;
   },

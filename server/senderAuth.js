@@ -61,8 +61,13 @@ export async function canSend(ctx) {
   // Reputation and policy are re-checked at scheduled_fire time when the campaign actually runs.
   if (mode === SEND_MODES.SCHEDULED) return { allowed: true };
 
-  // ROOT_ADMIN and secondary roots bypass operational controls (reputation, policy, warm-up)
-  if (user.role === USER_ROLES.ROOT_ADMIN || user.isSecondaryRoot) {
+  // ROOT_ADMIN bypasses operational controls (reputation, policy, warm-up) — after
+  // the identity check above, so this stays fail-closed (Audit 088). TRUST-015
+  // (M20-B): isSecondaryRoot no longer bypasses — it is a pure administrative
+  // grant (read + user-management access), never a sending privilege. A
+  // secondary root sends under the same reputation/warm-up rules as any team
+  // member, using the workspace's inherited domain (TRUST-014).
+  if (user.role === USER_ROLES.ROOT_ADMIN) {
     return { allowed: true };
   }
 
