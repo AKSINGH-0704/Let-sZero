@@ -8,7 +8,16 @@ This document summarises what was built, improved, and hardened across the RepMa
 
 ---
 
-## Current Release — v1.4 (2026-07-06)
+## Current Release — v1.5 (2026-07-06)
+
+### Team Invitations — Reliability Fix
+
+- Fixed an issue where a team member you invited could, in a specific and previously unnoticed situation, be unable to accept their invitation even though it was sent successfully — they would see a plan-limit message that didn't reflect your account's real allowance. Accepting a team invitation now correctly reflects your plan's actual team-member allowance in every case.
+- No change to how you invite team members, accept an invitation, or manage your team — this is a reliability fix with no visible workflow change.
+
+---
+
+## v1.4 (2026-07-06)
 
 ### Spam Analyzer, Redesigned
 
