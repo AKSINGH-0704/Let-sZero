@@ -57,6 +57,9 @@ export default function DomainDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  // TRUST-014 (M20-C): domains are workspace-owned; only the workspace admin
+  // manages them (server-enforced) — inheriting members get read-only access.
+  const canManageDomains = user?.role === "ROOT_ADMIN" || user?.isSecondaryRoot;
 
   // Campaign round-trip (internal /app/ paths only — open-redirect guard).
   const [initialParams] = useState(() => new URLSearchParams(window.location.search));
@@ -325,18 +328,20 @@ export default function DomainDetail() {
                           </>
                         : "We verify automatically in the background — this page updates on its own."}
                     </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => checkMutation.mutate()}
-                      disabled={checkMutation.isPending}
-                    >
-                      <RefreshCw
-                        className={`mr-1.5 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-spin motion-reduce:animate-none" : ""}`}
-                        aria-hidden="true"
-                      />
-                      {checkMutation.isPending ? "Checking…" : "Check now"}
-                    </Button>
+                    {canManageDomains && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => checkMutation.mutate()}
+                        disabled={checkMutation.isPending}
+                      >
+                        <RefreshCw
+                          className={`mr-1.5 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-spin motion-reduce:animate-none" : ""}`}
+                          aria-hidden="true"
+                        />
+                        {checkMutation.isPending ? "Checking…" : "Check now"}
+                      </Button>
+                    )}
                   </div>
 
                   <p className="text-xs text-muted-foreground">
@@ -410,11 +415,12 @@ export default function DomainDetail() {
 
             {/* ── FAILED: recovery-forward ─────────────────────────────────── */}
             {status === "FAILED" && (
-              <Banner variant="danger" action={removeDialog("Delete & re-register", true)}>
+              <Banner variant="danger" action={canManageDomains ? removeDialog("Delete & re-register", true) : undefined}>
                 <p className="font-medium">Verification didn't complete in time.</p>
                 <p className="mt-0.5 text-muted-foreground">
-                  DNS records weren't detected within {domain.verificationWindowDays} days, so this
-                  registration expired. Re-register to start fresh — you'll get new records to add.
+                  {canManageDomains
+                    ? `DNS records weren't detected within ${domain.verificationWindowDays} days, so this registration expired. Re-register to start fresh — you'll get new records to add.`
+                    : "This domain's verification expired. Ask your workspace admin to re-register it."}
                 </p>
               </Banner>
             )}
@@ -439,8 +445,8 @@ export default function DomainDetail() {
               </Banner>
             )}
 
-            {/* Danger zone (FAILED already offers deletion via recovery) */}
-            {status !== "FAILED" && (
+            {/* Danger zone (FAILED already offers deletion via recovery) — admin-only */}
+            {status !== "FAILED" && canManageDomains && (
               <DangerZone
                 title="Remove domain"
                 description="Deletes the domain and its SES identity. This cannot be undone."

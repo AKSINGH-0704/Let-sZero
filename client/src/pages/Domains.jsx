@@ -302,7 +302,15 @@ function DomainRow({ domain, returnTo }) {
         <Globe className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-medium text-foreground">{domain.domain}</p>
-          <p className="truncate text-xs text-muted-foreground">Sending as {domain.fromEmail}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            Sending as {domain.fromEmail}
+            {domain.isInherited && (
+              <span className="ml-1.5 inline-flex items-center gap-1 text-muted-foreground/80">
+                <UserRound className="h-3 w-3" aria-hidden="true" />
+                Owned by workspace admin
+              </span>
+            )}
+          </p>
         </div>
         <StatusChip status={chip} />
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -349,7 +357,13 @@ export default function Domains() {
   const [adding, setAdding] = useState(initialParams.get("add") === "1");
   const initialDomain = initialParams.get("domain") || "";
 
-  const isEligible = DOMAIN_ELIGIBLE_PLANS.includes(user?.plan?.toLowerCase());
+  // TRUST-014 (M20-C): effectivePlan, not the raw column — otherwise an
+  // invited team member (own .plan defaults to "free") would never see the
+  // Domains section at all, even though they inherit the workspace's domain.
+  const isEligible = DOMAIN_ELIGIBLE_PLANS.includes((user?.effectivePlan ?? user?.plan)?.toLowerCase());
+  // Domains are workspace-owned; only the workspace admin registers/manages
+  // them (server-enforced) — Sub-Admins/Users inherit read/select access only.
+  const canManageDomains = user?.role === "ROOT_ADMIN" || user?.isSecondaryRoot;
 
   const { data: domains = [], isLoading, isError, refetch } = useQuery({
     queryKey: ["/api/domains"],
@@ -382,7 +396,7 @@ export default function Domains() {
           description="Send from your own domain so deliverability and reputation stay yours."
           icon={Globe}
           actions={
-            isEligible && (
+            isEligible && canManageDomains && (
               <Button onClick={() => setAdding(true)}>
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 Add domain
@@ -432,12 +446,18 @@ export default function Domains() {
               <EmptyState
                 icon={Globe}
                 title="Send from your own domain"
-                description="Add a domain and we'll verify it automatically — usually within minutes. You'll send from an address your recipients trust."
+                description={
+                  canManageDomains
+                    ? "Add a domain and we'll verify it automatically — usually within minutes. You'll send from an address your recipients trust."
+                    : "Your workspace admin hasn't added a sending domain yet. Once they do, you'll be able to send from it."
+                }
                 action={
-                  <Button onClick={() => setAdding(true)}>
-                    <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                    Add your first domain
-                  </Button>
+                  canManageDomains && (
+                    <Button onClick={() => setAdding(true)}>
+                      <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Add your first domain
+                    </Button>
+                  )
                 }
               />
             ) : (

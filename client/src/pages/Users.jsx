@@ -252,6 +252,20 @@ export default function Users() {
     },
   });
 
+  // MAINT-007 (M20-C)
+  const revokeMutation = useMutation({
+    mutationFn: async (inviteId) => {
+      await apiRequest("POST", `/api/invites/${inviteId}/revoke`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invites"] });
+      toast({ title: "Invite revoked" });
+    },
+    onError: (err) => {
+      toast({ title: "Failed to revoke invite", description: err.message, variant: "destructive" });
+    },
+  });
+
   const grantSecondaryRootMutation = useMutation({
     mutationFn: async (userId) => {
       const res = await apiRequest("POST", "/api/admin/grant-root-access", { userId });
@@ -943,20 +957,53 @@ export default function Users() {
                               </TableCell>
                               <TableCell className="text-right">
                                 {invite.status !== "accepted" && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => resendMutation.mutate(invite.id)}
-                                    disabled={resendMutation.isPending}
-                                    className="gap-1.5 text-xs"
-                                    data-testid={`button-resend-${invite.id}`}
-                                  >
-                                    {resendMutation.isPending
-                                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                                      : <RotateCcw className="h-3 w-3" />
-                                    }
-                                    Resend
-                                  </Button>
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => resendMutation.mutate(invite.id)}
+                                      disabled={resendMutation.isPending}
+                                      className="gap-1.5 text-xs"
+                                      data-testid={`button-resend-${invite.id}`}
+                                    >
+                                      {resendMutation.isPending
+                                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                                        : <RotateCcw className="h-3 w-3" />
+                                      }
+                                      Resend
+                                    </Button>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="text-destructive hover:text-destructive"
+                                          title="Revoke invite"
+                                          data-testid={`button-revoke-${invite.id}`}
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Revoke invite to {invite.email}?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            The invite link stops working immediately. You can send a new invite to
+                                            this address at any time.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => revokeMutation.mutate(invite.id)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Revoke
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
                                 )}
                               </TableCell>
                             </TableRow>
