@@ -1136,7 +1136,12 @@ const dbStorage = {
 
   async getCampaigns(userId = null, isRootAdmin = false) {
     if (isRootAdmin) {
-      return await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+      // Workspace-scoped, not platform-wide — see resolveWorkspaceRootId/getWorkspaceMemberIds.
+      const rootId = await this.resolveWorkspaceRootId(userId);
+      const memberIds = await this.getWorkspaceMemberIds(rootId);
+      return await db.select().from(campaigns)
+        .where(inArray(campaigns.userId, [...memberIds]))
+        .orderBy(desc(campaigns.createdAt));
     }
     if (userId) {
       return await db.select().from(campaigns)
@@ -1516,7 +1521,12 @@ const dbStorage = {
 
   async getAuditLogs(filters = {}) {
     const conditions = [];
+    // userIds (plural) scopes to a workspace member set — used by admin-facing
+    // listing/export endpoints so "all logs I can see" means "my workspace",
+    // not the entire platform. filters.userId (singular) still wins if both
+    // are somehow passed, matching a caller asking about one specific member.
     if (filters.userId) conditions.push(eq(auditLogs.userId, filters.userId));
+    else if (filters.userIds) conditions.push(inArray(auditLogs.userId, filters.userIds));
     if (filters.action) conditions.push(eq(auditLogs.action, filters.action));
     if (filters.targetId) conditions.push(eq(auditLogs.targetId, filters.targetId));
 
@@ -1694,10 +1704,18 @@ const dbStorage = {
   async getUsersWithStats(parentId, isRootAdmin = false) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // 1. Fetch users
-    const userRows = isRootAdmin
-      ? await db.select().from(users).orderBy(desc(users.createdAt))
-      : await db.select().from(users).where(eq(users.parentId, parentId)).orderBy(desc(users.createdAt));
+    // 1. Fetch users — workspace-scoped, not platform-wide, when isRootAdmin.
+    let userRows;
+    if (isRootAdmin) {
+      const rootId = await this.resolveWorkspaceRootId(parentId);
+      const memberIds = await this.getWorkspaceMemberIds(rootId);
+      memberIds.delete(rootId); // exclude the admin themselves — matches prior "children only" shape
+      userRows = memberIds.size === 0
+        ? []
+        : await db.select().from(users).where(inArray(users.id, [...memberIds])).orderBy(desc(users.createdAt));
+    } else {
+      userRows = await db.select().from(users).where(eq(users.parentId, parentId)).orderBy(desc(users.createdAt));
+    }
 
     if (userRows.length === 0) return [];
 
@@ -2059,6 +2077,42 @@ const dbStorage = {
       currentId = user.parentId;
     }
     return "free";
+  },
+
+  // ── Workspace resolution (tenant-isolation fix) ────────────────────────────
+  // A "workspace" is the ROOT_ADMIN and its full descendant tree. These two
+  // helpers are the single source of truth for "which users belong to the
+  // same workspace as this caller" — used everywhere a ROOT_ADMIN/isSecondaryRoot
+  // caller's reach must be scoped to their own org, not the whole platform.
+
+  async resolveWorkspaceRootId(userId) {
+    // Walk parentId to the top of the chain. Cycle-guarded, same idiom as
+    // getEffectivePlan. A true ROOT_ADMIN resolves to themselves (parentId=null).
+    const visited = new Set();
+    let currentId = userId;
+    let current = await this.getUserById(currentId);
+    while (current) {
+      if (visited.has(current.id)) break;
+      visited.add(current.id);
+      if (!current.parentId) return current.id;
+      current = await this.getUserById(current.parentId);
+    }
+    return userId;
+  },
+
+  async getWorkspaceMemberIds(rootId) {
+    // Depth is fixed at exactly two hops (routes.js only ever lets a SUB_ADMIN
+    // create role USER, never another SUB_ADMIN) — a two-level walk is
+    // exhaustive, not an approximation. Returns the root itself plus every
+    // descendant (isActive or not — callers needing "active only" filter separately).
+    const level1 = await db.select({ id: users.id }).from(users).where(eq(users.parentId, rootId));
+    const level1Ids = level1.map(u => u.id);
+    let level2Ids = [];
+    if (level1Ids.length > 0) {
+      const level2 = await db.select({ id: users.id }).from(users).where(inArray(users.parentId, level1Ids));
+      level2Ids = level2.map(u => u.id);
+    }
+    return new Set([rootId, ...level1Ids, ...level2Ids]);
   },
 
   async checkAndIncrementAiQuota(userId) {
@@ -2788,10 +2842,14 @@ const dbStorage = {
     }).where(eq(users.id, userId));
   },
 
-  async getSecondaryRootCount() {
+  async getSecondaryRootCount(memberIds) {
+    // Scoped to one workspace's member set — previously counted isSecondaryRoot
+    // rows platform-wide, so one customer's grants could exhaust the quota for
+    // every other customer. memberIds is required; an empty/missing set counts as 0.
+    if (!memberIds || memberIds.length === 0) return 0;
     const [result] = await db.select({ count: sql`COUNT(*)` })
       .from(users)
-      .where(eq(users.isSecondaryRoot, true));
+      .where(and(eq(users.isSecondaryRoot, true), inArray(users.id, memberIds)));
     return parseInt(result.count, 10);
   },
 

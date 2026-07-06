@@ -1004,7 +1004,9 @@ export const memoryStorage = {
 
   async getCampaigns(userId = null, isRootAdmin = false) {
     if (isRootAdmin) {
-      return toSortedArray(store.campaigns);
+      const rootId = await this.resolveWorkspaceRootId(userId);
+      const memberIds = await this.getWorkspaceMemberIds(rootId);
+      return toSortedArray(store.campaigns).filter(c => memberIds.has(c.userId));
     }
     if (userId) {
       return toSortedArray(store.campaigns).filter(c => c.userId === userId);
@@ -1235,6 +1237,9 @@ export const memoryStorage = {
 
     if (filters.userId) {
       result = result.filter(l => l.userId === filters.userId);
+    } else if (filters.userIds) {
+      const idSet = new Set(filters.userIds);
+      result = result.filter(l => idSet.has(l.userId));
     }
     if (filters.action) {
       result = result.filter(l => l.action === filters.action);
@@ -1368,9 +1373,15 @@ export const memoryStorage = {
 
   async getUsersWithStats(parentId, isRootAdmin = false) {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const userRows = isRootAdmin
-      ? toSortedArray(store.users)
-      : toSortedArray(store.users).filter(u => u.parentId === parentId);
+    let userRows;
+    if (isRootAdmin) {
+      const rootId = await this.resolveWorkspaceRootId(parentId);
+      const memberIds = await this.getWorkspaceMemberIds(rootId);
+      memberIds.delete(rootId); // exclude the admin themselves — matches prior "children only" shape
+      userRows = toSortedArray(store.users).filter(u => memberIds.has(u.id));
+    } else {
+      userRows = toSortedArray(store.users).filter(u => u.parentId === parentId);
+    }
 
     if (userRows.length === 0) return [];
 
@@ -1724,6 +1735,33 @@ export const memoryStorage = {
       currentId = user.parentId;
     }
     return "free";
+  },
+
+  // ── Workspace resolution (tenant-isolation fix) — mirrors storage.js ───────
+  async resolveWorkspaceRootId(userId) {
+    const visited = new Set();
+    let currentId = userId;
+    let current = store.users.get(currentId);
+    while (current) {
+      if (visited.has(current.id)) break;
+      visited.add(current.id);
+      if (!current.parentId) return current.id;
+      current = store.users.get(current.parentId);
+    }
+    return userId;
+  },
+
+  async getWorkspaceMemberIds(rootId) {
+    const level1Ids = [];
+    for (const u of store.users.values()) {
+      if (u.parentId === rootId) level1Ids.push(u.id);
+    }
+    const level1Set = new Set(level1Ids);
+    const level2Ids = [];
+    for (const u of store.users.values()) {
+      if (u.parentId && level1Set.has(u.parentId)) level2Ids.push(u.id);
+    }
+    return new Set([rootId, ...level1Ids, ...level2Ids]);
   },
 
   async checkAndIncrementAiQuota(userId) {
@@ -2320,10 +2358,12 @@ export const memoryStorage = {
     user.updatedAt = new Date();
   },
 
-  async getSecondaryRootCount() {
+  async getSecondaryRootCount(memberIds) {
+    if (!memberIds || memberIds.length === 0) return 0;
+    const idSet = new Set(memberIds);
     let count = 0;
     for (const user of store.users.values()) {
-      if (user.isSecondaryRoot) count++;
+      if (user.isSecondaryRoot && idSet.has(user.id)) count++;
     }
     return count;
   },

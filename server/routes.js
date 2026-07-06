@@ -243,6 +243,22 @@ function rootAdminMiddleware(req, res, next) {
   next();
 }
 
+// ── Tenant isolation ──────────────────────────────────────────────────────────
+// req.isRootAdmin means "this caller holds root-tier privileges," not "this
+// caller may reach any resource on the platform." Every per-resource ownership
+// check that treats isRootAdmin as a blanket bypass must instead confirm the
+// target belongs to the caller's OWN workspace (the caller's ROOT_ADMIN and its
+// full descendant tree). This is that check — reused wherever such a bypass
+// exists, rather than duplicating the workspace-resolution logic per call site.
+// Callers who are not root-tier (plain SUB_ADMIN/USER) always get false here,
+// preserving their existing (unchanged, self-only) access exactly as before.
+async function isSameWorkspaceAdmin(callerUser, targetUserId) {
+  if (!(callerUser.role === USER_ROLES.ROOT_ADMIN || callerUser.isSecondaryRoot)) return false;
+  const rootId = await storage.resolveWorkspaceRootId(callerUser.id);
+  const memberIds = await storage.getWorkspaceMemberIds(rootId);
+  return memberIds.has(targetUserId);
+}
+
 // Reusable campaign execution — called by immediate send (routes.js), scheduler,
 // and PENDING watchdog (index.js). Delegates to the shared runCampaignLoop.
 //
@@ -1272,7 +1288,12 @@ export async function registerRoutes(httpServer, app) {
       if (target.isSecondaryRoot && req.user.role !== USER_ROLES.ROOT_ADMIN) {
         return res.status(403).json({ message: "Cannot deactivate a secondary root admin" });
       }
-      if (req.user.role === "SUB_ADMIN" && target.parentId !== req.user.id) {
+      // Direct-manager path (unchanged) or workspace-admin path (fixed — was
+      // previously unrestricted for any ROOT_ADMIN/isSecondaryRoot caller,
+      // regardless of which workspace the target belonged to).
+      const isDirectManager = req.user.role === "SUB_ADMIN" && target.parentId === req.user.id;
+      const isWorkspaceAdmin = await isSameWorkspaceAdmin(req.user, target.id);
+      if (!isDirectManager && !isWorkspaceAdmin) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
@@ -1406,7 +1427,9 @@ export async function registerRoutes(httpServer, app) {
       if (target.isSecondaryRoot && req.user.role !== USER_ROLES.ROOT_ADMIN) {
         return res.status(403).json({ message: "Cannot reactivate a secondary root admin" });
       }
-      if (req.user.role === "SUB_ADMIN" && target.parentId !== req.user.id) {
+      const isDirectManager = req.user.role === "SUB_ADMIN" && target.parentId === req.user.id;
+      const isWorkspaceAdmin = await isSameWorkspaceAdmin(req.user, target.id);
+      if (!isDirectManager && !isWorkspaceAdmin) {
         return res.status(403).json({ message: "Forbidden" });
       }
       if (target.isActive) {
@@ -1462,7 +1485,14 @@ export async function registerRoutes(httpServer, app) {
       if (target.role === USER_ROLES.ROOT_ADMIN) return res.status(400).json({ message: "User is already the root administrator." });
       if (target.isSecondaryRoot) return res.status(400).json({ message: "User already has secondary root access." });
 
-      const count = await storage.getSecondaryRootCount();
+      // Workspace-scoped — previously any ROOT_ADMIN could grant elevated access
+      // to any user on the platform, including another customer's account.
+      const memberIds = await storage.getWorkspaceMemberIds(req.user.id);
+      if (!memberIds.has(target.id)) {
+        return res.status(403).json({ message: "You can only grant secondary root access to a member of your own team." });
+      }
+
+      const count = await storage.getSecondaryRootCount([...memberIds]);
       if (count >= 2) {
         return res.status(400).json({ message: "Maximum of 2 secondary root admins allowed. Revoke one before granting another." });
       }
@@ -1500,6 +1530,11 @@ export async function registerRoutes(httpServer, app) {
       const target = await storage.getUserById(userId);
       if (!target) return res.status(404).json({ message: "User not found." });
       if (!target.isSecondaryRoot) return res.status(400).json({ message: "User does not have secondary root access." });
+
+      const memberIds = await storage.getWorkspaceMemberIds(req.user.id);
+      if (!memberIds.has(target.id)) {
+        return res.status(403).json({ message: "You can only revoke secondary root access from a member of your own team." });
+      }
 
       await storage.revokeSecondaryRoot(userId);
       await storage.createAuditLog({
@@ -1879,7 +1914,7 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       res.json(domain);
@@ -1893,7 +1928,7 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       if (domain.status === "VERIFIED") {
@@ -1922,7 +1957,7 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       await removeDomain(domain, req.user.id);
@@ -1941,7 +1976,7 @@ export async function registerRoutes(httpServer, app) {
     try {
       const domain = await storage.getSenderDomainById(req.params.id);
       if (!domain) return res.status(404).json({ message: "Domain not found" });
-      if (domain.userId !== req.user.id && !req.isRootAdmin) {
+      if (domain.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, domain.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       res.json({
@@ -2364,7 +2399,7 @@ export async function registerRoutes(httpServer, app) {
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
       const isOwner = campaign.userId === req.user.id;
-      const isAdmin = req.isRootAdmin;
+      const isAdmin = await isSameWorkspaceAdmin(req.user, campaign.userId);
       if (!isOwner && !isAdmin) return res.status(403).json({ message: "Forbidden" });
 
       const CANCELLABLE = [
@@ -2459,7 +2494,7 @@ export async function registerRoutes(httpServer, app) {
       if (!campaign) {
         return res.status(404).json({ message: "Campaign not found" });
       }
-      if (campaign.userId !== req.user.id && !req.isRootAdmin) {
+      if (campaign.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, campaign.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       const logs = await storage.getAuditLogs({ targetId: req.params.id, limit: 50 });
@@ -2475,7 +2510,7 @@ export async function registerRoutes(httpServer, app) {
       if (!existing) {
         return res.status(404).json({ message: "Campaign not found" });
       }
-      if (existing.userId !== req.user.id && req.user.role !== "ROOT_ADMIN" && !req.user.isSecondaryRoot) {
+      if (existing.userId !== req.user.id && !(await isSameWorkspaceAdmin(req.user, existing.userId))) {
         return res.status(403).json({ message: "Forbidden" });
       }
       const campaign = await storage.updateCampaign(req.params.id, req.body);
@@ -2551,8 +2586,16 @@ export async function registerRoutes(httpServer, app) {
   app.get("/api/audit-logs", authMiddleware, rootAdminMiddleware, async (req, res) => {
     try {
       const { userId, action, limit } = req.query;
+      // Workspace-scoped, not platform-wide — previously omitting userId (or an
+      // unverified one) returned every customer's audit history.
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const memberIds = await storage.getWorkspaceMemberIds(rootId);
+      if (userId && !memberIds.has(userId)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const logs = await storage.getAuditLogs({
-        userId,
+        userId: userId || undefined,
+        userIds: userId ? undefined : [...memberIds],
         action,
         limit: limit ? parseInt(limit) : 100
       });
@@ -2573,7 +2616,10 @@ export async function registerRoutes(httpServer, app) {
         });
       }
 
-      const logs = await storage.getAuditLogs({ limit: 10000 });
+      // Workspace-scoped — previously exported up to 10,000 rows platform-wide.
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const memberIds = await storage.getWorkspaceMemberIds(rootId);
+      const logs = await storage.getAuditLogs({ userIds: [...memberIds], limit: 10000 });
 
       const headers = '"Timestamp","User ID","Username","Action","Target Type","Target ID","Details"\n';
       const rows = logs.map(log => {
