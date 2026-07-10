@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,10 +53,8 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
         setError(data.message || "Failed to register domain");
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/domains"] });
       // Registration is the workspace-activation event — sendingIdentityType may change.
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sender-health"] });
+      invalidateAfter("domainIdentityChanged");
       refetch();
       toast({ title: "Domain added", description: `${data.domain} is registered — add the DNS records to verify.` });
       onOpenChange(false);

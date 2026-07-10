@@ -79,15 +79,43 @@ const PLAN_LABELS = {
   scale: "Scale", enterprise: "Enterprise",
 };
 
+// Dashboard polls live only while the customer has something actually
+// in flight (an active send) — everything else on this page is fully static,
+// matching the app's default cache model (queryClient.js). React Query pauses
+// refetchInterval automatically while the tab is backgrounded, so this never
+// polls a tab the customer isn't looking at.
+const ACTIVE_POLL_INTERVAL_MS = 8000;
+
 export default function Dashboard() {
   const { user, isAdmin, isRootAdmin } = useAuth();
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["/api/dashboard/stats"]
+  // The poll/live-indicator trigger is deliberately "is anything RUNNING right
+  // now," not stats.activeCampaigns — that aggregate also counts PAUSED and
+  // PENDING(scheduled) campaigns, neither of which is actually sending.
+  // Polling (and saying "sending now") for a paused or not-yet-started
+  // campaign would be both wasted network activity and, worse, actively
+  // misleading copy — the opposite of the trust this feature exists to build.
+  // recentCampaigns (limit 5, most-recent-first) is the source of truth for
+  // this: a campaign that's genuinely RUNNING right now is, by definition,
+  // recent, so the 5-item window doesn't miss it in normal usage.
+  const { data: recentCampaigns, isLoading: campaignsLoading } = useQuery({
+    queryKey: ["/api/campaigns", "?limit=5"],
+    // Self-terminating: re-evaluated against freshly-fetched data on every
+    // tick, so this stops on its own the moment the last running campaign
+    // reaches a terminal state — no separate "stop polling" step needed.
+    refetchInterval: (query) => (
+      query.state.data?.some(c => c.status === "RUNNING") ? ACTIVE_POLL_INTERVAL_MS : false
+    ),
   });
 
-  const { data: recentCampaigns, isLoading: campaignsLoading } = useQuery({
-    queryKey: ["/api/campaigns", "?limit=5"]
+  const runningCampaignCount = recentCampaigns?.filter(c => c.status === "RUNNING").length ?? 0;
+  const isSending = runningCampaignCount > 0;
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["/api/dashboard/stats"],
+    // Tied to the same signal as the campaigns query above so the stat tiles
+    // and the campaign table update together, not one before the other.
+    refetchInterval: isSending ? ACTIVE_POLL_INTERVAL_MS : false,
   });
 
   const { data: creditsInfo } = useQuery({
@@ -247,7 +275,40 @@ export default function Dashboard() {
                 )}
               </span>
             }
-            description={statsLoading ? 'Loading your data...' : `Welcome back, ${user?.username}!`}
+            description={
+              statsLoading ? 'Loading your data...' : (
+                <span aria-live="polite">
+                  <AnimatePresence mode="wait">
+                    {isSending ? (
+                      <motion.span
+                        key="sending"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                        className="inline-flex items-center gap-1.5"
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none"
+                          aria-hidden="true"
+                        />
+                        {runningCampaignCount} campaign{runningCampaignCount !== 1 ? 's' : ''} sending now — this page is updating live
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="welcome"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.25 }}
+                      >
+                        {`Welcome back, ${user?.username}!`}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </span>
+              )
+            }
             actions={
               <>
                 <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
@@ -360,10 +421,16 @@ export default function Dashboard() {
               </div>
               <p className="text-muted-foreground text-sm font-medium mb-1">{stat.label}</p>
               <motion.h3
+                // Keyed on the value itself so a live-refresh tick that actually
+                // changes this number replays a brief, gentle transition — a
+                // visible "this just updated" cue, not a jarring re-pop (kept
+                // soft on purpose: 0.85→1, not the louder 0.5→1 used elsewhere
+                // for one-time page-load entrances).
+                key={stat.value}
                 className="text-3xl font-bold text-foreground"
-                initial={{ opacity: 0, scale: 0.5 }}
+                initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 + idx * 0.1 }}
+                transition={{ duration: 0.35, delay: idx * 0.05 }}
               >
                 {statsLoading ? '...' : typeof stat.value === 'number' ? formatNumber(stat.value) : stat.value}
               </motion.h3>

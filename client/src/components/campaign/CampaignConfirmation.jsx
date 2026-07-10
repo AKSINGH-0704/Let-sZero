@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invalidateAfter } from "@/lib/queryInvalidation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -211,9 +212,7 @@ export default function CampaignConfirmation() {
       setCampaignData(campaign);
       queryClient.setQueryData(["/api/campaigns", campaign.id], campaign);
 
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      invalidateAfter("campaignCreated");
       refetchUser();
 
       // If the user checked "Save to Contact Library as", the list record is now created.

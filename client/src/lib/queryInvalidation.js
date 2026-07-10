@@ -17,6 +17,16 @@ import { queryClient } from "@/lib/queryClient";
 // surface that displays credits, or extending what a "campaign terminal state"
 // event affects, is now a one-line change in this file, not an N-site audit.
 const EVENT_QUERY_KEYS = {
+  // A new campaign was created (immediate or scheduled). Deliberately a
+  // narrower set than campaignTerminalStateChanged below — creation itself
+  // doesn't spend credits (sends do, as the campaign runs), so /api/credits/info
+  // is not included here; it's invalidated separately once the campaign
+  // actually reaches a terminal state.
+  campaignCreated: [
+    ["/api/campaigns"],
+    ["/api/dashboard/stats"],
+    ["/api/auth/me"],
+  ],
   // Any action that changes a campaign's terminal state (completed naturally,
   // cancelled, failed) or its cached counters (checkpoint, reconciliation).
   campaignTerminalStateChanged: [
