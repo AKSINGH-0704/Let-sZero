@@ -9,7 +9,7 @@
  */
 
 import { db, isDevMode } from "./db.js";
-import { memoryStorage } from "./memoryStorage.js";
+import { memoryStorage, buildMonthlyChart } from "./memoryStorage.js";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { MIN_SENDER_HEALTH_SENT, PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
@@ -38,31 +38,6 @@ const {
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
-}
-
-// Build 6-month chart from already-loaded campaign list (no extra DB query).
-function buildMonthlyChart(campaignsList) {
-  const buckets = {};
-  const orderedKeys = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleString("en-US", { month: "short" });
-    buckets[key] = { month: label, sent: 0, opened: 0 };
-    orderedKeys.push(key);
-  }
-  for (const c of campaignsList) {
-    // Use the actual send date so draft-in-Jan / sent-in-Feb campaigns land in Feb.
-    const d = new Date(c.startedAt || c.completedAt || c.createdAt);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (buckets[key]) {
-      buckets[key].sent   += c.sentEmails   || 0;
-      buckets[key].opened += c.openedEmails || 0;
-    }
-  }
-  return orderedKeys.map(k => buckets[k]);
 }
 
 // PostgreSQL-based storage implementation

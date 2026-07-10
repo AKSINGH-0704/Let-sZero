@@ -315,20 +315,13 @@ export default function Dashboard() {
               )
             }
             actions={
-              <>
-                <select className="px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-ring transition-all hover:bg-muted">
-                  <option>Last 30 days</option>
-                  <option>Last 90 days</option>
-                  <option>This year</option>
-                </select>
-                <Link href="/app/campaigns/new">
-                  <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
-                    <Plus className="h-4 w-4" />
-                    <span className="hidden sm:inline">New Campaign</span>
-                    <span className="sm:hidden">New</span>
-                  </Button>
-                </Link>
-              </>
+              <Link href="/app/campaigns/new">
+                <Button className="gap-2 shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-new-campaign">
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden sm:inline">New Campaign</span>
+                  <span className="sm:hidden">New</span>
+                </Button>
+              </Link>
             }
           />
         </motion.div>
@@ -647,8 +640,16 @@ export default function Dashboard() {
               {[
                 { label: 'New Campaign', href: '/app/campaigns/new', primary: true },
                 { label: 'Email Templates', href: '/app/templates' },
-                { label: 'Campaign History', href: '/app/history' },
-                { label: 'View Analytics', href: '/app/audit' },
+                // "Campaign Reports" is the customer-facing reporting entry point —
+                // it routes to History, which already contains the per-campaign
+                // engagement metrics, delivery health, and lifecycle timeline that
+                // make up RepMail's reporting experience. Deliberately not split
+                // into a separate "History" action: same destination, and a
+                // second entry pointing at the same page undermines the clear
+                // mental model this is meant to establish. Audit Logs (an
+                // administrative capability, not customer analytics) lives only
+                // in the Manage menu for ROOT_ADMIN — never here.
+                { label: 'Campaign Reports', href: '/app/history' },
               ].map((item) => (
                 <Link key={item.label} href={item.href}>
                   <motion.button 

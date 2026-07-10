@@ -45,6 +45,7 @@ import {
   X,
   Copy,
   UserMinus,
+  ShieldCheck,
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { Link } from "wouter";
@@ -569,6 +570,48 @@ export default function History() {
                     </div>
                   </div>
                 )}
+
+                {/* Delivery Health — synthesizes bounce/complaint signal rather than
+                    exposing bounce rate as an isolated number. bouncedEmails/
+                    complainedEmails are already present on every campaign row
+                    (server/storage.js counters, updated by the SNS webhook) —
+                    reused here, no new backend surface. Thresholds mirror what
+                    mailbox providers themselves treat as reputation-risking
+                    (Gmail/Yahoo bulk sender rules: >0.3% complaints; >5% bounce
+                    is a common ESP-wide risk line) — a customer-relevant "should
+                    I be worried" signal, not an arbitrary cutoff. Underlying
+                    counts and rates stay visible alongside the status, so nothing
+                    is hidden behind the synthesized label. */}
+                {viewCampaign.sentEmails > 0 && (() => {
+                  const bounced = viewCampaign.bouncedEmails ?? 0;
+                  const complained = viewCampaign.complainedEmails ?? 0;
+                  const bounceRate = (bounced / viewCampaign.sentEmails) * 100;
+                  const complaintRate = (complained / viewCampaign.sentEmails) * 100;
+                  const isPoor = bounceRate > 5 || complaintRate > 0.3;
+                  const isWatch = !isPoor && (bounceRate > 2 || complaintRate > 0.1);
+                  const HEALTH = isPoor
+                    ? { label: "At risk", icon: AlertTriangle, text: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800" }
+                    : isWatch
+                    ? { label: "Needs attention", icon: AlertTriangle, text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" }
+                    : { label: "Good", icon: ShieldCheck, text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" };
+                  const HealthIcon = HEALTH.icon;
+                  return (
+                    <div className={cn("rounded-lg border p-3", HEALTH.bg)}>
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <HealthIcon className={cn("h-4 w-4", HEALTH.text)} aria-hidden="true" />
+                          <span className={cn("text-sm font-medium", HEALTH.text)}>
+                            Delivery Health: {HEALTH.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span>{formatNumber(bounced)} bounced &middot; {bounceRate.toFixed(1)}%</span>
+                          <span>{formatNumber(complained)} complaint{complained === 1 ? "" : "s"} &middot; {complaintRate.toFixed(2)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Lifecycle timeline — the "why does this show what it shows" answer.
                     Filters the raw audit feed down to campaign-level decisions only;

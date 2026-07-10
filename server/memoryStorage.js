@@ -70,9 +70,36 @@ const store = {
 
 // Helper to convert Map to array sorted by createdAt desc
 function toSortedArray(map, sortField = "createdAt") {
-  return Array.from(map.values()).sort((a, b) => 
+  return Array.from(map.values()).sort((a, b) =>
     new Date(b[sortField]) - new Date(a[sortField])
   );
+}
+
+// Build 6-month chart from an already-loaded campaign list (no extra query).
+// Defined here (not duplicated in storage.js) so dbStorage and memoryStorage
+// share one implementation — storage.js imports it back from this module.
+export function buildMonthlyChart(campaignsList) {
+  const buckets = {};
+  const orderedKeys = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("en-US", { month: "short" });
+    buckets[key] = { month: label, sent: 0, opened: 0 };
+    orderedKeys.push(key);
+  }
+  for (const c of campaignsList) {
+    // Use the actual send date so draft-in-Jan / sent-in-Feb campaigns land in Feb.
+    const d = new Date(c.startedAt || c.completedAt || c.createdAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (buckets[key]) {
+      buckets[key].sent   += c.sentEmails   || 0;
+      buckets[key].opened += c.openedEmails || 0;
+    }
+  }
+  return orderedKeys.map(k => buckets[k]);
 }
 
 export const memoryStorage = {
@@ -1304,11 +1331,42 @@ export const memoryStorage = {
 
   async getDashboardStats(userId, isRootAdmin) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
+
+    // Mirrors dbStorage.getDashboardStats field-for-field (storage.js) — this
+    // used to be a much smaller subset, which meant Dashboard's analytics
+    // silently went blank in dev/test mode regardless of real underlying data.
+    const totalSent      = campaignsList.reduce((s, c) => s + (c.sentEmails      || 0), 0);
+    const totalAttempted = campaignsList.reduce((s, c) => s + (c.totalEmails     || 0), 0);
+    const totalOpens     = campaignsList.reduce((s, c) => s + (c.openedEmails    || 0), 0);
+    const totalClicks    = campaignsList.reduce((s, c) => s + (c.clickedEmails   || 0), 0);
+    const totalDelivered = campaignsList.reduce((s, c) => s + (c.deliveredEmails || 0), 0);
+
+    const avgOpenRate  = totalSent > 0 ? Math.min(100, (totalOpens     / totalSent)      * 100) : null;
+    const avgClickRate = totalSent > 0 ? Math.min(100, (totalClicks    / totalSent)      * 100) : null;
+    const deliveryRate = totalSent > 0 ? Math.min(100, (totalDelivered / totalSent)      * 100) : null;
+    const successRate  = totalAttempted > 0 ? Math.min(100, (totalSent / totalAttempted) * 100) : null;
+
+    const activeContacts = userId
+      ? Array.from(store.contacts.values()).filter(c => c.userId === userId).length
+      : 0;
+
     const base = {
       totalCampaigns: campaignsList.length,
-      activeCampaigns: campaignsList.filter(c => c.status === "RUNNING" || c.status === "PAUSED").length,
+      // Definition aligned with dbStorage: RUNNING + PAUSED + PENDING(scheduled).
+      // Previously excluded PENDING here, which meant this metric could disagree
+      // with production depending on which backend happened to compute it.
+      activeCampaigns: campaignsList.filter(c => ["RUNNING", "PAUSED", "PENDING"].includes(c.status)).length,
       completedCampaigns: campaignsList.filter(c => c.status === "COMPLETED").length,
-      totalEmailsSent: campaignsList.reduce((sum, c) => sum + (c.sentEmails || 0), 0)
+      totalEmailsSent: totalSent,
+      totalDelivered,
+      totalOpens,
+      totalClicks,
+      deliveryRate,
+      avgOpenRate,
+      avgClickRate,
+      successRate,
+      activeContacts,
+      monthlyChart: buildMonthlyChart(campaignsList),
     };
 
     if (!isRootAdmin) return base;

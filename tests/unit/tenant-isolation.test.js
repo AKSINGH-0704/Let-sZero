@@ -153,6 +153,47 @@ describe("Tenant isolation — cross-workspace access must be denied", () => {
     expect(statsA.json.totalCampaigns).toBe(0);
   });
 
+  // Regression for a confirmed memoryStorage/storage.js parity gap (Analytics &
+  // Reporting milestone, Audit 113): getDashboardStats used to omit deliveryRate/
+  // avgOpenRate/avgClickRate/activeContacts/monthlyChart in dev/test mode entirely,
+  // and defined activeCampaigns as RUNNING+PAUSED only (excluding PENDING, unlike
+  // storage.js) — a live metric-definition divergence between the two backends.
+  it("GET /api/dashboard/stats: memoryStorage returns the full field set, matching storage.js's shape", async () => {
+    const a = await makeWorkspace();
+
+    const sent = await storage.createCampaign({
+      userId: a.root.id,
+      name: "sent-campaign-" + Math.random().toString(36).slice(2),
+      status: "COMPLETED",
+      totalEmails: 10,
+      contactIds: [],
+    });
+    await storage.updateCampaign(sent.id, {
+      sentEmails: 10,
+      deliveredEmails: 9,
+      openedEmails: 4,
+      clickedEmails: 2,
+    });
+    await storage.createCampaign({
+      userId: a.root.id,
+      name: "scheduled-campaign-" + Math.random().toString(36).slice(2),
+      status: "PENDING",
+      totalEmails: 5,
+      contactIds: [],
+    });
+
+    const stats = await api("GET", "/api/dashboard/stats", { cookie: a.cookie });
+    expect(stats.status).toBe(200);
+    // PENDING must count toward activeCampaigns, matching storage.js's definition.
+    expect(stats.json.activeCampaigns).toBe(1);
+    expect(stats.json.deliveryRate).toBeCloseTo(90, 5);
+    expect(stats.json.avgOpenRate).toBeCloseTo(40, 5);
+    expect(stats.json.avgClickRate).toBeCloseTo(20, 5);
+    expect(Array.isArray(stats.json.monthlyChart)).toBe(true);
+    expect(stats.json.monthlyChart.length).toBe(6);
+    expect(typeof stats.json.activeContacts).toBe("number");
+  });
+
   it("Domain routes: a Root Admin cannot view, check, or delete another workspace's domain", async () => {
     const a = await makeWorkspace();
     const b = await makeWorkspace();
