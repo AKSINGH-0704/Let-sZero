@@ -2,13 +2,30 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-06
+**Last updated:** 2026-07-11
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.5 (2026-07-06)
+## Current Release — v1.6 (2026-07-11)
+
+### Teams / Workspace, Completed
+
+Your team's shared workspace is now fully connected end to end.
+
+- **Your sending domain is shared automatically.** Once you verify your custom sending domain, every team member you invite can send from it immediately — no separate verification step for each person, no waiting.
+- **Team seats now match what your plan promises.** Your plan's team-member allowance (Starter 3, Growth 10, Scale 25, Enterprise custom) is enforced across your whole team, consistently, exactly as advertised.
+- **You can now revoke a pending invitation.** Sent an invite to the wrong address, or want to close a stale invite window? You can now cancel it before it's accepted, from Team Management.
+- **A better welcome after upgrading.** Purchasing a team-capable plan now shows you exactly what you've unlocked — including your new team-seat allowance — with a short checklist guiding you to your next step (verify your domain, invite your team, send your first campaign).
+
+### Account Data Isolation, Strengthened
+
+As part of this work, we completed a proactive review of account boundaries across the platform and tightened several internal checks to ensure customer accounts remain fully isolated from one another. No customer data was found to have been accessed inappropriately, and no action is needed on your part — this is an internal hardening measure.
+
+---
+
+## v1.5 (2026-07-06)
 
 ### Team Invitations — Reliability Fix
 
