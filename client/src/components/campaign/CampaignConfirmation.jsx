@@ -385,7 +385,8 @@ export default function CampaignConfirmation() {
                         Add your domain →
                       </Link>
                       <span className="block mt-1 text-xs text-amber-400/70">
-                        You can save this campaign as a draft and send it once your domain is verified.
+                        Nothing you've written here is saved yet — verify your domain first, then come back and
+                        finish this campaign in one sitting.
                       </span>
                     </AlertDescription>
                   </Alert>

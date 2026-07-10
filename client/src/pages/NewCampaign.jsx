@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CampaignProvider, useCampaign } from "@/context/CampaignContext";
 import AppLayout from "@/components/layout/AppLayout";
 import StepIndicator from "@/components/campaign/StepIndicator";
+import CampaignReadinessPanel from "@/components/campaign/CampaignReadinessPanel";
 import FileUpload from "@/components/campaign/FileUpload";
 import ColumnMapping from "@/components/campaign/ColumnMapping";
 import TemplateBuilder from "@/components/campaign/TemplateBuilder";
@@ -56,6 +57,7 @@ function CampaignWizard({ duplicateFailed }) {
             </AlertDescription>
           </Alert>
         )}
+        {step < 7 && <CampaignReadinessPanel />}
         <StepIndicator currentStep={step} />
         <Card className="border-card-border">
           <CardContent className="p-6 md:p-8">

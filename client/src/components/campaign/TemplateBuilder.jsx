@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCampaign } from "@/context/CampaignContext";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,6 +36,7 @@ import {
   ChevronDown,
   ChevronUp,
   Wand2,
+  FileText,
 } from "lucide-react";
 import { replacePlaceholders, computePersonalizationStats, cn } from "@/lib/utils";
 
@@ -89,6 +90,23 @@ export default function TemplateBuilder() {
     body:    template.body    || "",
   });
   const [localIsAiGenerated, setLocalIsAiGenerated] = useState(() => templateIsAiGenerated);
+
+  // ── Entry choice — Campaign Creation Experience milestone ──────────────────
+  // "made" once the customer has picked a starting point (or already has
+  // content — duplicate flow, or returning to this step via Back/Forward).
+  // null shows the Blank / AI Generate / Saved Template chooser instead of the
+  // editor. Once made, this never resets for the rest of the wizard session —
+  // the existing "Generate with AI" collapsible and manual editing remain
+  // available afterwards exactly as before; this only changes what's shown
+  // on first arrival at this step.
+  const [entryChoice, setEntryChoice] = useState(() => {
+    if (isDuplicate || template.subject || template.body) return "made";
+    return null;
+  });
+  const { data: savedTemplates, isLoading: savedTemplatesLoading } = useQuery({
+    queryKey: ["/api/templates"],
+    enabled: entryChoice !== "made",
+  });
   const [error,                  setError]                  = useState("");
   const [activeTab,              setActiveTab]              = useState("edit");
   const [aiGenerationWarnings,   setAiGenerationWarnings]   = useState([]);
@@ -360,6 +378,13 @@ export default function TemplateBuilder() {
   const aiExhausted  = !aiIsUnlimited && aiRemaining <= 0;
   const aiWarning    = !aiIsUnlimited && !aiExhausted && aiLimit > 0 && aiUsed / aiLimit >= 0.8;
 
+  const selectSavedTemplate = (tpl) => {
+    setLocalTemplate({ name: tpl.name || "", subject: tpl.subject || "", body: tpl.body || "" });
+    setLocalIsAiGenerated(false);
+    setAiGenerationWarnings([]);
+    setEntryChoice("made");
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -375,6 +400,88 @@ export default function TemplateBuilder() {
           </p>
         )}
       </div>
+
+      {/* ── Starting-point chooser ────────────────────────────────────────────
+          Shown once, on first arrival at this step with no content yet.
+          Reuses the existing "Generate with AI" collapsible and the manual
+          editor verbatim — this only decides which one is in front, and
+          surfaces saved templates as a first-class starting option instead
+          of leaving them undiscoverable. */}
+      {entryChoice === null && (
+        <div className="grid sm:grid-cols-3 gap-3" role="group" aria-label="Choose how to start this template">
+          <button
+            type="button"
+            onClick={() => setEntryChoice("made")}
+            className="text-left rounded-lg border border-border p-4 hover:border-primary/50 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="button-start-blank"
+          >
+            <PenLine className="h-5 w-5 text-muted-foreground mb-2" aria-hidden="true" />
+            <p className="font-medium text-sm">Blank</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Write it yourself from scratch</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEntryChoice("made"); setAiOpen(true); }}
+            className="text-left rounded-lg border border-primary/30 bg-primary/5 p-4 hover:border-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="button-start-ai"
+          >
+            <Sparkles className="h-5 w-5 text-primary mb-2" aria-hidden="true" />
+            <p className="font-medium text-sm">AI Generate</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Answer a few questions, AI drafts it</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEntryChoice("picking-saved")}
+            className="text-left rounded-lg border border-border p-4 hover:border-primary/50 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="button-start-saved"
+          >
+            <FileText className="h-5 w-5 text-muted-foreground mb-2" aria-hidden="true" />
+            <p className="font-medium text-sm">Saved Template</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Reuse one from your library</p>
+          </button>
+        </div>
+      )}
+
+      {entryChoice === "picking-saved" && (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setEntryChoice(null)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3 w-3" aria-hidden="true" />
+            Back to starting options
+          </button>
+          {savedTemplatesLoading ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading your templates…</p>
+          ) : !savedTemplates || savedTemplates.length === 0 ? (
+            <div className="text-center py-10">
+              <FileText className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">No saved templates yet.</p>
+              <p className="text-xs text-muted-foreground/80 mt-1">
+                Start blank or with AI this time — you can save any template from the editor for next time.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {savedTemplates.map(tpl => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => selectSavedTemplate(tpl)}
+                  className="w-full text-left p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid={`button-saved-template-${tpl.id}`}
+                >
+                  <p className="font-medium text-sm truncate">{tpl.name || "Untitled template"}</p>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{tpl.subject}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {entryChoice === "made" && (<>
 
       {/* ── Sender profile warnings ──────────────────────────────────────────── */}
       {senderProfileBlocked ? (
@@ -961,6 +1068,7 @@ export default function TemplateBuilder() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      </>)}
 
       {/* ── Navigation ───────────────────────────────────────────────────────── */}
       <div className="flex justify-between pt-4">
@@ -968,9 +1076,11 @@ export default function TemplateBuilder() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button onClick={validateAndContinue} disabled={!canProceed} data-testid="button-next-step">
-          Continue to Preview
-        </Button>
+        {entryChoice === "made" && (
+          <Button onClick={validateAndContinue} disabled={!canProceed} data-testid="button-next-step">
+            Continue to Preview
+          </Button>
+        )}
       </div>
     </div>
   );
