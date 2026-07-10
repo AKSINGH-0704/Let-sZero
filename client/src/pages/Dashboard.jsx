@@ -118,8 +118,13 @@ export default function Dashboard() {
     refetchInterval: isSending ? ACTIVE_POLL_INTERVAL_MS : false,
   });
 
+  // Tied to the same isSending signal — without this, "Emails Sent" visibly
+  // climbs while "Available Credits" sits frozen (1 credit = 1 email, stated
+  // on the card itself), which reads as broken tracking, not a calm page.
+  // Found during final product review, before deployment.
   const { data: creditsInfo } = useQuery({
-    queryKey: ["/api/credits/info"]
+    queryKey: ["/api/credits/info"],
+    refetchInterval: isSending ? ACTIVE_POLL_INTERVAL_MS : false,
   });
 
   // Use total from credits/info (paid + free) so it matches the Payments page.
@@ -759,7 +764,19 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-foreground font-medium">{formatNumber(campaign.sentEmails || 0)}</div>
+                        {/* Keyed on the value, same gentle transition as the stat
+                            tiles above — this is the number a customer watching an
+                            active send is most likely staring at; it shouldn't be
+                            the one place on the page that just silently snaps. */}
+                        <motion.div
+                          key={campaign.sentEmails}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3 }}
+                          className="text-sm text-foreground font-medium"
+                        >
+                          {formatNumber(campaign.sentEmails || 0)}
+                        </motion.div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-foreground font-medium">{formatNumber(campaign.totalEmails || 0)}</div>
