@@ -459,7 +459,11 @@ export default function TemplateBuilder() {
               <FileText className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">No saved templates yet.</p>
               <p className="text-xs text-muted-foreground/80 mt-1">
-                Start blank or with AI this time — you can save any template from the editor for next time.
+                Start Blank or with AI this time. Templates are created from{" "}
+                <Link href="/app/templates" target="_blank" rel="noreferrer" className="underline text-primary">
+                  Email Templates
+                </Link>
+                {" "}— this wizard doesn't save one for you yet.
               </p>
             </div>
           ) : (
