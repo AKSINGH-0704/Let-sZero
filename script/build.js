@@ -2,6 +2,8 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 import { prerenderRoutes } from "./prerender.js";
+import { generateSitemap } from "./generate-sitemap.js";
+import { generateRss } from "./generate-rss.js";
 
 const allowlist = [
   "@google/generative-ai",
@@ -42,6 +44,20 @@ async function buildAll() {
   // Non-fatal per-route — a route that fails to prerender keeps today's
   // SPA-shell behavior for that one page rather than blocking the build.
   await prerenderRoutes();
+
+  console.log("generating sitemap.xml...");
+  // M21-E: overwrites the static file Vite's client build already copied
+  // from client/public/sitemap.xml, with a build-time-generated, lastmod-
+  // annotated version sourced from the same route list the prerender step
+  // just used — one source of truth, not two hand-kept copies (PAR §7).
+  await generateSitemap();
+
+  console.log("generating RSS feed...");
+  // M21-E (PAR §7). Zero real articles today produces a valid, empty feed —
+  // not an error, not skipped (see script/generate-rss.js for why an empty
+  // feed carries none of the "thin content" risk that kept the Resource
+  // Center's own pages out of the sitemap in M21-D).
+  await generateRss();
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
