@@ -95,6 +95,7 @@ const ResourceCenterHomePage = lazy(() => import("@/pages/resource-center/Resour
 const AcademyHubPage = lazy(() => import("@/pages/resource-center/AcademyHubPage"));
 const ArticlePage = lazy(() => import("@/pages/resource-center/ArticlePage"));
 const AuthorPage = lazy(() => import("@/pages/resource-center/AuthorPage"));
+const RepMailChangelog = lazy(() => import("@/pages/RepMailChangelog"));
 
 // Dev-only design-system preview. Gated on import.meta.env.DEV so Rollup drops the
 // dynamic import (and its chunk) entirely from production builds.
@@ -221,6 +222,14 @@ function AppRoutes() {
 
       <Route path="/repmail/learn/:academy">
         {() => <Suspense fallback={<LoadingScreen />}><AcademyHubPage /></Suspense>}
+      </Route>
+
+      {/* M21-G — reuses RELEASE_NOTES.md verbatim, zero new writing (PAR §13
+          Phase 11). Real, substantive content, so — unlike the still-empty
+          Resource Center pages above — this one IS prerendered/indexed
+          (see script/prerender-routes.js). */}
+      <Route path="/repmail/changelog">
+        {() => <Suspense fallback={<LoadingScreen />}><RepMailChangelog /></Suspense>}
       </Route>
 
       <Route path="/accept-invite">

@@ -3,6 +3,11 @@
 // deliberately not a larger set — this phase proves the pipeline on
 // already-shipped, already-tested pages (PAR §13 Phase 2), not a scope
 // expansion beyond what's already public and indexed.
+//
+// M21-G adds /repmail/changelog — real, substantive, already-published
+// content (RELEASE_NOTES.md verbatim), unlike the still-empty Resource
+// Center Academy pages, which deliberately remain out of this list until
+// they have real content worth indexing (see Audit 129).
 export const PUBLIC_ROUTES = [
   {
     path: "/",
@@ -67,5 +72,12 @@ export const PUBLIC_ROUTES = [
     description: "LetsZero's terms of service.",
     ogImage: "https://www.letszero.in/letszero-logo.png",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "LetsZero Terms of Service", url }),
+  },
+  {
+    path: "/repmail/changelog",
+    componentPath: "/src/pages/RepMailChangelog.jsx",
+    title: "What's New in RepMail — Changelog",
+    description: "Release notes for RepMail: what's been built, improved, and hardened, in plain language.",
+    jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "RepMail Changelog", url }),
   },
 ];
