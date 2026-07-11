@@ -2,12 +2,13 @@
 // :academy/:slug route params. M21-E adds BlogPosting + BreadcrumbList
 // JSON-LD, the latter built from the exact same buildBreadcrumbItems()
 // output the visual breadcrumb renders — one source of truth, not two
-// hand-kept copies that could drift.
+// hand-kept copies that could drift. M21-F adds related-content generation.
 import { useRoute } from "wouter";
 import { getArticlesForProduct } from "@/lib/resourceCenterContent";
 import { PRODUCTS } from "@shared/content/taxonomy.js";
 import { buildArticleJsonLd, buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
+import { getRelatedArticles } from "@shared/content/relatedContent.js";
 import ArticleTemplate from "@/components/resource-center/ArticleTemplate";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
@@ -17,7 +18,8 @@ const CANONICAL_ORIGIN = "https://www.letszero.in";
 export default function ArticlePage() {
   const [, params] = useRoute("/repmail/learn/:academy/:slug");
   const product = PRODUCTS.repmail;
-  const article = getArticlesForProduct("repmail").find(
+  const allArticles = getArticlesForProduct("repmail");
+  const article = allArticles.find(
     (a) => a.academy.slug === params?.academy && a.slug === params?.slug
   );
 
@@ -43,5 +45,15 @@ export default function ArticlePage() {
 
   if (!article) return <NotFound />;
 
-  return <ArticleTemplate article={article} author={article.author} product={product} readingTimeMinutes={article.readingTimeMinutes} />;
+  const relatedArticles = getRelatedArticles(article, allArticles, { limit: 3 });
+
+  return (
+    <ArticleTemplate
+      article={article}
+      author={article.author}
+      product={product}
+      readingTimeMinutes={article.readingTimeMinutes}
+      relatedArticles={relatedArticles}
+    />
+  );
 }

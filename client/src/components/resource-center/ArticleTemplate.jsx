@@ -2,6 +2,7 @@
 // props) — no data-fetching wired up yet, that's M21-D's MDX pipeline. Built
 // and reviewed against placeholder content now (PAR §13 Phase 3), same
 // component real content renders through later.
+import { Link } from "wouter";
 import ContentAsset from "./ContentAsset";
 import AuthorByline from "./AuthorByline";
 import ResourceCenterBreadcrumb, { buildBreadcrumbItems } from "./ResourceCenterBreadcrumb";
@@ -9,7 +10,10 @@ import { Badge } from "@/components/ui/badge";
 
 // article: the parsed+validated frontmatter (shared/content/schema.js) plus
 // `bodyHtml` (rendered markdown body) and `academy` (resolved taxonomy entry).
-export default function ArticleTemplate({ article, author, product, readingTimeMinutes }) {
+// relatedArticles (M21-F, PAR §8): generated via shared/content/relatedContent.js,
+// passed in already-computed rather than computed inside this presentational
+// component — keeps the scoring logic in one pure, independently-tested place.
+export default function ArticleTemplate({ article, author, product, readingTimeMinutes, relatedArticles = [] }) {
   if (!article) return null;
 
   const breadcrumbItems = buildBreadcrumbItems({
@@ -66,6 +70,26 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
           {article.assets.map((asset, i) => (
             <ContentAsset key={i} asset={asset} />
           ))}
+        </section>
+      )}
+
+      {/* Restrained — 2-3 items, not an aggressive full-width grid (PAR §8) */}
+      {relatedArticles.length > 0 && (
+        <section className="mt-10 border-t pt-6" aria-label="Related guides" data-testid="article-related">
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Related guides</h2>
+          <ul className="space-y-2">
+            {relatedArticles.map((related) => (
+              <li key={related.slug}>
+                <Link
+                  href={`${product.basePath}/${related.academy.slug}/${related.slug}`}
+                  className="text-sm text-primary hover:underline"
+                  data-testid={`link-related-${related.slug}`}
+                >
+                  {related.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </article>

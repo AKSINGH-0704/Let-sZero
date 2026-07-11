@@ -3,13 +3,30 @@
 // that has no real data yet simply doesn't render (each is conditional in
 // the template itself), so this honestly reflects that the Resource Center
 // has zero published content today, not a demo full of fake guides.
+// M21-F wires the real search command palette in place of the M21-D no-op.
+import { useEffect, useState } from "react";
 import { getArticlesForProduct } from "@/lib/resourceCenterContent";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
+import ResourceCenterSearch from "@/components/resource-center/ResourceCenterSearch";
 import { PRODUCTS } from "@shared/content/taxonomy.js";
 
 export default function ResourceCenterHomePage() {
   const product = PRODUCTS.repmail;
   const articles = getArticlesForProduct("repmail");
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // ⌘K / Ctrl+K — the "keyboard-accessible search" PAR §5/§8 calls for
+  // explicitly, not just a clickable button.
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const academyArticleCounts = Object.fromEntries(
     product.academies.map((a) => [a.slug, articles.filter((art) => art.academy.slug === a.slug).length])
@@ -23,16 +40,19 @@ export default function ResourceCenterHomePage() {
   const curatedResources = [];
 
   return (
-    <ResourceCenterHome
-      product={product}
-      featuredArticles={articles.filter((a) => a.featured)}
-      learningPaths={[]}
-      collections={[]}
-      toolsAvailable={false}
-      academyArticleCounts={academyArticleCounts}
-      curatedResources={curatedResources}
-      recentArticles={[...articles].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 5)}
-      onOpenSearch={() => {}} // wired to a real command palette in M21-F
-    />
+    <>
+      <ResourceCenterHome
+        product={product}
+        featuredArticles={articles.filter((a) => a.featured)}
+        learningPaths={[]}
+        collections={[]}
+        toolsAvailable={false}
+        academyArticleCounts={academyArticleCounts}
+        curatedResources={curatedResources}
+        recentArticles={[...articles].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 5)}
+        onOpenSearch={() => setSearchOpen(true)}
+      />
+      <ResourceCenterSearch open={searchOpen} onOpenChange={setSearchOpen} articles={articles} product={product} />
+    </>
   );
 }
