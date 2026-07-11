@@ -1118,7 +1118,7 @@ export async function registerRoutes(httpServer, app) {
       sendTransactionalEmail(
         user.email,
         "Reset your RepMail password",
-        `Hi ${user.username},\n\nYou requested a password reset for your RepMail account.\n\nClick the link below to set a new password. This link expires in 1 hour and can only be used once.\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.\n\nFor support: support@repmail.in\n\n— The RepMail Team`
+        `Hi ${user.username},\n\nYou requested a password reset for your RepMail account.\n\nClick the link below to set a new password. This link expires in 1 hour and can only be used once.\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.\n\nFor support: support@letszero.in\n\n— The RepMail Team`
       ).catch(err => console.error("[PASSWORD-RESET] Email send failed uid=%s:", user.id, err.message));
 
       res.json({ message: "If that email is registered, you will receive a reset link shortly." });
@@ -2093,7 +2093,7 @@ export async function registerRoutes(httpServer, app) {
         sendTransactionalEmail(
           owner.email,
           `Your sending domain ${domain.domain} has been suspended`,
-          `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain.domain}" has been suspended on RepMail.\n\nReason: ${reason}\n\nAny campaigns using this domain will be stopped. Please contact support@repmail.in to appeal or get more information.\n\n— The RepMail Team`
+          `Hi ${owner.username || owner.email},\n\nYour custom sending domain "${domain.domain}" has been suspended on RepMail.\n\nReason: ${reason}\n\nAny campaigns using this domain will be stopped. Please contact support@letszero.in to appeal or get more information.\n\n— The RepMail Team`
         ).catch(err => console.error("[DOMAIN][SUSPEND] Notification email failed uid=%s domain=%s:", domain.userId, domain.domain, err.message));
       }
 

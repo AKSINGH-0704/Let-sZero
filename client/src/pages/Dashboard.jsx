@@ -821,12 +821,22 @@ export default function Dashboard() {
                       Add Your Domain →
                     </Button>
                   </Link>
-                  <p className="text-xs text-muted-foreground mt-4">
-                    or{" "}
-                    <Link href="/app/campaigns/new" className="underline underline-offset-2">
-                      start building a campaign
+                  {/* DNS verification can take up to 48 hours (DomainDetail.jsx's own
+                      stated expectation). The campaign wizard doesn't save progress
+                      between visits, so — unlike the copy this replaced — this
+                      deliberately points at things that DO persist (Templates,
+                      Contacts) rather than inviting a customer to lose work by
+                      starting the wizard and closing the tab to go check DNS. */}
+                  <p className="text-xs text-muted-foreground mt-4 max-w-sm mx-auto">
+                    While you wait, you can safely get ready:{" "}
+                    <Link href="/app/templates" className="underline underline-offset-2">
+                      write your email templates
                     </Link>
-                    {" "}to prepare while DNS propagates
+                    {" "}or{" "}
+                    <Link href="/app/contacts" className="underline underline-offset-2">
+                      import your contacts
+                    </Link>
+                    . The campaign wizard itself doesn't save progress yet, so it's best started once your domain is verified.
                   </p>
                 </>
               ) : (

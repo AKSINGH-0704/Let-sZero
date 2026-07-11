@@ -250,7 +250,7 @@ export default function Profile() {
           <CardContent>
             <Button asChild variant="destructive" size="sm">
               <a
-                href={`mailto:support@repmail.in?subject=Account%20deletion%20request&body=Please%20delete%20my%20account%3A%20${encodeURIComponent(user.email)}`}
+                href={`mailto:support@letszero.in?subject=Account%20deletion%20request&body=Please%20delete%20my%20account%3A%20${encodeURIComponent(user.email)}`}
               >
                 Request account deletion
               </a>

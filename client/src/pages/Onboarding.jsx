@@ -149,7 +149,8 @@ export default function Onboarding() {
             <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
               New domains send up to <span className="font-medium text-foreground">{customLimit} emails/day</span> for
               the first {durationDays} days while your reputation builds. After that, your credit
-              balance governs volume.
+              balance governs volume — 1 credit = 1 email sent, and credits are only used when a
+              campaign actually sends, never for drafting, previewing, or building templates.
             </p>
 
             {error && (

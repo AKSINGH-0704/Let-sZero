@@ -351,6 +351,11 @@ export default function DomainDetail() {
                         {" "}{daysLeft} day{daysLeft === 1 ? "" : "s"} left in the verification window.
                       </span>
                     )}
+                    {" "}Stuck?{" "}
+                    <a href="mailto:support@letszero.in?subject=DNS%20verification%20help" className="underline underline-offset-2 hover:text-foreground">
+                      Contact support
+                    </a>
+                    .
                   </p>
 
                   <Disclosure summary="Using Cloudflare, GoDaddy or Route 53?">
@@ -404,7 +409,16 @@ export default function DomainDetail() {
                     {warmup?.active && (
                       <p className="text-xs text-muted-foreground">
                         Sender warm-up: {warmup.remainingToday ?? 0} of {warmup.dailyLimit} sends left today
-                        {warmup.daysRemaining != null && <> · {warmup.daysRemaining}d remaining</>}
+                        {warmup.daysRemaining != null && (
+                          <>
+                            {" "}· {warmup.daysRemaining}d remaining
+                            {/* UX-012: a day count alone doesn't answer "when will I be
+                                ready" — project it forward into a concrete date, computed
+                                from daysRemaining (already returned by /api/sender-health)
+                                rather than needing a new activatedAt field. */}
+                            {" "}(ready ~{new Date(Date.now() + warmup.daysRemaining * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" })})
+                          </>
+                        )}
                         . After warm-up, volume is governed by your credits.
                       </p>
                     )}

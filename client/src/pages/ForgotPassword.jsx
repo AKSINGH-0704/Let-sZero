@@ -64,8 +64,8 @@ export default function ForgotPassword() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Need help?{" "}
-                  <a href="mailto:support@repmail.in" className="text-primary hover:underline">
-                    support@repmail.in
+                  <a href="mailto:support@letszero.in" className="text-primary hover:underline">
+                    support@letszero.in
                   </a>
                 </p>
               </div>
