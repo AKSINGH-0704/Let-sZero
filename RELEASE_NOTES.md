@@ -2,13 +2,26 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.7 (2026-07-11)
+## Current Release — v1.8 (2026-07-12)
+
+### Team Plans, Simplified
+
+- **Every plan now includes up to 25 team members — including the free trial.** Team size is no longer a reason to pick one plan over another: Starter, Growth, and Scale all include the same 25-seat allowance, at no extra cost. Need a larger team? Enterprise offers unlimited seats.
+- **Pricing and plan-comparison pages updated everywhere** to reflect the new, simpler team allowance — no more hunting to figure out how many seats a plan includes.
+
+### Teams, Introduced From Day One
+
+- **New: a short welcome moment introduces Teams the first time you sign in.** A quick, conversational question — how many people you plan to work with — leads into a brief explanation of how invitations work, how your shared sending domain works, and what to expect as your team grows. Entirely optional and takes seconds; nothing is configured or locked in by your answer.
+
+---
+
+## v1.7 (2026-07-11)
 
 ### Purchase Confirmation, Redesigned
 

@@ -84,14 +84,14 @@ async function api(method, path, { cookie, body } = {}) {
 }
 
 describe("Teams end-to-end behavioral verification (real HTTP routes, real middleware, mocked email only)", () => {
-  it("Root Admin invites Sub-Admin -> accepts -> Sub-Admin invites User -> accepts -> limits enforce -> Root Admin/Enterprise/Trial unaffected", async () => {
+  it("Root Admin invites Sub-Admin -> accepts -> Sub-Admin invites User -> accepts -> limits enforce -> Root Admin/Enterprise/Trial unaffected", { timeout: 30000 }, async () => {
     const rootPassword = "root-pw-" + Math.random().toString(36).slice(2);
     const rootAdmin = await storage.createUser({
       username: "e2e_root_" + Math.random().toString(36).slice(2),
       email: `e2e_root_${Math.random().toString(36).slice(2)}@example.com`,
       password: rootPassword,
       role: USER_ROLES.ROOT_ADMIN,
-      plan: "growth", // MAX_TEAM_MEMBERS.growth = 10
+      plan: "growth", // MAX_TEAM_MEMBERS.growth = 25 (uniform across free/starter/growth/scale)
       isTrialUser: false,
       mustResetPassword: false,
     });
@@ -154,19 +154,20 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     expect(accept2.status, `User accept failed: ${JSON.stringify(accept2.json)}`).toBe(201);
     expect(accept2.json.user.role).toBe("USER");
 
-    // ── Team limits still enforce correctly (Starter/Growth/Scale caps) ─────
+    // ── Team limits still enforce correctly (uniform 25-seat cap) ───────────
     // TRUST-023 (M20-B): the seat cap is organization-wide, not per-node — the
-    // workspace's 10 seats are shared by Root Admin + Sub-Admin + every User,
-    // not a separate 10-seat allowance per admin (the pre-M20 model this test
+    // workspace's 25 seats are shared by Root Admin + Sub-Admin + every User,
+    // not a separate 25-seat allowance per admin (the pre-M20 model this test
     // originally verified). Sub-Admin's inherited effective plan is "growth"
-    // (limit 10); the Sub-Admin itself already occupies one of those 10 seats,
-    // so only 7 more fill accounts are needed (1 real invite-accepted User + 7
-    // seeded + the Sub-Admin = 9 members) to reach the boundary. Seeded
-    // straight via storage (not the real invite/accept HTTP round trip,
-    // deliberately — inviteLimiter is 5/admin/hour and registrationLimiter is
-    // 5/IP/24h; real invite creation and acceptance are already proven above
-    // and again below at the boundary-testing call itself, which IS real HTTP).
-    for (let i = 0; i < 7; i++) {
+    // (limit 25, same as every plan below Enterprise); the Sub-Admin itself
+    // already occupies one of those 25 seats, so 22 more fill accounts are
+    // needed (1 real invite-accepted User + 22 seeded + the Sub-Admin = 24
+    // members) to reach the boundary. Seeded straight via storage (not the
+    // real invite/accept HTTP round trip, deliberately — inviteLimiter is
+    // 5/admin/hour and registrationLimiter is 5/IP/24h; real invite creation
+    // and acceptance are already proven above and again below at the
+    // boundary-testing call itself, which IS real HTTP).
+    for (let i = 0; i < 22; i++) {
       await storage.createUser({
         username: `e2e_fill_${i}_${Math.random().toString(36).slice(2)}`,
         email: `e2e_fill_${i}_${Math.random().toString(36).slice(2)}@example.com`,
@@ -176,23 +177,23 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
         plan: "free",
       });
     }
-    // Workspace now has: Sub-Admin (1) + 1 real invite-accepted User + 7 seeded = 9 members.
+    // Workspace now has: Sub-Admin (1) + 1 real invite-accepted User + 22 seeded = 24 members.
     const rootId = await storage.resolveWorkspaceRootId(subAdmin.id);
     const activeCountBeforeBoundary = await storage.getActiveWorkspaceMemberCount(rootId);
-    expect(activeCountBeforeBoundary).toBe(9);
+    expect(activeCountBeforeBoundary).toBe(24);
 
     // One more real invite (still a real HTTP call through the real route) —
-    // this is the 10th workspace member, exactly at the growth-plan limit, and MUST be allowed.
+    // this is the 25th workspace member, exactly at the plan limit, and MUST be allowed.
     const lastSeatEmail = `e2e_lastseat_${Math.random().toString(36).slice(2)}@example.com`;
     const lastSeatInvite = await api("POST", "/api/users/invite", { cookie: subAdminCookie, body: { email: lastSeatEmail, role: "USER" } });
-    expect(lastSeatInvite.status, `10th (limit) invite unexpectedly rejected: ${JSON.stringify(lastSeatInvite.json)}`).toBe(201);
+    expect(lastSeatInvite.status, `25th (limit) invite unexpectedly rejected: ${JSON.stringify(lastSeatInvite.json)}`).toBe(201);
     const lastSeatMail = sentEmails.find(e => e.to === lastSeatEmail);
     const lastSeatToken = extractInviteToken(lastSeatMail.text);
     const lastSeatAccept = await api("POST", "/api/invites/accept", {
       body: { token: lastSeatToken, username: `e2e_lastseat_${Math.random().toString(36).slice(2)}`, password: "lastseat-pw-" + Math.random().toString(36).slice(2) },
     });
-    expect(lastSeatAccept.status, `10th (limit) accept unexpectedly rejected: ${JSON.stringify(lastSeatAccept.json)}`).toBe(201);
-    // Workspace now has exactly 10 members — at the growth limit.
+    expect(lastSeatAccept.status, `25th (limit) accept unexpectedly rejected: ${JSON.stringify(lastSeatAccept.json)}`).toBe(201);
+    // Workspace now has exactly 25 members — at the plan limit.
     const overLimitInvite = await api("POST", "/api/users/invite", {
       cookie: subAdminCookie,
       body: { email: `e2e_overlimit_${Math.random().toString(36).slice(2)}@example.com`, role: "USER" },
@@ -240,7 +241,10 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     }
   });
 
-  it("Trial plan behavior is unchanged — zero team seats, invite blocked immediately", async () => {
+  it("Free trial gets the same 25-seat allowance as every other plan — invite is allowed, not blocked", async () => {
+    // Team size is no longer a paid-plan differentiator: free/trial share the
+    // same 25-seat allowance as starter/growth/scale. This intentionally
+    // replaces the old "trial gets zero seats" behavior this test used to verify.
     const password = "trial-pw-" + Math.random().toString(36).slice(2);
     const trialAdmin = await storage.createUser({
       username: "e2e_trial_" + Math.random().toString(36).slice(2),
@@ -253,13 +257,11 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     });
     const cookie = await login(trialAdmin.username, password);
 
-    expect(MAX_TEAM_MEMBERS.trial).toBe(0);
+    expect(MAX_TEAM_MEMBERS.trial).toBe(25);
     const r = await api("POST", "/api/users/invite", {
       cookie,
       body: { email: `e2e_trial_invite_${Math.random().toString(36).slice(2)}@example.com`, role: "USER" },
     });
-    expect(r.status).toBe(403);
-    expect(r.json.error).toBe("PLAN_LIMIT");
-    expect(r.json.limit).toBe(0);
+    expect(r.status, `trial-plan invite unexpectedly rejected: ${JSON.stringify(r.json)}`).toBe(201);
   });
 });

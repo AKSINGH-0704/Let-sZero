@@ -848,14 +848,15 @@ export const AI_DAILY_LIMITS = {
 };
 
 // Maximum active child users (team members) per plan.
-// free/trial: admins on these plans cannot invite — they have no team seats.
+// Every plan up to Scale shares the same 25-seat allowance — team size is not
+// a plan differentiator below Enterprise, which is unlimited.
 // NOTE: PLAN_LIMITS also carries a maxTeamMembers field with older values;
 // MAX_TEAM_MEMBERS is authoritative for invite/create enforcement.
 export const MAX_TEAM_MEMBERS = {
-  free:       0,
-  trial:      0,
-  starter:    3,
-  growth:     10,
+  free:       25,
+  trial:      25,
+  starter:    25,
+  growth:     25,
   scale:      25,
   enterprise: Infinity,
 };

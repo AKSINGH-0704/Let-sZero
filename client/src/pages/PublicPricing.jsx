@@ -146,7 +146,7 @@ const PLANS = [
       campaigns: "1",
       templates: "3",
       scheduling: false,
-      teamMembers: "Solo",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -170,7 +170,7 @@ const PLANS = [
       campaigns: "5",
       templates: "10",
       scheduling: true,
-      teamMembers: "3",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -195,7 +195,7 @@ const PLANS = [
       campaigns: "10",
       templates: "25",
       scheduling: true,
-      teamMembers: "10",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: "+1,250",
       aiPersonalization: true,
@@ -305,15 +305,15 @@ const FAQ_ITEMS = [
   },
   {
     q: "What's the difference between plans?",
-    a: "All plans include AI Personalization, AI Spam Analysis, the full campaign system, analytics, and contact upload. Higher plans give you more templates, more active campaigns, team members, and campaign scheduling. The plan you hold is determined by your highest purchase — you never downgrade.",
+    a: "All plans include AI Personalization, AI Spam Analysis, the full campaign system, analytics, contact upload, and up to 25 team members. Higher plans give you more templates, more active campaigns, and campaign scheduling. The plan you hold is determined by your highest purchase — you never downgrade.",
   },
   {
     q: "What's included in the free trial?",
-    a: "500 credits with full access to AI Personalization, Spam Analysis, and the campaign system. Limited to 1 active campaign, 3 saved templates, and no team seats. Campaign scheduling is not available on the free plan.",
+    a: "500 credits with full access to AI Personalization, Spam Analysis, the campaign system, and up to 25 team members. Limited to 1 active campaign and 3 saved templates. Campaign scheduling is not available on the free plan.",
   },
   {
     q: "How do teams work?",
-    a: "Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work. Starter includes 3 team seats, Growth up to 10, Scale up to 25, Enterprise unlimited.",
+    a: "Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work. Every plan — Free Trial, Starter, Growth, and Scale — includes up to 25 team members at no extra cost. Need more? Enterprise offers unlimited seats.",
   },
   {
     q: "Can I buy more credits anytime?",
@@ -1374,8 +1374,9 @@ export default function PublicPricing() {
                       <div className="text-xs uppercase tracking-widest mb-4" style={{ color: "#7878A0" }}>Team Capacity by Plan</div>
                       <div className="space-y-2">
                         {[
-                          { plan: "Starter", seats: "3", color: "#60A5FA" },
-                          { plan: "Growth", seats: "10", color: "#00E5C8" },
+                          { plan: "Free Trial", seats: "25", color: "#9CA3AF" },
+                          { plan: "Starter", seats: "25", color: "#60A5FA" },
+                          { plan: "Growth", seats: "25", color: "#00E5C8" },
                           { plan: "Scale", seats: "25", color: "#A78BFA" },
                           { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
                         ].map(({ plan, seats, color }) => {
@@ -1399,7 +1400,7 @@ export default function PublicPricing() {
                         })}
                       </div>
                       <p className="text-xs mt-4" style={{ color: "#55556A" }}>
-                        Team seats are included in all paid plans at no additional cost.
+                        Every plan — including the free trial — includes up to 25 team seats at no additional cost.
                       </p>
                     </div>
 
@@ -1442,7 +1443,7 @@ export default function PublicPricing() {
                           </tbody>
                         </table>
                       </div>
-                      <p className="text-xs mt-4" style={{ color: "#55556A" }}>Team seats are included in all paid plans.</p>
+                      <p className="text-xs mt-4" style={{ color: "#55556A" }}>Team seats are included in every plan, free trial included.</p>
                     </div>
                   </div>
                 </motion.div>
@@ -1459,9 +1460,9 @@ export default function PublicPricing() {
                     </div>
                     <div className="space-y-4 flex-1">
                       {[
-                        { n: "1", title: "Purchase a plan", desc: "Starter (3 seats), Growth (10), or Scale (25). Team access is included at no extra cost." },
-                        { n: "2", title: "Invite team members", desc: "Go to Team Management and invite members. Assign each a role — Manager or Member." },
-                        { n: "3", title: "Allocate credits", desc: "Distribute your credits to each member. They spend only what you allocate to them." },
+                        { n: "1", title: "Invite team members", desc: "Go to Team Management and invite up to 25 people — free, on any plan, no purchase required." },
+                        { n: "2", title: "Assign roles", desc: "Give each person a role — Manager or Member — to control what they can see and do." },
+                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them." },
                         { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
                       ].map(({ n, title, desc }) => (
                         <div key={n} className="flex gap-3">
@@ -2349,7 +2350,7 @@ function PlanCard({ plan, currency }) {
       val: plan.features.scheduling,
     },
     {
-      label: plan.features.teamMembers === "Solo" ? "Solo account" : `${plan.features.teamMembers} team members`,
+      label: `${plan.features.teamMembers} team members`,
       icon: <Users className="w-3.5 h-3.5" />,
       val: true,
     },

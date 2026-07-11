@@ -46,7 +46,7 @@ const PLANS = [
       campaigns: "1",
       templates: "3",
       scheduling: false,
-      teamMembers: "Solo",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -69,7 +69,7 @@ const PLANS = [
       campaigns: "5",
       templates: "10",
       scheduling: true,
-      teamMembers: "3",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: false,
       aiPersonalization: true,
@@ -93,7 +93,7 @@ const PLANS = [
       campaigns: "10",
       templates: "25",
       scheduling: true,
-      teamMembers: "10",
+      teamMembers: "25",
       auditExport: false,
       bonusCredits: "+1,250",
       aiPersonalization: true,
@@ -247,7 +247,7 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
       val: plan.features.scheduling,
     },
     {
-      label: plan.features.teamMembers === "Solo" ? "Solo account" : `${plan.features.teamMembers} team members`,
+      label: `${plan.features.teamMembers} team members`,
       icon: <Users className="w-3.5 h-3.5" />,
       val: true,
     },
@@ -1642,8 +1642,9 @@ export default function Payments() {
                       <div className="text-xs uppercase tracking-widest mb-4" style={{ color: "#7878A0" }}>Team Capacity by Plan</div>
                       <div className="space-y-2">
                         {[
-                          { plan: "Starter", seats: "3", color: "#60A5FA" },
-                          { plan: "Growth", seats: "10", color: "#00E5C8" },
+                          { plan: "Free Trial", seats: "25", color: "#9CA3AF" },
+                          { plan: "Starter", seats: "25", color: "#60A5FA" },
+                          { plan: "Growth", seats: "25", color: "#00E5C8" },
                           { plan: "Scale", seats: "25", color: "#A78BFA" },
                           { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
                         ].map(({ plan, seats, color }) => {
@@ -1667,7 +1668,7 @@ export default function Payments() {
                         })}
                       </div>
                       <p className="text-xs mt-4" style={{ color: "#55556A" }}>
-                        Team seats are included in all paid plans at no additional cost.
+                        Every plan — including the free trial — includes up to 25 team seats at no additional cost.
                       </p>
                     </div>
 
@@ -1715,7 +1716,7 @@ export default function Payments() {
                         </table>
                       </div>
                       <p className="text-xs mt-3" style={{ color: "#55556A" }}>
-                        Team seats are included in Starter (3), Growth (10), and Scale (25) plans.
+                        Team seats are included in every plan — free trial through Scale — up to 25 members each.
                       </p>
                     </div>
                   </div>
@@ -1733,8 +1734,7 @@ export default function Payments() {
                     </div>
                     <div className="space-y-4 flex-1">
                       {[
-                        { n: "1", title: "Purchase a plan", desc: "Starter (3 seats), Growth (10), or Scale (25). Team access is included at no extra cost." },
-                        { n: "2", title: "Invite team members", desc: (
+                        { n: "1", title: "Invite team members", desc: (
                           <>
                             Go to{" "}
                             <button
@@ -1745,10 +1745,11 @@ export default function Payments() {
                             >
                               Team Management
                             </button>
-                            {" "}and invite members. Assign each a role — Manager or Member.
+                            {" "}and invite up to 25 people — free, on any plan, no purchase required.
                           </>
                         ) },
-                        { n: "3", title: "Allocate credits", desc: "Distribute your credits to each member. They spend only what you allocate to them." },
+                        { n: "2", title: "Assign roles", desc: "Give each person a role — Manager or Member — to control what they can see and do." },
+                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them." },
                         { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
                       ].map(({ n, title, desc }) => (
                         <div key={n} className="flex gap-3">

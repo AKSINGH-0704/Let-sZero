@@ -103,8 +103,10 @@ export default function PostPurchaseActivation({ payment, onClose }) {
 
   // Primary CTA is team-focused for every plan that includes seats — the
   // single highest-value action available immediately after upgrading.
-  // Plans with no team capacity (free/trial) fall back to the next real
-  // step instead. "Invite Your Team" specifically (not "Manage Team", which
+  // (This component only renders after a real purchase, so an unmatched
+  // planKey — not any real paid tier, all of which now include 25 seats —
+  // is the only way teamEligible is false here.) "Invite Your Team"
+  // specifically (not "Manage Team", which
   // implies an existing team the customer wants to review) also carries the
   // customer straight into an already-open invite dialog — found during the
   // end-to-end activation review that landing on Users.jsx still required a

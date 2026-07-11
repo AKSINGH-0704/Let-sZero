@@ -38,6 +38,7 @@ import { getStatusConfig } from "@/lib/campaignStatus";
 import DeliveryHealthPanel from "@/components/DeliveryHealthPanel";
 import SenderHealthWidget from "@/components/SenderHealthWidget";
 import PageHeader from "@/components/common/PageHeader";
+import TeamsWelcomeModal from "@/components/teams/TeamsWelcomeModal";
 
 // Animation variants
 const containerVariants = {
@@ -168,7 +169,8 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
-      <motion.div 
+      <TeamsWelcomeModal />
+      <motion.div
         className="space-y-8"
         variants={containerVariants}
         initial="hidden"

@@ -55,8 +55,13 @@ describe("T-3 — getEffectivePlan walks the full ancestor chain (dev/prod parit
 });
 
 describe("T-2 — invite-accept plan resolution must match invite-creation's check exactly", () => {
-  it("a Sub-Admin whose own raw plan is \"free\" can still have their invites accepted, via the Root Admin's inherited plan", async () => {
-    const rootAdmin = await makeUser({ role: USER_ROLES.ROOT_ADMIN, plan: "growth" });
+  it("a Sub-Admin whose own raw plan is \"free\" can still have their invites accepted without limit, via the Root Admin's inherited enterprise plan", async () => {
+    // free/starter/growth/scale all share the same 25-seat limit now, so a
+    // free-plan Sub-Admin's raw and inherited limits would coincidentally
+    // match at 25 — that would no longer demonstrate inheritance mattering.
+    // Enterprise (Infinity) still differs from free (25), so it's the case
+    // that actually proves getEffectivePlan's inheritance walk is load-bearing.
+    const rootAdmin = await makeUser({ role: USER_ROLES.ROOT_ADMIN, plan: "enterprise" });
     const subAdmin = await makeUser({ role: USER_ROLES.SUB_ADMIN, parentId: rootAdmin.id, plan: "free" });
 
     // This is exactly the check routes.js's invite-accept handler now performs.
@@ -64,23 +69,24 @@ describe("T-2 — invite-accept plan resolution must match invite-creation's che
     const limit = MAX_TEAM_MEMBERS[inviterEffectivePlan] ?? 0;
     const activeCount = await storage.getChildUserCount(subAdmin.id);
 
-    expect(inviterEffectivePlan).toBe("growth");
-    expect(limit).toBe(10);
+    expect(inviterEffectivePlan).toBe("enterprise");
+    expect(limit).toBe(Infinity);
     expect(activeCount).toBe(0);
     expect(activeCount >= limit).toBe(false); // accept must be ALLOWED
 
-    // Prove this is the exact bug being fixed: the OLD check (raw .plan, no
-    // inheritance) would have computed limit=0 here and rejected unconditionally.
+    // Prove inheritance still matters: the OLD check (raw .plan, no
+    // inheritance) would have used the Sub-Admin's own "free" plan (25) —
+    // silently under-reporting the Root Admin's real unlimited entitlement.
     const rawPlanLimit = MAX_TEAM_MEMBERS[subAdmin.plan] ?? 0;
-    expect(rawPlanLimit).toBe(0);
-    expect(activeCount >= rawPlanLimit).toBe(true); // old behavior: always rejected
+    expect(rawPlanLimit).toBe(25);
+    expect(rawPlanLimit).not.toBe(limit);
   });
 
-  it("still correctly blocks accept once the Root Admin's real seat limit is reached", async () => {
-    const rootAdmin = await makeUser({ role: USER_ROLES.ROOT_ADMIN, plan: "starter" }); // limit 3
+  it("still correctly blocks accept once the Root Admin's real seat limit (25, shared by every plan below Enterprise) is reached", { timeout: 15000 }, async () => {
+    const rootAdmin = await makeUser({ role: USER_ROLES.ROOT_ADMIN, plan: "starter" }); // limit 25
     const subAdmin = await makeUser({ role: USER_ROLES.SUB_ADMIN, parentId: rootAdmin.id, plan: "free" });
     // Fill the Sub-Admin's own direct-child count to the inherited limit.
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 25; i++) {
       await makeUser({ role: USER_ROLES.USER, parentId: subAdmin.id, plan: "free" });
     }
 
@@ -88,7 +94,7 @@ describe("T-2 — invite-accept plan resolution must match invite-creation's che
     const limit = MAX_TEAM_MEMBERS[inviterEffectivePlan] ?? 0;
     const activeCount = await storage.getChildUserCount(subAdmin.id);
 
-    expect(activeCount).toBe(3);
+    expect(activeCount).toBe(25);
     expect(activeCount >= limit).toBe(true); // correctly still blocked at the real limit
   });
 });

@@ -176,11 +176,10 @@ export default function Users() {
       totalTeamAiGenerationsToday: users.reduce((s, u) => s + (u.aiGenerationsToday || 0), 0),
     };
   }, [users, isAdmin]);
-  // seatLimit > 0 guard matters: without it, a free/trial workspace (seatLimit
-  // 0, always 0 members since it can't invite at all) would satisfy
-  // `0 >= 0` and incorrectly show "plan limit reached — upgrade for more
-  // seats" to someone who was never eligible for team seats in the first
-  // place, rather than not being at any kind of limit.
+  // seatLimit > 0 guard: defends against a 0-seat plan ever satisfying `0 >= 0`
+  // and showing "at limit" for a workspace that isn't eligible for seats at all.
+  // Every real plan is 25 now, but Infinity (enterprise) is excluded explicitly
+  // since "at limit" is meaningless for an uncapped workspace.
   const atSeatLimit = seatLimit > 0 && seatLimit !== Infinity && (teamStats?.totalTeamMembers ?? 0) >= seatLimit;
 
   const secondaryRootCount = useMemo(() =>
@@ -202,7 +201,7 @@ export default function Users() {
     },
     onError: (err) => {
       if (err.body?.error === "PLAN_LIMIT") {
-        toast({ title: "Plan limit reached", description: err.message + " Go to /app/payments to upgrade.", variant: "destructive" });
+        toast({ title: "Plan limit reached", description: err.message + " Every plan includes 25 seats — need more? Contact us about Enterprise.", variant: "destructive" });
         return;
       }
       toast({ title: "Failed to create user", description: err.message, variant: "destructive" });
@@ -621,9 +620,9 @@ export default function Users() {
                 </p>
                 {atSeatLimit && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                    Plan limit reached —{" "}
-                    <Link href="/app/payments" className="underline underline-offset-2">
-                      upgrade for more seats
+                    25-seat limit reached —{" "}
+                    <Link href="/contact?reason=enterprise" className="underline underline-offset-2">
+                      contact us about Enterprise
                     </Link>
                   </p>
                 )}

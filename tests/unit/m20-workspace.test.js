@@ -74,12 +74,13 @@ async function makeWorkspace(planName = "growth") {
 }
 
 describe("M20-B — organization-wide seat enforcement is atomic under concurrency (TRUST-026)", () => {
-  it("10 concurrent create attempts against a 5-seat workspace admit exactly 5", async () => {
-    const a = await makeWorkspace("starter"); // MAX_TEAM_MEMBERS.starter = 3 — use a fixed small cap directly instead
-    // Use growth (limit 10) with a pre-filled workspace so exactly 5 slots remain,
-    // giving a clean "10 attempts, 5 admitted" assertion regardless of MAX_TEAM_MEMBERS values.
+  it("10 concurrent create attempts against a workspace with 5 seats remaining admit exactly 5", { timeout: 30000 }, async () => {
+    // Use growth (limit 25, same as every plan below Enterprise) with a
+    // pre-filled workspace so exactly 5 slots remain, giving a clean
+    // "10 attempts, 5 admitted" assertion regardless of MAX_TEAM_MEMBERS values.
     const ws = await makeWorkspace("growth");
-    for (let i = 0; i < 5; i++) {
+    const prefillCount = MAX_TEAM_MEMBERS.growth - 5;
+    for (let i = 0; i < prefillCount; i++) {
       await storage.createUser({
         username: `m20_prefill_${i}_${Math.random().toString(36).slice(2)}`,
         email: `m20_prefill_${i}_${Math.random().toString(36).slice(2)}@example.com`,
@@ -96,7 +97,7 @@ describe("M20-B — organization-wide seat enforcement is atomic under concurren
     );
     const admitted = results.filter(r => r.status === 201).length;
     const rejected = results.filter(r => r.status === 403).length;
-    expect(admitted).toBe(5); // exactly fills the remaining 5 seats up to the growth-plan cap of 10
+    expect(admitted).toBe(5); // exactly fills the remaining 5 seats up to the growth-plan cap
     expect(rejected).toBe(5);
     const rootId = await storage.resolveWorkspaceRootId(ws.root.id);
     const finalCount = await storage.getActiveWorkspaceMemberCount(rootId);
