@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -43,9 +44,15 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import ImportErrorSummary from "@/components/common/ImportErrorSummary";
-import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Trash2, Pencil, Search, ChevronLeft, ChevronRight, Users, FileText, Download, Loader2, AlertTriangle } from "lucide-react";
 
 const CONTACT_FIELDS = ["email", "name", "company", "category"];
+
+// Mirrors CAMPAIGN_MAX_CONTACTS in server/routes.js — a list larger than this
+// cannot be used in a single campaign (POST /api/campaigns rejects it outright).
+// Surfaced here so a customer learns this while managing the list, not only
+// after investing a full trip through the campaign wizard.
+const CAMPAIGN_MAX_CONTACTS = 10_000;
 
 function formatDate(ts) {
   if (!ts) return "—";
@@ -484,6 +491,8 @@ export default function ContactListDetail() {
   const [importOpen, setImportOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkRemoveConfirmOpen, setBulkRemoveConfirmOpen] = useState(false);
 
   const { data: list, isLoading: listLoading } = useQuery({
     queryKey: [`/api/contact-lists/${listId}`],
@@ -514,9 +523,44 @@ export default function ContactListDetail() {
     onError: (err) => toast({ title: "Failed to remove contact", description: err.message, variant: "destructive" }),
   });
 
+  const bulkRemoveMutation = useMutation({
+    mutationFn: (contactIds) => apiRequest("POST", `/api/contact-lists/${listId}/bulk-remove`, { contactIds }),
+    onSuccess: (_, contactIds) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/contact-lists/${listId}/contacts`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/contact-lists/${listId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contact-lists"] });
+      setBulkRemoveConfirmOpen(false);
+      setSelectedIds(new Set());
+      toast({ title: `${contactIds.length.toLocaleString()} contact${contactIds.length === 1 ? "" : "s"} removed from list` });
+    },
+    onError: (err) => toast({ title: "Failed to remove contacts", description: err.message, variant: "destructive" }),
+  });
+
   const handleSearch = () => {
     setSearch(searchInput);
     setPage(1);
+  };
+
+  // Selections are scoped to what's currently on screen — a contact selected
+  // on one page/search result set that's no longer visible after navigating
+  // away would be a confusing thing to still have "selected" and act on.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, search]);
+
+  const toggleOne = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllOnPage = (rows) => {
+    setSelectedIds(prev => {
+      const allSelected = rows.length > 0 && rows.every(r => prev.has(r.id));
+      return allSelected ? new Set() : new Set(rows.map(r => r.id));
+    });
   };
 
   const handleExport = () => {
@@ -561,13 +605,25 @@ export default function ContactListDetail() {
           </Link>
           <h1 className="text-2xl font-bold">{list.name}</h1>
         </div>
-        <div className="flex items-center gap-4 ml-11 mb-8 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4 ml-11 mb-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5" />
             {(list.contactCount ?? 0).toLocaleString()} contacts
           </span>
           <span>Created {formatDate(list.createdAt)}</span>
         </div>
+
+        {/* Campaign-capacity warning — actionable, not just informational: explains
+            the actual limit and what to do about it, so a customer learns this while
+            managing the list rather than discovering it mid-campaign-creation. */}
+        {(list.contactCount ?? 0) > CAMPAIGN_MAX_CONTACTS && (
+          <div className="flex items-start gap-2.5 ml-11 mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-sm">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-amber-800 dark:text-amber-300">
+              This list has {(list.contactCount ?? 0).toLocaleString()} contacts, but a single campaign currently supports up to {CAMPAIGN_MAX_CONTACTS.toLocaleString()} recipients. Split it into two or more lists of {CAMPAIGN_MAX_CONTACTS.toLocaleString()} or fewer to reach everyone — a campaign built from this list as-is won't be able to start.
+            </p>
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 mb-4">
@@ -594,6 +650,27 @@ export default function ContactListDetail() {
           </div>
         </div>
 
+        {/* Bulk action bar — only visible with an active selection */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center justify-between gap-3 mb-3 px-3 py-2 rounded-lg bg-muted border border-border text-sm">
+            <span className="font-medium">{selectedIds.size.toLocaleString()} selected</span>
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                Clear selection
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setBulkRemoveConfirmOpen(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Remove selected
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         <Card>
           <CardContent className="p-0">
@@ -610,6 +687,13 @@ export default function ContactListDetail() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={rows.length > 0 && rows.every(r => selectedIds.has(r.id))}
+                        onCheckedChange={() => toggleAllOnPage(rows)}
+                        aria-label="Select all contacts on this page"
+                      />
+                    </TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Company</TableHead>
@@ -619,7 +703,14 @@ export default function ContactListDetail() {
                 </TableHeader>
                 <TableBody>
                   {rows.map(contact => (
-                    <TableRow key={contact.id}>
+                    <TableRow key={contact.id} data-state={selectedIds.has(contact.id) ? "selected" : undefined}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(contact.id)}
+                          onCheckedChange={() => toggleOne(contact.id)}
+                          aria-label={`Select ${contact.email}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono text-sm">{contact.email}</TableCell>
                       <TableCell className="text-sm">{contact.name || <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-sm">{contact.company || <span className="text-muted-foreground">—</span>}</TableCell>
@@ -687,6 +778,27 @@ export default function ContactListDetail() {
               onClick={() => removeMutation.mutate(removeTarget.id)}
             >
               Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkRemoveConfirmOpen} onOpenChange={setBulkRemoveConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {selectedIds.size.toLocaleString()} contact{selectedIds.size === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedIds.size.toLocaleString()} contact{selectedIds.size === 1 ? "" : "s"} will be removed from <span className="font-medium text-foreground">{list.name}</span>. This cannot be undone. Only the selected contacts are removed from this list — the contact records themselves are preserved and unaffected in any other list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={bulkRemoveMutation.isPending}
+              onClick={() => bulkRemoveMutation.mutate(Array.from(selectedIds))}
+            >
+              {bulkRemoveMutation.isPending ? "Removing…" : `Remove ${selectedIds.size.toLocaleString()}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

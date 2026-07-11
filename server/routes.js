@@ -1753,6 +1753,17 @@ export async function registerRoutes(httpServer, app) {
           rowErrors.push({ row: i + 1, value: rawEmail, reason: `Invalid email format: "${rawEmail}"` });
           continue;
         }
+        // Same role-address filter already applied to raw-upload campaign contacts
+        // (isRoleAddress, used at the /api/campaigns validation step) — previously
+        // only enforced there, so a role address imported into a saved list could
+        // persist indefinitely and be emailed by every list-based campaign with no
+        // deliverability protection at all. Reported as a row error (unlike the
+        // raw-upload path's silent filter) since this path already surfaces
+        // rowErrors for every other kind of rejection.
+        if (isRoleAddress(email)) {
+          rowErrors.push({ row: i + 1, value: rawEmail, reason: `Role-based address not imported (e.g. admin@, support@) — these addresses generate high bounce/complaint rates and are excluded to protect deliverability` });
+          continue;
+        }
         validRows.push({
           _row: i + 1, // consumed by importContactsToList for duplicate reporting, stripped before insert
           email,
@@ -1781,15 +1792,22 @@ export async function registerRoutes(httpServer, app) {
         source || "library_import",
         fileName ? String(fileName).slice(0, 500) : null
       );
-      // Patch failedRows to include pre-validation rejects (storage only counts insert-level failures)
-      // and in-batch duplicate emails (storage.importContactsToList reports these via duplicateRows —
-      // previously this case reached Postgres unguarded and surfaced as a raw "ON CONFLICT DO UPDATE
-      // command cannot affect row a second time" error to the user).
+      // Patch failedRows to include pre-validation rejects (missing email, invalid
+      // format, role address — storage never sees these rows at all, so it can't
+      // count them). In-batch duplicate emails are NOT added again here:
+      // storage.importContactsToList already folds duplicateRows.length into the
+      // failedRows it persists (this is also the only record of it — duplicateRows
+      // itself is ephemeral, deleted below, not a contact_imports column) — adding
+      // duplicateRowErrors.length again here double-counted every duplicate.
+      // Found via a new regression test (Audit — Contact Management UX) that only
+      // became possible to write once memoryStorage.js's own duplicate-handling
+      // gap was fixed; the double-count existed in the Postgres path all along but
+      // was previously unobservable in dev/test mode.
       const duplicateRowErrors = (importRecord.duplicateRows || []).map(d => ({
         row: d.row, value: d.email, reason: `Duplicate of row ${d.keptRow} — only the last occurrence was imported`,
       }));
       const allRowErrors = [...rowErrors, ...duplicateRowErrors];
-      importRecord.failedRows = (importRecord.failedRows || 0) + rowErrors.length + duplicateRowErrors.length;
+      importRecord.failedRows = (importRecord.failedRows || 0) + rowErrors.length;
       if (allRowErrors.length > 0) importRecord.rowErrors = allRowErrors.slice(0, 20);
       importRecord.totalRows = rows.length;
       delete importRecord.duplicateRows; // internal detail, folded into rowErrors above

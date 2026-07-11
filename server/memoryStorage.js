@@ -885,41 +885,72 @@ export const memoryStorage = {
   },
 
   async importContactsToList(userId, listId, rows, source = "library_import", fileName = null) {
+    // Mirrors storage.js's batching/dedup behavior field-for-field (same BATCH
+    // window, same "last occurrence within a batch wins" rule, same
+    // duplicateRows reporting) — a prior version of this method processed rows
+    // sequentially with no dedup step and hardcoded failedRows: 0, meaning the
+    // duplicate-row-error UI could never be exercised in dev/test mode, only
+    // in production against Postgres. Same bug class as TEAMS-002.
+    const BATCH = 1000;
     let newContacts = 0, updatedContacts = 0, addedToList = 0, alreadyInList = 0;
-    for (const row of rows) {
-      const email = row.email.toLowerCase().trim();
-      const existingContact = Array.from(store.contacts.values()).find(c => c.userId === userId && c.email === email);
-      let contactId;
-      if (existingContact) {
-        existingContact.name = row.name || existingContact.name;
-        existingContact.company = row.company || existingContact.company;
-        existingContact.category = row.category || existingContact.category;
-        existingContact.updatedAt = new Date();
-        store.contacts.set(existingContact.id, existingContact);
-        contactId = existingContact.id;
-        updatedContacts++;
-      } else {
-        const id = generateUUID();
-        const now = new Date();
-        const c = { id, userId, email, name: row.name || null, company: row.company || null, category: row.category || null, customFields: row.customFields || null, createdAt: now, updatedAt: now };
-        store.contacts.set(id, c);
-        contactId = id;
-        newContacts++;
+    const duplicateRows = [];
+
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const rawBatch = rows.slice(i, i + BATCH);
+
+      const lastIndexByEmail = new Map();
+      rawBatch.forEach((r, idx) => lastIndexByEmail.set(r.email.toLowerCase().trim(), idx));
+      const batch = [];
+      const seen = new Set();
+      for (let j = rawBatch.length - 1; j >= 0; j--) {
+        const r = rawBatch[j];
+        const normalizedEmail = r.email.toLowerCase().trim();
+        if (seen.has(normalizedEmail)) {
+          duplicateRows.push({ row: r._row, email: r.email, keptRow: rawBatch[lastIndexByEmail.get(normalizedEmail)]._row });
+          continue;
+        }
+        seen.add(normalizedEmail);
+        batch.unshift(r);
       }
-      const alreadyMember = Array.from(store.contactListMembers.values()).some(m => m.listId === listId && m.contactId === contactId);
-      if (alreadyMember) {
-        alreadyInList++;
-      } else {
-        const mid = generateUUID();
-        store.contactListMembers.set(mid, { id: mid, listId, contactId, addedAt: new Date() });
-        addedToList++;
+
+      for (const row of batch) {
+        const email = row.email.toLowerCase().trim();
+        const existingContact = Array.from(store.contacts.values()).find(c => c.userId === userId && c.email === email);
+        let contactId;
+        if (existingContact) {
+          existingContact.name = row.name || existingContact.name;
+          existingContact.company = row.company || existingContact.company;
+          existingContact.category = row.category || existingContact.category;
+          existingContact.customFields = row.customFields || existingContact.customFields;
+          existingContact.updatedAt = new Date();
+          store.contacts.set(existingContact.id, existingContact);
+          contactId = existingContact.id;
+          updatedContacts++;
+        } else {
+          const id = generateUUID();
+          const now = new Date();
+          const c = { id, userId, email, name: row.name || null, company: row.company || null, category: row.category || null, customFields: row.customFields || null, createdAt: now, updatedAt: now };
+          store.contacts.set(id, c);
+          contactId = id;
+          newContacts++;
+        }
+        const alreadyMember = Array.from(store.contactListMembers.values()).some(m => m.listId === listId && m.contactId === contactId);
+        if (alreadyMember) {
+          alreadyInList++;
+        } else {
+          const mid = generateUUID();
+          store.contactListMembers.set(mid, { id: mid, listId, contactId, addedAt: new Date() });
+          addedToList++;
+        }
       }
     }
+
+    const failedRows = duplicateRows.length;
     const id = generateUUID();
-    const importRecord = { id, userId, listId, source, fileName: fileName || null, totalRows: rows.length, failedRows: 0, newContacts, updatedContacts, addedToList, alreadyInList, createdAt: new Date(), completedAt: new Date() };
+    const importRecord = { id, userId, listId, source, fileName: fileName || null, totalRows: rows.length, failedRows, newContacts, updatedContacts, addedToList, alreadyInList, createdAt: new Date(), completedAt: new Date() };
     store.contactImports.set(id, importRecord);
-    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACTS_IMPORTED_TO_LIST, targetType: "contact_list", targetId: listId, details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows: 0, fileName } });
-    return importRecord;
+    await this.createAuditLog({ userId, action: AUDIT_ACTIONS.CONTACTS_IMPORTED_TO_LIST, targetType: "contact_list", targetId: listId, details: { totalRows: rows.length, newContacts, updatedContacts, addedToList, alreadyInList, failedRows, duplicatesInBatch: duplicateRows.length, fileName } });
+    return { ...importRecord, duplicateRows };
   },
 
   async exportContactList(listId, userId) {
