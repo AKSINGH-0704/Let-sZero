@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import { prerenderRoutes } from "./prerender.js";
 
 const allowlist = [
   "@google/generative-ai",
@@ -35,6 +36,12 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  console.log("prerendering public routes...");
+  // M21-B: static prerendering for public/content routes only (PAR §4).
+  // Non-fatal per-route — a route that fails to prerender keeps today's
+  // SPA-shell behavior for that one page rather than blocking the build.
+  await prerenderRoutes();
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

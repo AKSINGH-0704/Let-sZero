@@ -4,7 +4,7 @@
  * Standalone page (no app shell), accessible without authentication.
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Fragment } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -1946,7 +1946,7 @@ export default function PublicPricing() {
                 </thead>
                 <tbody>
                   {COMPARISON_CATEGORIES.map((cat, catIdx) => (
-                    <>
+                    <Fragment key={cat.label}>
                       {/* Category header row */}
                       <tr
                         key={`cat-${catIdx}`}
@@ -2001,7 +2001,7 @@ export default function PublicPricing() {
                           ))}
                         </tr>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

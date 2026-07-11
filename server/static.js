@@ -12,7 +12,13 @@ export function serveStatic(app) {
     );
   }
 
-  app.use(express.static(distPath));
+  // extensions: ["html"] lets a prerendered route (M21-B — e.g. /pricing ->
+  // dist/public/pricing.html) resolve with no trailing-slash redirect,
+  // matching the no-trailing-slash URLs already used throughout
+  // sitemap.xml and every internal <Link>. Has no effect on /app/* — those
+  // routes never match a static file here, so they fall through to the
+  // catch-all exactly as before.
+  app.use(express.static(distPath, { extensions: ["html"] }));
 
   app.use("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
