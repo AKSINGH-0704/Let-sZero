@@ -908,6 +908,15 @@ function ProcessPayment({ paymentId }) {
       return res.json();
     },
     onSuccess: (data, variables) => {
+      // Guards a known Razorpay Checkout.js edge case: modal.ondismiss can
+      // fire even after a successful payment, as the widget closes itself
+      // post-`handler`. The backend already refuses to downgrade a SUCCESS
+      // payment (storage.cancelPayment/failPayment, both no-op once
+      // status === SUCCESS) — this mirrors that same guard client-side, so a
+      // stray dismiss can't navigate the customer away from an
+      // already-showing activation modal with a spurious "Payment
+      // cancelled" toast.
+      if (activatedPayment) return;
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       if (variables?.cancelled) {
         toast({ title: "Payment cancelled" });

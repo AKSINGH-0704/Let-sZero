@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import AppLayout from "@/components/layout/AppLayout";
@@ -112,6 +113,7 @@ export default function Users() {
   const { user: currentUser, isRootAdmin, isSubAdmin, isSecondaryRoot } = useAuth();
   const { toast } = useToast();
   const isAdmin = isRootAdmin || isSubAdmin || isSecondaryRoot;
+  const search = useSearch();
 
   // dialogs / UI state
   const [isCreateOpen, setIsCreateOpen]   = useState(false);
@@ -126,6 +128,32 @@ export default function Users() {
   // form state
   const [newUser, setNewUser] = useState({ username: "", email: "", password: "", role: "USER", credits: 0 });
   const [inviteForm, setInviteForm] = useState({ email: "", role: "USER" });
+  // Field-level errors for the two dialogs above — reuses the existing manual
+  // useState pattern (no new form library). Neither dialog is wrapped in a
+  // <form>, so native HTML5 email-format checking never actually fires;
+  // this replaces the previous "please fill all required fields" toast
+  // (which didn't say which field, or catch a malformed email at all).
+  const [createFieldErrors, setCreateFieldErrors] = useState({});
+  const [inviteFieldErrors, setInviteFieldErrors] = useState({});
+
+  // Arriving from PostPurchaseActivation's "Invite Your Team" CTA
+  // (?invite=1) opens the Invite dialog immediately — otherwise the
+  // customer's very next action after clicking that exact CTA would be
+  // clicking "Invite User" again on this page, a redundant click at the
+  // one moment activation momentum matters most. One-shot: the query param
+  // is stripped from the URL right after, so refreshing or navigating back
+  // to this page later doesn't reopen the dialog. Also remembered so the
+  // *result* of this specific invite (below) can close the activation loop
+  // with a next-step message instead of the plain toast routine team
+  // management already gets — found during the end-to-end activation review.
+  const [cameFromActivation] = useState(() => new URLSearchParams(search).get("invite") === "1");
+  useEffect(() => {
+    if (cameFromActivation) {
+      setIsInviteOpen(true);
+      window.history.replaceState({}, "", "/app/users");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── queries ────────────────────────────────────────────────────────────────
   const { data: users, isLoading } = useQuery({ queryKey: ["/api/users"] });
@@ -190,7 +218,13 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ["/api/invites"] });
       setIsInviteOpen(false);
       setInviteForm({ email: "", role: "USER" });
-      toast({ title: "Invite sent successfully" });
+      // Closes the activation loop with the actual next step (matches the
+      // "How to activate your team" guide's own step 3, Payments.jsx) rather
+      // than the plain, routine toast — reserved for this specific arrival
+      // path so day-to-day team management doesn't get unnecessary ceremony.
+      toast(cameFromActivation
+        ? { title: "Invite sent — your team is taking shape", description: "Once they join, allocate credits to them from this page so they can start sending." }
+        : { title: "Invite sent successfully" });
     },
     onError: (err) => {
       toast({ title: "Failed to send invite", description: err.message, variant: "destructive" });
@@ -300,17 +334,33 @@ export default function Users() {
   });
 
   // ─── handlers ────────────────────────────────────────────────────────────────
+  // Mirrors isValidEmailFormat in server/routes.js — a deliberately trivial,
+  // stable one-liner (unlike the domain-normalization rules, which are
+  // shared directly from shared/domainUtils.js instead of duplicated).
+  const isValidEmailFormat = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const handleCreateUser = () => {
-    if (!newUser.username || !newUser.email || !newUser.password) {
-      toast({ title: "Please fill all required fields", variant: "destructive" });
+    const errors = {};
+    if (!newUser.username.trim()) errors.username = "Username is required.";
+    if (!newUser.email.trim()) errors.email = "Email is required.";
+    else if (!isValidEmailFormat(newUser.email.trim())) errors.email = "Enter a valid email address.";
+    if (!newUser.password) errors.password = "Password is required.";
+    setCreateFieldErrors(errors);
+    const firstInvalid = ["username", "email", "password"].find(f => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(firstInvalid)?.focus();
       return;
     }
     createMutation.mutate(newUser);
   };
 
   const handleSendInvite = () => {
-    if (!inviteForm.email) {
-      toast({ title: "Email is required", variant: "destructive" });
+    const errors = {};
+    if (!inviteForm.email.trim()) errors.email = "Email is required.";
+    else if (!isValidEmailFormat(inviteForm.email.trim())) errors.email = "Enter a valid email address.";
+    setInviteFieldErrors(errors);
+    if (errors.email) {
+      document.getElementById("invite-email")?.focus();
       return;
     }
     inviteMutation.mutate(inviteForm);
@@ -362,7 +412,7 @@ export default function Users() {
             )}
             <div className="flex gap-2">
             {/* Invite User (Recommended) */}
-            <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+            <Dialog open={isInviteOpen} onOpenChange={(open) => { setIsInviteOpen(open); if (!open) setInviteFieldErrors({}); }}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2" data-testid="button-invite-member">
                   <Mail className="w-4 h-4" />
@@ -384,11 +434,16 @@ export default function Users() {
                       id="invite-email"
                       type="email"
                       value={inviteForm.email}
-                      onChange={(e) => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
+                      onChange={(e) => {
+                        setInviteForm(prev => ({ ...prev, email: e.target.value }));
+                        if (inviteFieldErrors.email) setInviteFieldErrors(prev => ({ ...prev, email: undefined }));
+                      }}
                       placeholder="colleague@company.com"
-                      className="mt-1.5"
+                      aria-invalid={!!inviteFieldErrors.email}
+                      className={cn("mt-1.5", inviteFieldErrors.email && "border-destructive focus-visible:ring-destructive")}
                       data-testid="input-invite-email"
                     />
+                    {inviteFieldErrors.email && <p className="text-xs text-destructive mt-1">{inviteFieldErrors.email}</p>}
                   </div>
                   <div>
                     <Label htmlFor="invite-role">Role</Label>
@@ -408,7 +463,7 @@ export default function Users() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsInviteOpen(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => { setIsInviteOpen(false); setInviteFieldErrors({}); }}>Cancel</Button>
                   <Button
                     onClick={handleSendInvite}
                     disabled={inviteMutation.isPending}
@@ -427,6 +482,7 @@ export default function Users() {
               open={isCreateOpen}
               onOpenChange={(open) => {
                 setIsCreateOpen(open);
+                setCreateFieldErrors({});
                 if (open) setNewUser({ username: "", email: "", password: "", role: createUserRoles[0], credits: 0 });
               }}
             >
@@ -449,11 +505,16 @@ export default function Users() {
                     <Input
                       id="username"
                       value={newUser.username}
-                      onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
+                      onChange={(e) => {
+                        setNewUser(prev => ({ ...prev, username: e.target.value }));
+                        if (createFieldErrors.username) setCreateFieldErrors(prev => ({ ...prev, username: undefined }));
+                      }}
                       placeholder="Enter username"
+                      aria-invalid={!!createFieldErrors.username}
                       data-testid="input-new-username"
-                      className="mt-1.5"
+                      className={cn("mt-1.5", createFieldErrors.username && "border-destructive focus-visible:ring-destructive")}
                     />
+                    {createFieldErrors.username && <p className="text-xs text-destructive mt-1">{createFieldErrors.username}</p>}
                   </div>
                   <div>
                     <Label htmlFor="email">Email *</Label>
@@ -461,11 +522,16 @@ export default function Users() {
                       id="email"
                       type="email"
                       value={newUser.email}
-                      onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))}
+                      onChange={(e) => {
+                        setNewUser(prev => ({ ...prev, email: e.target.value }));
+                        if (createFieldErrors.email) setCreateFieldErrors(prev => ({ ...prev, email: undefined }));
+                      }}
                       placeholder="Enter email"
+                      aria-invalid={!!createFieldErrors.email}
                       data-testid="input-new-email"
-                      className="mt-1.5"
+                      className={cn("mt-1.5", createFieldErrors.email && "border-destructive focus-visible:ring-destructive")}
                     />
+                    {createFieldErrors.email && <p className="text-xs text-destructive mt-1">{createFieldErrors.email}</p>}
                   </div>
                   <div>
                     <Label htmlFor="password">Password *</Label>
@@ -473,11 +539,16 @@ export default function Users() {
                       id="password"
                       type="password"
                       value={newUser.password}
-                      onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
+                      onChange={(e) => {
+                        setNewUser(prev => ({ ...prev, password: e.target.value }));
+                        if (createFieldErrors.password) setCreateFieldErrors(prev => ({ ...prev, password: undefined }));
+                      }}
                       placeholder="Enter password"
+                      aria-invalid={!!createFieldErrors.password}
                       data-testid="input-new-password"
-                      className="mt-1.5"
+                      className={cn("mt-1.5", createFieldErrors.password && "border-destructive focus-visible:ring-destructive")}
                     />
+                    {createFieldErrors.password && <p className="text-xs text-destructive mt-1">{createFieldErrors.password}</p>}
                   </div>
                   <div>
                     <Label htmlFor="role">Role</Label>
@@ -509,7 +580,7 @@ export default function Users() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => { setIsCreateOpen(false); setCreateFieldErrors({}); }}>Cancel</Button>
                   <Button
                     onClick={handleCreateUser}
                     disabled={createMutation.isPending}

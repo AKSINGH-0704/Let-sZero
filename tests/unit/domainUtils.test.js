@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeDomain, validateFromEmail } from "../../server/domainUtils.js";
+import { normalizeDomain, validateFromEmail } from "../../shared/domainUtils.js";
 
 // ── normalizeDomain ───────────────────────────────────────────────────────────
 

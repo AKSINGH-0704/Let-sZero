@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invalidateAfter } from "@/lib/queryInvalidation";
+import { normalizeDomain, validateFromEmail } from "@shared/domainUtils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,10 @@ export default function Onboarding() {
   const [fromEmail, setFromEmail] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  // Field-level errors, reusing the exact same pure validators the server
+  // enforces (shared/domainUtils.js) — catches format mistakes before the
+  // round-trip, attributed to the specific field, not a page-level banner.
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const needsSenderName = !!user && !user.senderName?.trim();
 
@@ -68,6 +73,13 @@ export default function Onboarding() {
   const handleDomainChange = (val) => {
     setDomain(val);
     setError("");
+    // Clears fromEmail's error too, not just domain's — this function also
+    // rewrites fromEmail's value below (re-deriving it against the new
+    // domain), which typically resolves a "must use domain @X" mismatch. A
+    // stale fromEmail error sitting on screen after its underlying value
+    // just silently changed would violate "disappear immediately after
+    // correction" — found during a dedicated validation-UX review pass.
+    setFieldErrors(prev => ({ ...prev, domain: undefined, fromEmail: undefined }));
     if (val && !fromEmail) {
       setFromEmail(`hello@${val}`);
     } else if (fromEmail && val) {
@@ -77,10 +89,48 @@ export default function Onboarding() {
     }
   };
 
+  const handleFromEmailChange = (val) => {
+    setFromEmail(val);
+    setError("");
+    setFieldErrors(prev => ({ ...prev, fromEmail: undefined }));
+  };
+
+  const handleSenderNameChange = (val) => {
+    setSenderName(val);
+    setError("");
+    setFieldErrors(prev => ({ ...prev, senderName: undefined }));
+  };
+
   const canSubmit = !mutation.isPending
     && !!domain.trim()
     && !!fromEmail.trim()
     && (!needsSenderName || !!senderName.trim());
+
+  const handleSubmit = () => {
+    const errors = {};
+    if (needsSenderName && !senderName.trim()) errors.senderName = "Your name is required.";
+    let normalizedDomain;
+    try {
+      normalizedDomain = normalizeDomain(domain);
+    } catch (err) {
+      errors.domain = err.message;
+    }
+    if (!errors.domain) {
+      try {
+        validateFromEmail(fromEmail, normalizedDomain);
+      } catch (err) {
+        errors.fromEmail = err.message;
+      }
+    }
+    setFieldErrors(errors);
+    const fieldOrder = { senderName: "ob-sender-name", domain: "ob-domain", fromEmail: "ob-from" };
+    const firstInvalid = Object.keys(fieldOrder).find(f => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(fieldOrder[firstInvalid])?.focus();
+      return;
+    }
+    mutation.mutate();
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-6">
@@ -111,9 +161,13 @@ export default function Onboarding() {
                     placeholder="e.g. Priya Sharma"
                     value={senderName}
                     autoFocus
-                    onChange={e => { setSenderName(e.target.value); setError(""); }}
+                    aria-invalid={!!fieldErrors.senderName}
+                    className={fieldErrors.senderName ? "border-destructive focus-visible:ring-destructive" : ""}
+                    onChange={e => handleSenderNameChange(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">Shown as the From name in recipients' inboxes.</p>
+                  {fieldErrors.senderName
+                    ? <p className="text-xs text-destructive">{fieldErrors.senderName}</p>
+                    : <p className="text-xs text-muted-foreground">Shown as the From name in recipients' inboxes.</p>}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -126,8 +180,11 @@ export default function Onboarding() {
                   autoComplete="off"
                   autoCapitalize="off"
                   spellCheck={false}
+                  aria-invalid={!!fieldErrors.domain}
+                  className={fieldErrors.domain ? "border-destructive focus-visible:ring-destructive" : ""}
                   onChange={e => handleDomainChange(e.target.value.trim().toLowerCase())}
                 />
+                {fieldErrors.domain && <p className="text-xs text-destructive">{fieldErrors.domain}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ob-from">From email</Label>
@@ -138,9 +195,13 @@ export default function Onboarding() {
                   autoComplete="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  onChange={e => { setFromEmail(e.target.value.trim().toLowerCase()); setError(""); }}
+                  aria-invalid={!!fieldErrors.fromEmail}
+                  className={fieldErrors.fromEmail ? "border-destructive focus-visible:ring-destructive" : ""}
+                  onChange={e => handleFromEmailChange(e.target.value.trim().toLowerCase())}
                 />
-                <p className="text-xs text-muted-foreground">Recipients see this in the From field.</p>
+                {fieldErrors.fromEmail
+                  ? <p className="text-xs text-destructive">{fieldErrors.fromEmail}</p>
+                  : <p className="text-xs text-muted-foreground">Recipients see this in the From field.</p>}
               </div>
             </div>
 
@@ -158,7 +219,7 @@ export default function Onboarding() {
             )}
 
             <div className="space-y-2">
-              <Button className="w-full" onClick={() => mutation.mutate()} disabled={!canSubmit}>
+              <Button className="w-full" onClick={handleSubmit} disabled={!canSubmit}>
                 {mutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                 Add domain
               </Button>

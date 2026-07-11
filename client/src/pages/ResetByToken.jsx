@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
 
 export default function ResetByToken() {
   const { token } = useParams();
@@ -17,18 +18,23 @@ export default function ResetByToken() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Field-level errors — previously both checks rendered as one generic
+  // banner above both fields, regardless of which field was actually wrong.
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
 
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
+    const errors = {};
+    if (newPassword.length < 8) errors.newPassword = "Password must be at least 8 characters.";
+    else if (newPassword !== confirmPassword) errors.confirmPassword = "Passwords do not match.";
+    setFieldErrors(errors);
+    const fieldIds = { newPassword: "new-password", confirmPassword: "confirm-password" };
+    const firstInvalid = Object.keys(fieldIds).find(f => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(fieldIds[firstInvalid])?.focus();
       return;
     }
 
@@ -97,10 +103,14 @@ export default function ResetByToken() {
                     type={showPassword ? "text" : "password"}
                     placeholder="At least 8 characters"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (fieldErrors.newPassword) setFieldErrors(prev => ({ ...prev, newPassword: undefined }));
+                    }}
                     required
                     disabled={isSubmitting}
-                    className="pr-10 h-11"
+                    aria-invalid={!!fieldErrors.newPassword}
+                    className={cn("pr-10 h-11", fieldErrors.newPassword && "border-destructive focus-visible:ring-destructive")}
                     minLength={8}
                   />
                   <Button
@@ -118,6 +128,7 @@ export default function ResetByToken() {
                     )}
                   </Button>
                 </div>
+                {fieldErrors.newPassword && <p className="text-xs text-destructive">{fieldErrors.newPassword}</p>}
               </div>
 
               <div className="space-y-2">
@@ -129,11 +140,16 @@ export default function ResetByToken() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Repeat your new password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (fieldErrors.confirmPassword) setFieldErrors(prev => ({ ...prev, confirmPassword: undefined }));
+                  }}
                   required
                   disabled={isSubmitting}
-                  className="h-11"
+                  aria-invalid={!!fieldErrors.confirmPassword}
+                  className={cn("h-11", fieldErrors.confirmPassword && "border-destructive focus-visible:ring-destructive")}
                 />
+                {fieldErrors.confirmPassword && <p className="text-xs text-destructive">{fieldErrors.confirmPassword}</p>}
               </div>
 
               <Button

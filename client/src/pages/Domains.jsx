@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { DOMAIN_ELIGIBLE_PLANS } from "@shared/schema";
+import { normalizeDomain, validateFromEmail } from "@shared/domainUtils";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invalidateAfter } from "@/lib/queryInvalidation";
@@ -42,6 +43,12 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
   const [domain, setDomain] = useState(initialDomain);
   const [fromEmail, setFromEmail] = useState(initialDomain ? `hello@${initialDomain}` : "");
   const [error, setError] = useState("");
+  // Field-level errors from client-side pre-validation, reusing the exact
+  // same pure functions the server enforces (shared/domainUtils.js) — not a
+  // second, independently-written set of format rules that could drift from
+  // what the server actually accepts. Catches format mistakes before a
+  // round-trip, attributed to the specific field that's wrong.
+  const [fieldErrors, setFieldErrors] = useState({});
   const [, navigate] = useLocation();
   const { refetch } = useAuth();
   const { toast } = useToast();
@@ -69,6 +76,13 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
   const handleDomainChange = (val) => {
     setDomain(val);
     setError("");
+    // Clears fromEmail's error too, not just domain's — this function also
+    // rewrites fromEmail's value below (re-deriving it against the new
+    // domain), which typically resolves a "must use domain @X" mismatch. A
+    // stale fromEmail error sitting on screen after its underlying value
+    // just silently changed would violate "disappear immediately after
+    // correction" — found during a dedicated validation-UX review pass.
+    setFieldErrors({});
     if (val && !fromEmail) {
       setFromEmail(`hello@${val}`);
     } else if (fromEmail && val) {
@@ -76,6 +90,36 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
       const localPart = atIdx >= 0 ? fromEmail.slice(0, atIdx) : fromEmail;
       setFromEmail(`${localPart}@${val}`);
     }
+  };
+
+  const handleFromEmailChange = (val) => {
+    setFromEmail(val);
+    setError("");
+    setFieldErrors(prev => ({ ...prev, fromEmail: undefined }));
+  };
+
+  const handleSubmit = () => {
+    const errors = {};
+    let normalizedDomain;
+    try {
+      normalizedDomain = normalizeDomain(domain);
+    } catch (err) {
+      errors.domain = err.message;
+    }
+    if (!errors.domain) {
+      try {
+        validateFromEmail(fromEmail, normalizedDomain);
+      } catch (err) {
+        errors.fromEmail = err.message;
+      }
+    }
+    setFieldErrors(errors);
+    const firstInvalid = ["domain", "fromEmail"].find(f => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(firstInvalid === "domain" ? "add-domain-input" : "add-from-input")?.focus();
+      return;
+    }
+    mutation.mutate();
   };
 
   return (
@@ -98,8 +142,11 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
+              aria-invalid={!!fieldErrors.domain}
+              className={fieldErrors.domain ? "border-destructive focus-visible:ring-destructive" : ""}
               onChange={e => handleDomainChange(e.target.value.trim().toLowerCase())}
             />
+            {fieldErrors.domain && <p className="text-xs text-destructive">{fieldErrors.domain}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="add-from-input">From email</Label>
@@ -110,9 +157,13 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
-              onChange={e => { setFromEmail(e.target.value.trim().toLowerCase()); setError(""); }}
+              aria-invalid={!!fieldErrors.fromEmail}
+              className={fieldErrors.fromEmail ? "border-destructive focus-visible:ring-destructive" : ""}
+              onChange={e => handleFromEmailChange(e.target.value.trim().toLowerCase())}
             />
-            <p className="text-xs text-muted-foreground">Recipients see this in the From field. Must use the domain above.</p>
+            {fieldErrors.fromEmail
+              ? <p className="text-xs text-destructive">{fieldErrors.fromEmail}</p>
+              : <p className="text-xs text-muted-foreground">Recipients see this in the From field. Must use the domain above.</p>}
           </div>
           {error && (
             <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -123,7 +174,7 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button
-            onClick={() => mutation.mutate()}
+            onClick={handleSubmit}
             disabled={mutation.isPending || !domain || !fromEmail}
           >
             {mutation.isPending && <RefreshCw className="mr-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}

@@ -8,7 +8,28 @@ This document summarises what was built, improved, and hardened across the RepMa
 
 ---
 
-## Current Release — v1.6 (2026-07-11)
+## Current Release — v1.7 (2026-07-11)
+
+### Purchase Confirmation, Redesigned
+
+- **Your purchase confirmation now stays on screen until you're done with it.** It no longer disappears on its own partway through — you'll always see it clearly before moving on.
+- **You'll see your new credit total, not just what you bought.** The confirmation now shows both the credits just added and your resulting balance, so there's no mental math and no doubt the purchase landed.
+- **A clearer next step.** If your plan includes team seats, the confirmation now takes you straight to inviting your team — the fastest way to get value from your new plan.
+
+### Team Pricing, Clarified
+
+- **Team pricing is now visible in one place.** Comparing plans by team size no longer requires switching between views — price, credits, and seat count for every plan are shown together.
+- **Your current plan is now clearly marked** on the pricing page, so you always know what you're on before deciding whether to upgrade.
+- **A pricing inconsistency was corrected.** Some pages previously stated credits expire after 6 months; this did not match how credits actually work. All pages now consistently state that purchased credits never expire.
+
+### Clearer Errors, Everywhere
+
+- **Error messages are now always in plain language.** A small number of situations — most notably an incorrect password — previously could display a technical error message instead of a clear one. This is now fixed everywhere in the product.
+- **Form errors now point to exactly what's wrong.** Creating a template, adding a sending domain, inviting a teammate, or resetting your password now tells you specifically which field needs attention and why, instead of a generic "please fix this" message.
+
+---
+
+## v1.6 (2026-07-11)
 
 ### Teams / Workspace, Completed
 

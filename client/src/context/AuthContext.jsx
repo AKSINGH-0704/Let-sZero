@@ -90,6 +90,11 @@ export function AuthProvider({ children }) {
     logout,
     resetPassword,
     loginError: loginMutation.error,
+    // Lets SignInForm clear the "Invalid credentials" banner the moment the
+    // customer starts retyping, instead of it sitting on screen through the
+    // whole retry (React Query only clears mutation error state on the next
+    // mutate() call otherwise).
+    resetLoginError: loginMutation.reset,
     isLoggingIn: loginMutation.isPending,
     isResettingPassword: resetPasswordMutation.isPending,
     resetPasswordError: resetPasswordMutation.error,

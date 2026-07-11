@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -77,20 +78,24 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [error, setError] = useState("");
+  // Field-level errors — previously both the "too short" and "mismatch"
+  // checks rendered as one generic banner above both fields, regardless of
+  // which field was actually wrong.
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [submitError, setSubmitError] = useState("");
   const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setSubmitError("");
 
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match");
+    const errors = {};
+    if (newPassword.length < 6) errors.newPassword = "Password must be at least 6 characters.";
+    else if (newPassword !== confirmPassword) errors.confirmPassword = "Passwords do not match.";
+    setFieldErrors(errors);
+    const firstInvalid = ["newPassword", "confirmPassword"].find(f => errors[f]);
+    if (firstInvalid) {
+      document.getElementById(firstInvalid)?.focus();
       return;
     }
 
@@ -99,7 +104,7 @@ export default function ResetPassword() {
       await resetPassword("", newPassword);
       setSuccess(true);
     } catch (err) {
-      setError(err.message || "Failed to set password. Please try again.");
+      setSubmitError(err.message || "Failed to set password. Please try again.");
     }
   };
 
@@ -190,10 +195,10 @@ export default function ResetPassword() {
 
               <CardContent className="pt-4">
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {(error || resetPasswordError) && (
+                  {(submitError || resetPasswordError) && (
                     <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md text-sm animate-in fade-in slide-in-from-top-2 duration-300">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      <span>{error || resetPasswordError?.message}</span>
+                      <span>{submitError || resetPasswordError?.message}</span>
                     </div>
                   )}
 
@@ -204,10 +209,14 @@ export default function ResetPassword() {
                         id="newPassword"
                         type={showNewPassword ? "text" : "password"}
                         value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          if (fieldErrors.newPassword) setFieldErrors(prev => ({ ...prev, newPassword: undefined }));
+                        }}
                         placeholder="At least 6 characters"
                         required
-                        className="h-11 pr-10 transition-shadow duration-200 focus:shadow-md"
+                        aria-invalid={!!fieldErrors.newPassword}
+                        className={cn("h-11 pr-10 transition-shadow duration-200 focus:shadow-md", fieldErrors.newPassword && "border-destructive focus-visible:ring-destructive")}
                         data-testid="input-new-password"
                       />
                       <Button
@@ -224,6 +233,7 @@ export default function ResetPassword() {
                         )}
                       </Button>
                     </div>
+                    {fieldErrors.newPassword && <p className="text-xs text-destructive">{fieldErrors.newPassword}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -233,10 +243,14 @@ export default function ResetPassword() {
                         id="confirmPassword"
                         type={showConfirmPassword ? "text" : "password"}
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          if (fieldErrors.confirmPassword) setFieldErrors(prev => ({ ...prev, confirmPassword: undefined }));
+                        }}
                         placeholder="Re-enter your password"
                         required
-                        className="h-11 pr-10 transition-shadow duration-200 focus:shadow-md"
+                        aria-invalid={!!fieldErrors.confirmPassword}
+                        className={cn("h-11 pr-10 transition-shadow duration-200 focus:shadow-md", fieldErrors.confirmPassword && "border-destructive focus-visible:ring-destructive")}
                         data-testid="input-confirm-password"
                       />
                       <Button
@@ -253,6 +267,7 @@ export default function ResetPassword() {
                         )}
                       </Button>
                     </div>
+                    {fieldErrors.confirmPassword && <p className="text-xs text-destructive">{fieldErrors.confirmPassword}</p>}
                   </div>
 
                   <Button

@@ -13,6 +13,7 @@
  * plan that includes seats, since that's the highest-value action a customer
  * can take immediately after upgrading.
  */
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +23,58 @@ import { formatNumber } from "@/lib/utils";
 
 export default function PostPurchaseActivation({ payment, onClose }) {
   const [, setLocation] = useLocation();
+  const dialogRef = useRef(null);
+
+  // Every dismissal path — X, primary CTA, secondary CTA, Escape — routes
+  // through onClose first. Previously the primary CTA (team/campaign) called
+  // setLocation directly, bypassing the payment-detail cache invalidation
+  // onClose performs; a customer who took the primary action rather than
+  // "Continue to Dashboard" or X would leave this session with a stale
+  // PENDING payment sitting in the query cache, indefinitely — a genuine
+  // cache-consistency gap, found during adversarial review, not present in
+  // the two paths that were tested before.
+  const leaveWith = (path) => {
+    onClose();
+    setLocation(path);
+  };
+  const handleDismiss = () => leaveWith("/app/dashboard");
+
+  // Minimal, self-contained focus management — this is a hand-rolled overlay
+  // (not the shared Radix-backed Dialog primitive: that primitive renders its
+  // own built-in close button with different styling/position, which would
+  // either duplicate or fight this component's own X button, and this
+  // checkout surface deliberately keeps a bespoke dark aesthetic distinct
+  // from the rest of the app rather than the design-system's token-based
+  // Dialog styling — considered and rejected migrating for that reason).
+  // Without this, Tab can cycle focus into page content hidden behind the
+  // overlay, and there was no keyboard-only way to dismiss.
+  useEffect(() => {
+    dialogRef.current?.focus();
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleDismiss();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data: teamUsage } = useQuery({
     queryKey: ["/api/users/team-usage"],
@@ -51,15 +104,16 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   // Primary CTA is team-focused for every plan that includes seats — the
   // single highest-value action available immediately after upgrading.
   // Plans with no team capacity (free/trial) fall back to the next real
-  // step instead.
+  // step instead. "Invite Your Team" specifically (not "Manage Team", which
+  // implies an existing team the customer wants to review) also carries the
+  // customer straight into an already-open invite dialog — found during the
+  // end-to-end activation review that landing on Users.jsx still required a
+  // second, redundant click on the exact action the customer just took.
   const primaryAction = teamEligible
-    ? { label: hasTeamMember ? "Manage Team" : "Invite Your Team", icon: Users, go: () => setLocation("/app/users") }
-    : { label: "Create Your First Campaign", icon: ArrowRight, go: () => setLocation("/app/campaigns/new") };
-
-  const handleDismiss = () => {
-    onClose();
-    setLocation("/app/dashboard");
-  };
+    ? (hasTeamMember
+        ? { label: "Manage Team", icon: Users, go: () => leaveWith("/app/users") }
+        : { label: "Invite Your Team", icon: Users, go: () => leaveWith("/app/users?invite=1") })
+    : { label: "Create Your First Campaign", icon: ArrowRight, go: () => leaveWith("/app/campaigns/new") };
 
   return (
     <AnimatePresence>
@@ -74,11 +128,13 @@ export default function PostPurchaseActivation({ payment, onClose }) {
         aria-labelledby="activation-title"
       >
         <motion.div
+          ref={dialogRef}
+          tabIndex={-1}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
           transition={{ duration: 0.25 }}
-          className="relative w-full max-w-lg rounded-2xl p-7 md:p-8"
+          className="relative w-full max-w-lg rounded-2xl p-7 md:p-8 outline-none"
           style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
         >
           <button
@@ -116,7 +172,9 @@ export default function PostPurchaseActivation({ payment, onClose }) {
             <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
               <p className="text-xs" style={{ color: "#7878A0" }}>New balance</p>
               <p className="mt-0.5 text-lg font-bold" style={{ color: "#F0F0F5" }}>
-                {creditsInfo ? formatNumber(creditsInfo.total ?? 0) : "—"}
+                {creditsInfo
+                  ? formatNumber(creditsInfo.total ?? 0)
+                  : <span className="inline-block h-5 w-14 rounded animate-pulse motion-reduce:animate-none" style={{ background: "#1A1A2E" }} aria-hidden="true" />}
               </p>
             </div>
           </div>

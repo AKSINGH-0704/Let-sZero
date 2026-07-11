@@ -17,7 +17,7 @@ import { resolveCname } from "dns/promises";
 import { storage } from "./storage.js";
 import { sendTransactionalEmail } from "./email.js";
 import { AUDIT_ACTIONS, DOMAIN_ELIGIBLE_PLANS } from "../shared/schema.js";
-import { normalizeDomain, validateFromEmail } from "./domainUtils.js";
+import { normalizeDomain, validateFromEmail } from "../shared/domainUtils.js";
 
 export { normalizeDomain, validateFromEmail };
 

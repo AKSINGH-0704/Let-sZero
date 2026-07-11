@@ -195,7 +195,7 @@ function TabSwitcher({ activeTab, onChange }) {
   );
 }
 
-function SignInForm({ login, isLoggingIn, loginError }) {
+function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -272,7 +272,7 @@ function SignInForm({ login, isLoggingIn, loginError }) {
             type="text"
             placeholder="Enter your username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => { setUsername(e.target.value); resetLoginError?.(); }}
             required
             disabled={isLoggingIn}
             className="h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
@@ -297,7 +297,7 @@ function SignInForm({ login, isLoggingIn, loginError }) {
               type={showPassword ? "text" : "password"}
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); resetLoginError?.(); }}
               required
               disabled={isLoggingIn}
               className="pr-10 h-11 transition-all duration-200 focus:shadow-md focus:ring-2 focus:ring-primary/20"
@@ -442,7 +442,7 @@ function RequestAccessPanel({ onSignIn }) {
 }
 
 export default function Login() {
-  const { login, isLoggingIn, loginError, isAuthenticated } = useAuth();
+  const { login, isLoggingIn, loginError, resetLoginError, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState("signin");
 
   if (isAuthenticated) {
@@ -494,6 +494,7 @@ export default function Login() {
                     login={login}
                     isLoggingIn={isLoggingIn}
                     loginError={loginError}
+                    resetLoginError={resetLoginError}
                   />
                 ) : (
                   <RequestAccessPanel onSignIn={() => setActiveTab("signin")} />

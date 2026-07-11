@@ -698,8 +698,42 @@ export default function CampaignConfirmation() {
       {validationErrors.length > 0 && (
         <Banner variant="danger">
           <p className="font-medium mb-2">Cannot send campaign — fix these issues first:</p>
-          <ul className="list-disc pl-4 space-y-1 text-sm">
-            {validationErrors.map((e, i) => <li key={i}>{e}</li>)}
+          <ul className="list-disc pl-4 space-y-1.5 text-sm">
+            {validationErrors.map((e, i) => {
+              // These server-side messages arrive at this final step regardless
+              // of which earlier step actually caused them — a subject-length
+              // error, for instance, previously showed only as a disconnected
+              // bullet here with no path back to the Template step where it
+              // needs to be fixed. Keyword-matched against the known validator
+              // strings (server/routes.js) rather than a structured error code,
+              // since the server doesn't tag these with a step today and
+              // changing that response shape is bigger than this fix warrants.
+              const stepMatch = /subject|email body/i.test(e) ? { label: "Template", step: 3 }
+                : /contact list|contacts after filtering/i.test(e) ? { label: "Contacts", step: 1 }
+                : null;
+              return (
+                <li key={i}>
+                  {/* flex-wrap + min-w-0 on the message: on a narrow viewport,
+                      a long server message would otherwise overflow rather
+                      than wrap (a flex item's default min-width is its
+                      content width, not 0), which could push the "Fix in…"
+                      link off-screen instead of dropping to its own line —
+                      found during a dedicated validation-UX / mobile review. */}
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                    <span className="min-w-0 flex-1 break-words">{e}</span>
+                    {stepMatch && (
+                      <button
+                        type="button"
+                        onClick={() => setStep(stepMatch.step)}
+                        className="shrink-0 whitespace-nowrap text-xs font-medium underline underline-offset-2 hover:no-underline"
+                      >
+                        Fix in {stepMatch.label} →
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </Banner>
       )}

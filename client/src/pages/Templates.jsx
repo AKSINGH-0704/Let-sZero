@@ -59,6 +59,11 @@ export default function Templates() {
     subject: "",
     body: ""
   });
+  // Field-level errors — reuses the existing manual useState pattern (no new
+  // form library) so each required field gets its own message and red
+  // border instead of one generic "fill all fields" toast that doesn't say
+  // which field. Cleared per-field the moment its own value changes.
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ["/api/templates"]
@@ -113,23 +118,38 @@ export default function Templates() {
     }
   });
 
+  // idPrefix distinguishes the Create dialog's field ids (name/subject/body)
+  // from the Edit dialog's (edit-name/edit-subject/edit-body) so focus lands
+  // on the correct dialog's input, not the other one's (both share this same
+  // validator and fieldErrors state, since only one dialog is ever open).
+  const validateFormData = (idPrefix = "") => {
+    const errors = {};
+    if (!formData.name.trim()) errors.name = "Template name is required.";
+    if (!formData.subject.trim()) errors.subject = "Subject line is required.";
+    if (!formData.body.trim()) errors.body = "Email body is required.";
+    setFieldErrors(errors);
+    const firstInvalid = ["name", "subject", "body"].find(f => errors[f]);
+    if (firstInvalid) document.getElementById(`${idPrefix}${firstInvalid}`)?.focus();
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleFieldChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (fieldErrors[field]) setFieldErrors(prev => ({ ...prev, [field]: undefined }));
+  };
+
   const handleCreate = () => {
-    if (!formData.name || !formData.subject || !formData.body) {
-      toast({ title: "Please fill all fields", variant: "destructive" });
-      return;
-    }
+    if (!validateFormData()) return;
     createMutation.mutate(formData);
   };
 
   const handleUpdate = () => {
-    if (!formData.name || !formData.subject || !formData.body) {
-      toast({ title: "Please fill all fields", variant: "destructive" });
-      return;
-    }
+    if (!validateFormData("edit-")) return;
     updateMutation.mutate({ id: editTemplate.id, data: formData });
   };
 
   const handleEdit = (template) => {
+    setFieldErrors({});
     setEditTemplate(template);
     setFormData({
       name: template.name,
@@ -139,6 +159,7 @@ export default function Templates() {
   };
 
   const handleDuplicate = (template) => {
+    setFieldErrors({});
     setFormData({
       name: `${template.name} (Copy)`,
       subject: template.subject,
@@ -201,33 +222,41 @@ export default function Templates() {
                   <Input
                     id="name"
                     value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e) => handleFieldChange("name", e.target.value)}
                     placeholder="e.g., Welcome Email"
+                    aria-invalid={!!fieldErrors.name}
+                    className={fieldErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                     data-testid="input-template-name"
                   />
+                  {fieldErrors.name && <p className="text-xs text-destructive">{fieldErrors.name}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="subject">Subject Line *</Label>
                   <Input
                     id="subject"
                     value={formData.subject}
-                    onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
+                    onChange={(e) => handleFieldChange("subject", e.target.value)}
                     placeholder="e.g., Welcome to our platform, {{name}}!"
+                    aria-invalid={!!fieldErrors.subject}
+                    className={fieldErrors.subject ? "border-destructive focus-visible:ring-destructive" : ""}
                     data-testid="input-template-subject"
                   />
+                  {fieldErrors.subject && <p className="text-xs text-destructive">{fieldErrors.subject}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="body">Email Body *</Label>
                   <Textarea
                     id="body"
                     value={formData.body}
-                    onChange={(e) => setFormData(prev => ({ ...prev, body: e.target.value }))}
+                    onChange={(e) => handleFieldChange("body", e.target.value)}
                     placeholder="Write your email content here...
 
 Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
-                    className="min-h-[200px]"
+                    className={cn("min-h-[200px]", fieldErrors.body && "border-destructive focus-visible:ring-destructive")}
+                    aria-invalid={!!fieldErrors.body}
                     data-testid="input-template-body"
                   />
+                  {fieldErrors.body && <p className="text-xs text-destructive">{fieldErrors.body}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <p className="text-sm text-muted-foreground w-full">Available placeholders:</p>
@@ -247,6 +276,7 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
                 <Button variant="outline" onClick={() => {
                   setIsCreateOpen(false);
                   setFormData({ name: "", subject: "", body: "" });
+                  setFieldErrors({});
                 }}>
                   Cancel
                 </Button>
@@ -505,28 +535,36 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
                 <Input
                   id="edit-name"
                   value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => handleFieldChange("name", e.target.value)}
+                  aria-invalid={!!fieldErrors.name}
+                  className={fieldErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                   data-testid="input-edit-name"
                 />
+                {fieldErrors.name && <p className="text-xs text-destructive">{fieldErrors.name}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-subject">Subject Line *</Label>
                 <Input
                   id="edit-subject"
                   value={formData.subject}
-                  onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
+                  onChange={(e) => handleFieldChange("subject", e.target.value)}
+                  aria-invalid={!!fieldErrors.subject}
+                  className={fieldErrors.subject ? "border-destructive focus-visible:ring-destructive" : ""}
                   data-testid="input-edit-subject"
                 />
+                {fieldErrors.subject && <p className="text-xs text-destructive">{fieldErrors.subject}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-body">Email Body *</Label>
                 <Textarea
                   id="edit-body"
                   value={formData.body}
-                  onChange={(e) => setFormData(prev => ({ ...prev, body: e.target.value }))}
-                  className="min-h-[200px]"
+                  onChange={(e) => handleFieldChange("body", e.target.value)}
+                  className={cn("min-h-[200px]", fieldErrors.body && "border-destructive focus-visible:ring-destructive")}
+                  aria-invalid={!!fieldErrors.body}
                   data-testid="input-edit-body"
                 />
+                {fieldErrors.body && <p className="text-xs text-destructive">{fieldErrors.body}</p>}
               </div>
               <div className="flex flex-wrap gap-2">
                 <p className="text-sm text-muted-foreground w-full">Available placeholders:</p>
@@ -543,10 +581,10 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setEditTemplate(null)}>
+              <Button variant="outline" onClick={() => { setEditTemplate(null); setFieldErrors({}); }}>
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={handleUpdate}
                 disabled={updateMutation.isPending}
                 data-testid="button-submit-edit"
