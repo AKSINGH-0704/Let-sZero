@@ -13,7 +13,7 @@ const BRANDS = {
   letszero: {
     title: "LetsZero",
     favicon: "/letszero-logo.png",
-    routes: ["/", "/early-access", "/contact", "/privacy", "/terms"],
+    routes: ["/", "/early-access", "/contact", "/privacy", "/terms", "/learn"],
   },
   repmail: {
     title: "RepMail",
@@ -81,6 +81,20 @@ import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
+
+// M21-D — lazy-loaded, not a static top-level import like every other page
+// above. gray-matter/marked (the markdown/frontmatter parsing this pulls in
+// transitively via resourceCenterContent.js) add ~500KB to the bundle;
+// without lazy-loading, that cost lands on every page load — including the
+// authenticated app, since this codebase has no route-level code-splitting
+// anywhere else (M21-B's audit already found this gap). Splitting these 5
+// routes out keeps that cost paid only by someone who actually visits
+// /learn or /repmail/learn/*.
+const LetsZeroLearnDirectory = lazy(() => import("@/pages/LetsZeroLearnDirectory"));
+const ResourceCenterHomePage = lazy(() => import("@/pages/resource-center/ResourceCenterHomePage"));
+const AcademyHubPage = lazy(() => import("@/pages/resource-center/AcademyHubPage"));
+const ArticlePage = lazy(() => import("@/pages/resource-center/ArticlePage"));
+const AuthorPage = lazy(() => import("@/pages/resource-center/AuthorPage"));
 
 // Dev-only design-system preview. Gated on import.meta.env.DEV so Rollup drops the
 // dynamic import (and its chunk) entirely from production builds.
@@ -181,6 +195,32 @@ function AppRoutes() {
 
       <Route path="/repmail/terms">
         {() => <RepMailTerms />}
+      </Route>
+
+      {/* M21-D — Resource Center. Route order matters: /authors/:author must
+          be declared before /:academy/:slug (both are 3 segments — without
+          this order, "authors" would be greedily matched as an academy slug).
+          Each lazy-loaded component gets its own Suspense boundary so
+          navigating between Resource Center pages doesn't re-trigger the
+          full-screen loader for chunks already fetched. */}
+      <Route path="/learn">
+        {() => <Suspense fallback={<LoadingScreen />}><LetsZeroLearnDirectory /></Suspense>}
+      </Route>
+
+      <Route path="/repmail/learn">
+        {() => <Suspense fallback={<LoadingScreen />}><ResourceCenterHomePage /></Suspense>}
+      </Route>
+
+      <Route path="/repmail/learn/authors/:author">
+        {() => <Suspense fallback={<LoadingScreen />}><AuthorPage /></Suspense>}
+      </Route>
+
+      <Route path="/repmail/learn/:academy/:slug">
+        {() => <Suspense fallback={<LoadingScreen />}><ArticlePage /></Suspense>}
+      </Route>
+
+      <Route path="/repmail/learn/:academy">
+        {() => <Suspense fallback={<LoadingScreen />}><AcademyHubPage /></Suspense>}
       </Route>
 
       <Route path="/accept-invite">
