@@ -207,15 +207,13 @@ function ImportSheet({ listId, open, onClose }) {
     },
     onError: (err) => {
       // Validation failures (e.g. NO_VALID_ROWS) come back as a JSON body with
-      // structured row-level detail — parse it so it can render as a row list
-      // instead of a raw JSON blob. Non-JSON/network errors fall back to a toast.
-      let parsed = null;
-      try { parsed = JSON.parse(err.message); } catch {}
-      if (parsed?.rowErrors) {
-        setImportError(parsed);
+      // structured row-level detail (err.body, from queryClient.js's centralized
+      // parsing) — render it as a row list instead of a plain toast when present.
+      if (err.body?.rowErrors) {
+        setImportError(err.body);
         setStep("preview");
       } else {
-        toast({ title: "Import failed", description: parsed?.message || err.message, variant: "destructive" });
+        toast({ title: "Import failed", description: err.message, variant: "destructive" });
       }
     },
   });

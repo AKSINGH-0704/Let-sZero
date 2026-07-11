@@ -291,18 +291,16 @@ export default function TemplateBuilder() {
       ]);
     },
     onError: (err) => {
-      try {
-        const parsed = JSON.parse(err.message);
-        if (parsed?.resetsAt) {
-          const resetTime = new Date(parsed.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          setAiError(`Daily AI limit reached — resets at ${resetTime}. ${parsed.upgradeMessage}`);
-          return;
-        }
-        if (parsed?.validation?.hardBlocked) {
-          setAiError("The generated template failed validation and cannot be used. Please try again or write your template manually.");
-          return;
-        }
-      } catch {}
+      const body = err.body;
+      if (body?.resetsAt) {
+        const resetTime = new Date(body.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setAiError(`Daily AI limit reached — resets at ${resetTime}. ${body.upgradeMessage}`);
+        return;
+      }
+      if (body?.validation?.hardBlocked) {
+        setAiError("The generated template failed validation and cannot be used. Please try again or write your template manually.");
+        return;
+      }
       setAiError(err.message || "Failed to generate template. Please try again.");
     },
   });

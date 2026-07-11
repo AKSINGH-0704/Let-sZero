@@ -868,7 +868,19 @@ function ProcessPayment({ paymentId }) {
       return res.json();
     },
     onSuccess: (data) => {
-      invalidateAfter("creditsChanged", { extraKeys: [["/api/payments"]] });
+      // Deliberately does NOT invalidate ["/api/payments", paymentId] here —
+      // that's the exact query this component's own render branches on
+      // (see the `activatedPayment` priority check below). Invalidating it
+      // at verify time triggered a background refetch that returned
+      // status: "SUCCESS" within about one round-trip and flipped this
+      // component into its "Payment already completed" branch, destroying
+      // the activation modal before the customer had any real chance to see
+      // it — not a timer, not a dismissal, an unintended side effect of the
+      // standard credits-changed invalidation. The specific payment detail
+      // is refreshed only once the customer actually leaves the activation
+      // experience (handleActivationClose below).
+      invalidateAfter("creditsChanged");
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"], exact: true });
       // M20-C: a premium activation overlay replaces the old toast + banner —
       // reinforces the plan's value and drives the customer toward whichever
       // real setup step (domain / team / first campaign) is actually missing,
@@ -880,6 +892,15 @@ function ProcessPayment({ paymentId }) {
       toast({ title: "Payment verification failed", description: err.message, variant: "destructive" });
     },
   });
+
+  // Refresh the specific payment's own cached detail only once the customer
+  // is actually done with the activation experience — see the comment in
+  // verifyMutation.onSuccess above for why this can't happen any earlier.
+  // Navigation is owned by PostPurchaseActivation itself (both its dismiss
+  // paths land on Dashboard) — this handler is invalidation-only.
+  const handleActivationClose = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/payments", paymentId] });
+  };
 
   const failMutation = useMutation({
     mutationFn: async ({ reason, cancelled } = {}) => {
@@ -957,6 +978,21 @@ function ProcessPayment({ paymentId }) {
   }, [payment]);
 
   const amountLocal = payment?.amountLocal || 0;
+
+  // Defense-in-depth, independent of the deferred-invalidation fix above:
+  // once a purchase is verified, activatedPayment being set takes explicit
+  // priority over every status-branch below — the activation experience is
+  // the only thing that renders until the customer explicitly leaves it, no
+  // matter what a subsequent refetch of `payment` might say. This means a
+  // future, unrelated invalidation change touching this query can't silently
+  // reintroduce the same class of bug.
+  if (activatedPayment) {
+    return (
+      <AppLayout>
+        <PostPurchaseActivation payment={activatedPayment} onClose={handleActivationClose} />
+      </AppLayout>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -1131,13 +1167,6 @@ function ProcessPayment({ paymentId }) {
           </p>
         </div>
       </div>
-
-      {activatedPayment && (
-        <PostPurchaseActivation
-          payment={activatedPayment}
-          onClose={() => setLocation("/app/payments")}
-        />
-      )}
     </AppLayout>
   );
 }
@@ -1183,10 +1212,6 @@ export default function Payments() {
     queryKey: ["/api/pricing/plans"],
   });
 
-  const { data: payments } = useQuery({
-    queryKey: ["/api/payments"],
-  });
-
   const initiateMutation = useMutation({
     mutationFn: async (tierId) => {
       const res = await apiRequest("POST", "/api/payments/initiate", {
@@ -1229,9 +1254,16 @@ export default function Payments() {
     return `₹${fmtNum(plan.priceINR)}`;
   };
 
-  // Determine current plan from last successful payment
-  const lastSuccessful = payments?.find(p => p.status === "SUCCESS");
-  const currentPlanId = lastSuccessful?.planId || null;
+  // Current plan comes from user.effectivePlan (the same inheritance-aware
+  // source every other entitlement check in the app uses — Domains.jsx,
+  // CampaignConfirmation.jsx), not payment history. Deriving it from the
+  // payments table was silently broken (the table stores planName, not
+  // planId — payment.planId was always undefined, so this was never true
+  // for any customer) and conceptually wrong regardless: an invited team
+  // member's plan is inherited from their workspace root, not tied to any
+  // payment record of their own, so a payment-history-based check would
+  // never show a current plan for them even after fixing the field name.
+  const currentPlanId = user?.effectivePlan || null;
 
   if (processId) {
     return <ProcessPayment paymentId={processId} />;
@@ -1605,14 +1637,25 @@ export default function Payments() {
                           { plan: "Growth", seats: "10", color: "#00E5C8" },
                           { plan: "Scale", seats: "25", color: "#A78BFA" },
                           { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
-                        ].map(({ plan, seats, color }) => (
-                          <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
-                            <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
-                            <span className="text-xs" style={{ color: "#B8B8D0" }}>
-                              {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
-                            </span>
-                          </div>
-                        ))}
+                        ].map(({ plan, seats, color }) => {
+                          // Price/credits come from the same PLANS array the Individual
+                          // tab's cards render from — the Teams tab shouldn't require
+                          // switching tabs just to see what a plan actually costs.
+                          const planData = PLANS.find(p => p.name === plan);
+                          return (
+                            <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
+                              <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
+                              <span className="text-xs text-right" style={{ color: "#B8B8D0" }}>
+                                {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
+                                {planData && (
+                                  <span style={{ color: "#55556A" }}>
+                                    {" · "}{planData.isCustom ? "Custom pricing" : `${formatPrice(planData)} · ${fmtNum(planData.totalCredits)} credits`}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                       <p className="text-xs mt-4" style={{ color: "#55556A" }}>
                         Team seats are included in all paid plans at no additional cost.
@@ -1682,7 +1725,20 @@ export default function Payments() {
                     <div className="space-y-4 flex-1">
                       {[
                         { n: "1", title: "Purchase a plan", desc: "Starter (3 seats), Growth (10), or Scale (25). Team access is included at no extra cost." },
-                        { n: "2", title: "Invite team members", desc: "Go to Team Management and invite members. Assign each a role — Manager or Member." },
+                        { n: "2", title: "Invite team members", desc: (
+                          <>
+                            Go to{" "}
+                            <button
+                              type="button"
+                              onClick={() => setLocation("/app/users")}
+                              className="underline underline-offset-2"
+                              style={{ color: "#00E5C8" }}
+                            >
+                              Team Management
+                            </button>
+                            {" "}and invite members. Assign each a role — Manager or Member.
+                          </>
+                        ) },
                         { n: "3", title: "Allocate credits", desc: "Distribute your credits to each member. They spend only what you allocate to them." },
                         { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
                       ].map(({ n, title, desc }) => (

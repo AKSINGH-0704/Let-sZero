@@ -68,9 +68,11 @@ import {
   CheckCircle,
   Info,
 } from "lucide-react";
+import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatNumber, cn } from "@/lib/utils";
+import { MAX_TEAM_MEMBERS } from "@shared/schema";
 
 
 const ROLE_CONFIG = {
@@ -132,7 +134,11 @@ export default function Users() {
     enabled: isAdmin,
   });
 
-  // team summary stats derived from users array (avoids extra API call)
+  // team summary stats derived from users array (avoids extra API call).
+  // seatLimit reads MAX_TEAM_MEMBERS[effectivePlan] — the same inheritance-aware
+  // source Payments.jsx's Current Plan detection now uses — so this number can
+  // never disagree with what the plan actually entitles the workspace to.
+  const seatLimit = MAX_TEAM_MEMBERS[currentUser?.effectivePlan] ?? 0;
   const teamStats = useMemo(() => {
     if (!users || !isAdmin) return null;
     return {
@@ -142,6 +148,12 @@ export default function Users() {
       totalTeamAiGenerationsToday: users.reduce((s, u) => s + (u.aiGenerationsToday || 0), 0),
     };
   }, [users, isAdmin]);
+  // seatLimit > 0 guard matters: without it, a free/trial workspace (seatLimit
+  // 0, always 0 members since it can't invite at all) would satisfy
+  // `0 >= 0` and incorrectly show "plan limit reached — upgrade for more
+  // seats" to someone who was never eligible for team seats in the first
+  // place, rather than not being at any kind of limit.
+  const atSeatLimit = seatLimit > 0 && seatLimit !== Infinity && (teamStats?.totalTeamMembers ?? 0) >= seatLimit;
 
   const secondaryRootCount = useMemo(() =>
     (users || []).filter(u => u.isSecondaryRoot).length,
@@ -161,16 +173,11 @@ export default function Users() {
       setIsCreatedModalOpen(true);
     },
     onError: (err) => {
-      let msg = err.message;
-      try {
-        const parsed = JSON.parse(err.message);
-        if (parsed.error === "PLAN_LIMIT") {
-          toast({ title: "Plan limit reached", description: parsed.message + " Go to /app/payments to upgrade.", variant: "destructive" });
-          return;
-        }
-        msg = parsed.message || msg;
-      } catch {}
-      toast({ title: "Failed to create user", description: msg, variant: "destructive" });
+      if (err.body?.error === "PLAN_LIMIT") {
+        toast({ title: "Plan limit reached", description: err.message + " Go to /app/payments to upgrade.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Failed to create user", description: err.message, variant: "destructive" });
     },
   });
 
@@ -186,9 +193,7 @@ export default function Users() {
       toast({ title: "Invite sent successfully" });
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ title: "Failed to send invite", description: msg, variant: "destructive" });
+      toast({ title: "Failed to send invite", description: err.message, variant: "destructive" });
     },
   });
 
@@ -233,9 +238,7 @@ export default function Users() {
       toast({ title: "User reactivated" });
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ title: "Failed to reactivate user", description: msg, variant: "destructive" });
+      toast({ title: "Failed to reactivate user", description: err.message, variant: "destructive" });
     },
   });
 
@@ -277,9 +280,7 @@ export default function Users() {
       toast({ title: "Secondary admin access granted" });
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ title: "Failed to grant access", description: msg, variant: "destructive" });
+      toast({ title: "Failed to grant access", description: err.message, variant: "destructive" });
     },
   });
 
@@ -294,9 +295,7 @@ export default function Users() {
       toast({ title: "Secondary admin access revoked" });
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ title: "Failed to revoke access", description: msg, variant: "destructive" });
+      toast({ title: "Failed to revoke access", description: err.message, variant: "destructive" });
     },
   });
 
@@ -543,7 +542,20 @@ export default function Users() {
                   <p className="text-sm text-slate-500 dark:text-slate-400">Team Members</p>
                   <UsersIcon className="h-4 w-4 text-slate-400" />
                 </div>
-                <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">{teamStats.totalTeamMembers}</p>
+                <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
+                  {teamStats.totalTeamMembers}
+                  {seatLimit !== Infinity && (
+                    <span className="text-sm font-normal text-slate-500 dark:text-slate-400"> of {seatLimit}</span>
+                  )}
+                </p>
+                {atSeatLimit && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    Plan limit reached —{" "}
+                    <Link href="/app/payments" className="underline underline-offset-2">
+                      upgrade for more seats
+                    </Link>
+                  </p>
+                )}
               </CardContent>
             </Card>
             <Card>

@@ -105,13 +105,10 @@ export default function AiPreview() {
       setAiOpen(false);
     },
     onError: (err) => {
-      try {
-        const body = JSON.parse(err.message);
-        if (body?.resetsAt) {
-          setQuotaError({ resetsAt: body.resetsAt, upgradeMessage: body.upgradeMessage });
-          return;
-        }
-      } catch {}
+      if (err.body?.resetsAt) {
+        setQuotaError({ resetsAt: err.body.resetsAt, upgradeMessage: err.body.upgradeMessage });
+        return;
+      }
       setAiRewriteFailed(true);
       setPreviews(generateLocalPreviews());
       setIsAiEnhanced(false);

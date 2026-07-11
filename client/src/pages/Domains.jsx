@@ -61,9 +61,7 @@ function AddDomainDialog({ open, onOpenChange, initialDomain = "", returnTo }) {
       navigate(`/app/domains/${data.id}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`);
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      setError(msg);
+      setError(err.message);
     },
   });
 
@@ -181,9 +179,7 @@ function SenderIdentityCard() {
       }
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ variant: "destructive", title: "Update failed", description: msg });
+      toast({ variant: "destructive", title: "Update failed", description: err.message });
     },
   });
 

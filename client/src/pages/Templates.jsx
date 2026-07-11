@@ -76,16 +76,11 @@ export default function Templates() {
       toast({ title: "Template created successfully" });
     },
     onError: (err) => {
-      let msg = err.message;
-      try {
-        const parsed = JSON.parse(err.message);
-        if (parsed.error === "PLAN_LIMIT") {
-          toast({ title: "Plan limit reached", description: parsed.message + " Go to /app/payments to upgrade.", variant: "destructive" });
-          return;
-        }
-        msg = parsed.message || msg;
-      } catch {}
-      toast({ title: "Failed to create template", description: msg, variant: "destructive" });
+      if (err.body?.error === "PLAN_LIMIT") {
+        toast({ title: "Plan limit reached", description: err.message + " Go to /app/payments to upgrade.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Failed to create template", description: err.message, variant: "destructive" });
     }
   });
 

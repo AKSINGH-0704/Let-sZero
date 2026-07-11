@@ -250,27 +250,21 @@ export default function CampaignConfirmation() {
       setStep(7);
     },
     onError: (err) => {
-      try {
-        const parsed = JSON.parse(err.message);
-        if (parsed.error === "PLAN_LIMIT") {
-          setError(parsed.message);
-          setUpgradeNeeded(true);
-          return;
-        }
-        if (Array.isArray(parsed.validationErrors) && parsed.validationErrors.length > 0) {
-          setValidationErrors(parsed.validationErrors);
-          return;
-        }
-        // SAS denial — dimension-aware: Identity and Reputation need user action
-        if (parsed.dimension && parsed.remediationAction && parsed.message) {
-          setSasBlocked({ message: parsed.message, remediationAction: parsed.remediationAction });
-          return;
-        }
-        if (parsed.message) {
-          setError(parsed.message);
-          return;
-        }
-      } catch {}
+      const body = err.body;
+      if (body?.error === "PLAN_LIMIT") {
+        setError(body.message);
+        setUpgradeNeeded(true);
+        return;
+      }
+      if (Array.isArray(body?.validationErrors) && body.validationErrors.length > 0) {
+        setValidationErrors(body.validationErrors);
+        return;
+      }
+      // SAS denial — dimension-aware: Identity and Reputation need user action
+      if (body?.dimension && body?.remediationAction && body?.message) {
+        setSasBlocked({ message: body.message, remediationAction: body.remediationAction });
+        return;
+      }
       setError(err.message || "Failed to start campaign");
     }
   });

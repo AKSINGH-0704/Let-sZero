@@ -127,16 +127,13 @@ export default function DomainDetail() {
       }
     },
     onError: (err) => {
-      const msg = err.message || "";
-      const rateLimited = /too many|rate ?limit|429/i.test(msg);
-      let clean = msg;
-      try { clean = JSON.parse(msg).message || msg; } catch {}
+      const rateLimited = err.status === 429 || /too many|rate ?limit/i.test(err.message || "");
       toast({
         variant: rateLimited ? "default" : "destructive",
         title: rateLimited ? "Check limit reached" : "Check failed",
         description: rateLimited
           ? "Automatic checks keep running in the background — manual checks are limited to a few per hour."
-          : clean,
+          : err.message,
       });
     },
   });
@@ -156,9 +153,7 @@ export default function DomainDetail() {
       }
     },
     onError: (err) => {
-      let msg = err.message;
-      try { msg = JSON.parse(err.message).message || msg; } catch {}
-      toast({ variant: "destructive", title: "Delete failed", description: msg });
+      toast({ variant: "destructive", title: "Delete failed", description: err.message });
     },
   });
 

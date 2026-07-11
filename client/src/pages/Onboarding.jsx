@@ -55,9 +55,7 @@ export default function Onboarding() {
       navigate(`/app/domains/${data.id}`);
     },
     onError: (err) => {
-      let msg = err.message || "Failed to add domain";
-      try { msg = JSON.parse(msg).message || msg; } catch {}
-      setError(msg);
+      setError(err.message || "Failed to add domain");
     },
   });
 

@@ -767,7 +767,6 @@ export const MONTHLY_CREDITS = {
 };
 
 export const FREE_TRIAL_CREDITS    = MONTHLY_CREDITS.free; // backward-compat alias — do not remove
-export const CREDIT_VALIDITY_MONTHS = 6;
 export const MIN_CREDIT_PURCHASE   = 3000;
 
 /**

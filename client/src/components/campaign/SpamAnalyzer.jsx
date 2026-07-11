@@ -192,13 +192,10 @@ export default function SpamAnalyzer() {
       syncRejected(new Set());
     },
     onError: (err) => {
-      try {
-        const errBody = JSON.parse(err.message);
-        if (errBody?.resetsAt) {
-          setQuotaError({ resetsAt: errBody.resetsAt, upgradeMessage: errBody.upgradeMessage });
-          return;
-        }
-      } catch {}
+      if (err.body?.resetsAt) {
+        setQuotaError({ resetsAt: err.body.resetsAt, upgradeMessage: err.body.upgradeMessage });
+        return;
+      }
       setAiAnalysisFailed(true);
     },
   });

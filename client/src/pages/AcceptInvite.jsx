@@ -224,13 +224,7 @@ export default function AcceptInvite() {
                 <Alert variant="destructive" className="py-2">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-sm">
-                    {(() => {
-                      try {
-                        return JSON.parse(acceptMutation.error.message)?.message;
-                      } catch {
-                        return acceptMutation.error.message || "Something went wrong. Please try again.";
-                      }
-                    })()}
+                    {acceptMutation.error?.message || "Something went wrong. Please try again."}
                   </AlertDescription>
                 </Alert>
               )}

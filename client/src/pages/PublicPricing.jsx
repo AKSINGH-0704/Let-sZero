@@ -297,11 +297,11 @@ const COMPARISON_CATEGORIES = [
 const FAQ_ITEMS = [
   {
     q: "How do credits work?",
-    a: "Each credit equals one email sent. Purchase credits in bulk and use them anytime within 6 months. There are no monthly fees — you only pay for what you use.",
+    a: "Each credit equals one email sent. Purchase credits in bulk and use them anytime — there are no monthly fees, you only pay for what you use.",
   },
   {
     q: "Do credits expire?",
-    a: "Yes, credits expire 6 months from the date of purchase. Make sure to use them before then.",
+    a: "No. Credits never expire — one-time purchases, no subscriptions, no use-it-or-lose-it deadline.",
   },
   {
     q: "What's the difference between plans?",
@@ -844,7 +844,7 @@ export default function PublicPricing() {
             {[
               { icon: <Zap className="w-4 h-4" />, label: "Pay-as-you-go" },
               { icon: <Shield className="w-4 h-4" />, label: "No monthly fees" },
-              { icon: <Clock className="w-4 h-4" />, label: "6-month validity" },
+              { icon: <Clock className="w-4 h-4" />, label: "Credits never expire" },
               { icon: <CreditCard className="w-4 h-4" />, label: "No hidden costs" },
             ].map(({ icon, label }) => (
               <div
@@ -993,7 +993,7 @@ export default function PublicPricing() {
                 </div>
 
                 <p className="text-xs mt-4" style={{ color: "#7878A0" }}>
-                  Minimum purchase: 3,000 credits · Validity: 6 months from purchase
+                  Minimum purchase: 3,000 credits · Credits never expire
                 </p>
               </div>
 
@@ -1378,14 +1378,25 @@ export default function PublicPricing() {
                           { plan: "Growth", seats: "10", color: "#00E5C8" },
                           { plan: "Scale", seats: "25", color: "#A78BFA" },
                           { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
-                        ].map(({ plan, seats, color }) => (
-                          <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
-                            <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
-                            <span className="text-xs" style={{ color: "#B8B8D0" }}>
-                              {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
-                            </span>
-                          </div>
-                        ))}
+                        ].map(({ plan, seats, color }) => {
+                          // Price/credits come from the same PLANS array the Individual
+                          // tab's cards render from — the Teams tab shouldn't require
+                          // switching tabs just to see what a plan actually costs.
+                          const planData = PLANS.find(p => p.name === plan);
+                          return (
+                            <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
+                              <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
+                              <span className="text-xs text-right" style={{ color: "#B8B8D0" }}>
+                                {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
+                                {planData && (
+                                  <span style={{ color: "#55556A" }}>
+                                    {" · "}{planData.isCustom ? "Custom pricing" : `${fmtINR(planData.priceINR)} · ${fmtNum(planData.totalCredits)} credits`}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                       <p className="text-xs mt-4" style={{ color: "#55556A" }}>
                         Team seats are included in all paid plans at no additional cost.
@@ -1579,8 +1590,8 @@ export default function PublicPricing() {
               },
               {
                 icon: <Clock className="w-6 h-6" />,
-                title: "6-Month Validity",
-                desc: "Credits remain valid for 6 months from purchase date. Buy what you need.",
+                title: "Credits Never Expire",
+                desc: "No use-it-or-lose-it deadline. Buy what you need, use it whenever you're ready.",
                 color: "#34D399",
               },
             ].map(({ icon, title, desc, color }) => (

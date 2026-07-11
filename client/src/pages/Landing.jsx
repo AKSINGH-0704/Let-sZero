@@ -228,7 +228,7 @@ const stats = [
   { value: 'AWS SES', label: 'Delivery Infrastructure' },
   { value: 'GPT-4o', label: 'AI Personalization' },
   { value: '₹0.10', label: 'Per Email at Volume' },
-  { value: '6 months', label: 'Credit Validity' },
+  { value: 'Never', label: 'Credits Expire' },
 ];
 
 export default function Landing() {
