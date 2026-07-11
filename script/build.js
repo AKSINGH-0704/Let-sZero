@@ -4,6 +4,7 @@ import { rm, readFile } from "fs/promises";
 import { prerenderRoutes } from "./prerender.js";
 import { generateSitemap } from "./generate-sitemap.js";
 import { generateRss } from "./generate-rss.js";
+import { optimizeImages } from "./optimize-images.js";
 
 const allowlist = [
   "@google/generative-ai",
@@ -58,6 +59,13 @@ async function buildAll() {
   // feed carries none of the "thin content" risk that kept the Resource
   // Center's own pages out of the sitemap in M21-D).
   await generateRss();
+
+  console.log("optimizing content images...");
+  // M21-H (PAR §7). Zero real content images today produces zero output,
+  // not an error — same honest-empty-state pattern as generateRss() above.
+  // Ready the moment real Resource Center images exist, no build-step
+  // change needed then.
+  await optimizeImages();
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
