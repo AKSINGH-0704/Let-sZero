@@ -1,0 +1,14 @@
+{
+  "slug": "getting-started",
+  "name": "Getting Started",
+  "description": "Everything you need to launch a deliverable first cold email campaign with RepMail, in order.",
+  "level": "beginner",
+  "steps": [
+    "where-repmail-fits-in-your-workflow",
+    "verify-your-sending-domain",
+    "why-your-emails-land-in-spam",
+    "subject-lines-that-get-opened",
+    "personalize-cold-email-at-scale",
+    "pre-send-deliverability-checklist"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "slug": "getting-your-first-campaign-delivered",
+  "name": "Getting Your First Campaign Delivered",
+  "description": "A deliverability-focused bundle — warm-up pacing, bounce handling, and templates built to keep your first campaign out of spam.",
+  "articleSlugs": [
+    "why-new-domains-need-warm-up",
+    "hard-vs-soft-bounces",
+    "pre-send-deliverability-checklist",
+    "cold-email-templates"
+  ]
+}

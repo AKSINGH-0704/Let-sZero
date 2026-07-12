@@ -20,18 +20,43 @@ afterAll(async () => {
   await vite.close();
 });
 
-describe("getLearningPathsForProduct / getCollectionsForProduct — honest empty state (today's real state, zero content published)", () => {
-  it("returns an empty array, not an error, when no path files exist yet", () => {
+describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wave 1 Getting Started path + Collection (M22-C)", () => {
+  it("loads the real Getting Started path with its beginner level and 6 ordered steps", () => {
     const paths = resourceCenterContent.getLearningPathsForProduct("repmail");
-    expect(paths).toEqual([]);
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toMatchObject({
+      slug: "getting-started",
+      name: "Getting Started",
+      level: "beginner",
+      product: "repmail",
+    });
+    expect(paths[0].steps).toEqual([
+      "where-repmail-fits-in-your-workflow",
+      "verify-your-sending-domain",
+      "why-your-emails-land-in-spam",
+      "subject-lines-that-get-opened",
+      "personalize-cold-email-at-scale",
+      "pre-send-deliverability-checklist",
+    ]);
   });
 
-  it("returns an empty array, not an error, when no collection files exist yet", () => {
+  it("loads the real Getting Your First Campaign Delivered collection", () => {
     const collections = resourceCenterContent.getCollectionsForProduct("repmail");
-    expect(collections).toEqual([]);
+    expect(collections).toHaveLength(1);
+    expect(collections[0]).toMatchObject({
+      slug: "getting-your-first-campaign-delivered",
+      name: "Getting Your First Campaign Delivered",
+      product: "repmail",
+    });
+    expect(collections[0].articleSlugs).toEqual([
+      "why-new-domains-need-warm-up",
+      "hard-vs-soft-bounces",
+      "pre-send-deliverability-checklist",
+      "cold-email-templates",
+    ]);
   });
 
-  it("returns an empty array for a product that isn't registered at all", () => {
+  it("returns an empty array for a product that isn't registered at all — not a fallback to repmail's real data", () => {
     expect(resourceCenterContent.getLearningPathsForProduct("messagehub")).toEqual([]);
     expect(resourceCenterContent.getCollectionsForProduct("messagehub")).toEqual([]);
   });

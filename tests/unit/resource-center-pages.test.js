@@ -71,15 +71,17 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html.length).toBeGreaterThan(0);
   });
 
-  it("ResourceCenterHomePage renders the real Wave 1 content — featured guides, intent navigation, no dead links (M22-B)", async () => {
+  it("ResourceCenterHomePage renders the complete real Wave 1 homepage — intents, featured, Getting Started, Collection, academies (M22-C)", async () => {
     const html = await renderPage("/src/pages/resource-center/ResourceCenterHomePage.jsx", "/repmail/learn");
     expect(html).toContain("button-open-resource-center-search");
     expect(html).toContain("section-academies");
     expect(html).toContain("section-intents"); // real intent destinations now exist
     expect(html).toContain("section-featured"); // 3 real featured Wave 1 articles
+    expect(html).toContain("section-learning-paths"); // the real Getting Started path (M22-C)
+    expect(html).toContain("section-collections"); // the real Collection (M22-C)
+    expect(html).toContain("Getting Started");
+    expect(html).toContain("Getting Your First Campaign Delivered");
     expect(html).not.toContain("section-curated-resources"); // Template Library etc. not built yet — no dead links
-    expect(html).not.toContain("section-learning-paths"); // Getting Started path data doesn't exist until M22-C
-    expect(html).not.toContain("section-collections"); // Collection data doesn't exist until M22-C
   });
 
   it("LetsZeroLearnDirectory lists RepMail's real Resource Center", async () => {
@@ -107,9 +109,19 @@ describe("Resource Center pages 404 honestly for an unregistered product (M21-I 
   });
 });
 
-describe("LearningPathPage / CollectionPage (M22-A — first real consumers of learningPathSchema/collectionSchema)", () => {
-  it("LearningPathPage renders NotFound for a path slug that doesn't exist yet — today's honest real state, zero paths published", async () => {
+describe("LearningPathPage / CollectionPage (M22-C — real Getting Started path + Collection data)", () => {
+  it("LearningPathPage renders the real Getting Started path with all 6 steps in order, numbered 1-6", async () => {
     const html = await renderPage("/src/pages/resource-center/LearningPathPage.jsx", "/repmail/learn/paths/getting-started");
+    expect(html).toContain("learning-path-template");
+    expect(html).toContain("Getting Started");
+    expect(html).toContain("Where RepMail Fits Into Your Cold Email Workflow");
+    expect(html).toContain("Before You Hit Send");
+    // step 1's marker appears before step 6's — real ordering, not just "all present"
+    expect(html.indexOf("Where RepMail Fits Into Your Cold Email Workflow")).toBeLessThan(html.indexOf("Before You Hit Send"));
+  });
+
+  it("LearningPathPage renders NotFound for a path slug that isn't the real one", async () => {
+    const html = await renderPage("/src/pages/resource-center/LearningPathPage.jsx", "/repmail/learn/paths/not-a-real-path");
     expect(html).not.toContain("learning-path-template");
   });
 
@@ -118,8 +130,15 @@ describe("LearningPathPage / CollectionPage (M22-A — first real consumers of l
     expect(html).not.toContain("learning-path-template");
   });
 
-  it("CollectionPage renders NotFound for a collection slug that doesn't exist yet — today's honest real state, zero collections published", async () => {
+  it("CollectionPage renders the real Getting Your First Campaign Delivered collection with its 4 real articles", async () => {
     const html = await renderPage("/src/pages/resource-center/CollectionPage.jsx", "/repmail/learn/collections/getting-your-first-campaign-delivered");
+    expect(html).toContain("collection-template");
+    expect(html).toContain("Getting Your First Campaign Delivered");
+    expect(html).toContain("Cold Email Templates You Can Send Without Hurting Deliverability");
+  });
+
+  it("CollectionPage renders NotFound for a collection slug that isn't the real one", async () => {
+    const html = await renderPage("/src/pages/resource-center/CollectionPage.jsx", "/repmail/learn/collections/not-a-real-collection");
     expect(html).not.toContain("collection-template");
   });
 
