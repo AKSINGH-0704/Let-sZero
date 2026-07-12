@@ -131,9 +131,25 @@ describe("Homepage hero", () => {
         })
       )
     ));
-    expect(html).toContain("Get your cold email into the inbox");
+    expect(html).toContain("reach the inbox"); // hero headline (gradient span on this phrase)
     expect(html).toContain("button-open-resource-center-search");
     // honest, real total (5 + 6) across the two live topics — not a fabricated stat.
-    expect(html).toContain("11 guides across 2 topics");
+    expect(html).toContain("11 in-depth guides across 2 topics");
+  });
+
+  it("renders a closing conversion band linking to the product (M23-II-B)", async () => {
+    const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
+    const html = renderToString(
+      React.createElement(Router, { ssrPath: "/repmail/learn" },
+        React.createElement(ResourceCenterHome, {
+          product: repmail,
+          academyArticleCounts: { deliverability: 5 },
+          recentArticles: [],
+        })
+      )
+    );
+    expect(html).toContain("section-cta");
+    expect(html).toContain("Ready to put this into practice");
+    expect(html).toContain("link-cta-product");
   });
 });
