@@ -159,7 +159,8 @@ describe("resource-center component templates render for real (SSR), with real t
       academy: fixtureAcademy,
       articles: [],
     })));
-    expect(html).toContain("No guides published yet.");
+    expect(html).toContain("academy-empty");
+    expect(html).toContain("No guides here yet.");
   });
 
   it("AuthorPageTemplate renders the author's real bio and their publication list", async () => {

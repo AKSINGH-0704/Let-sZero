@@ -1,36 +1,14 @@
-// M22-A — the first real template for collectionSchema (M21-A schema, never
-// rendered until now). Unordered thematic bundle — unlike LearningPathTemplate,
-// a Collection deliberately doesn't number its articles, since it isn't a
-// sequence (PAR-M21 §6: "thematic groupings that can cross pillars").
-import { Link } from "wouter";
-import { Clock } from "lucide-react";
+// M22-A, rebuilt M23-D — a Collection: an unordered thematic bundle (unlike
+// the sequential learning path, deliberately not numbered), now with an
+// editorial header and the shared GuideRow so it matches every other list.
+import { Layers } from "lucide-react";
 import ResourceCenterBreadcrumb, { buildBreadcrumbItems } from "./ResourceCenterBreadcrumb";
-import { Card, CardContent } from "@/components/ui/card";
+import GuideRow from "./GuideRow";
 import { Badge } from "@/components/ui/badge";
 
-function ArticleCard({ article, href }) {
-  return (
-    <Link href={href} data-testid={`link-collection-article-${article.slug}`}>
-      <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-        <CardContent className="p-4">
-          <h3 className="mb-1 font-medium">{article.title}</h3>
-          <p className="mb-2 text-sm text-muted-foreground">{article.description}</p>
-          {typeof article.readingTimeMinutes === "number" && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-              {article.readingTimeMinutes} min
-            </span>
-          )}
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-// articles: already-resolved real article objects (resolveArticleSlugs in
-// resourceCenterContent.js silently drops any slug that doesn't resolve).
 export default function CollectionTemplate({ product, collection, articles }) {
   if (!collection) return null;
+  const list = articles ?? [];
 
   const breadcrumbItems = buildBreadcrumbItems({
     resourceCenterName: product.resourceCenterName,
@@ -39,27 +17,31 @@ export default function CollectionTemplate({ product, collection, articles }) {
   });
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10" data-testid="collection-template">
+    <div className="mx-auto max-w-3xl px-4 py-10" data-testid="collection-template">
       <ResourceCenterBreadcrumb items={breadcrumbItems} />
-      <div className="mt-6 mb-8">
-        <Badge variant="secondary" className="mb-3">Collection</Badge>
-        <h1 className="mb-2 text-3xl font-bold tracking-tight">{collection.name}</h1>
-        <p className="text-lg text-muted-foreground">{collection.description}</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-testid="collection-article-list">
-        {articles.length === 0 ? (
-          <p className="text-sm text-muted-foreground">This collection doesn't have any published articles yet.</p>
-        ) : (
-          articles.map((article) => (
-            <ArticleCard
-              key={article.slug}
-              article={article}
-              href={`${product.basePath}/${article.academy.slug}/${article.slug}`}
-            />
-          ))
+      <header className="mt-6 mb-8">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent" aria-hidden="true">
+            <Layers className="h-6 w-6" />
+          </span>
+          <Badge variant="secondary">Collection</Badge>
+        </div>
+        <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance sm:text-4xl">{collection.name}</h1>
+        <p className="max-w-2xl text-lg text-muted-foreground">{collection.description}</p>
+        {list.length > 0 && (
+          <p className="mt-3 text-sm text-muted-foreground">{list.length} guide{list.length === 1 ? "" : "s"}</p>
         )}
-      </div>
+      </header>
+
+      {list.length === 0 ? (
+        <p className="text-sm text-muted-foreground">This collection doesn&rsquo;t have any published guides yet.</p>
+      ) : (
+        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border" data-testid="collection-article-list">
+          {list.map((article) => (
+            <GuideRow key={article.slug} article={article} product={product} showAcademy testId={`link-collection-article-${article.slug}`} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

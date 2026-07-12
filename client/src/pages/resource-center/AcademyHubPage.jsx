@@ -36,11 +36,15 @@ export default function AcademyHubPage() {
 
   if (!product || !academy) return <NotFound />;
 
-  const articles = getArticlesForProduct(params.product).filter((a) => a.academy.slug === academy.slug);
+  const allArticles = getArticlesForProduct(params.product);
+  const articles = allArticles.filter((a) => a.academy.slug === academy.slug);
+  // Academies that actually have content — so the rail marks the rest "Soon"
+  // instead of linking to empty pages (M23-D).
+  const liveSlugs = new Set(allArticles.map((a) => a.academy.slug));
 
   return (
     <ResourceCenterLayout product={product}>
-      <AcademyHubTemplate product={product} academy={academy} articles={articles} />
+      <AcademyHubTemplate product={product} academy={academy} articles={articles} liveSlugs={liveSlugs} />
     </ResourceCenterLayout>
   );
 }

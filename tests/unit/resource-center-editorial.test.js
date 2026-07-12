@@ -92,6 +92,33 @@ describe("AcademyCard — themed live card vs. deliberate coming-soon", () => {
   });
 });
 
+describe("CategoryRail — themed nav that marks empty sections 'Soon', not dead links (M23-D)", () => {
+  it("live Academies are links; empty Academies and the unbuilt Template Library are non-link 'Soon' rows", async () => {
+    const CategoryRail = await loadDefault("/src/components/resource-center/CategoryRail.jsx");
+    const liveSlugs = new Set(["deliverability", "cold-email"]);
+    const html = noComments(renderToString(
+      React.createElement(Router, { ssrPath: "/repmail/learn/deliverability" },
+        React.createElement(CategoryRail, {
+          product: repmail,
+          academies: repmail.academies,
+          templateLibrary: repmail.templateLibrary,
+          activeSlug: "deliverability",
+          liveSlugs,
+        })
+      )
+    ));
+    // Live → real links
+    expect(html).toContain("link-rail-deliverability");
+    expect(html).toContain("link-rail-cold-email");
+    // Empty Academies + Template Library → "Soon" markers, not links
+    expect(html).toContain("rail-soon-compliance");
+    expect(html).toContain("rail-soon-templates");
+    expect(html).not.toContain("link-rail-compliance");
+    expect(html).not.toContain("link-rail-templates");
+    expect(html).toContain("Soon");
+  });
+});
+
 describe("Homepage hero", () => {
   it("renders the editorial hero, a prominent search trigger, and an honest guide count", async () => {
     const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");

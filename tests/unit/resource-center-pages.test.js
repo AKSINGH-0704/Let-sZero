@@ -78,7 +78,8 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
 
   it("AcademyHubPage still shows the honest empty state for an Academy Wave 1 deliberately didn't launch (Compliance)", async () => {
     const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/compliance");
-    expect(html).toContain("No guides published yet");
+    expect(html).toContain("academy-empty");
+    expect(html).toContain("No guides here yet");
   });
 
   it("AcademyHubPage renders NotFound for an unknown academy slug", async () => {
