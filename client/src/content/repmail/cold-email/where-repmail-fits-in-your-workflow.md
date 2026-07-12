@@ -7,6 +7,7 @@ authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["getting-started", "cold-email", "workflow"]
 featured: true
+heroDiagram: workflow-split
 keyTakeaways:
   - "RepMail handles sending, authentication, deliverability, and tracking — the hard infrastructure parts."
   - "You still own list-building, writing strategy, and your CRM or sales process."

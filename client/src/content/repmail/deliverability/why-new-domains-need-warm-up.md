@@ -6,6 +6,7 @@ description: A verified domain with zero sending history still needs to earn tru
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["warm-up", "sender-reputation", "deliverability"]
+heroDiagram: warmup-ramp
 keyTakeaways:
   - "Authentication proves your mail is legitimate; warm-up proves you're trustworthy."
   - "Start around 20–30 emails a day and raise volume gradually over a few weeks."

@@ -114,10 +114,12 @@ describe("validateArticle — two-stage validation (schema + real product taxono
       commonMistakes: ["Don't do X"],
       faqs: [{ question: "Q?", answer: "A." }],
       nextStep: { label: "Next", href: "/repmail/learn/x", description: "why" },
+      heroDiagram: "email-authentication",
     }));
     expect(enriched.keyTakeaways).toEqual(["One", "Two"]);
     expect(enriched.nextStep.href).toBe("/repmail/learn/x");
     expect(enriched.faqs[0].question).toBe("Q?");
+    expect(enriched.heroDiagram).toBe("email-authentication");
   });
 
   it("rejects a malformed nextStep (missing href) and a malformed faq (missing answer)", () => {

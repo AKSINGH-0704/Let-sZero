@@ -93,6 +93,10 @@ export const articleFrontmatterSchema = z.object({
     href: z.string().min(1),
     description: z.string().optional(),
   }).optional(),
+  // M23-II-D — an optional named explanatory figure (theme-aware inline SVG,
+  // client/src/components/resource-center/RcFigures.jsx) rendered near the top
+  // of the article. A key, not markup.
+  heroDiagram: z.string().optional(),
 });
 
 export const collectionSchema = z.object({

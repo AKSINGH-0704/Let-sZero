@@ -440,3 +440,12 @@ html, body {
   .rc-rise { animation: rc-rise var(--duration-slow, 240ms) var(--ease-standard, ease) both; }
   @keyframes rc-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 }
+
+/* M23-II-D — editorial lead paragraph: the first paragraph of an article body
+   reads a touch larger, a classic magazine cue, applied automatically so
+   authors do not mark it up. Scoped to the RC and to the rendered body. */
+.rc-editorial [data-testid="article-body"] > p:first-of-type {
+  font-size: 1.18rem;
+  line-height: 1.7;
+  color: hsl(var(--foreground));
+}

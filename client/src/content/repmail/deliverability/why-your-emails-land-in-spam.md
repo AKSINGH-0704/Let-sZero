@@ -7,6 +7,7 @@ authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["spf", "dkim", "dmarc", "authentication"]
 featured: true
+heroDiagram: email-authentication
 keyTakeaways:
   - "Spam placement is usually an authentication problem, not a content problem."
   - "SPF lists who can send as you, DKIM signs each message, and DMARC says what to do when either fails."

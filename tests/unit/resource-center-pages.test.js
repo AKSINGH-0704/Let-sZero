@@ -44,6 +44,8 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html).toContain("Key takeaways");
     expect(html).toContain("article-common-mistakes");
     expect(html).toContain("article-faq");
+    // A theme-aware explanatory figure (M23-II-D), rendered from heroDiagram:
+    expect(html).toContain("article-figure-email-authentication");
     // The next step is now the premium card, driven by the nextStep field:
     expect(html).toContain("article-continue-learning");
     expect(html).toContain("Continue learning");

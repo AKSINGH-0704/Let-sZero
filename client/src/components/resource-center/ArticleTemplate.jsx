@@ -9,6 +9,7 @@
 import { Link } from "wouter";
 import ContentAsset from "./ContentAsset";
 import ContentMeta from "./ContentMeta";
+import RcFigure from "./RcFigures";
 import AuthorByline from "./AuthorByline";
 import ResourceCenterBreadcrumb, { buildBreadcrumbItems } from "./ResourceCenterBreadcrumb";
 import { academyTheme, academyAccentStyle } from "./academyTheme";
@@ -65,6 +66,7 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
 
       <KeyTakeaways items={article.keyTakeaways} />
       <Prerequisites items={article.prerequisites} />
+      {article.heroDiagram && <RcFigure name={article.heroDiagram} />}
 
       {/* prose: @tailwindcss/typography, tuned for comfortable long-form
           reading. bodyHtml is build-time output from repo-committed markdown
