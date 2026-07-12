@@ -29,19 +29,19 @@ export const REPMAIL_ACADEMIES = [
     slug: "cold-email",
     name: "Cold Email",
     tagline: "Writing, personalization, subject lines, sequences",
-    description: "The tactical craft of cold email — what to write, how to personalize it, and how to structure a sequence that gets replies.",
+    description: "The tactical craft of cold email: what to write, how to personalize it, and how to structure a sequence that gets replies.",
   },
   {
     slug: "deliverability",
     name: "Deliverability & Sender Reputation",
     tagline: "DKIM, SPF, DMARC, warm-up, inbox placement",
-    description: "How to make sure the email you send actually lands in the inbox — the technical and reputational side of sending.",
+    description: "How to make sure the email you send actually lands in the inbox: the technical and reputational side of sending.",
   },
   {
     slug: "outreach",
     name: "Outreach & Sales Engagement",
     tagline: "Multi-channel sequencing, cadences, meeting booking",
-    description: "Cold email as one tactic inside a broader sales-engagement process — cadences, channels, and follow-up.",
+    description: "Cold email as one tactic inside a broader sales-engagement process: cadences, channels, and follow-up.",
   },
   {
     slug: "infrastructure",
@@ -53,7 +53,7 @@ export const REPMAIL_ACADEMIES = [
     slug: "lead-generation",
     name: "Lead Generation",
     tagline: "List building, prospecting, ICP and TAM",
-    description: "Finding the right people to email in the first place — upstream of cold email itself.",
+    description: "Finding the right people to email in the first place, upstream of cold email itself.",
   },
   {
     slug: "compliance",

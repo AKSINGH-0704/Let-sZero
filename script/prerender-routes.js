@@ -25,14 +25,14 @@
 import { buildArticleJsonLd, buildPersonJsonLd } from "../shared/content/jsonLd.js";
 
 const ORIGIN = "https://www.letszero.in";
-const REPMAIL_TEAM_AUTHOR = { name: "RepMail Team", role: "Product & Engineering", bio: "The people building and running RepMail — email infrastructure, deliverability, and the product itself.", authorType: "Organization" };
+const REPMAIL_TEAM_AUTHOR = { name: "RepMail Team", role: "Product & Engineering", bio: "The people building and running RepMail: email infrastructure, deliverability, and the product itself.", authorType: "Organization" };
 const AUTHOR_URL = `${ORIGIN}/repmail/learn/authors/repmail-team`;
 
 function articleRoute({ path, title, description, publishedAt }) {
   return {
     path,
     componentPath: "/src/pages/resource-center/ArticlePage.jsx",
-    title: `${title} — RepMail Resource Center`,
+    title: `${title} | RepMail Resource Center`,
     description,
     jsonLd: (url) => buildArticleJsonLd({ title, description, publishedAt, author: REPMAIL_TEAM_AUTHOR }, { canonicalUrl: url, authorUrl: AUTHOR_URL }),
   };
@@ -111,12 +111,13 @@ export const PUBLIC_ROUTES = [
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "RepMail Changelog", url }),
   },
 
-  // M22-D — Resource Center homepage.
+  // M22-D — Resource Center homepage. (M23-II-E: titles/descriptions cleaned
+  // of em dashes and kept in sync with the article frontmatter.)
   {
     path: "/repmail/learn",
     componentPath: "/src/pages/resource-center/ResourceCenterHomePage.jsx",
-    title: "RepMail Resource Center — Cold Email & Deliverability Guides",
-    description: "Practical guides on cold email deliverability, sending infrastructure, and getting your campaigns into the inbox — written by the team building RepMail.",
+    title: "RepMail Resource Center: Cold Email & Deliverability Guides",
+    description: "Practical guides on cold email deliverability, sending infrastructure, and getting your campaigns into the inbox, written by the team building RepMail.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "RepMail Resource Center", url }),
   },
 
@@ -124,44 +125,43 @@ export const PUBLIC_ROUTES = [
   {
     path: "/repmail/learn/deliverability",
     componentPath: "/src/pages/resource-center/AcademyHubPage.jsx",
-    title: "Deliverability & Sender Reputation — RepMail Resource Center",
-    description: "How to make sure the email you send actually lands in the inbox — SPF/DKIM/DMARC, domain warm-up, and bounce handling.",
+    title: "Deliverability & Sender Reputation | RepMail Resource Center",
+    description: "How to make sure the email you send actually lands in the inbox: SPF, DKIM, DMARC, domain warm-up, and bounce handling.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "Deliverability & Sender Reputation", url }),
   },
   {
     path: "/repmail/learn/cold-email",
     componentPath: "/src/pages/resource-center/AcademyHubPage.jsx",
-    title: "Cold Email — RepMail Resource Center",
-    description: "Writing, personalizing, and sequencing cold email that gets replies — plus where RepMail fits into your workflow.",
+    title: "Cold Email | RepMail Resource Center",
+    description: "Writing, personalizing, and sequencing cold email that gets replies, plus where RepMail fits into your workflow.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "Cold Email", url }),
   },
 
-  // M22-D — the 11 Wave 1 articles. title/description copied verbatim from
-  // each article's own frontmatter (client/src/content/repmail/...) — kept
-  // in sync by hand, since this file can't import.meta.glob the real files
-  // (see header comment).
+  // M22-D — the 11 Wave 1 articles. title/description kept in sync by hand
+  // with each article's own frontmatter (client/src/content/repmail/...),
+  // since this file can't import.meta.glob the real files (see header comment).
   articleRoute({
     path: "/repmail/learn/deliverability/why-your-emails-land-in-spam",
     title: "Why Your Emails Land in Spam, and How to Fix It",
-    description: "SPF, DKIM, and DMARC explained through the actual problem they solve — mail that never reaches the inbox.",
+    description: "SPF, DKIM, and DMARC explained through the problem they actually solve: mail that never reaches the inbox.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
     path: "/repmail/learn/deliverability/verify-your-sending-domain",
     title: "Verify Your Sending Domain Before Your First Campaign",
-    description: "A step-by-step walkthrough of domain verification in RepMail — the one thing every sending domain needs before you can campaign.",
+    description: "A step-by-step walkthrough of domain verification in RepMail, the one thing every sending domain needs before you can campaign.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
     path: "/repmail/learn/deliverability/why-new-domains-need-warm-up",
     title: "New Domain, Poor Delivery? Why You Need to Warm It Up First",
-    description: "A verified domain with zero sending history still needs to earn trust gradually — here's a practical ramp schedule.",
+    description: "A verified domain with no sending history still has to earn trust gradually. Here is a practical ramp schedule.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
     path: "/repmail/learn/deliverability/hard-vs-soft-bounces",
     title: "Why Did That Email Bounce? Hard vs. Soft Bounces Explained",
-    description: "Not every bounce means the same thing — the difference determines whether you remove a contact or just wait it out.",
+    description: "Not every bounce means the same thing. The difference decides whether you remove a contact or simply wait it out.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
@@ -173,19 +173,19 @@ export const PUBLIC_ROUTES = [
   articleRoute({
     path: "/repmail/learn/cold-email/subject-lines-that-get-opened",
     title: "Nobody's Opening Your Cold Emails? Fix Your Subject Line First",
-    description: "The subject line patterns that trigger spam filters and disengaged readers, and what to write instead.",
+    description: "The subject line patterns that trigger spam filters and lose readers, and what to write instead.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
     path: "/repmail/learn/cold-email/personalize-cold-email-at-scale",
     title: "Personalization That Doesn't Feel Robotic, Even at Scale",
-    description: "How to personalize cold email in a way that actually reads as genuine, using a repeatable structure instead of mail-merge tokens alone.",
+    description: "How to personalize cold email so it reads as genuine, using a repeatable structure instead of mail-merge tokens alone.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
     path: "/repmail/learn/cold-email/how-many-follow-ups",
     title: "How Many Follow-Ups Should a Cold Email Sequence Have?",
-    description: "A practical cadence for cold email follow-ups — how many, how far apart, and why the last one often performs best.",
+    description: "A practical cadence for cold email follow-ups. How many, how far apart, and why the last one often performs best.",
     publishedAt: "2026-07-12",
   }),
   articleRoute({
@@ -203,7 +203,7 @@ export const PUBLIC_ROUTES = [
   articleRoute({
     path: "/repmail/learn/cold-email/where-repmail-fits-in-your-workflow",
     title: "Where RepMail Fits Into Your Cold Email Workflow",
-    description: "A practical, honest breakdown of what RepMail handles in a cold email operation — and what's still your job.",
+    description: "A practical, honest breakdown of what RepMail handles in a cold email operation, and what is still your job.",
     publishedAt: "2026-07-12",
   }),
 
@@ -211,22 +211,22 @@ export const PUBLIC_ROUTES = [
   {
     path: "/repmail/learn/authors/repmail-team",
     componentPath: "/src/pages/resource-center/AuthorPage.jsx",
-    title: "RepMail Team — RepMail Resource Center",
-    description: "The people building and running RepMail — email infrastructure, deliverability, and the product itself.",
+    title: "RepMail Team | RepMail Resource Center",
+    description: "The people building and running RepMail: email infrastructure, deliverability, and the product itself.",
     jsonLd: (url) => buildPersonJsonLd(REPMAIL_TEAM_AUTHOR, { canonicalUrl: url }),
   },
   {
     path: "/repmail/learn/paths/getting-started",
     componentPath: "/src/pages/resource-center/LearningPathPage.jsx",
-    title: "Getting Started — RepMail Resource Center",
+    title: "Getting Started | RepMail Resource Center",
     description: "Everything you need to launch a deliverable first cold email campaign with RepMail, in order.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "Getting Started", url }),
   },
   {
     path: "/repmail/learn/collections/getting-your-first-campaign-delivered",
     componentPath: "/src/pages/resource-center/CollectionPage.jsx",
-    title: "Getting Your First Campaign Delivered — RepMail Resource Center",
-    description: "A deliverability-focused bundle — warm-up pacing, bounce handling, and templates built to keep your first campaign out of spam.",
+    title: "Getting Your First Campaign Delivered | RepMail Resource Center",
+    description: "A deliverability-focused bundle: warm-up pacing, bounce handling, and templates built to keep your first campaign out of spam.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "Getting Your First Campaign Delivered", url }),
   },
 ];

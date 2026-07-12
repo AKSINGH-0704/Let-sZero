@@ -8,7 +8,7 @@ publishedAt: "2026-07-12"
 tags: ["ab-testing", "cold-email", "optimization"]
 keyTakeaways:
   - "Test one variable at a time, or you learn nothing about which change mattered."
-  - "Start with the subject line — it caps every downstream metric."
+  - "Start with the subject line, because it caps every downstream metric."
   - "Then the opening line, then the call to action, then send time and length."
 nextStep:
   label: "Start from a proven template"
@@ -18,33 +18,33 @@ assets:
   - type: checklist
     title: What to test, in order
     content:
-      - "Subject line — the single highest-leverage thing to test first"
-      - "Opening line / first sentence"
-      - "Call to action — a question vs. a direct ask"
+      - "Subject line, the single highest-leverage thing to test first"
+      - "Opening line, the first sentence of the body"
+      - "Call to action, a soft question versus a direct ask"
       - "Send time and day of week"
-      - "Length — a short version vs. a longer, more detailed one"
+      - "Length, a short version versus a longer, more detailed one"
 ---
 
-When a cold email campaign underperforms, it's tempting to test everything at once — but changing five variables in the same test tells you nothing about which one actually mattered. The fix is testing one thing at a time, in the order most likely to move the number you're looking at.
+When a cold email campaign underperforms, it is tempting to test everything at once. Change five variables in one test, though, and you learn nothing about which one mattered. The fix is to test one thing at a time, in the order most likely to move the number you care about.
 
 ## Start with subject lines, not the body
 
-Subject line changes affect your open rate, which caps everything downstream — a great email nobody opens can't get a reply. It's also the fastest, lowest-risk thing to test: two subject lines, same body, split your list, and see which one gets opened more. Because it isolates a single, easily measured metric (opens), it's the cleanest place to start.
+Subject line changes affect your open rate, which caps everything downstream. A great email nobody opens cannot earn a reply. It is also the fastest, lowest-risk test: two subject lines, the same body, split the list, and see which gets opened more. Because it isolates a single, easily measured metric, it is the cleanest place to start.
 
 ## Then the opening line
 
-Once emails are being opened, the next bottleneck is usually whether the first sentence earns the rest of the read. Recipients decide within the first line or two whether to keep reading or move on — testing your opening line in isolation (same subject, same rest of the email) tells you specifically whether your hook is working.
+Once emails are being opened, the next bottleneck is usually whether the first sentence earns the rest of the read. People decide within a line or two whether to keep going. Testing your opening line on its own, with the same subject and the same rest of the email, tells you exactly whether your hook is working.
 
 ## Then the call to action
 
-How you ask for the next step matters more than most senders assume. A direct ask ("Can we get 15 minutes this week?") and a softer, lower-commitment question ("Worth a quick chat, or should I check back later?") can produce meaningfully different reply rates depending on your audience and how warm the outreach is. This is worth testing once your subject line and opening are already working, since the CTA is what converts an engaged reader into a reply.
+How you ask for the next step matters more than most senders assume. A direct ask like "Can we get 15 minutes this week?" and a softer one like "Worth a quick chat, or should I check back later?" can produce very different reply rates depending on your audience and how warm the outreach is. Test this once the subject line and opening are already working, since the ask is what turns an engaged reader into a reply.
 
 ## Then send time and length
 
-Send time and day of week matter, but usually less than the first three — and they're the easiest to test almost for free, since you're already sending on a schedule anyway. Length is similar: some audiences respond better to a short, scannable email; others want enough context to make a decision without a back-and-forth. Both are worth testing, just after the higher-leverage variables above.
+Send time and day of week matter, usually less than the first three, and they are the easiest to test almost for free, since you are already sending on a schedule. Length is similar. Some audiences prefer a short, scannable email, while others want enough context to decide without a back-and-forth. Both are worth testing, just after the higher-leverage variables above.
 
 ## Why the order matters
 
-Testing in this order means each test tells you something real, and you're always optimizing the variable most likely to be your actual bottleneck. Testing send time before your subject line is even landing opens, for example, optimizes something that doesn't matter yet if the bigger problem is upstream.
+Testing in this order means each test tells you something real, and you are always working on the variable most likely to be your actual bottleneck. Testing send time before your subject line is even landing opens, for instance, optimizes something that does not matter yet when the real problem is upstream.
 
-Testing is far easier when you're not starting from a blank page — a solid template gives you a baseline worth iterating on.
+Testing is far easier when you are not starting from a blank page. A solid template gives you a baseline worth iterating on.

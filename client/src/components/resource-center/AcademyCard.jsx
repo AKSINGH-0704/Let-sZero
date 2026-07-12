@@ -55,7 +55,7 @@ export default function AcademyCard({ academy, href, articleCount }) {
 
   if (!hasContent) {
     return (
-      <div data-testid={`card-academy-${academy.slug}`} aria-label={`${academy.name} — coming soon`}>
+      <div data-testid={`card-academy-${academy.slug}`} aria-label={`${academy.name}, coming soon`}>
         {inner}
       </div>
     );
