@@ -95,6 +95,9 @@ const ResourceCenterHomePage = lazy(() => import("@/pages/resource-center/Resour
 const AcademyHubPage = lazy(() => import("@/pages/resource-center/AcademyHubPage"));
 const ArticlePage = lazy(() => import("@/pages/resource-center/ArticlePage"));
 const AuthorPage = lazy(() => import("@/pages/resource-center/AuthorPage"));
+// M22-A — first real consumers of learningPathSchema/collectionSchema.
+const LearningPathPage = lazy(() => import("@/pages/resource-center/LearningPathPage"));
+const CollectionPage = lazy(() => import("@/pages/resource-center/CollectionPage"));
 const RepMailChangelog = lazy(() => import("@/pages/RepMailChangelog"));
 
 // Dev-only design-system preview. Gated on import.meta.env.DEV so Rollup drops the
@@ -220,6 +223,17 @@ function AppRoutes() {
 
       <Route path="/:product/learn/authors/:author">
         {() => <Suspense fallback={<LoadingScreen />}><AuthorPage /></Suspense>}
+      </Route>
+
+      {/* M22-A — paths/:path and collections/:collection are the same
+          3-segments-after-:product shape as authors/:author above, so they
+          must also be declared before :academy/:slug for the same reason. */}
+      <Route path="/:product/learn/paths/:path">
+        {() => <Suspense fallback={<LoadingScreen />}><LearningPathPage /></Suspense>}
+      </Route>
+
+      <Route path="/:product/learn/collections/:collection">
+        {() => <Suspense fallback={<LoadingScreen />}><CollectionPage /></Suspense>}
       </Route>
 
       <Route path="/:product/learn/:academy/:slug">

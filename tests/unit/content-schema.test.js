@@ -138,4 +138,14 @@ describe("collection and learning-path schemas — product-scoped like articles 
     expect(() => learningPathSchema.parse({ product: "repmail", slug: "new-to-cold-email", name: "New to Cold Email? Start Here", description: "...", steps: [] })).toThrow();
     expect(() => learningPathSchema.parse({ product: "repmail", slug: "new-to-cold-email", name: "New to Cold Email? Start Here", description: "...", steps: ["how-dkim-works"] })).not.toThrow();
   });
+
+  it("a learning path's level is optional, and accepts only beginner/intermediate/advanced (M22-A)", () => {
+    const noLevel = learningPathSchema.parse({ product: "repmail", slug: "getting-started", name: "Getting Started", description: "...", steps: ["how-dkim-works"] });
+    expect(noLevel.level).toBeUndefined();
+
+    const withLevel = learningPathSchema.parse({ product: "repmail", slug: "getting-started", name: "Getting Started", description: "...", steps: ["how-dkim-works"], level: "beginner" });
+    expect(withLevel.level).toBe("beginner");
+
+    expect(() => learningPathSchema.parse({ product: "repmail", slug: "x", name: "X", description: "...", steps: ["a"], level: "expert" })).toThrow();
+  });
 });

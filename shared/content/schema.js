@@ -83,6 +83,10 @@ export const learningPathSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   steps: z.array(z.string()).min(1), // ordered article slugs
+  // Optional (M22-A): lets multiple paths coexist per product — a beginner
+  // "Getting Started" path today, intermediate/advanced paths as new records
+  // later — with zero schema or template change when that day comes.
+  level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
 });
 
 /**

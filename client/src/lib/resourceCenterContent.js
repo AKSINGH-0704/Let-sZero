@@ -9,11 +9,17 @@
 // content/ directory, specifically so import.meta.glob's root-relative
 // pattern resolution stays simple and reliable — glob patterns are not
 // guaranteed to resolve through Vite path aliases the way normal imports are.
-import { authorSchema } from "@shared/content/schema.js";
+import { authorSchema, learningPathSchema, collectionSchema } from "@shared/content/schema.js";
 import { parseArticle } from "@shared/content/parseArticle.js";
 
 const authorModules = import.meta.glob("/src/content/*/authors/*.json", { eager: true, query: "?raw", import: "default" });
 const articleModules = import.meta.glob("/src/content/*/*/*.md", { eager: true, query: "?raw", import: "default" });
+// M22-A — learningPathSchema/collectionSchema existed since M21-A with no
+// loader ever reading real data for them (ResourceCenterHomePage.jsx hardcoded
+// learningPaths={[]}/collections={[]}). Same glob-per-content-type pattern as
+// authorModules/articleModules above, not a new mechanism.
+const pathModules = import.meta.glob("/src/content/*/paths/*.json", { eager: true, query: "?raw", import: "default" });
+const collectionModules = import.meta.glob("/src/content/*/collections/*.json", { eager: true, query: "?raw", import: "default" });
 
 function parsePathSegments(globKey) {
   // "/src/content/{product}/{academyOrAuthors}/{file}"
@@ -55,4 +61,50 @@ export function getArticlesForProduct(productSlug) {
 
 export function getAuthorsForProduct(productSlug) {
   return loadAuthorsForProduct(productSlug);
+}
+
+/**
+ * M22-A — first real consumer of learningPathSchema/collectionSchema
+ * (schemas existed since M21-A with nothing loading them). Same
+ * non-fatal, skip-invalid-and-log-it behavior, and the same product-slug
+ * injection convenience parseArticle() already gives articles (the
+ * directory already encodes which product a file belongs to, so the
+ * author doesn't have to repeat it in the JSON).
+ */
+export function getLearningPathsForProduct(productSlug) {
+  const paths = [];
+  for (const [key, raw] of Object.entries(pathModules)) {
+    const { product, file } = parsePathSegments(key);
+    if (product !== productSlug || !file.endsWith(".json")) continue;
+    try {
+      paths.push(learningPathSchema.parse({ ...JSON.parse(raw), product: productSlug }));
+    } catch (err) {
+      console.warn(`[resource-center] skipping invalid learning path file ${key}: ${err.message}`);
+    }
+  }
+  return paths;
+}
+
+export function getCollectionsForProduct(productSlug) {
+  const collections = [];
+  for (const [key, raw] of Object.entries(collectionModules)) {
+    const { product, file } = parsePathSegments(key);
+    if (product !== productSlug || !file.endsWith(".json")) continue;
+    try {
+      collections.push(collectionSchema.parse({ ...JSON.parse(raw), product: productSlug }));
+    } catch (err) {
+      console.warn(`[resource-center] skipping invalid collection file ${key}: ${err.message}`);
+    }
+  }
+  return collections;
+}
+
+/**
+ * Resolves a learning path's/collection's ordered article slugs into real
+ * article objects, silently dropping any slug that doesn't resolve to a
+ * real, valid article — a broken step is never worse than a missing one.
+ */
+export function resolveArticleSlugs(slugs, articles) {
+  const bySlug = new Map(articles.map((a) => [a.slug, a]));
+  return slugs.map((slug) => bySlug.get(slug)).filter(Boolean);
 }

@@ -27,6 +27,19 @@ function ArticleProbe() {
   return React.createElement("div", { "data-testid": "matched-article" }, `product:${params?.product} academy:${params?.academy} slug:${params?.slug}`);
 }
 
+// M22-A — paths/:path and collections/:collection probes: same ambiguity
+// risk as authors/:author (3 segments after :product), so they need the
+// same declared-before-:academy/:slug ordering, verified below.
+function PathProbe() {
+  const [, params] = useRoute("/:product/learn/paths/:path");
+  return React.createElement("div", { "data-testid": "matched-path" }, `product:${params?.product} path:${params?.path}`);
+}
+
+function CollectionProbe() {
+  const [, params] = useRoute("/:product/learn/collections/:collection");
+  return React.createElement("div", { "data-testid": "matched-collection" }, `product:${params?.product} collection:${params?.collection}`);
+}
+
 function ProbeSwitch({ ssrPath }) {
   return React.createElement(
     Router,
@@ -34,8 +47,11 @@ function ProbeSwitch({ ssrPath }) {
     React.createElement(
       Switch,
       null,
-      // Same order as client/src/App.jsx: authors/:author declared before :academy/:slug.
+      // Same order as client/src/App.jsx: authors/:author, paths/:path, and
+      // collections/:collection all declared before :academy/:slug.
       React.createElement(Route, { path: "/:product/learn/authors/:author", key: "author" }, () => React.createElement(AuthorProbe)),
+      React.createElement(Route, { path: "/:product/learn/paths/:path", key: "path" }, () => React.createElement(PathProbe)),
+      React.createElement(Route, { path: "/:product/learn/collections/:collection", key: "collection" }, () => React.createElement(CollectionProbe)),
       React.createElement(Route, { path: "/:product/learn/:academy/:slug", key: "article" }, () => React.createElement(ArticleProbe))
     )
   );
@@ -58,6 +74,20 @@ describe("Resource Center route ordering — the real ambiguous case, product-pa
   it("a hypothetical second product's routes resolve through the exact same pattern — no product-specific route needed", () => {
     const html = renderToString(React.createElement(ProbeSwitch, { ssrPath: "/messagehub/learn/deliverability/how-dkim-works" }));
     expect(html).toContain("product:messagehub academy:deliverability slug:how-dkim-works");
+  });
+
+  it("/repmail/learn/paths/getting-started matches the path route, not the article route treating 'paths' as an academy slug (M22-A)", () => {
+    const html = renderToString(React.createElement(ProbeSwitch, { ssrPath: "/repmail/learn/paths/getting-started" }));
+    expect(html).toContain('data-testid="matched-path"');
+    expect(html).toContain("product:repmail path:getting-started");
+    expect(html).not.toContain("matched-article");
+  });
+
+  it("/repmail/learn/collections/getting-your-first-campaign-delivered matches the collection route, not the article route (M22-A)", () => {
+    const html = renderToString(React.createElement(ProbeSwitch, { ssrPath: "/repmail/learn/collections/getting-your-first-campaign-delivered" }));
+    expect(html).toContain('data-testid="matched-collection"');
+    expect(html).toContain("product:repmail collection:getting-your-first-campaign-delivered");
+    expect(html).not.toContain("matched-article");
   });
 });
 

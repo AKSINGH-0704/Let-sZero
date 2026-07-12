@@ -9,16 +9,41 @@
 // content, not a new page component or route path.
 import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
-import { getArticlesForProduct } from "@/lib/resourceCenterContent";
+import { getArticlesForProduct, getLearningPathsForProduct, getCollectionsForProduct } from "@/lib/resourceCenterContent";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
 import ResourceCenterSearch from "@/components/resource-center/ResourceCenterSearch";
 import NotFound from "@/pages/not-found";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
 
+// M22-A / M22 PAR §9 — "what are you trying to do?" intent cards. Wave-1-
+// specific by design (real Academy slugs are stable/product-level, but the
+// article/path slugs below are specific Wave 1 content) — each entry
+// resolves against real loaded data and is simply omitted if its target
+// doesn't exist yet, so this never produces a dead link. As later waves add
+// more journeys, this list is expected to grow/change; it isn't meant to be
+// a permanently-fixed set.
+function buildIntentCards({ product, articles, learningPaths }) {
+  const findArticle = (slug) => articles.find((a) => a.slug === slug);
+  const hasPath = (slug) => learningPaths.some((p) => p.slug === slug);
+  const academyHref = (academySlug) => `${product.basePath}/${academySlug}`;
+
+  const candidates = [
+    { slug: "improve-deliverability", label: "Improve deliverability", href: academyHref("deliverability"), when: true },
+    { slug: "start-cold-email", label: "Start cold email", href: `${product.basePath}/paths/getting-started`, when: hasPath("getting-started") },
+    { slug: "verify-a-domain", label: "Verify a domain", href: (() => { const a = findArticle("verify-your-sending-domain"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("verify-your-sending-domain") },
+    { slug: "write-better-emails", label: "Write better emails", href: academyHref("cold-email"), when: true },
+    { slug: "learn-repmail", label: "Learn RepMail", href: (() => { const a = findArticle("where-repmail-fits-in-your-workflow"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("where-repmail-fits-in-your-workflow") },
+  ];
+
+  return candidates.filter((c) => c.when && c.href);
+}
+
 export default function ResourceCenterHomePage() {
   const [, params] = useRoute("/:product/learn");
   const product = useResourceCenterProduct(params?.product);
   const articles = product ? getArticlesForProduct(params.product) : [];
+  const learningPaths = product ? getLearningPathsForProduct(params.product) : [];
+  const collections = product ? getCollectionsForProduct(params.product) : [];
   const [searchOpen, setSearchOpen] = useState(false);
 
   // ⌘K / Ctrl+K — the "keyboard-accessible search" PAR §5/§8 calls for
@@ -48,14 +73,16 @@ export default function ResourceCenterHomePage() {
   // doesn't render (ResourceCenterHome is conditional per module), not a
   // dead link to a page that returns 404 today.
   const curatedResources = [];
+  const intents = buildIntentCards({ product, articles, learningPaths });
 
   return (
     <>
       <ResourceCenterHome
         product={product}
+        intents={intents}
         featuredArticles={articles.filter((a) => a.featured)}
-        learningPaths={[]}
-        collections={[]}
+        learningPaths={learningPaths}
+        collections={collections}
         toolsAvailable={false}
         academyArticleCounts={academyArticleCounts}
         curatedResources={curatedResources}

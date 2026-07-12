@@ -174,13 +174,14 @@ describe("resource-center component templates render for real (SSR), with real t
     expect(html).toContain("How DKIM Works");
   });
 
-  it("ResourceCenterHome renders modules in the PAR §5 order: search, featured, paths, collections, academies, resources, recent", async () => {
+  it("ResourceCenterHome renders modules in the M22 PAR §9 order: search, intents, featured, paths, collections, academies, resources, recent", async () => {
     const { Router } = await vite.ssrLoadModule("wouter");
     const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
     const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
       product: repmail,
+      intents: [{ slug: "improve-deliverability", label: "Improve deliverability", href: `${repmail.basePath}/deliverability` }],
       featuredArticles: [fixtureArticle],
-      learningPaths: [{ slug: "new-to-cold-email", name: "New to Cold Email? Start Here", description: "..." }],
+      learningPaths: [{ slug: "getting-started", name: "Getting Started", description: "..." }],
       collections: [{ slug: "first-delivery", name: "Getting Your First Campaign Delivered", description: "..." }],
       toolsAvailable: false,
       academyArticleCounts: { deliverability: 1 },
@@ -188,12 +189,36 @@ describe("resource-center component templates render for real (SSR), with real t
       recentArticles: [fixtureArticle],
     })));
 
-    const order = ["button-open-resource-center-search", "section-featured", "section-learning-paths", "section-collections", "section-academies", "section-curated-resources", "section-recent"]
+    const order = ["button-open-resource-center-search", "section-intents", "section-featured", "section-learning-paths", "section-collections", "section-academies", "section-curated-resources", "section-recent"]
       .map((testId) => html.indexOf(testId));
-    // every module present, and each one's marker appears strictly after the previous — the exact PAR §5 ordering, not just "all present somewhere"
+    // every module present, and each one's marker appears strictly after the previous — the exact M22 PAR §9 ordering, not just "all present somewhere"
     for (let i = 0; i < order.length; i++) expect(order[i]).toBeGreaterThan(-1);
     for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1]);
 
     expect(html).not.toContain("section-tools"); // toolsAvailable: false — not shown as a placeholder promise
+  });
+
+  it("ResourceCenterHome omits the intent section entirely when there are no valid intents (never a dead-link placeholder)", async () => {
+    const { Router } = await vite.ssrLoadModule("wouter");
+    const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
+    const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
+      product: repmail,
+      intents: [],
+      academyArticleCounts: {},
+    })));
+    expect(html).not.toContain("section-intents");
+  });
+
+  it("Learning path and Collection cards are real links to /paths/:slug and /collections/:slug (M22-A — previously not clickable)", async () => {
+    const { Router } = await vite.ssrLoadModule("wouter");
+    const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
+    const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
+      product: repmail,
+      learningPaths: [{ slug: "getting-started", name: "Getting Started", description: "..." }],
+      collections: [{ slug: "first-delivery", name: "Getting Your First Campaign Delivered", description: "..." }],
+      academyArticleCounts: {},
+    })));
+    expect(html).toContain(`href="${repmail.basePath}/paths/getting-started"`);
+    expect(html).toContain(`href="${repmail.basePath}/collections/first-delivery"`);
   });
 });

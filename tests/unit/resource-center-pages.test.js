@@ -82,3 +82,25 @@ describe("Resource Center pages 404 honestly for an unregistered product (M21-I 
     expect(authorHtml).not.toContain("author-page-template");
   });
 });
+
+describe("LearningPathPage / CollectionPage (M22-A — first real consumers of learningPathSchema/collectionSchema)", () => {
+  it("LearningPathPage renders NotFound for a path slug that doesn't exist yet — today's honest real state, zero paths published", async () => {
+    const html = await renderPage("/src/pages/resource-center/LearningPathPage.jsx", "/repmail/learn/paths/getting-started");
+    expect(html).not.toContain("learning-path-template");
+  });
+
+  it("LearningPathPage 404s for an unregistered product, same as every other Resource Center page", async () => {
+    const html = await renderPage("/src/pages/resource-center/LearningPathPage.jsx", "/messagehub/learn/paths/getting-started");
+    expect(html).not.toContain("learning-path-template");
+  });
+
+  it("CollectionPage renders NotFound for a collection slug that doesn't exist yet — today's honest real state, zero collections published", async () => {
+    const html = await renderPage("/src/pages/resource-center/CollectionPage.jsx", "/repmail/learn/collections/getting-your-first-campaign-delivered");
+    expect(html).not.toContain("collection-template");
+  });
+
+  it("CollectionPage 404s for an unregistered product, same as every other Resource Center page", async () => {
+    const html = await renderPage("/src/pages/resource-center/CollectionPage.jsx", "/messagehub/learn/collections/getting-your-first-campaign-delivered");
+    expect(html).not.toContain("collection-template");
+  });
+});
