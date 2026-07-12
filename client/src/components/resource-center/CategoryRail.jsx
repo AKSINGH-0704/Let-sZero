@@ -25,7 +25,7 @@ export default function CategoryRail({ product, academies, templateLibrary, acti
           return (
             <div
               key={item.slug}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground/60"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground"
               data-testid={`rail-soon-${item.slug}`}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

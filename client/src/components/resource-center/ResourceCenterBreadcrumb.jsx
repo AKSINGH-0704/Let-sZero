@@ -4,6 +4,7 @@
 // component system. The trail this renders is also the source of truth for
 // BreadcrumbList JSON-LD (M21-E), so both stay in sync by construction —
 // deriving the schema from the same `items` prop, not a parallel hand-kept copy.
+import { Fragment } from "react";
 import { Link } from "wouter";
 import {
   Breadcrumb,
@@ -23,7 +24,10 @@ export default function ResourceCenterBreadcrumb({ items }) {
         {items.map((item, i) => {
           const isLast = i === items.length - 1;
           return (
-            <span key={item.label} style={{ display: "contents" }}>
+            // Fragment (not a display:contents span): keeps the <li> items as
+            // direct children of the <ol>, which the previous span wrapper
+            // violated (axe list / listitem failures). M23-II-F fix.
+            <Fragment key={item.label}>
               <BreadcrumbItem>
                 {isLast || !item.href ? (
                   <BreadcrumbPage>{item.label}</BreadcrumbPage>
@@ -34,7 +38,7 @@ export default function ResourceCenterBreadcrumb({ items }) {
                 )}
               </BreadcrumbItem>
               {!isLast && <BreadcrumbSeparator />}
-            </span>
+            </Fragment>
           );
         })}
       </BreadcrumbList>
