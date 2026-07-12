@@ -64,7 +64,9 @@ export default function ResourceCenterLayout({ product, children }) {
 
   return (
     <SearchContext.Provider value={() => setSearchOpen(true)}>
-    <div className="flex min-h-screen flex-col bg-background" data-testid="resource-center-layout">
+    {/* rc-editorial (M23-II) scopes the premium editorial palette to the
+        Resource Center only — the app-wide M19 tokens are untouched. */}
+    <div className="rc-editorial flex min-h-screen flex-col bg-background text-foreground" data-testid="resource-center-layout">
       <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
           <Link
