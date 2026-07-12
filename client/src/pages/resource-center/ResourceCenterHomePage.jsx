@@ -8,6 +8,7 @@
 // PRODUCTS.repmail) — a second LetsZero product needs a PRODUCTS entry and
 // content, not a new page component or route path.
 import { useRoute } from "wouter";
+import { ShieldCheck, Compass, BadgeCheck, PenLine, Sparkles } from "lucide-react";
 import { getArticlesForProduct, getLearningPathsForProduct, getCollectionsForProduct } from "@/lib/resourceCenterContent";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
 import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
@@ -27,11 +28,11 @@ function buildIntentCards({ product, articles, learningPaths }) {
   const academyHref = (academySlug) => `${product.basePath}/${academySlug}`;
 
   const candidates = [
-    { slug: "improve-deliverability", label: "Improve deliverability", href: academyHref("deliverability"), when: true },
-    { slug: "start-cold-email", label: "Start cold email", href: `${product.basePath}/paths/getting-started`, when: hasPath("getting-started") },
-    { slug: "verify-a-domain", label: "Verify a domain", href: (() => { const a = findArticle("verify-your-sending-domain"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("verify-your-sending-domain") },
-    { slug: "write-better-emails", label: "Write better emails", href: academyHref("cold-email"), when: true },
-    { slug: "learn-repmail", label: "Learn RepMail", href: (() => { const a = findArticle("where-repmail-fits-in-your-workflow"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("where-repmail-fits-in-your-workflow") },
+    { slug: "improve-deliverability", label: "Improve deliverability", description: "SPF, DKIM, warm-up, and inbox placement.", Icon: ShieldCheck, href: academyHref("deliverability"), when: true },
+    { slug: "start-cold-email", label: "Start from scratch", description: "A guided path from setup to your first campaign.", Icon: Compass, href: `${product.basePath}/paths/getting-started`, when: hasPath("getting-started") },
+    { slug: "verify-a-domain", label: "Verify a domain", description: "Step-by-step domain setup in RepMail.", Icon: BadgeCheck, href: (() => { const a = findArticle("verify-your-sending-domain"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("verify-your-sending-domain") },
+    { slug: "write-better-emails", label: "Write better emails", description: "Subject lines, personalization, and follow-ups.", Icon: PenLine, href: academyHref("cold-email"), when: true },
+    { slug: "learn-repmail", label: "Learn RepMail", description: "How RepMail fits into your cold email workflow.", Icon: Sparkles, href: (() => { const a = findArticle("where-repmail-fits-in-your-workflow"); return a ? `${product.basePath}/${a.academy.slug}/${a.slug}` : null; })(), when: !!findArticle("where-repmail-fits-in-your-workflow") },
   ];
 
   return candidates.filter((c) => c.when && c.href);

@@ -79,6 +79,19 @@ html, body {
   --info: 217 91% 40%;
   --info-foreground: 0 0% 100%;
 
+  /* M23 (Resource Center) — per-Academy accent hues, HSL triplets.
+     Light-mode lightness chosen for >=4.5:1 as small text and for legible
+     tinted /10 backgrounds over --background, consistent with the M19
+     semantic tokens above. Consumed via the academyTheme.js registry, never
+     as inline hex in components (ADR-012). */
+  --rc-deliverability: 187 72% 33%;
+  --rc-cold-email: 250 55% 52%;
+  --rc-outreach: 30 82% 38%;
+  --rc-infrastructure: 214 68% 44%;
+  --rc-lead-generation: 150 58% 30%;
+  --rc-compliance: 336 62% 45%;
+  --rc-templates: 262 52% 50%;
+
   /* M19 design system — motion tokens (theme-independent) */
   --duration-fast: 120ms;
   --duration-base: 180ms;
@@ -175,6 +188,17 @@ html, body {
   --warning-foreground: 222 47% 6%;
   --info: 213 94% 68%;
   --info-foreground: 222 47% 6%;
+
+  /* M23 (Resource Center) — per-Academy accent hues (dark): higher
+     lightness so the same accents stay legible as text and tinted fills on
+     the dark ground, matching the M19 dark-token approach above. */
+  --rc-deliverability: 187 65% 55%;
+  --rc-cold-email: 250 75% 74%;
+  --rc-outreach: 30 88% 62%;
+  --rc-infrastructure: 214 85% 68%;
+  --rc-lead-generation: 150 55% 55%;
+  --rc-compliance: 336 74% 68%;
+  --rc-templates: 262 74% 74%;
 
 /* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));

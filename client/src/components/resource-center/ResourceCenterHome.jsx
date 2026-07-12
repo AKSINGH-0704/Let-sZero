@@ -1,30 +1,59 @@
-// M21-C — the Resource Center homepage. Module order is the content-strategy
-// decision made visible (PAR §5, revised by M22 PAR §9): search, intent
-// navigation, featured, learning paths, collections, tools, topic discovery,
-// curated resources, recent articles — in that order, every time. A
-// first-time visitor's job is to find their topic and get real help, not
-// scroll a chronological publishing log.
-//
-// Search is a trigger only here — the actual command-palette wiring is
-// M21-F's scope; this establishes its position in the layout now so the
-// module order is correct from the first real render, not retrofitted later.
+// M21-C, rebuilt M23-B — the Resource Center homepage as an editorial
+// destination, not an admin list. Module order is preserved from the M22
+// PAR §9 decision (search/hero → intents → featured → paths → collections →
+// academies → curated → recent) and asserted by test; what changed is the
+// treatment: a real hero, an intent module with icons + descriptions +
+// per-goal accent, Academy-themed featured/topic cards, metadata scent on
+// every guide, and deliberate "coming soon" empty Academies.
 import { Link } from "wouter";
-import { Search, ArrowRight, BookOpen } from "lucide-react";
+import { Search, ArrowRight, Sparkles, Compass, Layers } from "lucide-react";
 import AcademyCard from "./AcademyCard";
+import ContentMeta from "./ContentMeta";
+import { academyTheme, academyAccentStyle } from "./academyTheme";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useResourceCenterSearch } from "./ResourceCenterLayout";
 
-function Section({ title, subtitle, children, testId }) {
+function Section({ title, eyebrow, subtitle, children, testId }) {
   return (
-    <section className="mb-12" data-testid={testId}>
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+    <section className="mb-14" data-testid={testId}>
+      <div className="mb-5">
+        {eyebrow && (
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary">{eyebrow}</p>
+        )}
+        <h2 className="text-xl font-semibold tracking-tight text-balance">{title}</h2>
+        {subtitle && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {children}
     </section>
+  );
+}
+
+// A guide card with its Academy's accent + metadata scent, reused by the
+// Featured module (and available to others). Whole card is one link — no
+// nested interactives.
+function GuideCard({ article, product, testIdPrefix }) {
+  const { Icon } = academyTheme(article.academy.slug);
+  return (
+    <Link
+      href={`${product.basePath}/${article.academy.slug}/${article.slug}`}
+      data-testid={`${testIdPrefix}-${article.slug}`}
+      className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={academyAccentStyle(article.academy.slug)}
+    >
+      <Card className="h-full border-border transition-all hover:-translate-y-0.5 hover:border-[color:var(--academy-accent)] hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+        <CardContent className="flex h-full flex-col p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[color:var(--academy-accent)]/10 text-[color:var(--academy-accent)]" aria-hidden="true">
+              <Icon className="h-4 w-4" />
+            </span>
+            <ContentMeta article={article} />
+          </div>
+          <h3 className="mb-1.5 font-semibold leading-snug tracking-tight">{article.title}</h3>
+          <p className="text-sm text-muted-foreground">{article.description}</p>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -40,87 +69,128 @@ export default function ResourceCenterHome({
   recentArticles = [],
 }) {
   const openSearch = useResourceCenterSearch();
+  const totalGuides = Object.values(academyArticleCounts).reduce((sum, n) => sum + (n || 0), 0);
+  const liveAcademyCount = Object.values(academyArticleCounts).filter((n) => n > 0).length;
+  const primaryPath = learningPaths[0] ?? null;
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10" data-testid="resource-center-home">
-      <header className="mb-10">
-        <Badge variant="secondary" className="mb-3">{product.name}</Badge>
-        <h1 className="mb-2 text-3xl font-bold tracking-tight">{product.resourceCenterName}</h1>
-        <p className="max-w-2xl text-lg text-muted-foreground">
-          Everything we know about cold email deliverability and outreach — written by the team building {product.name}.
+    <div className="mx-auto max-w-6xl px-4 py-10 md:py-14" data-testid="resource-center-home">
+      {/* Hero — a confident statement of what this place is, with search as
+          the primary action. */}
+      <header className="mb-14 max-w-3xl">
+        <p className="mb-3 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          {product.resourceCenterName}
         </p>
+        <h1 className="text-4xl font-bold tracking-tight text-balance sm:text-5xl">
+          Get your cold email into the inbox.
+        </h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Practical, no-fluff guides on deliverability and cold email — from the team
+          that builds {product.name}&rsquo;s sending infrastructure.
+        </p>
+
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={openSearch}
+            data-testid="button-open-resource-center-search"
+            className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left text-muted-foreground shadow-sm transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-md"
+          >
+            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="flex-1 text-sm">Search guides, topics, and setup steps…</span>
+            <kbd className="hidden rounded border border-border bg-muted px-1.5 font-mono text-[10px] sm:inline">⌘K</kbd>
+          </button>
+          {primaryPath && (
+            <Button asChild size="lg" className="gap-2">
+              <Link href={`${product.basePath}/paths/${primaryPath.slug}`} data-testid="link-hero-getting-started">
+                <Compass className="h-4 w-4" aria-hidden="true" />
+                {primaryPath.name}
+              </Link>
+            </Button>
+          )}
+        </div>
+
+        {totalGuides > 0 && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            {totalGuides} guides across {liveAcademyCount} {liveAcademyCount === 1 ? "topic" : "topics"} · free, no signup required
+          </p>
+        )}
       </header>
 
-      {/* 1. Search — the intended primary discovery tool (PAR §5/§8) */}
-      <div className="mb-12">
-        <Button
-          variant="outline"
-          className="w-full max-w-md justify-start gap-2 text-muted-foreground"
-          onClick={openSearch}
-          data-testid="button-open-resource-center-search"
-        >
-          <Search className="h-4 w-4" aria-hidden="true" />
-          Search the {product.resourceCenterName}...
-        </Button>
-      </div>
-
-      {/* 2. Intent navigation (M22 PAR §9) — "what are you trying to do?",
-          ahead of both curated content and category browsing, so a
-          first-time visitor can identify their goal before search or
-          Academy-browsing. Each card's destination is resolved by the
-          caller (ResourceCenterHomePage) against real loaded data, so an
-          intent whose target doesn't exist yet is simply absent here —
-          never a dead link. */}
+      {/* Intents — start from a goal, not a table of contents. */}
       {intents.length > 0 && (
         <Section title="What are you trying to do?" testId="section-intents">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {intents.map((intent) => (
-              <Link key={intent.label} href={intent.href} data-testid={`link-intent-${intent.slug}`}>
-                <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-                  <CardContent className="p-4">
-                    <h3 className="font-medium">{intent.label}</h3>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+            {intents.map((intent) => {
+              const IntentIcon = intent.Icon ?? Compass;
+              return (
+                <Link
+                  key={intent.slug}
+                  href={intent.href}
+                  data-testid={`link-intent-${intent.slug}`}
+                  className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Card className="h-full border-border transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+                    <CardContent className="flex h-full items-start gap-3 p-5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+                        <IntentIcon className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <h3 className="font-semibold tracking-tight">{intent.label}</h3>
+                        {intent.description && (
+                          <p className="mt-0.5 text-sm text-muted-foreground">{intent.description}</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         </Section>
       )}
 
-      {/* 3. Featured guides — editorially curated, not "most recent" */}
+      {/* Featured */}
       {featuredArticles.length > 0 && (
-        <Section title="Featured guides" testId="section-featured">
+        <Section eyebrow="Editor's picks" title="Featured guides" testId="section-featured">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredArticles.map((article) => (
-              <Link key={article.slug} href={`${product.basePath}/${article.academy.slug}/${article.slug}`} data-testid={`link-featured-${article.slug}`}>
-                <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-                  <CardContent className="p-4">
-                    <h3 className="mb-1 font-medium">{article.title}</h3>
-                    <p className="text-sm text-muted-foreground">{article.description}</p>
-                  </CardContent>
-                </Card>
-              </Link>
+              <GuideCard key={article.slug} article={article} product={product} testIdPrefix="link-featured" />
             ))}
           </div>
         </Section>
       )}
 
-      {/* 4. Learning paths ("Getting Started" for Wave 1, per M22 PAR §6/§9) —
-          sequenced bundles for a given buyer stage. Now clickable (M22-A):
-          the card had no href at all until real path data existed to link
-          to — not a UI oversight, the section simply had nothing to point
-          at before this milestone. */}
+      {/* Learning paths ("Getting Started") */}
       {learningPaths.length > 0 && (
-        <Section title="Learning paths" subtitle="Sequenced guides for where you're starting from." testId="section-learning-paths">
+        <Section
+          eyebrow="Guided"
+          title="Start here"
+          subtitle="A sequenced path from setup to your first delivered campaign."
+          testId="section-learning-paths"
+        >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {learningPaths.map((path) => (
-              <Link key={path.slug} href={`${product.basePath}/paths/${path.slug}`} data-testid={`card-learning-path-${path.slug}`}>
-                <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-                  <CardContent className="flex items-center justify-between gap-3 p-4">
-                    <div>
-                      <h3 className="mb-1 font-medium">{path.name}</h3>
+              <Link
+                key={path.slug}
+                href={`${product.basePath}/paths/${path.slug}`}
+                data-testid={`card-learning-path-${path.slug}`}
+                className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Card className="h-full border-border transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+                  <CardContent className="flex items-center gap-4 p-5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+                      <Compass className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1">
+                      <div className="mb-0.5 flex items-center gap-2">
+                        <h3 className="font-semibold tracking-tight">{path.name}</h3>
+                        {path.steps && <span className="text-xs text-muted-foreground">{path.steps.length} steps</span>}
+                      </div>
                       <p className="text-sm text-muted-foreground">{path.description}</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />
                   </CardContent>
                 </Card>
               </Link>
@@ -129,17 +199,29 @@ export default function ResourceCenterHome({
         </Section>
       )}
 
-      {/* 5. Collections — thematic groupings that can cross Academies. Also
-          made clickable this milestone, same reasoning as Learning paths above. */}
+      {/* Collections */}
       {collections.length > 0 && (
-        <Section title="Collections" testId="section-collections">
+        <Section eyebrow="Curated" title="Collections" subtitle="Themed bundles that cut across topics." testId="section-collections">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {collections.map((c) => (
-              <Link key={c.slug} href={`${product.basePath}/collections/${c.slug}`} data-testid={`card-collection-${c.slug}`}>
-                <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-                  <CardContent className="p-4">
-                    <h3 className="mb-1 font-medium">{c.name}</h3>
-                    <p className="text-sm text-muted-foreground">{c.description}</p>
+              <Link
+                key={c.slug}
+                href={`${product.basePath}/collections/${c.slug}`}
+                data-testid={`card-collection-${c.slug}`}
+                className="group rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Card className="h-full border-border transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
+                  <CardContent className="flex items-start gap-4 p-5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent" aria-hidden="true">
+                      <Layers className="h-5 w-5" />
+                    </span>
+                    <div className="flex-1">
+                      <div className="mb-0.5 flex items-center gap-2">
+                        <h3 className="font-semibold tracking-tight">{c.name}</h3>
+                        {c.articleSlugs && <span className="text-xs text-muted-foreground">{c.articleSlugs.length} guides</span>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{c.description}</p>
+                    </div>
                   </CardContent>
                 </Card>
               </Link>
@@ -148,19 +230,18 @@ export default function ResourceCenterHome({
         </Section>
       )}
 
-      {/* 6. Tools — only shown once real, not a placeholder promise (PAR §6/§13) */}
+      {/* Tools (still gated off until real) */}
       {toolsAvailable && (
         <Section title="Tools" testId="section-tools">
-          <Link href={`${product.basePath}/tools`} data-testid="link-tools">
-            <Card className="transition-colors hover:border-primary cursor-pointer">
-              <CardContent className="p-4">Free tools</CardContent>
-            </Card>
+          <Link href={`${product.basePath}/tools`} data-testid="link-tools" className="block rounded-xl">
+            <Card className="transition-colors hover:border-primary"><CardContent className="p-4">Free tools</CardContent></Card>
           </Link>
         </Section>
       )}
 
-      {/* 7. Topic / Academy discovery — the primary long-term navigation */}
-      <Section title="Explore by topic" testId="section-academies">
+      {/* Academy discovery — the primary long-term navigation, now themed and
+          honest about what's launched vs. coming soon. */}
+      <Section eyebrow="Browse" title="Explore by topic" testId="section-academies">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {product.academies.map((academy) => (
             <AcademyCard
@@ -173,40 +254,40 @@ export default function ResourceCenterHome({
         </div>
       </Section>
 
-      {/* 8. Curated resources — Template Library, Glossary, Comparisons */}
+      {/* Curated resources (Template Library / Glossary / Comparisons — still
+          gated until those surfaces exist). */}
       {curatedResources.length > 0 && (
         <Section title="More resources" testId="section-curated-resources">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {curatedResources.map((r) => (
-              <Link key={r.href} href={r.href} data-testid={`link-curated-${r.slug}`}>
-                <Card className="h-full transition-colors hover:border-primary cursor-pointer">
-                  <CardContent className="flex items-center gap-2 p-4">
-                    <BookOpen className="h-4 w-4 text-primary" aria-hidden="true" />
-                    <span className="font-medium">{r.name}</span>
-                  </CardContent>
-                </Card>
+              <Link key={r.href} href={r.href} data-testid={`link-curated-${r.slug}`} className="block rounded-xl">
+                <Card className="h-full transition-colors hover:border-primary"><CardContent className="p-4 font-medium">{r.name}</CardContent></Card>
               </Link>
             ))}
           </div>
         </Section>
       )}
 
-      {/* 9. Recent articles — last, smallest, for return visitors only */}
+      {/* Recently published */}
       {recentArticles.length > 0 && (
         <Section title="Recently published" testId="section-recent">
-          <ul className="space-y-2">
+          <div className="divide-y divide-border rounded-xl border border-border">
             {recentArticles.map((article) => (
-              <li key={article.slug}>
-                <Link
-                  href={`${product.basePath}/${article.academy.slug}/${article.slug}`}
-                  className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-                  data-testid={`link-recent-${article.slug}`}
-                >
-                  {article.title}
-                </Link>
-              </li>
+              <Link
+                key={article.slug}
+                href={`${product.basePath}/${article.academy.slug}/${article.slug}`}
+                data-testid={`link-recent-${article.slug}`}
+                className="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={academyAccentStyle(article.academy.slug)}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{article.title}</p>
+                  <ContentMeta article={article} showAcademy className="mt-0.5" />
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </Link>
             ))}
-          </ul>
+          </div>
         </Section>
       )}
     </div>
