@@ -36,8 +36,15 @@ export const authorSchema = z.object({
   name: z.string().min(1),
   role: z.string().min(1),
   bio: z.string().min(1),
+  // Person (default) for a real named individual, Organization for a real
+  // team-level byline (e.g. "RepMail Team") — both are honest identities,
+  // neither is a fictional persona. Governs the schema.org @type emitted by
+  // buildPersonJsonLd/buildArticleJsonLd (ADR-014); a name string alone
+  // can't tell Google whether an entity is a person or a team.
+  authorType: z.enum(["Person", "Organization"]).default("Person"),
   // No `isAiGenerated` / persona flag of any kind — the schema has no field
-  // that could represent a fictional author, by design (PAR §9/§12 Decision 5).
+  // that could represent a fictional author, by design (PAR §9/§12 Decision 5,
+  // ADR-014).
   avatarUrl: z.string().optional(),
 });
 

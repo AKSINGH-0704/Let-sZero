@@ -16,6 +16,7 @@ const VALID_AUTHOR = {
   name: "Jane Doe",
   role: "Deliverability Engineer, RepMail",
   bio: "Writes about DKIM, SPF, and DMARC from the inside of a sending platform.",
+  authorType: "Person", // ADR-014
 };
 
 const VALID_ARTICLE_MD = `---
@@ -92,6 +93,19 @@ describe("loadAuthors", () => {
     const authors = await loadAuthors(emptyDir, "repmail", { log: () => {} });
     expect(authors.size).toBe(0);
     await rm(emptyDir, { recursive: true, force: true });
+  });
+
+  it("defaults authorType to Person for an on-disk author file that predates ADR-014 and doesn't specify it", async () => {
+    const legacyDir = await mkdtemp(path.join(tmpdir(), "content-loader-legacy-author-"));
+    await mkdir(path.join(legacyDir, "repmail", "authors"), { recursive: true });
+    await writeFile(
+      path.join(legacyDir, "repmail", "authors", "old-author.json"),
+      JSON.stringify({ slug: "old-author", name: "Old Author", role: "Engineer", bio: "Predates authorType." }),
+      "utf-8"
+    );
+    const authors = await loadAuthors(legacyDir, "repmail", { log: () => {} });
+    expect(authors.get("old-author").authorType).toBe("Person");
+    await rm(legacyDir, { recursive: true, force: true });
   });
 });
 

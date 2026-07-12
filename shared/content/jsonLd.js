@@ -4,12 +4,17 @@
 // to shared/content/schema.js and taxonomy.js since these describe the
 // same content model, just projected into schema.org's vocabulary.
 
+// authorType (ADR-014): "Person" for a real named individual, "Organization"
+// for a real team-level byline (e.g. "RepMail Team"). jobTitle is a Person-only
+// schema.org property — omitted for Organization rather than emitted
+// meaninglessly. Defaults to "Person" for author records predating this field.
 export function buildPersonJsonLd(author, { canonicalUrl }) {
+  const authorType = author.authorType ?? "Person";
   return {
     "@context": "https://schema.org",
-    "@type": "Person",
+    "@type": authorType,
     name: author.name,
-    jobTitle: author.role,
+    ...(authorType === "Person" ? { jobTitle: author.role } : {}),
     description: author.bio,
     url: canonicalUrl,
     ...(author.avatarUrl ? { image: author.avatarUrl } : {}),
@@ -26,7 +31,7 @@ export function buildArticleJsonLd(article, { canonicalUrl, authorUrl }) {
     ...(article.updatedAt ? { dateModified: article.updatedAt } : {}),
     url: canonicalUrl,
     author: {
-      "@type": "Person",
+      "@type": article.author.authorType ?? "Person",
       name: article.author.name,
       url: authorUrl,
     },

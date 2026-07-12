@@ -112,6 +112,16 @@ describe("author schema — no field can represent a fictional persona (PAR §9/
     expect(Object.keys(authorSchema.shape)).not.toContain("isAiGenerated");
     expect(Object.keys(authorSchema.shape)).not.toContain("persona");
   });
+
+  it("authorType defaults to Person when omitted (ADR-014 backward compatibility)", () => {
+    const parsed = authorSchema.parse({ slug: "jane-doe", name: "Jane Doe", role: "Engineer", bio: "Writes about deliverability." });
+    expect(parsed.authorType).toBe("Person");
+  });
+
+  it("accepts Organization for a real team-level byline (ADR-014), rejects anything else", () => {
+    expect(() => authorSchema.parse({ slug: "repmail-team", name: "RepMail Team", role: "Product Team", bio: "The team behind RepMail.", authorType: "Organization" })).not.toThrow();
+    expect(() => authorSchema.parse({ slug: "repmail-team", name: "RepMail Team", role: "Product Team", bio: "...", authorType: "AI" })).toThrow();
+  });
 });
 
 describe("collection and learning-path schemas — product-scoped like articles (PAR §11)", () => {

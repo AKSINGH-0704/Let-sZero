@@ -19,6 +19,19 @@ describe("buildPersonJsonLd", () => {
     const jsonLd = buildPersonJsonLd(author, { canonicalUrl: "https://x.test" });
     expect("image" in jsonLd).toBe(false);
   });
+
+  it("defaults to Person for an author record with no authorType (ADR-014 backward compatibility)", () => {
+    const jsonLd = buildPersonJsonLd(author, { canonicalUrl: "https://x.test" });
+    expect(jsonLd["@type"]).toBe("Person");
+  });
+
+  it("emits Organization, not Person, for a real team-level byline (ADR-014) — and omits jobTitle, a Person-only property", () => {
+    const teamAuthor = { slug: "repmail-team", name: "RepMail Team", role: "Product Team", bio: "The team behind RepMail.", authorType: "Organization" };
+    const jsonLd = buildPersonJsonLd(teamAuthor, { canonicalUrl: "https://www.letszero.in/repmail/learn/authors/repmail-team" });
+    expect(jsonLd["@type"]).toBe("Organization");
+    expect(jsonLd.name).toBe("RepMail Team");
+    expect("jobTitle" in jsonLd).toBe(false);
+  });
 });
 
 describe("buildArticleJsonLd", () => {
@@ -43,6 +56,15 @@ describe("buildArticleJsonLd", () => {
   it("includes dateModified only when the article has been updated", () => {
     const jsonLd = buildArticleJsonLd({ ...article, updatedAt: "2026-08-01" }, { canonicalUrl: "https://x.test", authorUrl: "https://x.test/authors/jane-doe" });
     expect(jsonLd.dateModified).toBe("2026-08-01");
+  });
+
+  it("nests an Organization author, not Person, for an article bylined to a real team (ADR-014)", () => {
+    const teamAuthor = { slug: "repmail-team", name: "RepMail Team", role: "Product Team", bio: "The team behind RepMail.", authorType: "Organization" };
+    const jsonLd = buildArticleJsonLd({ ...article, author: teamAuthor }, {
+      canonicalUrl: "https://x.test",
+      authorUrl: "https://x.test/authors/repmail-team",
+    });
+    expect(jsonLd.author).toEqual({ "@type": "Organization", name: "RepMail Team", url: "https://x.test/authors/repmail-team" });
   });
 });
 
