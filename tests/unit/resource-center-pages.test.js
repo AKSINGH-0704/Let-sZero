@@ -76,10 +76,22 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html).not.toContain("No guides published yet");
   });
 
-  it("AcademyHubPage still shows the honest empty state for an Academy Wave 1 deliberately didn't launch (Compliance)", async () => {
+  it("AcademyHubPage renders the rich M23-II-C editorial sections for a live Academy (why / outcomes / curriculum / capabilities)", async () => {
+    const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/deliverability");
+    expect(html).toContain("academy-why");
+    expect(html).toContain("academy-outcomes");
+    expect(html).toContain("academy-curriculum");
+    expect(html).toContain("academy-capabilities");
+    expect(html).toContain("Warm a new domain"); // a real learning outcome
+    expect(html).toContain("helps here"); // "How RepMail helps here" (name is a separate text node in SSR)
+  });
+
+  it("AcademyHubPage shows an aspirational 'on the way' state with planned topics for a Wave 1-deferred Academy (Compliance)", async () => {
     const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/compliance");
     expect(html).toContain("academy-empty");
-    expect(html).toContain("No guides here yet");
+    expect(html).toContain("This Academy is being written now.");
+    expect(html).toContain("CAN-SPAM and GDPR"); // a real planned topic from academyEditorial
+    expect(html).not.toContain("academy-article-list"); // no fabricated guides
   });
 
   it("AcademyHubPage renders NotFound for an unknown academy slug", async () => {

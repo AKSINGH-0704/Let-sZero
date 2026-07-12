@@ -160,7 +160,7 @@ describe("resource-center component templates render for real (SSR), with real t
       articles: [],
     })));
     expect(html).toContain("academy-empty");
-    expect(html).toContain("No guides here yet.");
+    expect(html).toContain("This Academy is being written now.");
   });
 
   it("AuthorPageTemplate renders the author's real bio and their publication list", async () => {
