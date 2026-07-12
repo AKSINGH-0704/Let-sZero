@@ -109,6 +109,7 @@ export default function ResourceCenterLayout({ product, children }) {
               className="gap-2 text-muted-foreground"
               onClick={() => setSearchOpen(true)}
               data-testid="button-rc-header-search"
+              aria-label="Search the Resource Center"
             >
               <Search className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Search</span>

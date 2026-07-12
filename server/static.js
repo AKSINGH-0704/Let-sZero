@@ -35,6 +35,32 @@ export function serveStatic(app, distPath = path.resolve(__dirname, "public")) {
   // redirect:false only changes behavior for an exact directory-path match
   // like this one; it has zero effect on the extensions-based flat-file
   // lookup above, which is a separate mechanism.
+  // M23-E — prerendered flat file FIRST, before express.static's directory
+  // handling. A "container" route can have both a prerendered file and a real
+  // child directory at the same path: /repmail/learn has dist/public/repmail/
+  // learn.html (the prerendered homepage) AND dist/public/repmail/learn/ (its
+  // child articles + rss.xml). express.static's `extensions: ["html"]`
+  // fallback does NOT fire when the path resolves to a directory, so those
+  // routes were silently served the SPA shell (no prerendered metadata,
+  // defeating the whole prerender/SEO effort for exactly the homepage and
+  // Academy hub pages). This resolver serves "<route>.html" when it exists,
+  // winning over the directory shadow. Leaf routes (articles, authors) are
+  // unaffected — they already resolve via extensions since no directory
+  // shadows them; this just also handles the container case. /app/* and /api/*
+  // have no matching .html and fall through untouched.
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    const urlPath = req.path;
+    if (urlPath === "/" || urlPath.endsWith("/") || path.extname(urlPath)) return next();
+    const candidate = path.join(distPath, urlPath.replace(/^\/+/, "")) + ".html";
+    // Defense in depth against path traversal (req.path is already normalized).
+    if (!candidate.startsWith(distPath + path.sep)) return next();
+    fs.access(candidate, fs.constants.F_OK, (err) => {
+      if (err) return next();
+      res.sendFile(candidate);
+    });
+  });
+
   app.use(express.static(distPath, { extensions: ["html"], redirect: false }));
 
   app.use("*", (_req, res) => {
