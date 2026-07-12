@@ -6,6 +6,14 @@ description: Not every bounce means the same thing — the difference determines
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["bounces", "deliverability", "list-hygiene"]
+keyTakeaways:
+  - "A hard bounce is permanent — remove the address immediately and never retry it."
+  - "A soft bounce is temporary — RepMail retries automatically before giving up."
+  - "A reputation-based rejection looks like a bounce but is fixed by warm-up and authentication, not by pruning the list."
+nextStep:
+  label: "Cold email templates that protect deliverability"
+  href: "/repmail/learn/cold-email/cold-email-templates"
+  description: "Put these deliverability habits into what you actually send."
 assets:
   - type: table
     title: Bounce type reference
@@ -35,6 +43,4 @@ There's a third case worth knowing about, even though it isn't always cleanly la
 
 Confusing these categories leads to two different mistakes: removing perfectly good addresses because of a temporary soft bounce, or — worse — continuing to send to genuinely invalid addresses because a bounce "seemed minor." Getting this right keeps your list clean without being overly aggressive about pruning contacts who are simply having a temporary delivery issue.
 
-## Next step
-
-Once your list hygiene is solid, the highest-leverage next move is putting deliverability best practices into what you actually send: [cold email templates built with deliverability in mind](/repmail/learn/cold-email/cold-email-templates).
+With a clean list and healthy sending, the highest-leverage next move is putting these habits into what you actually send.

@@ -1,20 +1,31 @@
-// M21-C — the article page template. Pure presentational (accepts data as
-// props) — no data-fetching wired up yet, that's M21-D's MDX pipeline. Built
-// and reviewed against placeholder content now (PAR §13 Phase 3), same
-// component real content renders through later.
+// M21-C, rebuilt M23-C — the article reading experience. Presentational
+// (accepts already-parsed/validated data as props). What changed in M23-C:
+// an editorial header with the Academy's identity + metadata scent, the
+// optional educational blocks (key takeaways, prerequisites, common
+// mistakes, FAQ) rendered in designed positions, a premium "Continue
+// learning" hand-off (the schema `nextStep`, replacing the old in-body
+// markdown section), and tuned long-form typography. The engineering
+// contract is unchanged — same props, same bodyHtml pipeline.
 import { Link } from "wouter";
 import ContentAsset from "./ContentAsset";
+import ContentMeta from "./ContentMeta";
 import AuthorByline from "./AuthorByline";
 import ResourceCenterBreadcrumb, { buildBreadcrumbItems } from "./ResourceCenterBreadcrumb";
+import { academyTheme, academyAccentStyle } from "./academyTheme";
+import {
+  KeyTakeaways,
+  Prerequisites,
+  CommonMistakes,
+  ArticleFaq,
+  ContinueLearning,
+} from "./ArticleBlocks";
 import { Badge } from "@/components/ui/badge";
 
-// article: the parsed+validated frontmatter (shared/content/schema.js) plus
-// `bodyHtml` (rendered markdown body) and `academy` (resolved taxonomy entry).
-// relatedArticles (M21-F, PAR §8): generated via shared/content/relatedContent.js,
-// passed in already-computed rather than computed inside this presentational
-// component — keeps the scoring logic in one pure, independently-tested place.
 export default function ArticleTemplate({ article, author, product, readingTimeMinutes, relatedArticles = [] }) {
   if (!article) return null;
+
+  const { Icon } = academyTheme(article.academy.slug);
+  const accentStyle = academyAccentStyle(article.academy.slug);
 
   const breadcrumbItems = buildBreadcrumbItems({
     resourceCenterName: product.resourceCenterName,
@@ -25,19 +36,25 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
   });
 
   return (
-    <article className="mx-auto max-w-3xl px-4 py-10" data-testid="article-template">
+    <article className="mx-auto max-w-3xl px-4 py-10" data-testid="article-template" style={accentStyle}>
       <ResourceCenterBreadcrumb items={breadcrumbItems} />
 
       <header className="mt-6 mb-8">
-        {article.tags?.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {article.tags.map((tag) => (
-              <Badge key={tag} variant="outline">{tag}</Badge>
-            ))}
-          </div>
-        )}
-        <h1 className="mb-4 text-3xl font-bold tracking-tight">{article.title}</h1>
-        <p className="mb-5 text-lg text-muted-foreground">{article.description}</p>
+        {/* Academy identity + metadata scent */}
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Link
+            href={`${product.basePath}/${article.academy.slug}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--academy-accent)]/10 px-2.5 py-1 text-xs font-medium text-[color:var(--academy-accent)] hover:bg-[color:var(--academy-accent)]/15"
+            data-testid="link-article-academy"
+          >
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+            {article.academy.name}
+          </Link>
+          <ContentMeta article={{ ...article, readingTimeMinutes }} />
+        </div>
+
+        <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-balance sm:text-4xl">{article.title}</h1>
+        <p className="mb-6 text-lg text-muted-foreground">{article.description}</p>
         <AuthorByline
           author={author}
           basePath={product.basePath}
@@ -46,46 +63,60 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
         />
       </header>
 
-      {/* prose: @tailwindcss/typography, already installed, previously unused
-          anywhere in this codebase (PAR §2/§8).
-          bodyHtml is build-time output from markdown files committed to this
-          repo (never user input, never runtime-submitted content — same
-          trust boundary as the rest of the source tree), so
-          dangerouslySetInnerHTML is the standard, low-risk SSG pattern here,
-          not a shortcut around a real XSS concern. M21-D (the markdown/MDX
-          pipeline) owns the actual parser choice and decides whether that
-          stays HTML-string output or switches to a React-element renderer
-          (e.g. react-markdown) — this prop shape is deliberately the
-          simplest thing that could work for M21-C's template-only scope,
-          not a locked-in decision. */}
+      <KeyTakeaways items={article.keyTakeaways} />
+      <Prerequisites items={article.prerequisites} />
+
+      {/* prose: @tailwindcss/typography, tuned for comfortable long-form
+          reading. bodyHtml is build-time output from repo-committed markdown
+          (never user input — same trust boundary as source), so
+          dangerouslySetInnerHTML is the standard SSG pattern here, not an XSS
+          shortcut. */}
       <div
-        className="prose prose-neutral dark:prose-invert max-w-none"
+        className="prose prose-neutral max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-headings:font-semibold prose-headings:tracking-tight prose-a:font-medium prose-a:text-primary hover:prose-a:underline prose-li:my-1"
         data-testid="article-body"
         dangerouslySetInnerHTML={{ __html: article.bodyHtml ?? "" }}
       />
 
       {article.assets?.length > 0 && (
         <section className="mt-10 space-y-4" aria-label="Practical resources" data-testid="article-assets">
-          <h2 className="text-lg font-semibold">Resources in this guide</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Resources in this guide</h2>
           {article.assets.map((asset, i) => (
             <ContentAsset key={i} asset={asset} />
           ))}
         </section>
       )}
 
-      {/* Restrained — 2-3 items, not an aggressive full-width grid (PAR §8) */}
+      <CommonMistakes items={article.commonMistakes} />
+
+      {article.tags?.length > 0 && (
+        <div className="mt-10 flex flex-wrap gap-1.5" data-testid="article-tags">
+          {article.tags.map((tag) => (
+            <Badge key={tag} variant="outline">{tag}</Badge>
+          ))}
+        </div>
+      )}
+
+      <ArticleFaq faqs={article.faqs} />
+
+      {/* The premium hand-off — the M23 "Continue Learning" experience that
+          replaces the old in-body "## Next step" markdown. */}
+      <ContinueLearning nextStep={article.nextStep} accentStyle={accentStyle} />
+
+      {/* Algorithmic related guides (shared-tag scoring) — complements, doesn't
+          replace, the editorial next step above. Restrained: 2-3 items. */}
       {relatedArticles.length > 0 && (
-        <section className="mt-10 border-t pt-6" aria-label="Related guides" data-testid="article-related">
-          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Related guides</h2>
-          <ul className="space-y-2">
+        <section className="mt-12 border-t border-border pt-6" aria-label="Related guides" data-testid="article-related">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">More on this topic</h2>
+          <ul className="space-y-3">
             {relatedArticles.map((related) => (
               <li key={related.slug}>
                 <Link
                   href={`${product.basePath}/${related.academy.slug}/${related.slug}`}
-                  className="text-sm text-primary hover:underline"
+                  className="group flex items-center justify-between gap-3 text-sm"
                   data-testid={`link-related-${related.slug}`}
                 >
-                  {related.title}
+                  <span className="font-medium text-foreground group-hover:text-primary">{related.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{related.readingTimeMinutes} min</span>
                 </Link>
               </li>
             ))}

@@ -6,6 +6,14 @@ description: Two ready-to-use cold email templates, written to perform well and 
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["templates", "cold-email", "deliverability"]
+keyTakeaways:
+  - "Templates are starting points, not send-as-is emails — the bracketed slots need real, specific detail."
+  - "Both templates avoid spam-trigger language and stay short enough to read on mobile."
+  - "A low-pressure ask tends to outperform an aggressive one with cold recipients."
+nextStep:
+  label: "Getting Your First Campaign Delivered"
+  href: "/repmail/learn/collections/getting-your-first-campaign-delivered"
+  description: "See how templates fit into a full, deliverable first campaign."
 assets:
   - type: template
     title: Two ready-to-use templates
@@ -59,6 +67,4 @@ Neither template uses spam-trigger language — no "guaranteed," no excessive pu
 
 Fill in every bracketed section with something genuinely true and specific before sending — a template with unfilled or vague placeholder text reads worse than no template at all. The words around the brackets are deliberately plain and human; resist the urge to make them sound more "professional" or salesy, since that's usually what tips a message from "a person wrote this" into "this is templated marketing."
 
-## Next step
-
-For a deeper pass through everything that goes into getting a first campaign delivered well, see the [Getting Your First Campaign Delivered](/repmail/learn/collections/getting-your-first-campaign-delivered) collection.
+A template is one piece of a deliverable campaign — the full collection shows how it fits with warm-up, list hygiene, and the pre-send checklist.

@@ -6,6 +6,19 @@ description: A practical cadence for cold email follow-ups — how many, how far
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["sequences", "follow-up", "cold-email"]
+keyTakeaways:
+  - "Most replies come from a follow-up, not the first email."
+  - "Four total touches, spaced a few days to a week apart, is a sensible default."
+  - "The final 'breakup' email often gets the highest reply rate of the sequence."
+faqs:
+  - question: "Isn't following up multiple times annoying?"
+    answer: "Not if each message adds something — a new angle, a resource, or a genuine reason you're reaching out again. 'Just checking in' with no new information is what reads as annoying, not the follow-up itself."
+  - question: "What should the last email say?"
+    answer: "A short, pressure-removing note — something like 'I'll assume the timing isn't right and won't follow up again.' It consistently earns replies from people who were mildly interested but hadn't gotten around to responding."
+nextStep:
+  label: "What to A/B test first"
+  href: "/repmail/learn/cold-email/what-to-ab-test-first"
+  description: "With your cadence set, start improving what's actually underperforming."
 assets:
   - type: table
     title: Suggested follow-up cadence
@@ -36,6 +49,4 @@ The second email shouldn't just say "just checking in" — that adds no new info
 
 The final "breakup" email — something like "I'll assume the timing isn't right and won't follow up again" — consistently gets some of the highest reply rates in a sequence. It removes pressure rather than adding it, which paradoxically makes it easier for someone who was mildly interested but hadn't gotten around to replying to finally respond. It also gives you a clean, honest way to close out the sequence rather than trailing off indefinitely.
 
-## Next step
-
-Once your cadence is set, the next lever to pull is testing what's actually working: [what to A/B test first](/repmail/learn/cold-email/what-to-ab-test-first).
+A cadence is a starting point, not a finished system — the next lever is finding out what's actually working and what isn't.

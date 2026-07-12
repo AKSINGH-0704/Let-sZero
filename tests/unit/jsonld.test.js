@@ -2,7 +2,7 @@
 // assertions — no rendering needed.
 
 import { describe, it, expect } from "vitest";
-import { buildPersonJsonLd, buildArticleJsonLd, buildBreadcrumbListJsonLd } from "../../shared/content/jsonLd.js";
+import { buildPersonJsonLd, buildArticleJsonLd, buildBreadcrumbListJsonLd, buildFaqJsonLd } from "../../shared/content/jsonLd.js";
 
 const author = { slug: "jane-doe", name: "Jane Doe", role: "Deliverability Engineer", bio: "Writes about DKIM." };
 
@@ -80,5 +80,26 @@ describe("buildBreadcrumbListJsonLd", () => {
     expect(jsonLd.itemListElement).toHaveLength(3);
     expect(jsonLd.itemListElement[0]).toEqual({ "@type": "ListItem", position: 1, name: "RepMail Resource Center", item: "https://www.letszero.in/repmail/learn" });
     expect(jsonLd.itemListElement[2]).toEqual({ "@type": "ListItem", position: 3, name: "How DKIM Works" }); // no `item` field — matches having no href
+  });
+});
+
+describe("buildFaqJsonLd (M23-C)", () => {
+  it("produces FAQPage with a Question/Answer per genuine FAQ", () => {
+    const jsonLd = buildFaqJsonLd([
+      { question: "Do I need all three?", answer: "Practically, yes." },
+      { question: "Where do records go?", answer: "In your DNS." },
+    ]);
+    expect(jsonLd["@type"]).toBe("FAQPage");
+    expect(jsonLd.mainEntity).toHaveLength(2);
+    expect(jsonLd.mainEntity[0]).toEqual({
+      "@type": "Question",
+      name: "Do I need all three?",
+      acceptedAnswer: { "@type": "Answer", text: "Practically, yes." },
+    });
+  });
+
+  it("returns null for no/empty FAQs so it can be filtered out of a JSON-LD graph", () => {
+    expect(buildFaqJsonLd(undefined)).toBeNull();
+    expect(buildFaqJsonLd([])).toBeNull();
   });
 });

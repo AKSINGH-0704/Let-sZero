@@ -29,7 +29,7 @@ function ChecklistBody({ content }) {
 
 function TemplateBody({ content }) {
   return (
-    <pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm font-mono">{String(content ?? "")}</pre>
+    <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/60 p-4 text-sm font-mono leading-relaxed">{String(content ?? "")}</pre>
   );
 }
 
@@ -37,20 +37,20 @@ function TableBody({ content }) {
   const headers = content?.headers ?? [];
   const rows = content?.rows ?? [];
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b">
+          <tr className="border-b border-border bg-muted/50">
             {headers.map((h) => (
-              <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">{h}</th>
+              <th key={h} className="px-3 py-2.5 text-left font-semibold">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b last:border-0">
+            <tr key={i} className="border-b border-border last:border-0 even:bg-muted/20">
               {row.map((cell, j) => (
-                <td key={j} className="px-3 py-2">{cell}</td>
+                <td key={j} className="px-3 py-2.5 align-top">{cell}</td>
               ))}
             </tr>
           ))}
@@ -62,7 +62,7 @@ function TableBody({ content }) {
 
 function DiagramBody({ content }) {
   if (!content) return null;
-  return <img src={content} alt="" className="w-full rounded-md border" />;
+  return <img src={content} alt="" className="w-full rounded-lg border border-border" />;
 }
 
 const BODY_RENDERERS = {
@@ -77,11 +77,20 @@ export default function ContentAsset({ asset }) {
   const Icon = ASSET_ICONS[asset.type] ?? FileText;
   const BodyRenderer = BODY_RENDERERS[asset.type];
 
+  const TYPE_LABEL = { checklist: "Checklist", template: "Template", table: "Reference", diagram: "Diagram" };
+
   return (
-    <Card data-testid={`content-asset-${asset.type}`}>
-      <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-3">
-        <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-        <CardTitle className="text-base">{asset.title}</CardTitle>
+    <Card data-testid={`content-asset-${asset.type}`} className="border-border">
+      <CardHeader className="space-y-0 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary" aria-hidden="true">
+            <Icon className="h-4 w-4" />
+          </span>
+          <CardTitle className="text-base">{asset.title}</CardTitle>
+          <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {TYPE_LABEL[asset.type] ?? "Resource"}
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         {BodyRenderer ? <BodyRenderer content={asset.content} /> : null}

@@ -67,6 +67,32 @@ export const articleFrontmatterSchema = z.object({
   // Canonical override — only needed if a piece is intentionally a canonical
   // duplicate of another URL; absent for the normal case (PAR §7).
   canonicalUrl: z.string().optional(),
+
+  // M23-C — optional educational components, rendered by ArticleTemplate as
+  // designed elements (never raw markdown sections). All optional and
+  // additive: an article that omits them renders exactly as before.
+  //
+  // Scannable summary shown near the top of the article.
+  keyTakeaways: z.array(z.string().min(1)).optional(),
+  // "Before you start" — prior steps/knowledge, each an optional internal link.
+  prerequisites: z.array(z.object({
+    label: z.string().min(1),
+    href: z.string().optional(),
+  })).optional(),
+  // A warning-styled "Common mistakes" box.
+  commonMistakes: z.array(z.string().min(1)).optional(),
+  // Genuine Q&A — also emitted as FAQPage structured data (SEO).
+  faqs: z.array(z.object({
+    question: z.string().min(1),
+    answer: z.string().min(1),
+  })).optional(),
+  // The single, editorially-chosen next step, rendered as a premium
+  // "Continue Learning" card (M23 mandate: not another markdown section).
+  nextStep: z.object({
+    label: z.string().min(1),
+    href: z.string().min(1),
+    description: z.string().optional(),
+  }).optional(),
 });
 
 export const collectionSchema = z.object({

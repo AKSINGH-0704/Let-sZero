@@ -7,6 +7,17 @@ authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["subject-lines", "copywriting", "cold-email"]
 featured: true
+keyTakeaways:
+  - "The subject line does all the work in cold email — it's the only signal a stranger has."
+  - "Short, specific, and human beats clever or hyped every time."
+  - "A fake-looking personalization token reads worse than no personalization at all."
+commonMistakes:
+  - "Using ALL CAPS, excessive punctuation, or hype words that trip spam filters."
+  - "Promising something the email doesn't deliver — you get the open but lose trust on line one."
+nextStep:
+  label: "Personalize without sounding robotic"
+  href: "/repmail/learn/cold-email/personalize-cold-email-at-scale"
+  description: "Once the subject line earns the open, the body has to hold it."
 assets:
   - type: checklist
     title: Subject line patterns to avoid
@@ -36,6 +47,4 @@ Beyond simply being unpersuasive, certain patterns actively work against you —
 
 If you have a genuine, specific detail about the recipient or their company — something that shows you did real research, not a mail-merge field — using it in the subject line is one of the highest-leverage things you can do. It has to be real, though; a fake-sounding personalization token ("Hi {{firstName}}, quick question about {{company}}") reads worse than no personalization at all, because it signals the opposite of what you're going for.
 
-## Next step
-
-Once your subject line earns the open, the next job is the body: [personalization that doesn't feel robotic, even at scale](/repmail/learn/cold-email/personalize-cold-email-at-scale).
+Earning the open is only half the job — the first line of the body has to keep the reader going.

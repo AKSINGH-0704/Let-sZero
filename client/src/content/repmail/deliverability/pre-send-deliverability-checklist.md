@@ -6,6 +6,18 @@ description: A final, practical checklist to run through before launching any co
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["deliverability", "checklist", "getting-started"]
+keyTakeaways:
+  - "Run one fast, complete pass before every campaign — order matters more than depth here."
+  - "Domain verification and, for new domains, warm-up status come first; nothing else matters without them."
+  - "A real test send to your own inbox catches formatting issues a preview won't."
+prerequisites:
+  - label: "A verified sending domain"
+    href: "/repmail/learn/deliverability/verify-your-sending-domain"
+  - label: "An opted-in or genuinely relevant contact list"
+nextStep:
+  label: "Getting Your First Campaign Delivered"
+  href: "/repmail/learn/collections/getting-your-first-campaign-delivered"
+  description: "A themed bundle covering warm-up, bounce handling, and deliverability-safe templates."
 assets:
   - type: checklist
     title: Pre-send checklist
@@ -32,6 +44,4 @@ Each individual topic — SPF/DKIM/DMARC, warm-up, bounce handling — has enoug
 
 This isn't a replacement for understanding *why* each of these matters — that's what the rest of the Deliverability Academy covers. It's the fast version, for the moment right before you click send, when you want confidence that the fundamentals are actually in place rather than assumed.
 
-## Next step
-
-For a deeper, themed pass through everything that goes into a deliverable first campaign, see the [Getting Your First Campaign Delivered](/repmail/learn/collections/getting-your-first-campaign-delivered) collection.
+If you want a deeper, themed pass through everything that goes into a deliverable first campaign, the full collection pulls it together.

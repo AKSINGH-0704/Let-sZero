@@ -6,6 +6,14 @@ description: A prioritized order for A/B testing cold email, starting with the c
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["ab-testing", "cold-email", "optimization"]
+keyTakeaways:
+  - "Test one variable at a time, or you learn nothing about which change mattered."
+  - "Start with the subject line — it caps every downstream metric."
+  - "Then the opening line, then the call to action, then send time and length."
+nextStep:
+  label: "Start from a proven template"
+  href: "/repmail/learn/cold-email/cold-email-templates"
+  description: "Rather than test from a blank page, start with something that already works."
 assets:
   - type: checklist
     title: What to test, in order
@@ -39,6 +47,4 @@ Send time and day of week matter, but usually less than the first three — and 
 
 Testing in this order means each test tells you something real, and you're always optimizing the variable most likely to be your actual bottleneck. Testing send time before your subject line is even landing opens, for example, optimizes something that doesn't matter yet if the bigger problem is upstream.
 
-## Next step
-
-Want a starting point instead of testing from a blank page? See [cold email templates built with deliverability in mind](/repmail/learn/cold-email/cold-email-templates).
+Testing is far easier when you're not starting from a blank page — a solid template gives you a baseline worth iterating on.

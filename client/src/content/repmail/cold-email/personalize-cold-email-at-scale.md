@@ -6,6 +6,14 @@ description: How to personalize cold email in a way that actually reads as genui
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["personalization", "cold-email", "copywriting"]
+keyTakeaways:
+  - "Real personalization shows you looked at this specific person — not that you filled in more merge fields."
+  - "A fixed structure with one or two genuinely researched slots is what scales."
+  - "AI can help draft and find trigger events, but the specific detail itself must be real."
+nextStep:
+  label: "Run the pre-send checklist"
+  href: "/repmail/learn/deliverability/pre-send-deliverability-checklist"
+  description: "Message written? Confirm everything else is in place before you hit send."
 assets:
   - type: template
     title: Personalization variable reference
@@ -41,6 +49,4 @@ The highest-leverage personalization details tend to be things that change: a co
 
 Using AI to help draft the surrounding structure, or to help find and summarize a genuine trigger event, is a reasonable way to make this scale without sacrificing quality — as long as the specific detail itself is real and the final message still reads like something a person actually wrote and meant. The goal is never to automate the appearance of personalization; it's to make genuine personalization efficient enough to do at real volume.
 
-## Next step
-
-Once your message is written, the last step before sending is [a pre-campaign deliverability checklist](/repmail/learn/deliverability/pre-send-deliverability-checklist) — a fast pass to confirm everything else is in place too.
+With the message written, one fast pass remains before you send — confirming the deliverability fundamentals are actually in place.

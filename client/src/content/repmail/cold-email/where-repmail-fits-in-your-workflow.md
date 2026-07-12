@@ -7,6 +7,14 @@ authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["getting-started", "cold-email", "workflow"]
 featured: true
+keyTakeaways:
+  - "RepMail handles sending, authentication, deliverability, and tracking — the hard infrastructure parts."
+  - "You still own list-building, writing strategy, and your CRM or sales process."
+  - "Knowing the split up front tells you what to bring and what to expect."
+nextStep:
+  label: "Verify your sending domain"
+  href: "/repmail/learn/deliverability/verify-your-sending-domain"
+  description: "The first real step in RepMail — everything else depends on it."
 assets:
   - type: table
     title: Who handles what
@@ -39,6 +47,4 @@ What we don't do: we don't find your leads, and we don't tell you who to email. 
 
 It's tempting for a product page to imply it does everything. It's more useful for you to know exactly where the line is before you invest time setting things up — so you know what to bring, and what to expect us to handle.
 
-## Next step
-
-If you haven't already, the first real step is [verifying your sending domain](/repmail/learn/deliverability/verify-your-sending-domain) — everything else in RepMail depends on that being done correctly.
+Now that you know what RepMail handles, the very first thing to set up is the foundation everything else depends on.

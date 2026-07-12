@@ -38,6 +38,24 @@ export function buildArticleJsonLd(article, { canonicalUrl, authorUrl }) {
   };
 }
 
+// M23-C — FAQPage structured data from an article's genuine Q&A (schema.js
+// `faqs`). Only emit when there are real FAQs — Google's guidance is that
+// FAQPage markup must reflect visible, genuine Q&A on the page, which it does
+// here (the same list drives the visible ArticleFaq component). Returns null
+// for no/empty FAQs so callers can spread it into a JSON-LD graph safely.
+export function buildFaqJsonLd(faqs) {
+  if (!Array.isArray(faqs) || faqs.length === 0) return null;
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((f) => ({
+      "@type": "Question",
+      name: f.question,
+      acceptedAnswer: { "@type": "Answer", text: f.answer },
+    })),
+  };
+}
+
 // breadcrumbItems: the same [{ label, href }, ...] shape
 // ResourceCenterBreadcrumb.jsx's buildBreadcrumbItems() already produces —
 // one source of truth for the visual trail and its structured-data twin,

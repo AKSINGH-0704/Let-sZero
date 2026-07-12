@@ -7,6 +7,22 @@ authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["spf", "dkim", "dmarc", "authentication"]
 featured: true
+keyTakeaways:
+  - "Spam placement is usually an authentication problem, not a content problem."
+  - "SPF lists who can send as you, DKIM signs each message, and DMARC says what to do when either fails."
+  - "A brand-new domain performs badly until all three records are correctly published."
+commonMistakes:
+  - "Publishing more than one SPF record on the same domain — only one is valid."
+  - "Enforcing a strict DMARC policy before SPF and DKIM actually pass, which can block your own mail."
+faqs:
+  - question: "Do I really need all three of SPF, DKIM, and DMARC?"
+    answer: "Practically, yes. SPF and DKIM establish that your mail is legitimate; DMARC tells receivers what to do when a message fails those checks, and gives you reporting. Missing any one gives a receiving server a reason to distrust your mail."
+  - question: "Where do these records actually go?"
+    answer: "All three live in your domain's DNS. SPF and DMARC are TXT records on your domain and its _dmarc subdomain; DKIM is a public key your sending platform generates for you to publish."
+nextStep:
+  label: "Fix your subject line first"
+  href: "/repmail/learn/cold-email/subject-lines-that-get-opened"
+  description: "Good authentication gets you to the inbox — a weak subject line still loses the open."
 assets:
   - type: table
     title: SPF, DKIM, and DMARC at a glance
@@ -42,6 +58,4 @@ When all three are set up correctly, a receiving mail server can confirm, before
 
 A missing or misconfigured SPF record, a DKIM signature that doesn't validate, or no DMARC policy at all — any one of these gives a receiving server a real reason to distrust your mail, independent of how good your writing is. This is also the single most common reason a brand-new sending domain performs badly in its first few days, before anything else about sending volume or content even comes into play.
 
-## Next step
-
-With the "why" covered, the next step is putting it to work: [fix your subject line first](/repmail/learn/cold-email/subject-lines-that-get-opened) — good authentication gets you to the inbox, but a weak subject line still loses the open.
+Once your authentication is solid, the mechanics stop being the bottleneck — and what you actually write starts to matter.

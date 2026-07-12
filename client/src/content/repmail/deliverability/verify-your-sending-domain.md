@@ -6,6 +6,20 @@ description: A step-by-step walkthrough of domain verification in RepMail — th
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["domain-verification", "dkim", "setup", "getting-started"]
+keyTakeaways:
+  - "Every sending domain must be verified before its first campaign — no exceptions."
+  - "You add three DNS records RepMail generates; RepMail confirms each as Verified automatically."
+  - "DNS changes usually propagate in minutes, occasionally up to 24–48 hours."
+prerequisites:
+  - label: "A domain you own and will send from"
+  - label: "Access to that domain's DNS settings (your registrar or DNS provider)"
+commonMistakes:
+  - "Adding the records to the wrong domain, or as the wrong record type."
+  - "Scheduling a campaign before all three records show Verified."
+nextStep:
+  label: "Why your emails land in spam"
+  href: "/repmail/learn/deliverability/why-your-emails-land-in-spam"
+  description: "Now that your domain is verified, understand what SPF, DKIM, and DMARC actually do for delivery."
 assets:
   - type: checklist
     title: Domain verification, step by step
@@ -35,6 +49,4 @@ RepMail checks your domain's DNS automatically and marks each record — SPF, DK
 
 A domain that isn't fully verified will produce exactly the deliverability problems described in the SPF/DKIM/DMARC guide — spam placement or outright rejection — regardless of how good your campaign content is. This is deliberately the first real action in getting started with RepMail: nothing else is worth doing until it's done.
 
-## Next step
-
-With your domain verified, it's worth understanding exactly why SPF and DKIM matter so much: [why your emails land in spam, and how this fixes it](/repmail/learn/deliverability/why-your-emails-land-in-spam).
+With verification done, the rest of deliverability builds on this foundation — starting with why these records matter in the first place.

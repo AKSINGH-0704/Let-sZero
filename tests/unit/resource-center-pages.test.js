@@ -37,6 +37,21 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html).toContain("RepMail Team");
   });
 
+  it("ArticlePage renders the M23-C educational blocks and the premium Continue Learning hand-off, not an in-body Next step heading", async () => {
+    const html = await renderPage("/src/pages/resource-center/ArticlePage.jsx", "/repmail/learn/deliverability/why-your-emails-land-in-spam");
+    // Educational components from the real frontmatter:
+    expect(html).toContain("article-key-takeaways");
+    expect(html).toContain("Key takeaways");
+    expect(html).toContain("article-common-mistakes");
+    expect(html).toContain("article-faq");
+    // The next step is now the premium card, driven by the nextStep field:
+    expect(html).toContain("article-continue-learning");
+    expect(html).toContain("Continue learning");
+    expect(html).toContain("Fix your subject line first");
+    // ...and the old in-body markdown "## Next step" heading is gone:
+    expect(html).not.toContain(">Next step</h2>");
+  });
+
   it("AuthorPage renders the real repmail-team author with their 11 real articles (M22-B)", async () => {
     const html = await renderPage("/src/pages/resource-center/AuthorPage.jsx", "/repmail/learn/authors/repmail-team");
     expect(html).toContain("RepMail Team");

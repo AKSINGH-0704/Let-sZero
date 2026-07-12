@@ -6,7 +6,7 @@
 // related-content generation. M21-I: :product is resolved dynamically.
 import { useRoute } from "wouter";
 import { getArticlesForProduct } from "@/lib/resourceCenterContent";
-import { buildArticleJsonLd, buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
+import { buildArticleJsonLd, buildBreadcrumbListJsonLd, buildFaqJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import { getRelatedArticles } from "@shared/content/relatedContent.js";
 import ArticleTemplate from "@/components/resource-center/ArticleTemplate";
@@ -41,7 +41,10 @@ export default function ArticlePage() {
           }),
           { canonicalOrigin: CANONICAL_ORIGIN }
         ),
-      ]
+        // FAQPage — only present when the article has genuine, visible Q&A
+        // (buildFaqJsonLd returns null otherwise, filtered out below).
+        buildFaqJsonLd(article.faqs),
+      ].filter(Boolean)
     : null;
   useJsonLd(jsonLdGraph);
 

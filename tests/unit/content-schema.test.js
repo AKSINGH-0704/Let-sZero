@@ -100,6 +100,30 @@ describe("validateArticle — two-stage validation (schema + real product taxono
   it("throws for an academy slug that isn't real, even though it passes the generic schema (it's just a non-empty string there)", () => {
     expect(() => validateArticle(validFrontmatter({ academy: "productivity-tips" }))).toThrow(/Unknown academy/);
   });
+
+  it("accepts the optional M23-C educational fields, and validates without them (backward compatible)", () => {
+    // Absent — the pre-M23 shape still validates.
+    const base = validateArticle(validFrontmatter());
+    expect(base.keyTakeaways).toBeUndefined();
+    expect(base.nextStep).toBeUndefined();
+
+    // Present and well-formed.
+    const enriched = validateArticle(validFrontmatter({
+      keyTakeaways: ["One", "Two"],
+      prerequisites: [{ label: "A verified domain", href: "/repmail/learn/deliverability/verify-your-sending-domain" }, { label: "A list" }],
+      commonMistakes: ["Don't do X"],
+      faqs: [{ question: "Q?", answer: "A." }],
+      nextStep: { label: "Next", href: "/repmail/learn/x", description: "why" },
+    }));
+    expect(enriched.keyTakeaways).toEqual(["One", "Two"]);
+    expect(enriched.nextStep.href).toBe("/repmail/learn/x");
+    expect(enriched.faqs[0].question).toBe("Q?");
+  });
+
+  it("rejects a malformed nextStep (missing href) and a malformed faq (missing answer)", () => {
+    expect(() => validateArticle(validFrontmatter({ nextStep: { label: "Next" } }))).toThrow();
+    expect(() => validateArticle(validFrontmatter({ faqs: [{ question: "Q?" }] }))).toThrow();
+  });
 });
 
 describe("author schema — no field can represent a fictional persona (PAR §9/§12 Decision 5)", () => {

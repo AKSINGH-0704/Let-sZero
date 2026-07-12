@@ -6,6 +6,19 @@ description: A verified domain with zero sending history still needs to earn tru
 authorSlug: repmail-team
 publishedAt: "2026-07-12"
 tags: ["warm-up", "sender-reputation", "deliverability"]
+keyTakeaways:
+  - "Authentication proves your mail is legitimate; warm-up proves you're trustworthy."
+  - "Start around 20–30 emails a day and raise volume gradually over a few weeks."
+  - "High bounce or complaint rates during warm-up do outsized damage — slow down if you see them."
+faqs:
+  - question: "How long does warming up a domain take?"
+    answer: "Most senders reach normal volume in about three to four weeks, but it depends on your target volume and how engaged your early recipients are. Let your bounce and complaint rates, not the calendar, set the pace."
+  - question: "Can I skip warm-up if my authentication is perfect?"
+    answer: "No. Authentication and reputation are separate judgments. A correctly authenticated domain with no sending history still has no reputation, and mailbox providers treat a sudden volume spike from an unknown sender with caution."
+nextStep:
+  label: "Hard vs. soft bounces, explained"
+  href: "/repmail/learn/deliverability/hard-vs-soft-bounces"
+  description: "Bounces are the clearest early signal something's off — learn which ones to act on."
 assets:
   - type: table
     title: A 4-week warm-up schedule
@@ -36,6 +49,4 @@ There's no single official number, but the practical guidance most senders conve
 
 The single fastest way to damage a new domain's reputation is sending to a low-quality or unverified list during this early period — high bounce rates in week one do more damage than the same bounce rate would later, precisely because there's no established good reputation yet to absorb it. This is also why warm-up and list quality are really the same conversation: a small, engaged list is what makes a gradual ramp possible in the first place.
 
-## Next step
-
-Bounces are the clearest early signal that something's off — see [hard vs. soft bounces explained](/repmail/learn/deliverability/hard-vs-soft-bounces) to know which ones to worry about.
+Watching how recipients respond during warm-up means paying close attention to bounces — and not all bounces mean the same thing.
