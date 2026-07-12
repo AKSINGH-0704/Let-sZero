@@ -29,6 +29,21 @@ async function renderPage(componentPath, ssrPath) {
 }
 
 describe("Resource Center route pages render without errors (real SSR)", () => {
+  it("ArticlePage renders a real Wave 1 article end to end: body, table asset, RepMail Team byline (M22-B)", async () => {
+    const html = await renderPage("/src/pages/resource-center/ArticlePage.jsx", "/repmail/learn/deliverability/why-your-emails-land-in-spam");
+    expect(html).toContain("Why Your Emails Land in Spam");
+    expect(html).toContain("SPF, DKIM, and DMARC at a glance"); // the table asset's title
+    expect(html).toContain("Lists which mail servers are allowed to send"); // a real table cell
+    expect(html).toContain("RepMail Team");
+  });
+
+  it("AuthorPage renders the real repmail-team author with their 11 real articles (M22-B)", async () => {
+    const html = await renderPage("/src/pages/resource-center/AuthorPage.jsx", "/repmail/learn/authors/repmail-team");
+    expect(html).toContain("RepMail Team");
+    expect(html).toContain("Why Your Emails Land in Spam");
+    expect(html).toContain("Where RepMail Fits Into Your Cold Email Workflow");
+  });
+
   it("AuthorPage renders NotFound for a nonexistent author (honest 404, no crash)", async () => {
     const html = await renderPage("/src/pages/resource-center/AuthorPage.jsx", "/repmail/learn/authors/jane-doe");
     expect(html.length).toBeGreaterThan(0);
@@ -39,9 +54,15 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html.length).toBeGreaterThan(0);
   });
 
-  it("AcademyHubPage renders the real Deliverability academy with its honest empty state", async () => {
+  it("AcademyHubPage renders the real Deliverability academy with its 5 real Wave 1 articles (M22-B — no longer empty)", async () => {
     const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/deliverability");
     expect(html).toContain("Deliverability");
+    expect(html).toContain("Why Did That Email Bounce?");
+    expect(html).not.toContain("No guides published yet");
+  });
+
+  it("AcademyHubPage still shows the honest empty state for an Academy Wave 1 deliberately didn't launch (Compliance)", async () => {
+    const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/compliance");
     expect(html).toContain("No guides published yet");
   });
 
@@ -50,12 +71,15 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html.length).toBeGreaterThan(0);
   });
 
-  it("ResourceCenterHomePage renders the homepage with search + academy discovery, no fabricated content sections", async () => {
+  it("ResourceCenterHomePage renders the real Wave 1 content — featured guides, intent navigation, no dead links (M22-B)", async () => {
     const html = await renderPage("/src/pages/resource-center/ResourceCenterHomePage.jsx", "/repmail/learn");
     expect(html).toContain("button-open-resource-center-search");
     expect(html).toContain("section-academies");
-    expect(html).not.toContain("section-featured"); // zero real articles today — correctly absent, not faked
+    expect(html).toContain("section-intents"); // real intent destinations now exist
+    expect(html).toContain("section-featured"); // 3 real featured Wave 1 articles
     expect(html).not.toContain("section-curated-resources"); // Template Library etc. not built yet — no dead links
+    expect(html).not.toContain("section-learning-paths"); // Getting Started path data doesn't exist until M22-C
+    expect(html).not.toContain("section-collections"); // Collection data doesn't exist until M22-C
   });
 
   it("LetsZeroLearnDirectory lists RepMail's real Resource Center", async () => {
