@@ -4,19 +4,27 @@
 // the template itself), so this honestly reflects that the Resource Center
 // has zero published content today, not a demo full of fake guides.
 // M21-F wires the real search command palette in place of the M21-D no-op.
+// M21-I: :product is resolved dynamically from the route (was hardcoded to
+// PRODUCTS.repmail) — a second LetsZero product needs a PRODUCTS entry and
+// content, not a new page component or route path.
 import { useEffect, useState } from "react";
+import { useRoute } from "wouter";
 import { getArticlesForProduct } from "@/lib/resourceCenterContent";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
 import ResourceCenterSearch from "@/components/resource-center/ResourceCenterSearch";
-import { PRODUCTS } from "@shared/content/taxonomy.js";
+import NotFound from "@/pages/not-found";
+import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
 
 export default function ResourceCenterHomePage() {
-  const product = PRODUCTS.repmail;
-  const articles = getArticlesForProduct("repmail");
+  const [, params] = useRoute("/:product/learn");
+  const product = useResourceCenterProduct(params?.product);
+  const articles = product ? getArticlesForProduct(params.product) : [];
   const [searchOpen, setSearchOpen] = useState(false);
 
   // ⌘K / Ctrl+K — the "keyboard-accessible search" PAR §5/§8 calls for
-  // explicitly, not just a clickable button.
+  // explicitly, not just a clickable button. Registered unconditionally
+  // (hooks can't be called conditionally) — a no-op if product is null,
+  // since the dialog it would open never renders in that case either.
   useEffect(() => {
     function handleKeyDown(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -27,6 +35,8 @@ export default function ResourceCenterHomePage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  if (!product) return <NotFound />;
 
   const academyArticleCounts = Object.fromEntries(
     product.academies.map((a) => [a.slug, articles.filter((art) => art.academy.slug === a.slug).length])

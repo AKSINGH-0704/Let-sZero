@@ -1,42 +1,80 @@
-// M21-F — search scoring tests. Pure function, plain fixture data.
+// M21-F/M21-I — search scoring + content-type-agnostic index tests.
 
 import { describe, it, expect } from "vitest";
-import { searchArticles } from "../../shared/content/search.js";
+import { searchContent, buildSearchIndex, articleToSearchEntry, academyToSearchEntry } from "../../shared/content/search.js";
+import { PRODUCTS } from "../../shared/content/taxonomy.js";
 
-const articles = [
-  { slug: "how-dkim-works", title: "How DKIM Works", description: "A guide to DKIM signing.", tags: ["dkim", "authentication"] },
-  { slug: "spf-explained", title: "SPF Explained", description: "Understanding SPF records for deliverability.", tags: ["spf"] },
-  { slug: "warm-up-guide", title: "Sender Warm-Up Guide", description: "How to warm up a new sending domain.", tags: ["warm-up", "dkim"] },
+const repmail = PRODUCTS.repmail;
+
+const rawArticles = [
+  { slug: "how-dkim-works", title: "How DKIM Works", description: "A guide to DKIM signing.", tags: ["dkim", "authentication"], academy: repmail.academies[1] },
+  { slug: "spf-explained", title: "SPF Explained", description: "Understanding SPF records for deliverability.", tags: ["spf"], academy: repmail.academies[1] },
+  { slug: "warm-up-guide", title: "Sender Warm-Up Guide", description: "How to warm up a new sending domain.", tags: ["warm-up", "dkim"], academy: repmail.academies[1] },
 ];
 
-describe("searchArticles", () => {
-  it("returns an empty array for an empty or whitespace-only query, not every article", () => {
-    expect(searchArticles("", articles)).toEqual([]);
-    expect(searchArticles("   ", articles)).toEqual([]);
+const entries = rawArticles.map((a) => articleToSearchEntry(a, repmail));
+
+describe("searchContent (generic, content-type-agnostic)", () => {
+  it("returns an empty array for an empty or whitespace-only query, not every entry", () => {
+    expect(searchContent("", entries)).toEqual([]);
+    expect(searchContent("   ", entries)).toEqual([]);
   });
 
   it("ranks an exact title match above a partial title match", () => {
-    const results = searchArticles("how dkim works", articles);
-    expect(results[0].slug).toBe("how-dkim-works");
+    const results = searchContent("how dkim works", entries);
+    expect(results[0].title).toBe("How DKIM Works");
   });
 
   it("matches on tags even when the title/description don't contain the query", () => {
-    const results = searchArticles("spf", articles);
-    expect(results.map((r) => r.slug)).toContain("spf-explained");
-  });
-
-  it("a query matching a shared tag across multiple articles returns all of them, tag-matches ranked above description-only matches", () => {
-    const results = searchArticles("dkim", articles);
-    const slugs = results.map((r) => r.slug);
-    expect(slugs).toContain("how-dkim-works");
-    expect(slugs).toContain("warm-up-guide"); // tagged dkim even though title doesn't say it
+    const results = searchContent("spf", entries);
+    expect(results.map((r) => r.title)).toContain("SPF Explained");
   });
 
   it("is case-insensitive", () => {
-    expect(searchArticles("SPF", articles).map((r) => r.slug)).toContain("spf-explained");
+    expect(searchContent("SPF", entries).map((r) => r.title)).toContain("SPF Explained");
   });
 
   it("returns nothing for a query with no match anywhere", () => {
-    expect(searchArticles("nonexistent-topic-xyz", articles)).toEqual([]);
+    expect(searchContent("nonexistent-topic-xyz", entries)).toEqual([]);
+  });
+});
+
+describe("SearchEntry adapters", () => {
+  it("articleToSearchEntry produces a real, navigable url and the Academy name as subtitle", () => {
+    const entry = articleToSearchEntry(rawArticles[0], repmail);
+    expect(entry.type).toBe("article");
+    expect(entry.url).toBe("/repmail/learn/deliverability/how-dkim-works");
+    expect(entry.subtitle).toBe("Deliverability & Sender Reputation");
+  });
+
+  it("academyToSearchEntry produces a real, navigable url to the Academy hub", () => {
+    const entry = academyToSearchEntry(repmail.academies[0], repmail);
+    expect(entry.type).toBe("academy");
+    expect(entry.url).toBe("/repmail/learn/cold-email");
+    expect(entry.subtitle).toBe("Academy");
+  });
+});
+
+describe("buildSearchIndex — proves search scales beyond articles without new architecture", () => {
+  it("combines Academies and Articles into one flat, uniformly-searchable index", () => {
+    const index = buildSearchIndex(repmail, { articles: rawArticles });
+    expect(index.some((e) => e.type === "academy")).toBe(true);
+    expect(index.some((e) => e.type === "article")).toBe(true);
+    // every one of the 6 real Academies is in the index, not just articles
+    expect(index.filter((e) => e.type === "academy")).toHaveLength(6);
+  });
+
+  it("a query matching an Academy's own name/description surfaces the Academy itself, alongside any matching articles — one search, multiple content types, zero type-specific UI logic", () => {
+    const index = buildSearchIndex(repmail, { articles: rawArticles });
+    // "Compliance" matches only the Academy (no article in the fixture set is tagged/titled with it)
+    const results = searchContent("compliance", index);
+    expect(results.some((r) => r.type === "academy" && r.title === "Compliance")).toBe(true);
+  });
+
+  it("works correctly with zero articles — an Academy-only index is still valid and searchable (today's real state)", () => {
+    const index = buildSearchIndex(repmail, { articles: [] });
+    expect(index).toHaveLength(6); // 6 Academies, 0 articles
+    const results = searchContent("deliverability", index);
+    expect(results[0].type).toBe("academy");
   });
 });

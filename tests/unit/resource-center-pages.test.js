@@ -64,3 +64,21 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html).toContain('href="/repmail/learn"');
   });
 });
+
+describe("Resource Center pages 404 honestly for an unregistered product (M21-I multi-product proof)", () => {
+  it("ResourceCenterHomePage renders NotFound for a product slug that isn't in PRODUCTS yet — not a silent fallback to repmail", async () => {
+    const html = await renderPage("/src/pages/resource-center/ResourceCenterHomePage.jsx", "/messagehub/learn");
+    expect(html).not.toContain("resource-center-home");
+  });
+
+  it("AcademyHubPage, ArticlePage, and AuthorPage all 404 for the same unregistered product", async () => {
+    const academyHtml = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/messagehub/learn/deliverability");
+    expect(academyHtml).not.toContain("academy-hub-template");
+
+    const articleHtml = await renderPage("/src/pages/resource-center/ArticlePage.jsx", "/messagehub/learn/deliverability/how-dkim-works");
+    expect(articleHtml).not.toContain("article-template");
+
+    const authorHtml = await renderPage("/src/pages/resource-center/AuthorPage.jsx", "/messagehub/learn/authors/jane-doe");
+    expect(authorHtml).not.toContain("author-page-template");
+  });
+});

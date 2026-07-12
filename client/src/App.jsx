@@ -198,29 +198,35 @@ function AppRoutes() {
         {() => <RepMailTerms />}
       </Route>
 
-      {/* M21-D — Resource Center. Route order matters: /authors/:author must
-          be declared before /:academy/:slug (both are 3 segments — without
-          this order, "authors" would be greedily matched as an academy slug).
-          Each lazy-loaded component gets its own Suspense boundary so
-          navigating between Resource Center pages doesn't re-trigger the
-          full-screen loader for chunks already fetched. */}
+      {/* M21-D/M21-I — Resource Center, product-parameterized: :product is
+          resolved against the real PRODUCTS registry inside each page
+          (useResourceCenterProduct), not hardcoded to "repmail" — a second
+          LetsZero product (PAR §11's own examples — MessageHub,
+          NotifyStream) needs a PRODUCTS entry and content, not new routes
+          or new page components. Route order matters: /authors/:author
+          must be declared before /:academy/:slug (both are 3 segments
+          after :product — without this order, "authors" would be greedily
+          matched as an academy slug). Each lazy-loaded component gets its
+          own Suspense boundary so navigating between Resource Center pages
+          doesn't re-trigger the full-screen loader for chunks already
+          fetched. */}
       <Route path="/learn">
         {() => <Suspense fallback={<LoadingScreen />}><LetsZeroLearnDirectory /></Suspense>}
       </Route>
 
-      <Route path="/repmail/learn">
+      <Route path="/:product/learn">
         {() => <Suspense fallback={<LoadingScreen />}><ResourceCenterHomePage /></Suspense>}
       </Route>
 
-      <Route path="/repmail/learn/authors/:author">
+      <Route path="/:product/learn/authors/:author">
         {() => <Suspense fallback={<LoadingScreen />}><AuthorPage /></Suspense>}
       </Route>
 
-      <Route path="/repmail/learn/:academy/:slug">
+      <Route path="/:product/learn/:academy/:slug">
         {() => <Suspense fallback={<LoadingScreen />}><ArticlePage /></Suspense>}
       </Route>
 
-      <Route path="/repmail/learn/:academy">
+      <Route path="/:product/learn/:academy">
         {() => <Suspense fallback={<LoadingScreen />}><AcademyHubPage /></Suspense>}
       </Route>
 

@@ -1,24 +1,25 @@
 // M21-D — wires ArticleTemplate (M21-C) to a real article via the
-// :academy/:slug route params. M21-E adds BlogPosting + BreadcrumbList
-// JSON-LD, the latter built from the exact same buildBreadcrumbItems()
-// output the visual breadcrumb renders — one source of truth, not two
-// hand-kept copies that could drift. M21-F adds related-content generation.
+// :product/:academy/:slug route params. M21-E adds BlogPosting +
+// BreadcrumbList JSON-LD, the latter built from the exact same
+// buildBreadcrumbItems() output the visual breadcrumb renders — one
+// source of truth, not two hand-kept copies that could drift. M21-F adds
+// related-content generation. M21-I: :product is resolved dynamically.
 import { useRoute } from "wouter";
 import { getArticlesForProduct } from "@/lib/resourceCenterContent";
-import { PRODUCTS } from "@shared/content/taxonomy.js";
 import { buildArticleJsonLd, buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import { getRelatedArticles } from "@shared/content/relatedContent.js";
 import ArticleTemplate from "@/components/resource-center/ArticleTemplate";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
+import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
 
 const CANONICAL_ORIGIN = "https://www.letszero.in";
 
 export default function ArticlePage() {
-  const [, params] = useRoute("/repmail/learn/:academy/:slug");
-  const product = PRODUCTS.repmail;
-  const allArticles = getArticlesForProduct("repmail");
+  const [, params] = useRoute("/:product/learn/:academy/:slug");
+  const product = useResourceCenterProduct(params?.product);
+  const allArticles = product ? getArticlesForProduct(params.product) : [];
   const article = allArticles.find(
     (a) => a.academy.slug === params?.academy && a.slug === params?.slug
   );
@@ -43,7 +44,7 @@ export default function ArticlePage() {
     : null;
   useJsonLd(jsonLdGraph);
 
-  if (!article) return <NotFound />;
+  if (!product || !article) return <NotFound />;
 
   const relatedArticles = getRelatedArticles(article, allArticles, { limit: 3 });
 
