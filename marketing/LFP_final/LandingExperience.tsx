@@ -221,6 +221,9 @@ export default function LandingExperience() {
             <a href="/pricing" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Pricing
             </a>
+            <a href="/repmail/learn" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
+              Resources
+            </a>
             <a href="#contact" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
               Contact
             </a>
@@ -315,6 +318,11 @@ export default function LandingExperience() {
                   className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
                   style={{ fontFamily: "'Inter', sans-serif" }}>
                   Pricing
+                </a>
+                <a href="/repmail/learn" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+                  style={{ fontFamily: "'Inter', sans-serif" }}>
+                  Resources
                 </a>
                 <button
                   onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }), 300); }}
@@ -1473,6 +1481,9 @@ export default function LandingExperience() {
             <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
           </div>
           <div className="flex items-center gap-6">
+            <a href="/repmail/learn" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Resources</a>
             <a href="/privacy" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
               onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
               onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Privacy</a>
