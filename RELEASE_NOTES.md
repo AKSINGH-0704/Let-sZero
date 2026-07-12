@@ -2,13 +2,29 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-12
+**Last updated:** 2026-07-13
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.8 (2026-07-12)
+## Current Release — v1.9 (2026-07-13)
+
+### New: The RepMail Resource Center
+
+A free, in-depth learning destination for cold email and deliverability, at **letszero.in/repmail/learn**.
+
+- **Practical guides that solve real problems.** Eleven in-depth guides across two Academies, Deliverability and Sender Reputation and Cold Email, covering everything from SPF, DKIM, and DMARC through warming up a new domain, reading bounces, writing subject lines that get opened, and building follow-up sequences that get replies. Every guide ships with something usable, such as a checklist, a reference table, or a ready-to-use template.
+- **A guided Getting Started path.** A sequenced route from verifying your domain to sending your first deliverable campaign, so a new sender always knows the next step.
+- **Built to help you find things fast.** On-site search with a keyboard shortcut, topic Academies, curated collections, rich internal linking, and clear visual diagrams that explain how email authentication and domain warm-up actually work.
+- **Discoverable everywhere.** Reachable from the LetsZero site, the RepMail product pages, and inside the app, with no need to type a URL.
+- **Fast, accessible, and search-friendly.** Every page is prerendered for search engines and social sharing, scores top marks for accessibility, works in both light and dark themes, and ships with a sitemap and an RSS feed.
+
+This release adds the Resource Center. It does not change sending, billing, or any existing product behaviour.
+
+---
+
+## Previous Release — v1.8 (2026-07-12)
 
 ### Team Plans, Simplified
 
