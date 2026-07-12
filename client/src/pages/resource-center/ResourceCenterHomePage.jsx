@@ -7,11 +7,10 @@
 // M21-I: :product is resolved dynamically from the route (was hardcoded to
 // PRODUCTS.repmail) — a second LetsZero product needs a PRODUCTS entry and
 // content, not a new page component or route path.
-import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
 import { getArticlesForProduct, getLearningPathsForProduct, getCollectionsForProduct } from "@/lib/resourceCenterContent";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
-import ResourceCenterSearch from "@/components/resource-center/ResourceCenterSearch";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
 
@@ -44,22 +43,9 @@ export default function ResourceCenterHomePage() {
   const articles = product ? getArticlesForProduct(params.product) : [];
   const learningPaths = product ? getLearningPathsForProduct(params.product) : [];
   const collections = product ? getCollectionsForProduct(params.product) : [];
-  const [searchOpen, setSearchOpen] = useState(false);
 
-  // ⌘K / Ctrl+K — the "keyboard-accessible search" PAR §5/§8 calls for
-  // explicitly, not just a clickable button. Registered unconditionally
-  // (hooks can't be called conditionally) — a no-op if product is null,
-  // since the dialog it would open never renders in that case either.
-  useEffect(() => {
-    function handleKeyDown(e) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setSearchOpen((open) => !open);
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  // Search (dialog + Cmd/Ctrl+K) now lives in ResourceCenterLayout, so it's
+  // available on every Resource Center page, not just this one (M23-A).
 
   if (!product) return <NotFound />;
 
@@ -76,7 +62,7 @@ export default function ResourceCenterHomePage() {
   const intents = buildIntentCards({ product, articles, learningPaths });
 
   return (
-    <>
+    <ResourceCenterLayout product={product}>
       <ResourceCenterHome
         product={product}
         intents={intents}
@@ -87,9 +73,7 @@ export default function ResourceCenterHomePage() {
         academyArticleCounts={academyArticleCounts}
         curatedResources={curatedResources}
         recentArticles={[...articles].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 5)}
-        onOpenSearch={() => setSearchOpen(true)}
       />
-      <ResourceCenterSearch open={searchOpen} onOpenChange={setSearchOpen} articles={articles} product={product} />
-    </>
+    </ResourceCenterLayout>
   );
 }

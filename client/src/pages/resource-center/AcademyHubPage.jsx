@@ -9,6 +9,7 @@ import { getAcademyBySlug } from "@shared/content/taxonomy.js";
 import { buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import AcademyHubTemplate from "@/components/resource-center/AcademyHubTemplate";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
@@ -37,5 +38,9 @@ export default function AcademyHubPage() {
 
   const articles = getArticlesForProduct(params.product).filter((a) => a.academy.slug === academy.slug);
 
-  return <AcademyHubTemplate product={product} academy={academy} articles={articles} />;
+  return (
+    <ResourceCenterLayout product={product}>
+      <AcademyHubTemplate product={product} academy={academy} articles={articles} />
+    </ResourceCenterLayout>
+  );
 }

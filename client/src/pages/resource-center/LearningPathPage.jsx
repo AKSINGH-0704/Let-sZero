@@ -7,6 +7,7 @@ import { getArticlesForProduct, getLearningPathsForProduct, resolveArticleSlugs 
 import { buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import LearningPathTemplate from "@/components/resource-center/LearningPathTemplate";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
@@ -36,5 +37,9 @@ export default function LearningPathPage() {
   const articles = getArticlesForProduct(params.product);
   const steps = resolveArticleSlugs(path.steps, articles);
 
-  return <LearningPathTemplate product={product} path={path} steps={steps} />;
+  return (
+    <ResourceCenterLayout product={product}>
+      <LearningPathTemplate product={product} path={path} steps={steps} />
+    </ResourceCenterLayout>
+  );
 }

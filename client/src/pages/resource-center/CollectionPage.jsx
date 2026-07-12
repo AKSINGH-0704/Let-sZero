@@ -6,6 +6,7 @@ import { getArticlesForProduct, getCollectionsForProduct, resolveArticleSlugs } 
 import { buildBreadcrumbListJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import CollectionTemplate from "@/components/resource-center/CollectionTemplate";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
@@ -35,5 +36,9 @@ export default function CollectionPage() {
   const articles = getArticlesForProduct(params.product);
   const resolvedArticles = resolveArticleSlugs(collection.articleSlugs, articles);
 
-  return <CollectionTemplate product={product} collection={collection} articles={resolvedArticles} />;
+  return (
+    <ResourceCenterLayout product={product}>
+      <CollectionTemplate product={product} collection={collection} articles={resolvedArticles} />
+    </ResourceCenterLayout>
+  );
 }

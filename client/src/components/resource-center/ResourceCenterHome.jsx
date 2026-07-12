@@ -14,6 +14,7 @@ import AcademyCard from "./AcademyCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useResourceCenterSearch } from "./ResourceCenterLayout";
 
 function Section({ title, subtitle, children, testId }) {
   return (
@@ -37,8 +38,8 @@ export default function ResourceCenterHome({
   academyArticleCounts = {},
   curatedResources = [],
   recentArticles = [],
-  onOpenSearch,
 }) {
+  const openSearch = useResourceCenterSearch();
   return (
     <div className="mx-auto max-w-6xl px-4 py-10" data-testid="resource-center-home">
       <header className="mb-10">
@@ -54,7 +55,7 @@ export default function ResourceCenterHome({
         <Button
           variant="outline"
           className="w-full max-w-md justify-start gap-2 text-muted-foreground"
-          onClick={onOpenSearch}
+          onClick={openSearch}
           data-testid="button-open-resource-center-search"
         >
           <Search className="h-4 w-4" aria-hidden="true" />

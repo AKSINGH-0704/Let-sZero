@@ -34,6 +34,7 @@ import {
   Shield,
   Globe,
   SlidersHorizontal,
+  GraduationCap,
 } from "lucide-react";
 import { getInitials } from "@/lib/utils";
 
@@ -63,6 +64,12 @@ export default function Navbar() {
     ] },
     { label: "Account", items: [
       { href: "/app/payments", label: "Payments", icon: CreditCard },
+    ] },
+    // M23-A — even signed-in customers had no in-app path to the Resource
+    // Center; the guides are directly useful to them (domain setup,
+    // deliverability). Reuses the existing config-driven Manage menu.
+    { label: "Learn", items: [
+      { href: "/repmail/learn", label: "Resource Center", icon: GraduationCap },
     ] },
   ];
   if (isAdmin || isRootAdmin) {

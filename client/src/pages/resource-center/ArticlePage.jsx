@@ -10,6 +10,7 @@ import { buildArticleJsonLd, buildBreadcrumbListJsonLd } from "@shared/content/j
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import { getRelatedArticles } from "@shared/content/relatedContent.js";
 import ArticleTemplate from "@/components/resource-center/ArticleTemplate";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
@@ -49,12 +50,14 @@ export default function ArticlePage() {
   const relatedArticles = getRelatedArticles(article, allArticles, { limit: 3 });
 
   return (
-    <ArticleTemplate
-      article={article}
-      author={article.author}
-      product={product}
-      readingTimeMinutes={article.readingTimeMinutes}
-      relatedArticles={relatedArticles}
-    />
+    <ResourceCenterLayout product={product}>
+      <ArticleTemplate
+        article={article}
+        author={article.author}
+        product={product}
+        readingTimeMinutes={article.readingTimeMinutes}
+        relatedArticles={relatedArticles}
+      />
+    </ResourceCenterLayout>
   );
 }

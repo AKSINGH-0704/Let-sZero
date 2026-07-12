@@ -8,6 +8,7 @@ import { useRoute } from "wouter";
 import { getArticlesForProduct, getAuthorsForProduct } from "@/lib/resourceCenterContent";
 import { buildPersonJsonLd } from "@shared/content/jsonLd.js";
 import AuthorPageTemplate from "@/components/resource-center/AuthorPageTemplate";
+import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
 import useJsonLd from "@/hooks/useJsonLd";
 import useResourceCenterProduct from "@/hooks/useResourceCenterProduct";
@@ -26,5 +27,9 @@ export default function AuthorPage() {
 
   const articles = getArticlesForProduct(params.product).filter((a) => a.author.slug === author.slug);
 
-  return <AuthorPageTemplate author={author} articles={articles} product={product} />;
+  return (
+    <ResourceCenterLayout product={product}>
+      <AuthorPageTemplate author={author} articles={articles} product={product} />
+    </ResourceCenterLayout>
+  );
 }

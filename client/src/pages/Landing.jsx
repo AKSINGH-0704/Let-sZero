@@ -282,6 +282,14 @@ export default function Landing() {
               Pricing
             </Button>
           </Link>
+          <Link href="/repmail/learn" className="hidden md:block">
+            <Button
+              variant="ghost"
+              className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+            >
+              Resources
+            </Button>
+          </Link>
           <Link href="/contact" className="hidden md:block">
             <Button
               variant="ghost"
@@ -702,6 +710,7 @@ export default function Landing() {
             <span>© 2026 RepMail by LetsZero. All rights reserved.</span>
           </div>
           <div className="flex items-center space-x-6">
+            <Link href="/repmail/learn" className="hover:text-white transition-colors">Resources</Link>
             <Link href="/repmail/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/repmail/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
