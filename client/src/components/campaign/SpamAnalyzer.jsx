@@ -258,6 +258,53 @@ export default function SpamAnalyzer() {
     setSpamAnalysis(newAnalysis);
   };
 
+  // Applies every pending suggestion in one click. Deliberately replays exactly what
+  // clicking Accept on each row in order would do — same regex replacement, same
+  // per-suggestion snapshot taken immediately before that suggestion is applied — so the
+  // existing undo chain (which unwinds the most recent acceptance first, using
+  // acceptedSnapshots' insertion order) keeps working unchanged afterwards. The template
+  // text is threaded through the loop rather than read from state each time, because
+  // setTemplate is async and calling acceptSuggestion N times would apply every
+  // replacement against the same stale text.
+  const applyAllSuggestions = (pending) => {
+    if (pending.length === 0) return;
+
+    let subject = template.subject;
+    let body    = template.body;
+    const newSet       = new Set(acceptedSuggestions);
+    const newMap       = new Map(acceptedDetails);
+    const newSnapshots = new Map(acceptedSnapshots);
+
+    for (const suggestion of pending) {
+      // Guards double-application: the same `original` can legitimately appear in both
+      // the pattern list and the AI list, and Set/Map are keyed by it.
+      if (newSet.has(suggestion.original)) continue;
+
+      const pattern     = new RegExp(escapeRegex(suggestion.original), "gi");
+      const nextSubject = subject.replace(pattern, suggestion.suggestion);
+      const nextBody    = body.replace(pattern, suggestion.suggestion);
+
+      const changedFields = [];
+      if (nextSubject !== subject) changedFields.push("subject line");
+      if (nextBody    !== body)    changedFields.push("body");
+
+      newSnapshots.set(suggestion.original, { subject, body });
+      newSet.add(suggestion.original);
+      newMap.set(suggestion.original, changedFields);
+
+      subject = nextSubject;
+      body    = nextBody;
+    }
+
+    setTemplate({ subject, body });
+    syncAccepted(newSet, newMap, newSnapshots);
+    setEditingSuggestion(null);
+
+    const newAnalysis = calculateSpamScore(subject, body);
+    setLocalAnalysisLive(newAnalysis);
+    setSpamAnalysis(newAnalysis);
+  };
+
   const startManualEdit = (suggestion) => {
     setEditingSuggestion(suggestion.original);
     setEditedText(suggestion.suggestion);
@@ -329,6 +376,14 @@ export default function SpamAnalyzer() {
     ...aiRecommendations.map(s => ({ ...s, source: "ai", confidence: s.confidence || null })),
   ];
   const showSuggestionsCard = unifiedSuggestions.length > 0 || structuralTips.length > 0;
+
+  // Exactly the rows that render an Accept button today: not already applied, and actually
+  // present in the template. Keeping this identical to the per-row `canApply` condition is
+  // what makes "Apply all" mean "click every Accept button", with nothing else hidden in it.
+  const pendingSuggestions = unifiedSuggestions.filter(
+    s => !acceptedSuggestions.has(s.original) &&
+         (s.source === "pattern" || isApplicableToTemplate(s.original))
+  );
 
   // ── Objective quality signals — memoized on template content + contact data
   const personalizationStats = useMemo(
@@ -749,17 +804,34 @@ export default function SpamAnalyzer() {
       {showSuggestionsCard && (
         <Card className="border-card-border">
           <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-primary" />
-              Suggestions
-            </CardTitle>
-            {aiAnalysis?.summary && aiActionableTotal > 0 && (
-              <CardDescription>
-                {aiActionableResolved >= aiActionableTotal
-                  ? "All AI-flagged issues from this review have been addressed."
-                  : `${aiActionableResolved} of ${aiActionableTotal} AI-flagged issue${aiActionableTotal === 1 ? "" : "s"} addressed.`}
-              </CardDescription>
-            )}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-primary" />
+                  Suggestions
+                </CardTitle>
+                {aiAnalysis?.summary && aiActionableTotal > 0 && (
+                  <CardDescription>
+                    {aiActionableResolved >= aiActionableTotal
+                      ? "All AI-flagged issues from this review have been addressed."
+                      : `${aiActionableResolved} of ${aiActionableTotal} AI-flagged issue${aiActionableTotal === 1 ? "" : "s"} addressed.`}
+                  </CardDescription>
+                )}
+              </div>
+              {/* Only worth offering once there is more than one thing to apply — with a
+                  single pending row this would just duplicate its own Accept button. */}
+              {pendingSuggestions.length > 1 && (
+                <Button
+                  size="sm"
+                  onClick={() => applyAllSuggestions(pendingSuggestions)}
+                  data-testid="button-apply-all-suggestions"
+                  className="shrink-0"
+                >
+                  <ThumbsUp className="h-3 w-3 mr-1.5" />
+                  Apply all {pendingSuggestions.length}
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             {analyzeMutation.isPending && !aiAnalysis && (

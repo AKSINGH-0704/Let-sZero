@@ -2,13 +2,36 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-13
+**Last updated:** 2026-07-14
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.9 (2026-07-13)
+## Current Release — v1.10 (2026-07-14)
+
+### You can always buy credits
+
+Previously, if you were already on a plan, that plan's card showed as "Active" and could not be clicked. That was wrong. RepMail sells one-time credit packs, not subscriptions, so the pack you are already on is the one you are most likely to want again.
+
+- **Buy again, any time.** Every paid pack stays purchasable, including the one you already hold. Your current plan is still clearly marked, but it is now a label, not a locked button.
+- **You always know what a purchase does.** Each pack states its effect before you buy: how many credits it adds, and, when you pick a smaller pack, a clear reminder that your existing plan stays exactly as it is. Buying more credits never downgrades you.
+- **Enterprise customers can always reach us.** The Contact Sales button now works even if you are already on Enterprise.
+- **The credit estimator now works when signed in.** Choosing an amount and clicking through takes you to the right place instead of doing nothing.
+
+### Apply every email suggestion in one click
+
+The Email Quality Check now offers an **Apply all** action when more than one suggestion is waiting. It applies each fix exactly as if you had accepted them one by one, so you can still undo them individually, edit any suggestion by hand, or dismiss the ones you disagree with.
+
+### You cannot lose credits to a missed setting
+
+The final confirmation screen now checks every requirement before a campaign can start, including a verified sending domain and your sender identity. If something is missing, the campaign will not run, and the screen tells you exactly which field needs attention, right beneath that field, and takes you to it. The message clears itself as soon as you fix it.
+
+This release does not change how campaigns send, how credits are counted, or how payments are processed.
+
+---
+
+## Previous Release — v1.9 (2026-07-13)
 
 ### New: The RepMail Resource Center
 

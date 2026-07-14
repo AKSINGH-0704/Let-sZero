@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -68,6 +68,14 @@ export default function CampaignConfirmation() {
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [senderDomainId, setSenderDomainId] = useState("");
+  // Per-field validation for the last screen before credits are consumed. Shown only
+  // after a send attempt, cleared automatically as each field is corrected.
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const nameRef        = useRef(null);
+  const domainRef      = useRef(null);
+  const scheduledAtRef = useRef(null);
+  const confirmRef     = useRef(null);
 
   const { data: creditsInfo } = useQuery({ queryKey: ["/api/credits/info"] });
   const { data: platformConfig } = useQuery({ queryKey: ["/api/platform-config"], staleTime: 60_000 });
@@ -269,25 +277,80 @@ export default function CampaignConfirmation() {
     }
   });
 
-  const handleSend = () => {
+  // Every prerequisite that must hold before a single credit can be consumed. This is the
+  // authority: the Send button no longer sits permanently disabled with no explanation of
+  // what is missing, so this function is what actually stands between the customer and a
+  // send. Server-side validation and the Sender Authorization Service remain in force
+  // behind it; this exists so the customer is told what is wrong, on the field that is
+  // wrong, rather than facing a dead button.
+  const validateCampaign = () => {
+    const errs = {};
     if (!name.trim()) {
-      setError("Campaign name is required");
-      return;
+      errs.name = "Give this campaign a name.";
     }
-    if (!confirmed) {
-      setError("Please confirm you want to send this campaign");
-      return;
+    if (verifiedDomains.length === 0) {
+      errs.senderDomain = "You need a verified sending domain before this campaign can launch.";
+    } else if (!senderDomainId) {
+      errs.senderDomain = "Select the verified domain this campaign will send from.";
     }
-    if (!senderDomainId) {
-      setError("Select a verified sending domain before launching.");
-      return;
+    if (!senderProfileComplete) {
+      errs.senderProfile = "Add your sender name in your profile before launching.";
     }
     if (isScheduled && !scheduledAt) {
-      setError("Please select a date and time to schedule the campaign");
-      return;
+      errs.scheduledAt = "Choose the date and time this campaign should send.";
     }
     if (!isScheduled && !hasEnoughCredits) {
-      setError("Insufficient credits to send this campaign");
+      errs.credits = "You do not have enough credits to send this campaign.";
+    }
+    if (!confirmed) {
+      errs.confirmed = "Confirm you want to send this campaign.";
+    }
+    return errs;
+  };
+
+  // Top-to-bottom page order, so focus lands on the first problem the customer would
+  // actually reach, not the first one this object happens to list.
+  const FIELD_FOCUS_ORDER = [
+    ["name",         nameRef],
+    ["senderDomain", domainRef],
+    ["scheduledAt",  scheduledAtRef],
+    ["confirmed",    confirmRef],
+  ];
+
+  // Errors disappear on their own as each field is corrected, without re-running the whole
+  // validation as the customer types. Only fields already flagged are re-checked, so a
+  // field the customer has not reached yet never lights up early.
+  useEffect(() => {
+    setFieldErrors(prev => {
+      const flagged = Object.keys(prev);
+      if (flagged.length === 0) return prev;
+      const current = validateCampaign();
+      const next = {};
+      for (const key of flagged) {
+        if (current[key]) next[key] = current[key];
+      }
+      return Object.keys(next).length === flagged.length ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, senderDomainId, isScheduled, scheduledAt, confirmed, senderProfileComplete, hasEnoughCredits, verifiedDomains.length]);
+
+  const handleSend = () => {
+    const errs = validateCampaign();
+    setFieldErrors(errs);
+
+    if (Object.keys(errs).length > 0) {
+      const firstInvalid = FIELD_FOCUS_ORDER.find(([key]) => errs[key]);
+      const el = firstInvalid?.[1]?.current;
+      if (el) {
+        setError("");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.focus?.({ preventScroll: true });
+      } else {
+        // Missing credits or an incomplete sender profile have no field to focus: both are
+        // fixed elsewhere in the app and already render their own alerts on this page. Echo
+        // the reason next to the button so the click is never a silent no-op.
+        setError(errs.credits || errs.senderProfile || "Fix the highlighted issues before sending.");
+      }
       return;
     }
 
@@ -319,14 +382,22 @@ export default function CampaignConfirmation() {
                 <Label htmlFor="campaign-name">Campaign Name</Label>
                 <Input
                   id="campaign-name"
+                  ref={nameRef}
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
                     setError("");
                   }}
                   placeholder="Enter campaign name"
+                  aria-invalid={!!fieldErrors.name}
+                  className={fieldErrors.name ? "border-destructive focus-visible:ring-destructive" : ""}
                   data-testid="input-campaign-name"
                 />
+                {fieldErrors.name && (
+                  <p role="alert" className="text-xs text-destructive" data-testid="error-campaign-name">
+                    {fieldErrors.name}
+                  </p>
+                )}
               </div>
 
               {/* Campaign Scheduling */}
@@ -346,12 +417,23 @@ export default function CampaignConfirmation() {
                     <div className="mt-2">
                       <input
                         type="datetime-local"
+                        ref={scheduledAtRef}
                         value={scheduledAt}
                         onChange={(e) => setScheduledAt(e.target.value)}
                         min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)}
-                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground"
+                        aria-invalid={!!fieldErrors.scheduledAt}
+                        className={`w-full bg-background border rounded-md px-3 py-2 text-sm text-foreground ${
+                          fieldErrors.scheduledAt ? "border-destructive focus-visible:ring-destructive" : "border-input"
+                        }`}
+                        data-testid="input-scheduled-at"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">Campaign will send automatically at this time.</p>
+                      {fieldErrors.scheduledAt ? (
+                        <p role="alert" className="text-xs text-destructive mt-1" data-testid="error-scheduled-at">
+                          {fieldErrors.scheduledAt}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-1">Campaign will send automatically at this time.</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -387,7 +469,12 @@ export default function CampaignConfirmation() {
                 ) : (
                   <>
                     <Select value={senderDomainId} onValueChange={setSenderDomainId}>
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger
+                        ref={domainRef}
+                        aria-invalid={!!fieldErrors.senderDomain}
+                        className={`w-full${fieldErrors.senderDomain ? " border-destructive focus-visible:ring-destructive" : ""}`}
+                        data-testid="select-sender-domain"
+                      >
                         <SelectValue placeholder="Select a sending domain" />
                       </SelectTrigger>
                       <SelectContent>
@@ -398,10 +485,25 @@ export default function CampaignConfirmation() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Select the verified domain this campaign will send from.
-                    </p>
+                    {fieldErrors.senderDomain ? (
+                      <p role="alert" className="text-xs text-destructive" data-testid="error-sender-domain">
+                        {fieldErrors.senderDomain}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Select the verified domain this campaign will send from.
+                      </p>
+                    )}
                   </>
+                )}
+                {/* No verified domain exists at all. The amber Preview Mode alert above
+                    already explains the situation and links to Domains; this is the
+                    send-blocking restatement in the destructive field style, shown only
+                    once the customer has actually tried to launch. */}
+                {verifiedDomains.length === 0 && fieldErrors.senderDomain && (
+                  <p role="alert" className="text-xs text-destructive" data-testid="error-sender-domain">
+                    {fieldErrors.senderDomain}
+                  </p>
                 )}
               </div>
 
@@ -611,8 +713,11 @@ export default function CampaignConfirmation() {
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="confirm"
+                  ref={confirmRef}
                   checked={confirmed}
                   onCheckedChange={setConfirmed}
+                  aria-invalid={!!fieldErrors.confirmed}
+                  className={fieldErrors.confirmed ? "border-destructive" : ""}
                   data-testid="checkbox-confirm"
                 />
                 <div>
@@ -624,6 +729,11 @@ export default function CampaignConfirmation() {
                   <p className="text-sm text-muted-foreground mt-1">
                     This action cannot be undone once the campaign starts.
                   </p>
+                  {fieldErrors.confirmed && (
+                    <p role="alert" className="text-xs text-destructive mt-1.5" data-testid="error-confirm">
+                      {fieldErrors.confirmed}
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -743,9 +853,13 @@ export default function CampaignConfirmation() {
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
+        {/* Deliberately not disabled on missing prerequisites. A permanently dead button
+            told the customer nothing about what was wrong. Clicking now runs
+            validateCampaign(), which hard-blocks the mutation and points at the offending
+            field, so no credit can be consumed while anything required is missing. */}
         <Button
           onClick={handleSend}
-          disabled={!confirmed || (!isScheduled && !hasEnoughCredits) || !senderProfileComplete || !senderDomainId || verifiedDomains.length === 0 || sendMutation.isPending}
+          disabled={sendMutation.isPending}
           data-testid="button-send-campaign"
         >
           {sendMutation.isPending ? (
