@@ -8,22 +8,47 @@
  *
  * This is the customer's activation moment, not a payment receipt: it
  * confirms the plan is active, shows the credited amount *and* the resulting
- * total balance, states the biggest benefits just unlocked, and drives
- * straight at Teams adoption — the primary CTA is team-focused for every
- * plan that includes seats, since that's the highest-value action a customer
- * can take immediately after upgrading.
+ * total balance, and — for a paid workspace that has not built a team yet —
+ * introduces the collaboration capability their plan already includes.
+ *
+ * M26: two deliberate variants, chosen by whether the Teams introduction is
+ * genuinely useful to this customer right now.
+ *
+ *   FULL     paid plan + can manage a team + no members yet.
+ *            The activation moment: celebrate, then introduce Teams once.
+ *
+ *   COMPACT  everything else — a workspace that already has members, a
+ *            purchaser who cannot manage a team, or a non-paid plan.
+ *            A clean purchase confirmation. Nobody is educated about Teams
+ *            twice, and the fifth top-up of the month is not an onboarding.
+ *
+ * Both variants confirm the purchase and both give a clean exit. The variant
+ * only decides how much is said, never whether the customer can leave.
  */
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Users, Globe, ArrowRight, X } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { CheckCircle, Users, Globe, Shield, Mail, ArrowRight, X } from "lucide-react";
 import { MAX_TEAM_MEMBERS } from "@shared/schema";
+import { useAuth } from "@/context/AuthContext";
 import { formatNumber } from "@/lib/utils";
+
+// The paid tiers, and only the paid tiers. MAX_TEAM_MEMBERS also carries
+// free/trial seat limits (both 25, uniform since M20), so matching a plan name
+// against its keys would let "Free Trial" match "free" and present the paid
+// Teams activation to a customer who has not paid. Free plans are excluded here
+// explicitly rather than relying on the fact that the free-credit claim happens
+// to skip this render path today.
+const PAID_TIERS = ["starter", "growth", "scale", "enterprise"];
+
+const TEAM_ADMIN_ROLES = ["ROOT_ADMIN", "SUB_ADMIN"];
 
 export default function PostPurchaseActivation({ payment, onClose }) {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const dialogRef = useRef(null);
+  const prefersReducedMotion = useReducedMotion();
 
   // Every dismissal path — X, primary CTA, secondary CTA, Escape — routes
   // through onClose first. Previously the primary CTA (team/campaign) called
@@ -76,10 +101,22 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { data: teamUsage } = useQuery({
+  const planKey = (payment?.planId || payment?.planName || "").toLowerCase();
+  const paidTier = PAID_TIERS.find(t => planKey.includes(t)) || null;
+
+  // /api/users/team-usage is admin-gated (adminMiddleware). A member-role
+  // purchaser would get a 403 here, which must not be read as "this workspace
+  // has no team" and used to push them at a Team Management page they cannot
+  // open — so the role check gates the query itself, not just the CTA.
+  const canManageTeam = TEAM_ADMIN_ROLES.includes(user?.role);
+  const teamIntroEligible = !!paidTier && canManageTeam;
+
+  const { data: teamUsage, isLoading: teamUsageLoading } = useQuery({
     queryKey: ["/api/users/team-usage"],
     queryFn: () => fetch("/api/users/team-usage", { credentials: "include" }).then(r => r.ok ? r.json() : null),
+    enabled: teamIntroEligible,
   });
+
   // Same query key Dashboard.jsx reads /api/credits/info from — shares cache,
   // so the balance shown here is byte-identical to what the customer sees a
   // moment later on Dashboard, not a second, independently-computed number.
@@ -88,34 +125,29 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     queryFn: () => fetch("/api/credits/info", { credentials: "include" }).then(r => r.ok ? r.json() : null),
   });
 
-  const planKey = (payment?.planId || payment?.planName || "").toLowerCase();
-  const matchedTier = Object.keys(MAX_TEAM_MEMBERS).find(k => planKey.includes(k));
-  const seatLimit = matchedTier ? MAX_TEAM_MEMBERS[matchedTier] : 0;
-  const hasTeamMember = (teamUsage?.totalMembers ?? 0) > 0;
-  const teamEligible = seatLimit > 0;
+  const seatLimit = paidTier ? MAX_TEAM_MEMBERS[paidTier] : 0;
+  const hasTeamMembers = (teamUsage?.totalMembers ?? 0) > 0;
 
-  const benefits = [
-    teamEligible
-      ? (seatLimit === Infinity ? "Unlimited team members included" : `Up to ${seatLimit} team members included, at no extra cost`)
-      : null,
-    "Send from your own verified domain — your reputation, not a shared one",
-  ].filter(Boolean);
+  // Only introduce Teams to a paid workspace that hasn't built one. While the
+  // team count is still loading we deliberately hold the compact variant: it is
+  // the safe default. Rendering the full onboarding first and collapsing it a
+  // moment later would flash Teams education at a customer who already has a
+  // team, which is the exact thing this variant exists to prevent.
+  const showTeamIntro = teamIntroEligible && !teamUsageLoading && !hasTeamMembers;
 
-  // Primary CTA is team-focused for every plan that includes seats — the
-  // single highest-value action available immediately after upgrading.
-  // (This component only renders after a real purchase, so an unmatched
-  // planKey — not any real paid tier, all of which now include 25 seats —
-  // is the only way teamEligible is false here.) "Invite Your Team"
-  // specifically (not "Manage Team", which
-  // implies an existing team the customer wants to review) also carries the
-  // customer straight into an already-open invite dialog — found during the
-  // end-to-end activation review that landing on Users.jsx still required a
-  // second, redundant click on the exact action the customer just took.
-  const primaryAction = teamEligible
-    ? (hasTeamMember
-        ? { label: "Manage Team", icon: Users, go: () => leaveWith("/app/users") }
-        : { label: "Invite Your Team", icon: Users, go: () => leaveWith("/app/users?invite=1") })
-    : { label: "Create Your First Campaign", icon: ArrowRight, go: () => leaveWith("/app/campaigns/new") };
+  const seatCopy = seatLimit === Infinity
+    ? "unlimited teammates"
+    : `up to ${seatLimit} teammates`;
+
+  const collaboration = [
+    { icon: Mail,   text: "Every campaign in one place, visible to the whole workspace" },
+    { icon: Globe,  text: "Your verified sending domains, shared across the team" },
+    { icon: Shield, text: "Roles and permissions decide who sees and sends what" },
+  ];
+
+  const motionProps = prefersReducedMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.15 } }
+    : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 8 }, transition: { duration: 0.25 } };
 
   return (
     <AnimatePresence>
@@ -132,12 +164,10 @@ export default function PostPurchaseActivation({ payment, onClose }) {
         <motion.div
           ref={dialogRef}
           tabIndex={-1}
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
-          transition={{ duration: 0.25 }}
+          {...motionProps}
           className="relative w-full max-w-lg rounded-2xl p-7 md:p-8 outline-none"
           style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
+          data-testid={showTeamIntro ? "activation-full" : "activation-compact"}
         >
           <button
             onClick={handleDismiss}
@@ -158,12 +188,13 @@ export default function PostPurchaseActivation({ payment, onClose }) {
             You're on {payment?.planName || "your new plan"}
           </h2>
           <p className="mt-1.5 text-center text-sm" style={{ color: "#9898B8" }}>
-            Payment confirmed — your plan is active. A receipt is on its way to your inbox.
+            Payment confirmed, your credits are in. A receipt is on its way to your inbox.
           </p>
 
           {/* Credits added this purchase + the resulting total — both numbers
               visible together so the customer never has to do the addition
-              themselves or wonder whether the purchase actually landed. */}
+              themselves or wonder whether the purchase actually landed. Shown
+              in both variants: it is the point of the purchase. */}
           <div className="mt-6 grid grid-cols-2 gap-2.5">
             <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
               <p className="text-xs" style={{ color: "#7878A0" }}>Credits added</p>
@@ -181,32 +212,83 @@ export default function PostPurchaseActivation({ payment, onClose }) {
             </div>
           </div>
 
-          <ul className="mt-5 space-y-2">
-            {benefits.map((text, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm" style={{ color: "#D0D0E0" }}>
-                <Globe className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#00E5C8" }} aria-hidden="true" />
-                {text}
-              </li>
-            ))}
-          </ul>
+          {showTeamIntro ? (
+            <>
+              {/* The Teams introduction. Shown once, to a paid workspace that has
+                  not built a team yet — never to a workspace that already has one. */}
+              <div
+                className="mt-6 rounded-xl p-4"
+                style={{ background: "#08080F", border: "1px solid #1A1A2E" }}
+              >
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 shrink-0" style={{ color: "#00E5C8" }} aria-hidden="true" />
+                  <p className="text-sm font-semibold" style={{ color: "#F0F0F5" }}>
+                    Your workspace includes {seatCopy}
+                  </p>
+                </div>
+                <p className="mt-1 text-xs" style={{ color: "#7878A0" }}>
+                  Included in your plan, at no extra cost. Invite them whenever you're ready.
+                </p>
+                <ul className="mt-3.5 space-y-2">
+                  {collaboration.map(({ icon: Icon, text }) => (
+                    <li key={text} className="flex items-start gap-2.5 text-sm" style={{ color: "#D0D0E0" }}>
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#00E5C8" }} aria-hidden="true" />
+                      {text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          <div className="mt-7 flex flex-col gap-2.5">
-            <button
-              onClick={primaryAction.go}
-              className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors"
-              style={{ background: "#00E5C8", color: "#06060B" }}
-            >
-              <primaryAction.icon className="h-4 w-4" aria-hidden="true" />
-              {primaryAction.label}
-            </button>
-            <button
-              onClick={handleDismiss}
-              className="rounded-lg px-4 py-2 text-xs font-medium transition-colors"
-              style={{ color: "#7878A0" }}
-            >
-              Continue to Dashboard
-            </button>
-          </div>
+              <div className="mt-6 flex flex-col gap-2.5">
+                {/* Lands on Team Management with the invite dialog already open
+                    (?invite=1). Established in the M20-C activation review: sending
+                    the customer to Users.jsx and making them click Invite again is a
+                    redundant second click on the action they just chose. This is the
+                    existing production Team Management screen, not a parallel flow. */}
+                <button
+                  onClick={() => leaveWith("/app/users?invite=1")}
+                  className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0C0C14]"
+                  style={{ background: "#00E5C8", color: "#06060B" }}
+                  data-testid="button-activation-team"
+                >
+                  <Users className="h-4 w-4" aria-hidden="true" />
+                  Invite your team
+                </button>
+                <button
+                  onClick={handleDismiss}
+                  className="rounded-lg px-4 py-2 text-xs font-medium transition-colors hover:text-[#F0F0F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+                  style={{ color: "#7878A0" }}
+                  data-testid="button-activation-dashboard"
+                >
+                  Continue to Dashboard
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button
+                onClick={handleDismiss}
+                className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0C0C14]"
+                style={{ background: "#00E5C8", color: "#06060B" }}
+                data-testid="button-activation-dashboard"
+              >
+                Continue to Dashboard
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+              {/* A workspace with a team keeps a quiet route back to it, without
+                  being re-taught what Teams is. */}
+              {teamIntroEligible && hasTeamMembers && (
+                <button
+                  onClick={() => leaveWith("/app/users")}
+                  className="rounded-lg px-4 py-2 text-xs font-medium transition-colors hover:text-[#F0F0F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+                  style={{ color: "#7878A0" }}
+                  data-testid="button-activation-team"
+                >
+                  Manage team
+                </button>
+              )}
+            </div>
+          )}
         </motion.div>
       </motion.div>
     </AnimatePresence>
