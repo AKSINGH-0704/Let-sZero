@@ -499,6 +499,21 @@ export default function PublicPricing() {
   const animatedPrice = useAnimatedNumber(estimPrice, currency);
   const animatedTotal = useAnimatedNumber(estimTotal, currency);
 
+  // The estimator's CTA used to point at `?plan=${purchase.id}`, but calcPurchase() returns
+  // no id — so every signed-in customer was sent to `/app/payments?plan=undefined`, which
+  // matches no plan and silently opens nothing. Where the chosen amount is exactly a
+  // purchasable pack we deep-link it (the payments page opens its confirm modal on ?plan=);
+  // otherwise we land on the plan grid, because /api/payments/initiate only accepts a plan
+  // id and cannot transact an arbitrary credit amount (see PAY-006).
+  const estimatorPlan = PLANS.find(
+    p => !p.isCustom && !p.isTrial && p.credits === estimatorCredits
+  );
+  const estimatorHref = !user
+    ? "/login"
+    : estimatorPlan
+    ? `/app/payments?plan=${estimatorPlan.id}`
+    : "/app/payments";
+
   const formatPrice = (inr, usd) => {
     if (currency === "INR") return fmtINR(inr);
     return fmtUSD(usd);
@@ -1127,7 +1142,7 @@ export default function PublicPricing() {
                       </div>
 
                       <Link
-                        href={user && purchase ? `/app/payments?plan=${purchase.id}` : "/login"}
+                        href={estimatorHref}
                         className="block mt-6"
                       >
                         <button

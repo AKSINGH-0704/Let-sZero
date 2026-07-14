@@ -20,6 +20,7 @@ import {
   Smartphone, Gift,
 } from "lucide-react";
 import { formatDate, formatNumber, cn } from "@/lib/utils";
+import { getPlanPurchaseState } from "@/lib/planPurchase";
 import PostPurchaseActivation from "@/components/payments/PostPurchaseActivation";
 
 function fmtNum(n) {
@@ -211,8 +212,18 @@ function FeatureIcon({ value, special }) {
 }
 
 // ─── Plan Card (in-app version: CTA triggers handlePurchase) ──────────────────
-function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
-  const isCurrent = plan.id === currentPlanId;
+// Exported for tests/unit/plan-purchase-card-render.test.js — the M24 defect lived in this
+// component's JSX (a disabled button), not in the rule behind it, so the rendered output is
+// asserted directly rather than only the rule.
+export function PlanCard({ plan, currency, onPurchase, currentPlanId, isTrialUser, isPending }) {
+  // Holding a plan marks the card, it never disables it. RepMail sells one-time credit
+  // packs, not subscriptions (see client/src/lib/planPurchase.js) — the pack you already
+  // own is the one you are most likely to buy again, so it must stay purchasable.
+  const { isCurrentPlan, canPurchase, ctaLabel, note } = getPlanPurchaseState({
+    plan,
+    effectivePlan: currentPlanId,
+    isTrialUser,
+  });
 
   const perCreditRate = plan.isCustom || plan.isTrial
     ? null
@@ -294,14 +305,6 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
     ? "#60A5FA"
     : "#00B8E0";
 
-  const ctaLabel = isCurrent
-    ? "Current Plan"
-    : plan.isCustom
-    ? "Contact Sales"
-    : plan.isTrial
-    ? "Start Free Trial"
-    : "Get Started →";
-
   const CardContent = (
     <div
       className="relative flex flex-col h-full rounded-2xl transition-all"
@@ -324,8 +327,12 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
       }} />
 
       <div className="p-6 flex flex-col flex-1">
-        {/* Most Popular badge */}
-        {plan.isPopular && (
+        {/* Most Popular badge. Suppressed on the customer's own plan: both badges are
+            absolutely positioned in the same slot, so a Growth customer (Growth being both
+            the popular card and the most commonly held plan) rendered the two on top of each
+            other. "Most Popular" is a persuasion device aimed at people still choosing;
+            once it is your plan, the fact that it is yours is the more useful thing to say. */}
+        {plan.isPopular && !isCurrentPlan && (
           <div
             className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap"
             style={{
@@ -339,8 +346,10 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
           </div>
         )}
 
-        {/* Current Plan badge */}
-        {isCurrent && (
+        {/* "Your plan" badge — a statement of fact, deliberately not an action.
+            It marks the card the customer already holds without competing with,
+            or standing in for, the purchase CTA below. */}
+        {isCurrentPlan && (
           <div
             className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap flex items-center gap-1.5"
             style={{
@@ -349,9 +358,10 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
               color: "#34D399",
               letterSpacing: "0.15em",
             }}
+            data-testid={`badge-current-plan-${plan.id}`}
           >
             <Check className="w-3 h-3" />
-            Current Plan
+            Your Plan
           </div>
         )}
 
@@ -510,21 +520,32 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
           ))}
         </ul>
 
-        {/* CTA button */}
+        {/* CTA button.
+            The only non-purchasable state is a free trial that has already been claimed —
+            a one-time grant the backend atomically refuses to repeat (storage.claimTrialCredits,
+            409), so an enabled button here could only ever fail. Every paid card stays live in
+            every account state, including the plan the customer already holds. */}
+        {!canPurchase ? (
+          <div
+            className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+            style={{
+              background: "rgba(52,211,153,0.06)",
+              border: "1px solid rgba(52,211,153,0.2)",
+              color: "#34D399",
+            }}
+            data-testid={`state-plan-${plan.id}`}
+          >
+            <Check className="w-3.5 h-3.5" />
+            {note}
+          </div>
+        ) : (
         <button
-          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-          disabled={isCurrent || isPending}
-          onClick={() => !isCurrent && onPurchase(plan.id)}
+          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+          disabled={isPending}
+          onClick={() => onPurchase(plan.id)}
+          data-testid={`button-purchase-${plan.id}`}
           style={
-            isCurrent
-              ? {
-                  background: "rgba(52,211,153,0.06)",
-                  border: "1px solid rgba(52,211,153,0.2)",
-                  color: "#34D399",
-                  opacity: 0.7,
-                  cursor: "default",
-                }
-              : plan.isPopular
+            plan.isPopular
               ? {
                   background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
                   color: "#06060B",
@@ -537,6 +558,16 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
                   border: "1px solid rgba(139,92,246,0.45)",
                   color: "#A78BFA",
                   boxShadow: "0 0 20px rgba(139,92,246,0.1)",
+                }
+              : isCurrentPlan
+              ? {
+                  // The pack the customer already owns is the one they are most likely to
+                  // buy again, so it carries a primary CTA — in the same emerald as its
+                  // "Your Plan" badge, so the two read as one idea rather than competing.
+                  background: "linear-gradient(135deg, #34D399 0%, #10B981 100%)",
+                  color: "#06060B",
+                  boxShadow: "0 4px 24px rgba(52,211,153,0.3)",
+                  fontWeight: 700,
                 }
               : plan.isTrial
               ? {
@@ -552,7 +583,6 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
                 }
           }
           onMouseEnter={e => {
-            if (isCurrent) return;
             const el = e.currentTarget;
             if (plan.isPopular) {
               el.style.transform = "translateY(-2px)";
@@ -560,6 +590,9 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
             } else if (plan.isCustom) {
               el.style.background = "rgba(139,92,246,0.2)";
               el.style.borderColor = "rgba(139,92,246,0.65)";
+            } else if (isCurrentPlan) {
+              el.style.transform = "translateY(-2px)";
+              el.style.boxShadow = "0 10px 40px rgba(52,211,153,0.4)";
             } else {
               el.style.transform = "translateY(-1px)";
               el.style.background = plan.isTrial
@@ -568,7 +601,6 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
             }
           }}
           onMouseLeave={e => {
-            if (isCurrent) return;
             const el = e.currentTarget;
             el.style.transform = "translateY(0)";
             if (plan.isPopular) {
@@ -576,6 +608,8 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
             } else if (plan.isCustom) {
               el.style.background = "rgba(139,92,246,0.1)";
               el.style.borderColor = "rgba(139,92,246,0.45)";
+            } else if (isCurrentPlan) {
+              el.style.boxShadow = "0 4px 24px rgba(52,211,153,0.3)";
             } else if (plan.isTrial) {
               el.style.background = "linear-gradient(135deg, rgba(52,211,153,0.15) 0%, rgba(0,229,200,0.1) 100%)";
             } else {
@@ -583,20 +617,30 @@ function PlanCard({ plan, currency, onPurchase, currentPlanId, isPending }) {
             }
           }}
         >
-          {isCurrent ? (
-            <>
-              <Check className="w-3.5 h-3.5" />
-              Active
-            </>
-          ) : isPending && !isCurrent ? (
+          {isPending ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <>
               {ctaLabel}
-              {!plan.isCustom && !isCurrent && <ArrowRight className="w-3.5 h-3.5" />}
+              {!plan.isCustom && <ArrowRight className="w-3.5 h-3.5" />}
             </>
           )}
         </button>
+        )}
+
+        {/* What this purchase actually does to the account. The fear that stops a customer
+            clicking a pack below their tier is "will this downgrade me?" — the answer is no
+            (upgradePlanIfHigher only ever raises a plan), and no button label can say that
+            without becoming a sentence. So the card says it. */}
+        {canPurchase && note && (
+          <p
+            className="text-xs text-center mt-2.5"
+            style={{ color: "#7878A0", lineHeight: 1.5 }}
+            data-testid={`note-purchase-${plan.id}`}
+          >
+            {note}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1273,6 +1317,13 @@ export default function Payments() {
   // payment record of their own, so a payment-history-based check would
   // never show a current plan for them even after fixing the field name.
   const currentPlanId = user?.effectivePlan || null;
+  // The one-time free grant is gated on this flag server-side (storage.claimTrialCredits),
+  // so the trial card offers the claim only while it is genuinely still claimable.
+  const isTrialUser = Boolean(user?.isTrialUser);
+  const currentPlanName = PLANS.find(p => p.id === currentPlanId)?.name || null;
+  const selectedTierState = selectedTier
+    ? getPlanPurchaseState({ plan: selectedTier, effectivePlan: currentPlanId, isTrialUser })
+    : null;
 
   if (processId) {
     return <ProcessPayment paymentId={processId} />;
@@ -1425,6 +1476,23 @@ export default function Payments() {
                 <div className="text-xs mt-1" style={{ color: "#55556A" }}>
                   1 credit = 1 email sent
                 </div>
+                {/* The customer's plan, stated next to the balance it explains. Putting it
+                    here means "this is my plan" is visible without scrolling to the grid,
+                    and without a card having to say it by disabling itself. */}
+                {currentPlanName && (
+                  <div
+                    className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full text-xs font-semibold"
+                    style={{
+                      background: "rgba(52,211,153,0.1)",
+                      border: "1px solid rgba(52,211,153,0.2)",
+                      color: "#34D399",
+                    }}
+                    data-testid="chip-current-plan"
+                  >
+                    <Check className="w-3 h-3" />
+                    {currentPlanName} plan · buy more anytime
+                  </div>
+                )}
               </div>
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -1511,6 +1579,7 @@ export default function Payments() {
                       currency={currency}
                       onPurchase={handlePurchase}
                       currentPlanId={currentPlanId}
+                      isTrialUser={isTrialUser}
                       isPending={initiateMutation.isPending}
                     />
                   ))}
@@ -1529,6 +1598,7 @@ export default function Payments() {
                       currency={currency}
                       onPurchase={handlePurchase}
                       currentPlanId={currentPlanId}
+                      isTrialUser={isTrialUser}
                       isPending={initiateMutation.isPending}
                     />
                   ))}
@@ -2006,6 +2076,18 @@ export default function Payments() {
                       {formatPrice(selectedTier)}
                     </span>
                   </div>
+
+                  {/* The last screen before payment must not read as "replace my plan".
+                      Same note the card carries, restated at the point of commitment. */}
+                  {selectedTierState?.note && (
+                    <p
+                      className="text-xs pt-3"
+                      style={{ color: "#7878A0", borderTop: "1px solid #1A1A2E", lineHeight: 1.5 }}
+                      data-testid="text-purchase-effect"
+                    >
+                      {selectedTierState.note}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex gap-3">
