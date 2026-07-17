@@ -22,8 +22,9 @@ export const CONTENT_TYPES = {
   GLOSSARY_TERM: "glossary-term",
 };
 
-// RepMail's seven Academies (PAR §6). Order is editorial (drives homepage
+// RepMail's Academies (PAR §6). Order is editorial (drives homepage
 // Academy-discovery module order, PAR §5) — not alphabetical.
+// M27 adds Email Sending Platform and Glossary.
 export const REPMAIL_ACADEMIES = [
   {
     slug: "cold-email",
@@ -50,6 +51,12 @@ export const REPMAIL_ACADEMIES = [
     description: "How sending infrastructure actually works, for the practitioner who wants to understand the machinery, not just use it.",
   },
   {
+    slug: "email-platform",
+    name: "Email Sending Platform",
+    tagline: "Sending platforms, bulk email, email APIs, platform choice",
+    description: "How email sending platforms work and how to choose one: bulk and mass sending, email APIs, and the trade-offs between marketing tools, cold email, and raw sending infrastructure.",
+  },
+  {
     slug: "lead-generation",
     name: "Lead Generation",
     tagline: "List building, prospecting, ICP and TAM",
@@ -60,6 +67,12 @@ export const REPMAIL_ACADEMIES = [
     name: "Compliance",
     tagline: "CAN-SPAM, GDPR, CASL, unsubscribe requirements",
     description: "Staying on the right side of the law while sending cold email at scale.",
+  },
+  {
+    slug: "glossary",
+    name: "Glossary",
+    tagline: "Canonical definitions of email and deliverability terms",
+    description: "Authoritative, concise definitions of the core email, authentication, deliverability, and infrastructure terms, each linking to the in-depth guide.",
   },
 ];
 

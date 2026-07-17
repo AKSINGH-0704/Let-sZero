@@ -88,8 +88,10 @@ html, body {
   --rc-cold-email: 250 55% 52%;
   --rc-outreach: 30 82% 38%;
   --rc-infrastructure: 214 68% 44%;
+  --rc-email-platform: 300 52% 44%;
   --rc-lead-generation: 150 58% 30%;
   --rc-compliance: 336 62% 45%;
+  --rc-glossary: 45 78% 38%;
   --rc-templates: 262 52% 50%;
 
   /* M19 design system — motion tokens (theme-independent) */
@@ -196,8 +198,10 @@ html, body {
   --rc-cold-email: 250 75% 74%;
   --rc-outreach: 30 88% 62%;
   --rc-infrastructure: 214 85% 68%;
+  --rc-email-platform: 300 68% 72%;
   --rc-lead-generation: 150 55% 55%;
   --rc-compliance: 336 74% 68%;
+  --rc-glossary: 45 82% 62%;
   --rc-templates: 262 74% 74%;
 
 /* Fallback for older browsers */

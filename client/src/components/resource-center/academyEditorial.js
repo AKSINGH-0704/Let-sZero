@@ -45,13 +45,50 @@ const EDITORIAL = {
     plannedTopics: ["Multi-channel sequencing", "Cadence design that respects the prospect", "Booking meetings that actually happen"],
   },
   infrastructure: {
-    plannedTopics: ["SMTP and SES fundamentals", "Dedicated vs shared IPs", "Scaling your sending architecture safely"],
+    whyItMatters:
+      "When deliverability breaks, most senders discover the tool they trusted was never really infrastructure. Understanding the sending stack, the domain, DNS, SMTP relay, and IP, is what lets you tell a content problem from an infrastructure one.",
+    outcomes: [
+      "Understand the full sending stack, layer by layer",
+      "Read an SMTP conversation and its reply codes",
+      "Publish the DNS records receivers actually check",
+      "See why cloud-native AWS SES beats the mailbox-wrapper model",
+    ],
+    capabilities: [
+      "Native AWS SES delivery, not a mailbox wrapper",
+      "Guided DNS and domain verification",
+      "Real-time bounce and complaint telemetry via AWS SNS",
+    ],
+  },
+  "email-platform": {
+    whyItMatters:
+      "\"Send email\" can mean a dozen different things: a marketing newsletter tool, a transactional API, a bulk sender, a cold outreach engine. They are built on different assumptions, and picking the wrong category is the most expensive mistake a sender makes before writing a single message.",
+    outcomes: [
+      "Tell an email sending platform apart from marketing software and a raw API",
+      "Send bulk or mass email without destroying your domain",
+      "Decide when you need an email API versus a full platform",
+      "Match the platform category to what you are actually sending",
+    ],
+    capabilities: [
+      "Cloud-native AWS SES sending, not a mailbox wrapper",
+      "Pay-as-you-go credits instead of per-seat subscriptions",
+      "Built-in deliverability, personalization, and analytics",
+    ],
   },
   "lead-generation": {
     plannedTopics: ["Building a clean, permission-based list", "Data enrichment without the junk", "Defining your ICP and total addressable market"],
   },
   compliance: {
     plannedTopics: ["CAN-SPAM and GDPR, in plain language", "Unsubscribe handling that stays compliant", "Reducing legal risk as you scale"],
+  },
+  glossary: {
+    whyItMatters:
+      "Email has a vocabulary of its own, and the terms are not decoration. SPF, DMARC, SCL, PTR, warm-up: each names a specific mechanism that decides whether your mail reaches the inbox. These are the canonical definitions, each linking to the guide that explains it in depth.",
+    outcomes: [
+      "Look up any core email or deliverability term in one place",
+      "Understand what a term means before diving into the full guide",
+      "See how each concept connects to the ones around it",
+      "Move from a definition straight to the in-depth explanation",
+    ],
   },
 };
 

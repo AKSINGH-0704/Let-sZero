@@ -16,6 +16,8 @@ import {
   Scale,
   LayoutTemplate,
   GraduationCap,
+  Globe,
+  BookOpen,
 } from "lucide-react";
 
 const REGISTRY = {
@@ -23,8 +25,10 @@ const REGISTRY = {
   "cold-email": { Icon: PenLine, token: "--rc-cold-email" },
   "outreach": { Icon: Send, token: "--rc-outreach" },
   "infrastructure": { Icon: Server, token: "--rc-infrastructure" },
+  "email-platform": { Icon: Globe, token: "--rc-email-platform" },
   "lead-generation": { Icon: Target, token: "--rc-lead-generation" },
   "compliance": { Icon: Scale, token: "--rc-compliance" },
+  "glossary": { Icon: BookOpen, token: "--rc-glossary" },
   "templates": { Icon: LayoutTemplate, token: "--rc-templates" },
 };
 
