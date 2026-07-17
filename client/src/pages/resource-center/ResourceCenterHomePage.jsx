@@ -10,6 +10,7 @@
 import { useRoute } from "wouter";
 import { ShieldCheck, Compass, BadgeCheck, PenLine, Sparkles } from "lucide-react";
 import { getArticlesForProduct, getLearningPathsForProduct, getCollectionsForProduct } from "@/lib/resourceCenterContent";
+import { latestGuides, sortGuidesForDisplay } from "@shared/content/ordering.js";
 import ResourceCenterHome from "@/components/resource-center/ResourceCenterHome";
 import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
@@ -50,8 +51,17 @@ export default function ResourceCenterHomePage() {
 
   if (!product) return <NotFound />;
 
+  // M28 — counts and the per-Academy "latest" are both derived from the loaded
+  // content, never hardcoded, so a new markdown file changes them with no code
+  // change. An Academy whose count is 0 is dropped by ResourceCenterHome rather
+  // than rendered as a "Coming soon" placeholder.
   const academyArticleCounts = Object.fromEntries(
     product.academies.map((a) => [a.slug, articles.filter((art) => art.academy.slug === a.slug).length])
+  );
+  const academyLatestArticles = Object.fromEntries(
+    product.academies
+      .map((a) => [a.slug, sortGuidesForDisplay(articles.filter((art) => art.academy.slug === a.slug))[0] ?? null])
+      .filter(([, latest]) => latest)
   );
 
   // Template Library, Glossary, and Comparisons are their own later roadmap
@@ -72,8 +82,10 @@ export default function ResourceCenterHomePage() {
         collections={collections}
         toolsAvailable={false}
         academyArticleCounts={academyArticleCounts}
+        academyLatestArticles={academyLatestArticles}
         curatedResources={curatedResources}
-        recentArticles={[...articles].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)).slice(0, 5)}
+        latestArticles={latestGuides(articles, { limit: 6 })}
+        totalArticleCount={articles.length}
       />
     </ResourceCenterLayout>
   );

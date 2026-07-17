@@ -7,7 +7,7 @@
 // story plus supporting guides, so the page stops looking like a wall of
 // identical cards), and a closing conversion band.
 import { Link } from "wouter";
-import { Search, ArrowRight, Sparkles, Compass, Layers } from "lucide-react";
+import { Search, ArrowRight, Sparkles, Compass, Layers, Clock, CalendarClock } from "lucide-react";
 import AcademyCard from "./AcademyCard";
 import ContentMeta from "./ContentMeta";
 import RcHeroArt from "./RcHeroArt";
@@ -31,8 +31,11 @@ function Section({ title, eyebrow, subtitle, children, testId, tinted = false })
   );
 }
 
-// Compact themed guide card (Academy accent + metadata scent).
-function GuideCard({ article, product, testIdPrefix }) {
+// Compact themed guide card (Academy accent + metadata scent). M28: the
+// metadata line is configurable so the same card serves both Featured (type +
+// reading time) and Latest Guides (which also needs the category and, when the
+// article has one, the updated date).
+function GuideCard({ article, product, testIdPrefix, showAcademy = false, showUpdated = false }) {
   const { Icon } = academyTheme(article.academy.slug);
   return (
     <Link
@@ -47,7 +50,7 @@ function GuideCard({ article, product, testIdPrefix }) {
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[color:var(--academy-accent)]/10 text-[color:var(--academy-accent)]" aria-hidden="true">
               <Icon className="h-4 w-4" />
             </span>
-            <ContentMeta article={article} />
+            <ContentMeta article={article} showAcademy={showAcademy} showUpdated={showUpdated} />
           </div>
           <h3 className="mb-1.5 font-semibold leading-snug tracking-tight">{article.title}</h3>
           <p className="text-sm text-muted-foreground">{article.description}</p>
@@ -102,12 +105,17 @@ export default function ResourceCenterHome({
   collections = [],
   toolsAvailable = false,
   academyArticleCounts = {},
+  academyLatestArticles = {},
   curatedResources = [],
-  recentArticles = [],
+  latestArticles = [],
+  totalArticleCount = 0,
 }) {
   const openSearch = useResourceCenterSearch();
-  const totalGuides = Object.values(academyArticleCounts).reduce((sum, n) => sum + (n || 0), 0);
-  const liveAcademyCount = Object.values(academyArticleCounts).filter((n) => n > 0).length;
+  const totalGuides = totalArticleCount || Object.values(academyArticleCounts).reduce((sum, n) => sum + (n || 0), 0);
+  // M28 — an Academy with nothing published is not shown at all. It used to
+  // render a non-interactive "Coming soon" card, which is the placeholder this
+  // milestone removes: it advertised an empty room.
+  const liveAcademies = product.academies.filter((a) => (academyArticleCounts[a.slug] ?? 0) > 0);
   const primaryPath = learningPaths[0] ?? null;
   const [lead, ...restFeatured] = featuredArticles;
 
@@ -153,7 +161,7 @@ export default function ResourceCenterHome({
 
             {totalGuides > 0 && (
               <p className="mt-5 text-sm text-muted-foreground">
-                {totalGuides} in-depth guides across {liveAcademyCount} {liveAcademyCount === 1 ? "topic" : "topics"}, free and updated as the craft changes.
+                {totalGuides} in-depth guides across {liveAcademies.length} {liveAcademies.length === 1 ? "topic" : "topics"}, free and updated as the craft changes.
               </p>
             )}
           </div>
@@ -251,6 +259,40 @@ export default function ResourceCenterHome({
           </Section>
         )}
 
+        {/* Latest Guides — M28. The homepage's single recency surface (this
+            replaced the old "Recently published" list at the foot of the page,
+            which showed the same articles from the same sort). Ordering is
+            deterministic, see shared/content/ordering.js. */}
+        {latestArticles.length > 0 && (
+          <Section
+            eyebrow="Fresh"
+            title="Latest guides"
+            subtitle="The most recently published guides across every topic."
+            testId="section-latest-guides"
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {latestArticles.map((article) => (
+                <GuideCard
+                  key={article.slug}
+                  article={article}
+                  product={product}
+                  testIdPrefix="link-latest"
+                  showAcademy
+                  showUpdated
+                />
+              ))}
+            </div>
+            <div className="mt-5">
+              <Button asChild variant="outline" className="gap-2">
+                <Link href={`${product.basePath}/guides`} data-testid="link-view-all-guides">
+                  View all {totalGuides} guides
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </Button>
+            </div>
+          </Section>
+        )}
+
         {/* Collections */}
         {collections.length > 0 && (
           <Section eyebrow="Curated" title="Collections" subtitle="Themed bundles that cut across topics." testId="section-collections">
@@ -290,19 +332,22 @@ export default function ResourceCenterHome({
           </Section>
         )}
 
-        {/* Academy discovery */}
-        <Section eyebrow="Browse" title="Explore by topic" subtitle="Each Academy goes deep on one part of getting email delivered." testId="section-academies">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {product.academies.map((academy) => (
-              <AcademyCard
-                key={academy.slug}
-                academy={academy}
-                href={`${product.basePath}/${academy.slug}`}
-                articleCount={academyArticleCounts[academy.slug] ?? 0}
-              />
-            ))}
-          </div>
-        </Section>
+        {/* Academy discovery — only Academies that actually have content. */}
+        {liveAcademies.length > 0 && (
+          <Section eyebrow="Browse" title="Explore by topic" subtitle="Each Academy goes deep on one part of getting email delivered." testId="section-academies">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {liveAcademies.map((academy) => (
+                <AcademyCard
+                  key={academy.slug}
+                  academy={academy}
+                  href={`${product.basePath}/${academy.slug}`}
+                  articleCount={academyArticleCounts[academy.slug] ?? 0}
+                  latestArticle={academyLatestArticles[academy.slug] ?? null}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
 
         {curatedResources.length > 0 && (
           <Section title="More resources" testId="section-curated-resources">
@@ -316,28 +361,9 @@ export default function ResourceCenterHome({
           </Section>
         )}
 
-        {/* Recently published */}
-        {recentArticles.length > 0 && (
-          <Section title="Recently published" testId="section-recent">
-            <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-              {recentArticles.map((article) => (
-                <Link
-                  key={article.slug}
-                  href={`${product.basePath}/${article.academy.slug}/${article.slug}`}
-                  data-testid={`link-recent-${article.slug}`}
-                  className="flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  style={academyAccentStyle(article.academy.slug)}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{article.title}</p>
-                    <ContentMeta article={article} showAcademy className="mt-0.5" />
-                  </div>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                </Link>
-              ))}
-            </div>
-          </Section>
-        )}
+        {/* M28 removed the "Recently published" list that sat here: it showed
+            the same articles, from the same sort, as Latest Guides above. One
+            canonical recency surface, not two. */}
 
         {/* Closing conversion band — the natural bridge from learning to the product. */}
         <aside className="relative mt-4 overflow-hidden rounded-2xl border border-border p-8 text-center sm:p-12" data-testid="section-cta">
