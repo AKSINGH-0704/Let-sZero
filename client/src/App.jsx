@@ -92,6 +92,8 @@ import { lazy, Suspense } from "react";
 // /learn or /repmail/learn/*.
 const LetsZeroLearnDirectory = lazy(() => import("@/pages/LetsZeroLearnDirectory"));
 const ResourceCenterHomePage = lazy(() => import("@/pages/resource-center/ResourceCenterHomePage"));
+// M28 — the flat "all guides" index behind the homepage's View all guides CTA.
+const AllGuidesPage = lazy(() => import("@/pages/resource-center/AllGuidesPage"));
 const AcademyHubPage = lazy(() => import("@/pages/resource-center/AcademyHubPage"));
 const ArticlePage = lazy(() => import("@/pages/resource-center/ArticlePage"));
 const AuthorPage = lazy(() => import("@/pages/resource-center/AuthorPage"));
@@ -219,6 +221,13 @@ function AppRoutes() {
 
       <Route path="/:product/learn">
         {() => <Suspense fallback={<LoadingScreen />}><ResourceCenterHomePage /></Suspense>}
+      </Route>
+
+      {/* M28 — /guides is a literal 2-segments-after-:product path, the same
+          shape as :academy below, so it must be declared first or "guides"
+          would match as an Academy slug and render a 404 hub. */}
+      <Route path="/:product/learn/guides">
+        {() => <Suspense fallback={<LoadingScreen />}><AllGuidesPage /></Suspense>}
       </Route>
 
       <Route path="/:product/learn/authors/:author">

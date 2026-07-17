@@ -125,6 +125,17 @@ export const STATIC_ROUTES = [
     description: "Practical guides on cold email deliverability, sending infrastructure, and getting your campaigns into the inbox, written by the team building RepMail.",
     jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name: "RepMail Resource Center", url }),
   },
+
+  // M28 — the All Guides index. Static here because it is a React page with no
+  // backing content file of its own; the guides it lists are derived at render
+  // time from the same loader, so it never needs updating as content grows.
+  {
+    path: "/repmail/learn/guides",
+    componentPath: "/src/pages/resource-center/AllGuidesPage.jsx",
+    title: "All Guides | RepMail Resource Center",
+    description: "Every guide, definition, and comparison in the RepMail Resource Center, grouped by topic: deliverability, cold email, infrastructure, sending platforms, and the email glossary.",
+    jsonLd: (url) => ({ "@context": "https://schema.org", "@type": "CollectionPage", name: "All Guides", url }),
+  },
 ];
 
 
