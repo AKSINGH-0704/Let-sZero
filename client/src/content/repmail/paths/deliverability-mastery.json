@@ -1,0 +1,18 @@
+{
+  "slug": "deliverability-mastery",
+  "name": "Deliverability Mastery",
+  "description": "From sender reputation to Gmail's filter: the full path to understanding why cold email lands in spam and how to reach the inbox reliably.",
+  "level": "intermediate",
+  "steps": [
+    "sender-reputation",
+    "email-authentication",
+    "what-is-spf",
+    "what-is-dkim",
+    "what-is-dmarc",
+    "what-is-a-good-spam-score",
+    "check-spam-score-before-sending",
+    "inbox-placement-vs-deliverability",
+    "how-gmail-spam-filter-works",
+    "complaint-rate-and-bounce-rate"
+  ]
+}

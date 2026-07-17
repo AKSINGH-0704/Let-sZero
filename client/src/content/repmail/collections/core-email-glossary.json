@@ -1,0 +1,10 @@
+{
+  "slug": "core-email-glossary",
+  "name": "Core Email Glossary",
+  "description": "Canonical one-page definitions of the terms every sender should know: authentication, infrastructure, and deliverability, each linking to its full guide.",
+  "articleSlugs": [
+    "spf", "dkim", "dmarc", "arc", "bimi",
+    "smtp", "dns-records", "ptr-record", "mx-record",
+    "reputation", "spam-score", "inbox-placement", "bounce", "email-warmup"
+  ]
+}

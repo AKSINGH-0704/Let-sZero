@@ -1,46 +1,67 @@
-// M22-D — structural tests on the real PUBLIC_ROUTES array itself (data,
-// not the prerender mechanism — that's tested against a fixture in
-// prerender.test.js per its own header comment, and against the real
-// 24 production routes by `npm run build`, which isn't re-run per test).
-// This confirms the 17 Resource Center routes M22-D added are actually
-// present with the right shape, and that the article/author entries
-// correctly reuse shared/content/jsonLd.js's real builders rather than
-// hand-duplicating the JSON-LD shape.
+// M22-D / M27 — structural tests on the real route list itself (data, not the
+// prerender mechanism — that's tested against a fixture in prerender.test.js
+// per its own header comment).
+//
+// M27 changed the subject under test: routes are no longer a hand-written
+// array, they are derived from the real content directory by getPublicRoutes().
+// So the load-bearing assertion is no longer "these 17 specific paths exist"
+// but "every article on disk has a route" — the invariant whose absence let the
+// M27 content ship with a 24-URL sitemap while RSS reported 60 articles.
 
 import { describe, it, expect } from "vitest";
-import { PUBLIC_ROUTES } from "../../script/prerender-routes.js";
+import path from "path";
+import { getPublicRoutes, STATIC_ROUTES } from "../../script/prerender-routes.js";
+import { loadAuthors, loadArticles } from "../../shared/content/loader.js";
 
 const CANONICAL = "https://www.letszero.in/repmail/learn";
+const CONTENT_DIR = path.resolve(import.meta.dirname, "..", "..", "client", "src", "content");
 
-function findRoute(path) {
-  return PUBLIC_ROUTES.find((r) => r.path === path);
+const routes = await getPublicRoutes();
+const authors = await loadAuthors(CONTENT_DIR, "repmail", { log: () => {} });
+const articles = await loadArticles(CONTENT_DIR, "repmail", authors, { log: () => {} });
+
+function findRoute(p) {
+  return routes.find((r) => r.path === p);
 }
 
-describe("PUBLIC_ROUTES — the 17 Resource Center routes M22-D adds", () => {
-  it("includes the homepage, both launched Academy hubs, all 11 articles, the author page, the path, and the collection", () => {
+describe("getPublicRoutes — derived from the real content, never hand-maintained", () => {
+  it("emits a route for every article on disk — the sitemap can never silently lag the content again", () => {
+    expect(articles.length).toBeGreaterThan(0);
+    for (const article of articles) {
+      const expected = `/repmail/learn/${article.academy.slug}/${article.slug}`;
+      expect(findRoute(expected), `missing route for article ${article.slug}`).toBeTruthy();
+    }
+  });
+
+  it("carries the M22-D Wave 1 routes forward unchanged, alongside the M27 additions", () => {
     const expectedPaths = [
       "/repmail/learn",
       "/repmail/learn/deliverability",
       "/repmail/learn/cold-email",
       "/repmail/learn/deliverability/why-your-emails-land-in-spam",
-      "/repmail/learn/deliverability/verify-your-sending-domain",
-      "/repmail/learn/deliverability/why-new-domains-need-warm-up",
-      "/repmail/learn/deliverability/hard-vs-soft-bounces",
-      "/repmail/learn/deliverability/pre-send-deliverability-checklist",
-      "/repmail/learn/cold-email/subject-lines-that-get-opened",
-      "/repmail/learn/cold-email/personalize-cold-email-at-scale",
-      "/repmail/learn/cold-email/how-many-follow-ups",
-      "/repmail/learn/cold-email/what-to-ab-test-first",
-      "/repmail/learn/cold-email/cold-email-templates",
       "/repmail/learn/cold-email/where-repmail-fits-in-your-workflow",
       "/repmail/learn/authors/repmail-team",
       "/repmail/learn/paths/getting-started",
       "/repmail/learn/collections/getting-your-first-campaign-delivered",
+      // M27 — the new academies, a glossary term, a comparison, a path, a collection.
+      "/repmail/learn/glossary",
+      "/repmail/learn/email-platform",
+      "/repmail/learn/glossary/dkim",
+      "/repmail/learn/outreach/instantly-vs-repmail",
+      "/repmail/learn/paths/deliverability-mastery",
+      "/repmail/learn/collections/complete-guides",
     ];
     for (const p of expectedPaths) expect(findRoute(p), `missing route ${p}`).toBeTruthy();
   });
 
-  it("every article route reuses buildArticleJsonLd — emits BlogPosting with an Organization author (repmail-team, ADR-014), not a hand-duplicated shape", () => {
+  it("only emits an Academy hub once that Academy has content — an empty Academy is never indexed as a thin page", () => {
+    const academySlugsWithContent = new Set(articles.map((a) => a.academy.slug));
+    expect(academySlugsWithContent.has("lead-generation")).toBe(false);
+    expect(findRoute("/repmail/learn/lead-generation")).toBeFalsy();
+    expect(findRoute("/repmail/learn/compliance")).toBeFalsy();
+  });
+
+  it("every article route reuses buildArticleJsonLd — BlogPosting with an Organization author (repmail-team, ADR-014), built from the real frontmatter", () => {
     const route = findRoute("/repmail/learn/deliverability/why-your-emails-land-in-spam");
     const jsonLd = route.jsonLd(`${CANONICAL}/deliverability/why-your-emails-land-in-spam`);
     expect(jsonLd["@type"]).toBe("BlogPosting");
@@ -60,11 +81,26 @@ describe("PUBLIC_ROUTES — the 17 Resource Center routes M22-D adds", () => {
     expect("jobTitle" in jsonLd).toBe(false); // Person-only property, correctly absent
   });
 
-  it("every route has a componentPath pointing at a real Resource Center page component", () => {
-    const resourceCenterPaths = PUBLIC_ROUTES.filter((r) => r.path.startsWith("/repmail/learn"));
-    expect(resourceCenterPaths).toHaveLength(17);
-    for (const route of resourceCenterPaths) {
+  it("every Resource Center route points at a real Resource Center page component", () => {
+    const resourceCenterRoutes = routes.filter((r) => r.path.startsWith("/repmail/learn"));
+    expect(resourceCenterRoutes.length).toBeGreaterThan(60);
+    for (const route of resourceCenterRoutes) {
       expect(route.componentPath).toMatch(/^\/src\/pages\/(resource-center\/\w+Page\.jsx)$/);
     }
+  });
+
+  it("titles and descriptions come from the content, so they cannot drift from the page they describe", () => {
+    const article = articles.find((a) => a.slug === "dkim");
+    const route = findRoute("/repmail/learn/glossary/dkim");
+    expect(route.title).toBe(`${article.title} | RepMail Resource Center`);
+    expect(route.description).toBe(article.description);
+  });
+
+  it("keeps the hand-written static routes, which have no backing content file to derive from", () => {
+    for (const route of STATIC_ROUTES) {
+      expect(findRoute(route.path), `missing static route ${route.path}`).toBeTruthy();
+    }
+    expect(findRoute("/pricing")).toBeTruthy();
+    expect(findRoute("/repmail/changelog")).toBeTruthy();
   });
 });

@@ -50,11 +50,14 @@ describe("ResourceCenterLayout — persistent chrome", () => {
 
   it("header nav lists only Academies that actually have content — never a dead '0 guides' link", () => {
     const html = render("/repmail/learn");
-    // Wave 1 launched exactly these two Academies with real content:
-    expect(html).toContain("link-nav-academy-deliverability");
-    expect(html).toContain("link-nav-academy-cold-email");
-    // The four un-launched Academies must NOT appear in the header nav:
-    for (const emptySlug of ["outreach", "infrastructure", "lead-generation", "compliance"]) {
+    // The Academies with real content. M27 filled outreach (comparisons),
+    // infrastructure, email-platform, and glossary, so they legitimately
+    // appear now; the rule under test is the filter, not the specific set.
+    for (const filledSlug of ["deliverability", "cold-email", "outreach", "infrastructure", "email-platform", "glossary"]) {
+      expect(html).toContain(`link-nav-academy-${filledSlug}`);
+    }
+    // The Academies that are still genuinely empty must NOT appear:
+    for (const emptySlug of ["lead-generation", "compliance"]) {
       expect(html).not.toContain(`link-nav-academy-${emptySlug}`);
     }
   });

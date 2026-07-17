@@ -1,0 +1,13 @@
+{
+  "slug": "escaping-the-spam-folder",
+  "name": "Escaping the Spam Folder",
+  "description": "A focused bundle on why cold email gets filtered and how to fix it: spam scores, trigger words, Gmail's filter, the Promotions tab, and the metrics that sink domains.",
+  "articleSlugs": [
+    "why-your-emails-land-in-spam",
+    "what-is-a-good-spam-score",
+    "spam-trigger-words",
+    "how-gmail-spam-filter-works",
+    "why-emails-land-in-promotions",
+    "complaint-rate-and-bounce-rate"
+  ]
+}

@@ -20,17 +20,20 @@ afterAll(async () => {
   await vite.close();
 });
 
-describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wave 1 Getting Started path + Collection (M22-C)", () => {
+describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wave 1 Getting Started path + Collection (M22-C), alongside the M27 additions", () => {
   it("loads the real Getting Started path with its beginner level and 6 ordered steps", () => {
     const paths = resourceCenterContent.getLearningPathsForProduct("repmail");
-    expect(paths).toHaveLength(1);
-    expect(paths[0]).toMatchObject({
+    // M27 added deliverability-mastery and email-infrastructure; look the Wave 1
+    // path up by slug rather than by position, which glob order decides.
+    const gettingStarted = paths.find((p) => p.slug === "getting-started");
+    expect(gettingStarted).toBeTruthy();
+    expect(gettingStarted).toMatchObject({
       slug: "getting-started",
       name: "Getting Started",
       level: "beginner",
       product: "repmail",
     });
-    expect(paths[0].steps).toEqual([
+    expect(gettingStarted.steps).toEqual([
       "where-repmail-fits-in-your-workflow",
       "verify-your-sending-domain",
       "why-your-emails-land-in-spam",
@@ -42,13 +45,14 @@ describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wav
 
   it("loads the real Getting Your First Campaign Delivered collection", () => {
     const collections = resourceCenterContent.getCollectionsForProduct("repmail");
-    expect(collections).toHaveLength(1);
-    expect(collections[0]).toMatchObject({
+    const firstCampaign = collections.find((c) => c.slug === "getting-your-first-campaign-delivered");
+    expect(firstCampaign).toBeTruthy();
+    expect(firstCampaign).toMatchObject({
       slug: "getting-your-first-campaign-delivered",
       name: "Getting Your First Campaign Delivered",
       product: "repmail",
     });
-    expect(collections[0].articleSlugs).toEqual([
+    expect(firstCampaign.articleSlugs).toEqual([
       "why-new-domains-need-warm-up",
       "hard-vs-soft-bounces",
       "pre-send-deliverability-checklist",

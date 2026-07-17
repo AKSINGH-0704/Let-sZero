@@ -20,7 +20,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { PUBLIC_ROUTES } from "./prerender-routes.js";
+import { getPublicRoutes } from "./prerender-routes.js";
 
 // Vite's ssrLoadModule resolves these from the *client* module graph (same
 // aliases as the real app), so AuthProvider/Router here are the app's own
@@ -70,8 +70,9 @@ export async function prerenderRoutes({
   canonicalOrigin = "https://www.letszero.in",
   log = console.log,
   distDir = DIST_DIR,
-  routes = PUBLIC_ROUTES,
+  routes,
 } = {}) {
+  routes ??= await getPublicRoutes();
   const baseHtmlPath = path.join(distDir, "index.html");
   const baseHtml = await readFile(baseHtmlPath, "utf-8");
 

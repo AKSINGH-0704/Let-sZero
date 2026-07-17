@@ -1,0 +1,11 @@
+{
+  "slug": "email-platform-essentials",
+  "name": "Email Sending Platform Essentials",
+  "description": "What an email sending platform is, how to send bulk email safely, when you need an email API, and how sending platforms differ from marketing software.",
+  "articleSlugs": [
+    "what-is-an-email-sending-platform",
+    "how-to-send-bulk-email-safely",
+    "what-is-an-email-api",
+    "email-sending-platform-vs-marketing-software"
+  ]
+}

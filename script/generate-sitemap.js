@@ -4,20 +4,22 @@
 // dev-mode fallback — Vite's client build copies it into dist/public/
 // verbatim before this runs; this step overwrites it in production only).
 //
-// Sources its URL list from the same PUBLIC_ROUTES config the prerender
-// pipeline (M21-B) already uses — one list, not two hand-kept copies that
-// could drift out of sync with what's actually being prerendered.
+// Sources its URL list from the same route config the prerender pipeline
+// (M21-B) already uses — one list, not two hand-kept copies that could drift
+// out of sync with what's actually being prerendered. Since M27 that list is
+// itself derived from the real content files.
 import { writeFile } from "fs/promises";
 import path from "path";
-import { PUBLIC_ROUTES } from "./prerender-routes.js";
+import { getPublicRoutes } from "./prerender-routes.js";
 
 export async function generateSitemap({
   distDir = path.resolve(import.meta.dirname, "..", "dist", "public"),
   canonicalOrigin = "https://www.letszero.in",
-  routes = PUBLIC_ROUTES,
+  routes,
   lastmod = new Date().toISOString().slice(0, 10),
   log = console.log,
 } = {}) {
+  routes ??= await getPublicRoutes();
   const urls = routes
     .map((route) => {
       const loc = `${canonicalOrigin}${route.path === "/" ? "" : route.path}`;

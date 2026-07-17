@@ -24,11 +24,11 @@ function validFrontmatter(overrides = {}) {
 }
 
 describe("taxonomy", () => {
-  it("defines exactly the seven RepMail academies from the PAR, in editorial order", () => {
+  it("defines the RepMail academies in editorial order, including the two M27 added", () => {
     expect(REPMAIL_ACADEMIES.map((a) => a.slug)).toEqual([
-      "cold-email", "deliverability", "outreach", "infrastructure", "lead-generation", "compliance",
+      "cold-email", "deliverability", "outreach", "infrastructure", "email-platform", "lead-generation", "compliance", "glossary",
     ]);
-    expect(REPMAIL_ACADEMIES).toHaveLength(6); // 6 Academies + 1 Template Library = 7 pillars total
+    expect(REPMAIL_ACADEMIES).toHaveLength(8); // M27: + email-platform, + glossary (was 6)
     expect(REPMAIL_TEMPLATE_LIBRARY.slug).toBe("templates");
   });
 
@@ -52,8 +52,8 @@ describe("taxonomy", () => {
     expect(getAcademyBySlug("not-a-real-product", "deliverability")).toBeNull();
   });
 
-  it("listAcademySlugs returns all seven-minus-templates slugs for repmail, empty for an unknown product", () => {
-    expect(listAcademySlugs("repmail")).toHaveLength(6);
+  it("listAcademySlugs returns every academy slug for repmail, empty for an unknown product", () => {
+    expect(listAcademySlugs("repmail")).toHaveLength(8);
     expect(listAcademySlugs("nonexistent")).toEqual([]);
   });
 });

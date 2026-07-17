@@ -1,0 +1,12 @@
+{
+  "slug": "email-authentication-essentials",
+  "name": "Email Authentication Essentials",
+  "description": "Everything that proves your mail is really yours: the authentication overview, each of SPF, DKIM, and DMARC in depth, and the DNS records they live in.",
+  "articleSlugs": [
+    "email-authentication",
+    "what-is-spf",
+    "what-is-dkim",
+    "what-is-dmarc",
+    "dns-records-for-email"
+  ]
+}

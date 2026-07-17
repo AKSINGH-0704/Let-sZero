@@ -1,0 +1,12 @@
+{
+  "slug": "email-infrastructure",
+  "name": "Email Infrastructure, End to End",
+  "description": "Understand the machinery under every send: the sending stack, the SMTP protocol, the DNS records receivers check, and the AWS SES delivery layer.",
+  "level": "advanced",
+  "steps": [
+    "email-infrastructure-explained",
+    "what-is-smtp",
+    "dns-records-for-email",
+    "aws-ses-for-cold-email"
+  ]
+}

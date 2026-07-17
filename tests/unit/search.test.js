@@ -60,8 +60,8 @@ describe("buildSearchIndex — proves search scales beyond articles without new 
     const index = buildSearchIndex(repmail, { articles: rawArticles });
     expect(index.some((e) => e.type === "academy")).toBe(true);
     expect(index.some((e) => e.type === "article")).toBe(true);
-    // every one of the 6 real Academies is in the index, not just articles
-    expect(index.filter((e) => e.type === "academy")).toHaveLength(6);
+    // every one of the 8 real Academies is in the index, not just articles
+    expect(index.filter((e) => e.type === "academy")).toHaveLength(8);
   });
 
   it("a query matching an Academy's own name/description surfaces the Academy itself, alongside any matching articles — one search, multiple content types, zero type-specific UI logic", () => {
@@ -71,9 +71,9 @@ describe("buildSearchIndex — proves search scales beyond articles without new 
     expect(results.some((r) => r.type === "academy" && r.title === "Compliance")).toBe(true);
   });
 
-  it("works correctly with zero articles — an Academy-only index is still valid and searchable (today's real state)", () => {
+  it("works correctly with zero articles — an Academy-only index is still valid and searchable", () => {
     const index = buildSearchIndex(repmail, { articles: [] });
-    expect(index).toHaveLength(6); // 6 Academies, 0 articles
+    expect(index).toHaveLength(8); // 8 Academies, 0 articles
     const results = searchContent("deliverability", index);
     expect(results[0].type).toBe("academy");
   });
