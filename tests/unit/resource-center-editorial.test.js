@@ -78,22 +78,44 @@ describe("AcademyCard — themed live card vs. deliberate coming-soon", () => {
     expect(html).not.toContain("Coming soon");
   });
 
-  it("an empty Academy renders as a non-link 'Coming soon' card, not a dead link to an empty page", async () => {
+  it("an Academy card carries real scent: count, description, and the guide you would land on", async () => {
     const AcademyCard = await loadDefault("/src/components/resource-center/AcademyCard.jsx");
-    const academy = repmail.academies.find((a) => a.slug === "compliance");
-    const html = renderToString(
+    const academy = repmail.academies.find((a) => a.slug === "deliverability");
+    const html = noComments(renderToString(
       React.createElement(Router, { ssrPath: "/repmail/learn" },
-        React.createElement(AcademyCard, { academy, href: "/repmail/learn/compliance", articleCount: 0 })
+        React.createElement(AcademyCard, {
+          academy,
+          href: "/repmail/learn/deliverability",
+          articleCount: 20,
+          latestArticle: { slug: "what-is-spf", title: "What Is SPF?" },
+        })
       )
-    );
-    expect(html).toContain("Coming soon");
-    expect(html).toContain("card-academy-compliance");
-    expect(html).not.toContain("link-academy-compliance");
+    ));
+    expect(html).toContain("20 guides");
+    expect(html).toContain("the technical and reputational side of sending"); // the real taxonomy description, not the tagline
+    expect(html).toContain("What Is SPF?");
+    expect(html).toContain("Start learning");
   });
+
+  it("a Glossary counts definitions, not guides — 15 one-paragraph definitions are not 15 guides", async () => {
+    const AcademyCard = await loadDefault("/src/components/resource-center/AcademyCard.jsx");
+    const academy = repmail.academies.find((a) => a.slug === "glossary");
+    const html = noComments(renderToString(
+      React.createElement(Router, { ssrPath: "/repmail/learn" },
+        React.createElement(AcademyCard, { academy, href: "/repmail/learn/glossary", articleCount: 15 })
+      )
+    ));
+    expect(html).toContain("15 definitions");
+    expect(html).not.toContain("15 guides");
+  });
+
+  // M28 — the "Coming soon" card is gone from the component entirely. An empty
+  // Academy is filtered out by the homepage and never reaches AcademyCard, so
+  // there is no placeholder branch left to keep honest.
 });
 
-describe("CategoryRail — themed nav that marks empty sections 'Soon', not dead links (M23-D)", () => {
-  it("live Academies are links; empty Academies and the unbuilt Template Library are non-link 'Soon' rows", async () => {
+describe("CategoryRail — themed nav listing only sections that exist (M23-D, completed M28)", () => {
+  it("live Academies are links; empty Academies and the unbuilt Template Library are omitted entirely", async () => {
     const CategoryRail = await loadDefault("/src/components/resource-center/CategoryRail.jsx");
     const liveSlugs = new Set(["deliverability", "cold-email"]);
     const html = noComments(renderToString(
@@ -101,7 +123,6 @@ describe("CategoryRail — themed nav that marks empty sections 'Soon', not dead
         React.createElement(CategoryRail, {
           product: repmail,
           academies: repmail.academies,
-          templateLibrary: repmail.templateLibrary,
           activeSlug: "deliverability",
           liveSlugs,
         })
@@ -110,12 +131,14 @@ describe("CategoryRail — themed nav that marks empty sections 'Soon', not dead
     // Live → real links
     expect(html).toContain("link-rail-deliverability");
     expect(html).toContain("link-rail-cold-email");
-    // Empty Academies + Template Library → "Soon" markers, not links
-    expect(html).toContain("rail-soon-compliance");
-    expect(html).toContain("rail-soon-templates");
+    // M28 — empty Academies and the Template Library are not rendered at all.
+    // M23-D made them non-clickable "Soon" rows, which stopped them being dead
+    // links but left a placeholder in the nav; now they simply do not appear.
+    expect(html).not.toContain("rail-soon-compliance");
+    expect(html).not.toContain("rail-soon-templates");
     expect(html).not.toContain("link-rail-compliance");
     expect(html).not.toContain("link-rail-templates");
-    expect(html).toContain("Soon");
+    expect(html).not.toContain("Soon");
   });
 });
 

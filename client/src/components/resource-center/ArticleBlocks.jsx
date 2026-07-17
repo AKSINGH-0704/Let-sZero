@@ -12,6 +12,7 @@ import {
   ListChecks,
   CheckCircle2,
   ArrowRight,
+  ArrowLeft,
 } from "lucide-react";
 
 // --- Callout (note / tip / warning) — for inline emphasis and Common mistakes.
@@ -151,5 +152,75 @@ export function ContinueLearning({ nextStep, accentStyle }) {
         </div>
       </div>
     </Link>
+  );
+}
+
+// M28 — Previous/Next navigation for an article being read as part of a
+// learning path. Derived from the path's own step order (see
+// shared/content/ordering.js findPathNavigation), never hand-maintained on the
+// article: reordering a path updates every member's navigation automatically.
+//
+// Renders nothing for the 40 of 60 articles that belong to no path, so a
+// standalone reference page is not given a fake sequence to sit in.
+export function PathNavigation({ navigation, product }) {
+  if (!navigation) return null;
+  const { path, position, total, previous, next } = navigation;
+  if (!previous && !next) return null;
+
+  const href = (article) => `${product.basePath}/${article.academy.slug}/${article.slug}`;
+
+  return (
+    <nav
+      className="mt-12 border-t border-border pt-6"
+      aria-label={`${path.name} navigation`}
+      data-testid="article-path-navigation"
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <span className="font-semibold uppercase tracking-wider">Part of</span>
+        <Link
+          href={`${product.basePath}/paths/${path.slug}`}
+          className="font-medium text-foreground hover:text-primary"
+          data-testid="link-path-nav-parent"
+        >
+          {path.name}
+        </Link>
+        <span aria-hidden="true" className="opacity-40">·</span>
+        <span data-testid="text-path-position">
+          Step {position} of {total}
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {previous ? (
+          <Link
+            href={href(previous)}
+            data-testid="link-path-previous"
+            className="group flex flex-col rounded-xl border border-border bg-card p-4 outline-none transition-colors hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Previous
+            </span>
+            <span className="text-sm font-semibold leading-snug group-hover:text-primary">{previous.title}</span>
+          </Link>
+        ) : (
+          <span aria-hidden="true" />
+        )}
+
+        {next && (
+          <Link
+            href={href(next)}
+            data-testid="link-path-next"
+            className="group flex flex-col rounded-xl border border-border bg-card p-4 text-right outline-none transition-colors hover:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring sm:items-end"
+          >
+            <span className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              Next
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <span className="text-sm font-semibold leading-snug group-hover:text-primary">{next.title}</span>
+          </Link>
+        )}
+      </div>
+    </nav>
   );
 }

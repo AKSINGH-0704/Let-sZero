@@ -19,10 +19,11 @@ import {
   CommonMistakes,
   ArticleFaq,
   ContinueLearning,
+  PathNavigation,
 } from "./ArticleBlocks";
 import { Badge } from "@/components/ui/badge";
 
-export default function ArticleTemplate({ article, author, product, readingTimeMinutes, relatedArticles = [] }) {
+export default function ArticleTemplate({ article, author, product, readingTimeMinutes, relatedArticles = [], pathNavigation = null }) {
   if (!article) return null;
 
   const { Icon } = academyTheme(article.academy.slug);
@@ -103,6 +104,10 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
       {/* The premium hand-off — the M23 "Continue Learning" experience that
           replaces the old in-body "## Next step" markdown. */}
       <ContinueLearning nextStep={article.nextStep} accentStyle={accentStyle} />
+
+      {/* M28 — sequential navigation when this article is a step in a learning
+          path. Derived from the path's step order, not authored per article. */}
+      <PathNavigation navigation={pathNavigation} product={product} />
 
       {/* Algorithmic related guides (shared-tag scoring) — complements, doesn't
           replace, the editorial next step above. Restrained: 2-3 items. */}

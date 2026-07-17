@@ -34,7 +34,6 @@ export default function AcademyHubTemplate({ product, academy, articles, liveSlu
         <CategoryRail
           product={product}
           academies={product.academies}
-          templateLibrary={product.templateLibrary}
           activeSlug={academy.slug}
           liveSlugs={liveSlugs}
         />

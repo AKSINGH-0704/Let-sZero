@@ -5,10 +5,11 @@
 // source of truth, not two hand-kept copies that could drift. M21-F adds
 // related-content generation. M21-I: :product is resolved dynamically.
 import { useRoute } from "wouter";
-import { getArticlesForProduct } from "@/lib/resourceCenterContent";
+import { getArticlesForProduct, getLearningPathsForProduct } from "@/lib/resourceCenterContent";
 import { buildArticleJsonLd, buildBreadcrumbListJsonLd, buildFaqJsonLd } from "@shared/content/jsonLd.js";
 import { buildBreadcrumbItems } from "@/components/resource-center/ResourceCenterBreadcrumb";
 import { getRelatedArticles } from "@shared/content/relatedContent.js";
+import { findPathNavigation } from "@shared/content/ordering.js";
 import ArticleTemplate from "@/components/resource-center/ArticleTemplate";
 import ResourceCenterLayout from "@/components/resource-center/ResourceCenterLayout";
 import NotFound from "@/pages/not-found";
@@ -52,6 +53,14 @@ export default function ArticlePage() {
 
   const relatedArticles = getRelatedArticles(article, allArticles, { limit: 3 });
 
+  // M28 — if this article is a step in a learning path, offer Previous/Next.
+  // Derived from the path data, so it stays correct when a path is reordered.
+  const pathNavigation = findPathNavigation(
+    article.slug,
+    getLearningPathsForProduct(params.product),
+    new Map(allArticles.map((a) => [a.slug, a]))
+  );
+
   return (
     <ResourceCenterLayout product={product}>
       <ArticleTemplate
@@ -60,6 +69,7 @@ export default function ArticlePage() {
         product={product}
         readingTimeMinutes={article.readingTimeMinutes}
         relatedArticles={relatedArticles}
+        pathNavigation={pathNavigation}
       />
     </ResourceCenterLayout>
   );

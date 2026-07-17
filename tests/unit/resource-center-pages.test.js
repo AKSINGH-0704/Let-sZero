@@ -177,3 +177,38 @@ describe("LearningPathPage / CollectionPage (M22-C — real Getting Started path
     expect(html).not.toContain("collection-template");
   });
 });
+
+// M28 — the All Guides index. The load-bearing property is that it lists
+// EVERY article, since it is what makes each one reachable from the homepage in
+// one hop; a page that quietly dropped a guide would reintroduce the orphan
+// problem M28 exists to fix.
+describe("AllGuidesPage (M28)", () => {
+  it("lists every real article, grouped under its Academy", async () => {
+    const [{ loadAuthors, loadArticles }, { PRODUCTS }, path] = await Promise.all([
+      import("../../shared/content/loader.js"),
+      import("../../shared/content/taxonomy.js"),
+      import("path"),
+    ]);
+    const contentDir = path.resolve(import.meta.dirname, "..", "..", "client", "src", "content");
+    const authors = await loadAuthors(contentDir, "repmail", { log: () => {} });
+    const articles = await loadArticles(contentDir, "repmail", authors, { log: () => {} });
+
+    const html = await renderPage("/src/pages/resource-center/AllGuidesPage.jsx", "/repmail/learn/guides");
+    expect(html).toContain("all-guides-page");
+    expect(articles.length).toBeGreaterThan(0);
+    for (const article of articles) {
+      expect(html, `All Guides is missing ${article.slug}`).toContain(`link-all-guides-${article.slug}`);
+    }
+    // Every populated Academy has a section; the empty ones have none.
+    for (const academy of PRODUCTS.repmail.academies) {
+      const has = articles.some((a) => a.academy.slug === academy.slug);
+      if (has) expect(html).toContain(`section-guides-${academy.slug}`);
+      else expect(html).not.toContain(`section-guides-${academy.slug}`);
+    }
+  });
+
+  it("404s for an unregistered product, same as every other Resource Center page", async () => {
+    const html = await renderPage("/src/pages/resource-center/AllGuidesPage.jsx", "/messagehub/learn/guides");
+    expect(html).not.toContain("all-guides-page");
+  });
+});

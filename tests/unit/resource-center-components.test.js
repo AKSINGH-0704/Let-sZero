@@ -80,19 +80,20 @@ describe("resource-center component templates render for real (SSR), with real t
     expect(html).toContain(`href="${repmail.basePath}/${fixtureAcademy.slug}"`);
   });
 
-  it("CategoryRail lists all six academies plus the template library, marks the active one", async () => {
+  it("CategoryRail lists every academy and marks the active one (no liveSlugs — backward-safe, all treated as live)", async () => {
     const { Router } = await vite.ssrLoadModule("wouter");
     const CategoryRail = await loadDefault("/src/components/resource-center/CategoryRail.jsx");
     const html = renderToString(withRouter(Router, React.createElement(CategoryRail, {
       product: repmail,
       academies: repmail.academies,
-      templateLibrary: repmail.templateLibrary,
       activeSlug: "deliverability",
     })));
     for (const academy of repmail.academies) {
       expect(html).toContain(htmlEscaped(academy.name));
     }
-    expect(html).toContain(repmail.templateLibrary.name);
+    // M28 — the Template Library is no longer rendered as a "Soon" row. It has
+    // no page, and the rail is navigation: everything in it must navigate.
+    expect(html).not.toContain(repmail.templateLibrary.name);
   });
 
   it("ContentAsset renders a checklist and a table asset with real content", async () => {
@@ -175,7 +176,7 @@ describe("resource-center component templates render for real (SSR), with real t
     expect(html).toContain("How DKIM Works");
   });
 
-  it("ResourceCenterHome renders modules in the M22 PAR §9 order: search, intents, featured, paths, collections, academies, resources, recent", async () => {
+  it("ResourceCenterHome renders modules in order: search, intents, featured, paths, latest guides, collections, academies, resources", async () => {
     const { Router } = await vite.ssrLoadModule("wouter");
     const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
     const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
@@ -187,16 +188,53 @@ describe("resource-center component templates render for real (SSR), with real t
       toolsAvailable: false,
       academyArticleCounts: { deliverability: 1 },
       curatedResources: [{ slug: "glossary", name: "Glossary", href: `${repmail.basePath}/glossary` }],
-      recentArticles: [fixtureArticle],
+      latestArticles: [fixtureArticle],
+      totalArticleCount: 1,
     })));
 
-    const order = ["button-open-resource-center-search", "section-intents", "section-featured", "section-learning-paths", "section-collections", "section-academies", "section-curated-resources", "section-recent"]
+    // M28 amends the M22 PAR §9 order: "latest guides" is inserted directly
+    // after the learning paths (the operator's "immediately below Start From
+    // Zero"), and the old trailing "recent" module is gone — it listed the same
+    // articles, from the same sort, as latest guides.
+    const order = ["button-open-resource-center-search", "section-intents", "section-featured", "section-learning-paths", "section-latest-guides", "section-collections", "section-academies", "section-curated-resources"]
       .map((testId) => html.indexOf(testId));
-    // every module present, and each one's marker appears strictly after the previous — the exact M22 PAR §9 ordering, not just "all present somewhere"
+    // every module present, and each one's marker appears strictly after the previous — exact ordering, not just "all present somewhere"
     for (let i = 0; i < order.length; i++) expect(order[i]).toBeGreaterThan(-1);
     for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1]);
 
     expect(html).not.toContain("section-tools"); // toolsAvailable: false — not shown as a placeholder promise
+    expect(html).not.toContain("section-recent"); // replaced by section-latest-guides
+  });
+
+  it("ResourceCenterHome hides an Academy with no content instead of advertising it as 'Coming soon' (M28 — no placeholders in production)", async () => {
+    const { Router } = await vite.ssrLoadModule("wouter");
+    const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
+    const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
+      product: repmail,
+      academyArticleCounts: { deliverability: 3, compliance: 0 },
+      totalArticleCount: 3,
+    })));
+
+    expect(html).toContain("link-academy-deliverability");
+    expect(html).toContain("3 guides");
+    // The empty Academy appears nowhere at all — not as a card, not as a badge.
+    expect(html).not.toContain("compliance");
+    expect(html).not.toContain("Coming soon");
+  });
+
+  it("ResourceCenterHome's View all guides CTA points at the All Guides index and counts the real total", async () => {
+    const { Router } = await vite.ssrLoadModule("wouter");
+    const ResourceCenterHome = await loadDefault("/src/components/resource-center/ResourceCenterHome.jsx");
+    const html = renderToString(withRouter(Router, React.createElement(ResourceCenterHome, {
+      product: repmail,
+      academyArticleCounts: { deliverability: 1 },
+      latestArticles: [fixtureArticle],
+      totalArticleCount: 60,
+    })));
+    expect(html).toContain("link-view-all-guides");
+    expect(html).toContain(`href="${repmail.basePath}/guides"`);
+    // React splits the interpolated count with comment markers in SSR output.
+    expect(html.replace(/<!-- -->/g, "")).toContain("View all 60 guides");
   });
 
   it("ResourceCenterHome omits the intent section entirely when there are no valid intents (never a dead-link placeholder)", async () => {
