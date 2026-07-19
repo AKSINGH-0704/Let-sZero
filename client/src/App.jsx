@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect, useLocation } from "wouter";
+﻿import { Switch, Route, Redirect, useLocation } from "wouter";
 import { useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 
 // Central brand registry.
-// Add a new entry here when a new product launches — no logic changes needed.
+// Add a new entry here when a new product launches â€” no logic changes needed.
 const BRANDS = {
   letszero: {
     title: "LetsZero",
@@ -49,55 +49,63 @@ function BrandingManager() {
 }
 
 import Landing from "@/pages/Landing";
-import Login from "@/pages/Login";
-import Dashboard from "@/pages/Dashboard";
-import NewCampaign from "@/pages/NewCampaign";
-import History from "@/pages/History";
-import Templates from "@/pages/Templates";
-import Users from "@/pages/Users";
-import Audit from "@/pages/Audit";
-import Profile from "@/pages/Profile";
 import ResetPassword from "@/pages/ResetPassword";
 import PublicPricing from "@/pages/PublicPricing";
-import Payments from "@/pages/Payments";
 import Contact from "@/pages/Contact";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
-import RepMailPrivacy from "@/pages/RepMailPrivacy";
-import RepMailTerms from "@/pages/RepMailTerms";
 import NotFound from "@/pages/not-found";
-import WaitlistLanding from "@/pages/WaitlistLanding";
-import AcceptInvite from "@/pages/AcceptInvite";
-import Suppressions from "@/pages/Suppressions";
-import ContactLibrary from "@/pages/ContactLibrary";
-import ContactListDetail from "@/pages/ContactListDetail";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetByToken from "@/pages/ResetByToken";
-import Domains from "@/pages/Domains";
-import DomainDetail from "@/pages/DomainDetail";
-import LinkExpired from "@/pages/LinkExpired";
-import Onboarding from "@/pages/Onboarding";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 
-// M21-D — lazy-loaded, not a static top-level import like every other page
+// M21-D â€” lazy-loaded, not a static top-level import like every other page
 // above. gray-matter/marked (the markdown/frontmatter parsing this pulls in
 // transitively via resourceCenterContent.js) add ~500KB to the bundle;
-// without lazy-loading, that cost lands on every page load — including the
+// without lazy-loading, that cost lands on every page load â€” including the
 // authenticated app, since this codebase has no route-level code-splitting
 // anywhere else (M21-B's audit already found this gap). Splitting these 5
 // routes out keeps that cost paid only by someone who actually visits
 // /learn or /repmail/learn/*.
 const LetsZeroLearnDirectory = lazy(() => import("@/pages/LetsZeroLearnDirectory"));
+// M32-B â€” every authenticated /app/* page and every non-prerendered public
+// page is loaded on demand. Before this, a visitor landing on the marketing
+// homepage downloaded the whole authenticated application: Dashboard,
+// NewCampaign, History, Templates, Users, Audit, Payments, Domains and the
+// rest, none of which they can even reach while logged out. The prerendered
+// public routes stay eager on purpose: their HTML is already in the document,
+// and suspending during hydration would replace real content with a spinner.
+const Login = lazy(() => import("@/pages/Login"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const NewCampaign = lazy(() => import("@/pages/NewCampaign"));
+const History = lazy(() => import("@/pages/History"));
+const Templates = lazy(() => import("@/pages/Templates"));
+const Users = lazy(() => import("@/pages/Users"));
+const Audit = lazy(() => import("@/pages/Audit"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Payments = lazy(() => import("@/pages/Payments"));
+const RepMailPrivacy = lazy(() => import("@/pages/RepMailPrivacy"));
+const RepMailTerms = lazy(() => import("@/pages/RepMailTerms"));
+const WaitlistLanding = lazy(() => import("@/pages/WaitlistLanding"));
+const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
+const Suppressions = lazy(() => import("@/pages/Suppressions"));
+const ContactLibrary = lazy(() => import("@/pages/ContactLibrary"));
+const ContactListDetail = lazy(() => import("@/pages/ContactListDetail"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetByToken = lazy(() => import("@/pages/ResetByToken"));
+const Domains = lazy(() => import("@/pages/Domains"));
+const DomainDetail = lazy(() => import("@/pages/DomainDetail"));
+const LinkExpired = lazy(() => import("@/pages/LinkExpired"));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
+
 const ResourceCenterHomePage = lazy(() => import("@/pages/resource-center/ResourceCenterHomePage"));
-// M28 — the flat "all guides" index behind the homepage's View all guides CTA.
+// M28 â€” the flat "all guides" index behind the homepage's View all guides CTA.
 const AllGuidesPage = lazy(() => import("@/pages/resource-center/AllGuidesPage"));
 const AcademyHubPage = lazy(() => import("@/pages/resource-center/AcademyHubPage"));
 const ArticlePage = lazy(() => import("@/pages/resource-center/ArticlePage"));
 const AuthorPage = lazy(() => import("@/pages/resource-center/AuthorPage"));
-// M22-A — first real consumers of learningPathSchema/collectionSchema.
+// M22-A â€” first real consumers of learningPathSchema/collectionSchema.
 const LearningPathPage = lazy(() => import("@/pages/resource-center/LearningPathPage"));
 const CollectionPage = lazy(() => import("@/pages/resource-center/CollectionPage"));
 const RepMailChangelog = lazy(() => import("@/pages/RepMailChangelog"));
@@ -135,17 +143,48 @@ function ProtectedRoute({ children, requiredRole }) {
 }
 
 // Preview Mode: users can access the full product before completing domain verification.
-// Sending is blocked by SAS + CampaignConfirmation — no upstream redirect needed.
+// Sending is blocked by SAS + CampaignConfirmation â€” no upstream redirect needed.
 // This component is kept as a pass-through so route structure is preserved for future use.
 function RequiresWorkspaceActivation({ children }) {
   return children;
 }
 
+// M32-C — routes whose rendering does not depend on auth state at all.
+//
+// AppRoutes used to return a full-screen LoadingScreen for every route while
+// the auth query was in flight. On a prerendered public page that means the
+// server sends complete, correct HTML, React hydrates, and then immediately
+// replaces it with a spinner. Measured at 4x CPU throttle:
+//
+//   /               256ms of full-screen spinner over prerendered content
+//   /pricing        358ms
+//   /repmail/learn  1956ms
+//
+// while /api/auth/me itself answered in 26-57ms. The wait is JS parse, execute
+// and chunk fetch, not the network call, and none of these pages render
+// anything differently for a signed-in user. Prerendering exists precisely to
+// put content on screen immediately; blocking it on an irrelevant query gave
+// that benefit away.
+//
+// "/" is deliberately NOT in this list: it redirects signed-in visitors to the
+// dashboard, so it genuinely needs auth resolved before it can decide.
+const AUTH_INDEPENDENT_ROUTES = [
+  /^\/repmail\/learn(\/|$)/,
+  /^\/repmail\/changelog(\/|$)/,
+  /^\/repmail\/(privacy|terms)(\/|$)/,
+  /^\/learn(\/|$)/,
+  /^\/products\//,
+  /^\/pricing(\/|$)/,
+  /^\/contact(\/|$)/,
+  /^\/privacy(\/|$)/,
+  /^\/terms(\/|$)/,
+];
+
 function AppRoutes() {
   const { isAuthenticated, isLoading, mustResetPassword } = useAuth();
   const [location] = useLocation();
 
-  if (isLoading) {
+  if (isLoading && !AUTH_INDEPENDENT_ROUTES.some((re) => re.test(location))) {
     return <LoadingScreen />;
   }
 
@@ -156,6 +195,13 @@ function AppRoutes() {
   return (
     <ErrorBoundary resetKey={location}>
       <BrandingManager />
+      {/* M32-B â€” one boundary covering every lazily-loaded route. Eagerly
+          imported components (the prerendered public pages) never suspend, so
+          they still render on the first frame and hydration is unaffected; only
+          an on-demand chunk reaches this fallback. The Resource Center routes
+          keep their own inner boundaries so moving between them does not
+          re-trigger this full-screen loader for chunks already fetched. */}
+      <Suspense fallback={<LoadingScreen />}>
       <Switch>
         {import.meta.env.DEV && DesignPreview && (
           <Route path="/_design">
@@ -203,14 +249,14 @@ function AppRoutes() {
         {() => <RepMailTerms />}
       </Route>
 
-      {/* M21-D/M21-I — Resource Center, product-parameterized: :product is
+      {/* M21-D/M21-I â€” Resource Center, product-parameterized: :product is
           resolved against the real PRODUCTS registry inside each page
-          (useResourceCenterProduct), not hardcoded to "repmail" — a second
-          LetsZero product (PAR §11's own examples — MessageHub,
+          (useResourceCenterProduct), not hardcoded to "repmail" â€” a second
+          LetsZero product (PAR Â§11's own examples â€” MessageHub,
           NotifyStream) needs a PRODUCTS entry and content, not new routes
           or new page components. Route order matters: /authors/:author
           must be declared before /:academy/:slug (both are 3 segments
-          after :product — without this order, "authors" would be greedily
+          after :product â€” without this order, "authors" would be greedily
           matched as an academy slug). Each lazy-loaded component gets its
           own Suspense boundary so navigating between Resource Center pages
           doesn't re-trigger the full-screen loader for chunks already
@@ -223,7 +269,7 @@ function AppRoutes() {
         {() => <Suspense fallback={<LoadingScreen />}><ResourceCenterHomePage /></Suspense>}
       </Route>
 
-      {/* M28 — /guides is a literal 2-segments-after-:product path, the same
+      {/* M28 â€” /guides is a literal 2-segments-after-:product path, the same
           shape as :academy below, so it must be declared first or "guides"
           would match as an Academy slug and render a 404 hub. */}
       <Route path="/:product/learn/guides">
@@ -234,7 +280,7 @@ function AppRoutes() {
         {() => <Suspense fallback={<LoadingScreen />}><AuthorPage /></Suspense>}
       </Route>
 
-      {/* M22-A — paths/:path and collections/:collection are the same
+      {/* M22-A â€” paths/:path and collections/:collection are the same
           3-segments-after-:product shape as authors/:author above, so they
           must also be declared before :academy/:slug for the same reason. */}
       <Route path="/:product/learn/paths/:path">
@@ -253,9 +299,9 @@ function AppRoutes() {
         {() => <Suspense fallback={<LoadingScreen />}><AcademyHubPage /></Suspense>}
       </Route>
 
-      {/* M21-G — reuses RELEASE_NOTES.md verbatim, zero new writing (PAR §13
-          Phase 11). Real, substantive content, so — unlike the still-empty
-          Resource Center pages above — this one IS prerendered/indexed
+      {/* M21-G â€” reuses RELEASE_NOTES.md verbatim, zero new writing (PAR Â§13
+          Phase 11). Real, substantive content, so â€” unlike the still-empty
+          Resource Center pages above â€” this one IS prerendered/indexed
           (see script/prerender-routes.js). */}
       <Route path="/repmail/changelog">
         {() => <Suspense fallback={<LoadingScreen />}><RepMailChangelog /></Suspense>}
@@ -379,6 +425,7 @@ function AppRoutes() {
 
       <Route component={NotFound} />
     </Switch>
+      </Suspense>
     </ErrorBoundary>
   );
 }
