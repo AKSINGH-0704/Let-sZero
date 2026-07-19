@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PRIVATE BETA WAITLIST LANDING PAGE
  *
  * Design system: Matches existing LandingExperience.tsx
@@ -15,12 +15,13 @@ import {
   Loader2, Check, AlertCircle, Send, Sparkles, Users, Globe2, Lock,
   CheckCircle2, Zap, Eye
 } from "lucide-react";
+import { useSubmitGuard } from "@/hooks/useSubmitGuard";
 
 const FONT_HEADING = "'Space Grotesk', sans-serif";
 const FONT_BODY    = "'Inter', sans-serif";
 const FONT_MONO    = "'JetBrains Mono', monospace";
 
-// ─── PARTICLES (deterministic, no hydration mismatch) ────────────────────────
+// â”€â”€â”€ PARTICLES (deterministic, no hydration mismatch) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PARTICLES = Array.from({ length: 50 }, (_, i) => ({
   id: i,
   x: ((i * 73 + 11) % 97) + 1.5,
@@ -31,7 +32,7 @@ const PARTICLES = Array.from({ length: 50 }, (_, i) => ({
   opacity: 0.06 + (i % 5) * 0.04,
 }));
 
-// ─── MORSE CODE: "EARLY ACCESS" ──────────────────────────────────────────────
+// â”€â”€â”€ MORSE CODE: "EARLY ACCESS" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Each item: { s: '.' | '-' | 'gap' | 'word' }
 const MORSE_SEQ = (() => {
   const enc = {
@@ -58,7 +59,7 @@ const MORSE_SEQ = (() => {
   return seq;
 })();
 
-// ─── MORSE CODE DISPLAY ───────────────────────────────────────────────────────
+// â”€â”€â”€ MORSE CODE DISPLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MorseCodeDisplay() {
   const [activeIdx, setActiveIdx] = useState(0);
   const TICK_MS = 260; // ms per symbol
@@ -112,13 +113,13 @@ function MorseCodeDisplay() {
         className="ml-3 text-[9px] tracking-[0.25em] text-violet-400/40 uppercase select-none"
         style={{ fontFamily: FONT_MONO }}
       >
-        EARLY·ACCESS
+        EARLYÂ·ACCESS
       </span>
     </div>
   );
 }
 
-// ─── FLOATING REPMAIL METRIC CARDS ────────────────────────────────────────────
+// â”€â”€â”€ FLOATING REPMAIL METRIC CARDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const METRIC_CARDS = [
   {
     id: 1,
@@ -144,7 +145,7 @@ const METRIC_CARDS = [
     borderColor: "rgba(139,92,246,0.22)",
     label: "Anti-Spam Check",
     primary: "Score: 12",
-    secondary: "Safe to send ✓",
+    secondary: "Safe to send âœ“",
     badge: { text: "Safe", color: "violet" },
     right: "18%", top: "39%",
     animY: [0, 16, -8, 0],
@@ -175,7 +176,7 @@ const METRIC_CARDS = [
     glowColor: "rgba(245,158,11,0.12)",
     borderColor: "rgba(245,158,11,0.20)",
     label: "Open Rate",
-    primary: "↑ 34.2%",
+    primary: "â†‘ 34.2%",
     secondary: "vs 22.1% avg",
     badge: { text: "+12%", color: "amber" },
     right: "20%", top: "78%",
@@ -275,8 +276,8 @@ function FloatingMetricCards() {
   );
 }
 
-// ─── ANIMATED DATA-FLOW SVG ───────────────────────────────────────────────────
-// Continuous SVG line animation — email delivery paths
+// â”€â”€â”€ ANIMATED DATA-FLOW SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Continuous SVG line animation â€” email delivery paths
 function AnimatedDataFlow({ className = "" }) {
   const PATHS = [
     "M 0 80 C 120 40, 200 140, 320 80 S 480 20, 600 80 S 760 140, 900 80",
@@ -330,13 +331,13 @@ function AnimatedDataFlow({ className = "" }) {
   );
 }
 
-// ─── ANIMATED BACKGROUND ─────────────────────────────────────────────────────
+// â”€â”€â”€ ANIMATED BACKGROUND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AnimatedBackground() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
       <div className="absolute inset-0 bg-gradient-to-br from-[#0D0D18] via-[#0A0A0F] to-[#08080E]" />
 
-      {/* Violet orb — drifts slowly */}
+      {/* Violet orb â€” drifts slowly */}
       <motion.div
         className="absolute rounded-full blur-[140px]"
         style={{
@@ -394,7 +395,7 @@ function AnimatedBackground() {
   );
 }
 
-// ─── SECTION GLOW ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ SECTION GLOW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SectionGlow({ color = "violet", intensity = 0.08, size = 600, className = "" }) {
   const colorMap = {
     violet:  `rgba(139,92,246,${intensity})`,
@@ -413,16 +414,20 @@ function SectionGlow({ color = "violet", intensity = 0.08, size = 600, className
   );
 }
 
-// ─── WAITLIST FORM ────────────────────────────────────────────────────────────
+// â”€â”€â”€ WAITLIST FORM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function WaitlistForm({ variant = "hero" }) {
   const [email, setEmail]   = useState("");
   const [status, setStatus] = useState("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const inputRef = useRef(null);
 
-  const handleSubmit = async (e) => {
+  // M35-C â€” the guard below used to read `status`, which is React state and so
+  // still reads "idle" for every click delivered before the next render.
+  // Measured: three clicks produced three POST /api/waitlist. useSubmitGuard
+  // holds the flag in a ref, which mutates synchronously and wins that race.
+  const [handleSubmit] = useSubmitGuard(async (e) => {
     e.preventDefault();
-    if (status === "loading" || status === "success") return;
+    if (status === "success") return;
     const trimmed = email.trim();
     if (!trimmed) { setErrorMessage("Enter your email address."); setStatus("error"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -435,7 +440,7 @@ function WaitlistForm({ variant = "hero" }) {
       else if (res.status === 409) { setErrorMessage("You're already on the list."); setStatus("error"); }
       else { setErrorMessage(data.message || "Something went wrong."); setStatus("error"); }
     } catch { setErrorMessage("Network error. Please try again."); setStatus("error"); }
-  };
+  });
 
   if (status === "success") {
     return (
@@ -495,7 +500,7 @@ function WaitlistForm({ variant = "hero" }) {
   );
 }
 
-// ─── VALUE BLOCKS ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ VALUE BLOCKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VALUE_BLOCKS = [
   { icon: Send,     title: "Campaign Automation",       description: "End-to-end campaign orchestration. Upload contacts, build templates with merge fields, preview with AI, and send at scale. All from one interface.", color: "cyan",   delay: 0.1 },
   { icon: Shield,   title: "Deliverability Infrastructure", description: "Built-in spam analysis, content scoring, and domain reputation monitoring. Know your inbox placement before you hit send.",                        color: "violet", delay: 0.2 },
@@ -508,19 +513,19 @@ const ACCENT = {
   amber:  { iconBg: "from-amber-500/15 to-amber-600/10", border: "border-amber-500/20",  hoverBorder: "hover:border-amber-500/40",  text: "text-amber-400",  glow: "rgba(245,158,11,0.13)"  },
 };
 
-// ─── STATS ROW ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ STATS ROW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TRUST_STATS = [
   { icon: Users,  value: "200+",    label: "Teams on waitlist",     color: "violet" },
   { icon: Globe2, value: "18",      label: "Countries represented", color: "cyan"   },
   { icon: Lock,   value: "Private", label: "Invite-only beta",      color: "amber"  },
 ];
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+// â”€â”€â”€ MAIN COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function WaitlistLanding() {
   return (
     <div className="min-h-screen w-full bg-[#0A0A0F] overflow-x-hidden">
 
-      {/* ── NAVIGATION ── */}
+      {/* â”€â”€ NAVIGATION â”€â”€ */}
       <nav
         className="fixed top-0 left-0 right-0 z-50 backdrop-blur-2xl bg-[#0A0A0F]/80 border-b border-white/[0.06]"
         style={{ boxShadow: "0 1px 0 rgba(255,255,255,0.04), 0 4px 24px rgba(0,0,0,0.4)" }}
@@ -545,7 +550,7 @@ export default function WaitlistLanding() {
         </div>
       </nav>
 
-      {/* ── HERO ── */}
+      {/* â”€â”€ HERO â”€â”€ */}
       <section className="relative w-full min-h-screen overflow-hidden pt-20">
         <AnimatedBackground />
 
@@ -607,7 +612,7 @@ export default function WaitlistLanding() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.5 }}
               className="mt-5 text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}
             >
-              Now onboarding early operators · Rolling invitations · No spam, ever
+              Now onboarding early operators Â· Rolling invitations Â· No spam, ever
             </motion.p>
           </div>
         </div>
@@ -622,7 +627,7 @@ export default function WaitlistLanding() {
         </motion.div>
       </section>
 
-      {/* ── STATS ROW ── */}
+      {/* â”€â”€ STATS ROW â”€â”€ */}
       <section className="relative w-full bg-[#0A0A0F] py-10">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/20 to-transparent" />
         <div className="max-w-[1440px] mx-auto px-6 md:px-12">
@@ -646,7 +651,7 @@ export default function WaitlistLanding() {
         </div>
       </section>
 
-      {/* ── CORE VALUE SECTION (with data-flow animation in bg) ── */}
+      {/* â”€â”€ CORE VALUE SECTION (with data-flow animation in bg) â”€â”€ */}
       <section className="relative w-full bg-[#0A0A0F] py-24 md:py-32 overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
         <SectionGlow color="cyan" intensity={0.06} size={500} className="top-1/2 -translate-y-1/2 -left-32" />
@@ -695,7 +700,7 @@ export default function WaitlistLanding() {
         </div>
       </section>
 
-      {/* ── PROBLEM SECTION ── */}
+      {/* â”€â”€ PROBLEM SECTION â”€â”€ */}
       <section className="relative w-full bg-[#0A0A0F] py-24 md:py-32 overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
         <SectionGlow color="violet" intensity={0.07} size={600} className="-top-32 -right-48" />
@@ -728,7 +733,7 @@ export default function WaitlistLanding() {
         </div>
       </section>
 
-      {/* ── VISION SECTION ── */}
+      {/* â”€â”€ VISION SECTION â”€â”€ */}
       <section className="relative w-full bg-[#0A0A0F] py-24 md:py-32 overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
         <motion.div
@@ -744,7 +749,7 @@ export default function WaitlistLanding() {
               <h2 className="text-3xl md:text-4xl font-semibold text-white mb-8" style={{ fontFamily: FONT_HEADING }}>Building the infrastructure layer<br />for modern outbound</h2>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.6, delay: 0.14 }} className="space-y-5 text-left md:text-center">
-              <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>LetsZero is building a unified system where campaign automation, deliverability intelligence, and performance analytics work together — not as separate products, but as one coherent infrastructure.</p>
+              <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>LetsZero is building a unified system where campaign automation, deliverability intelligence, and performance analytics work together â€” not as separate products, but as one coherent infrastructure.</p>
               <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>We started with RepMail because email is still the backbone of B2B outbound. The architecture is designed to extend into messaging, notifications, and multi-channel orchestration.</p>
               <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>Built for teams who want control, clarity, and scale. No black boxes. No vendor lock-in. Just infrastructure that works.</p>
             </motion.div>
@@ -754,24 +759,24 @@ export default function WaitlistLanding() {
             >
               <div className="flex items-center gap-2">
                 <motion.div className="w-2 h-2 rounded-full bg-emerald-400" animate={{ opacity: [1, 0.4, 1], scale: [1, 0.8, 1] }} transition={{ duration: 2, repeat: Infinity }} style={{ boxShadow: "0 0 8px rgba(52,211,153,0.6)" }} />
-                <span className="text-sm text-gray-300" style={{ fontFamily: FONT_BODY }}>RepMail · Live</span>
+                <span className="text-sm text-gray-300" style={{ fontFamily: FONT_BODY }}>RepMail Â· Live</span>
               </div>
               <div className="w-px h-5 bg-white/10" />
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub · Planned</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub Â· Planned</span>
               </div>
               <div className="w-px h-5 bg-white/10 hidden sm:block" />
               <div className="hidden sm:flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream · Future</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream Â· Future</span>
               </div>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* ── FINAL CTA ── */}
+      {/* â”€â”€ FINAL CTA â”€â”€ */}
       <section id="waitlist-cta" className="relative w-full bg-[#0A0A0F] py-28 md:py-36 overflow-hidden">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/20 to-transparent" />
 
@@ -793,7 +798,7 @@ export default function WaitlistLanding() {
           <div className="max-w-xl mx-auto text-center">
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.6 }}>
 
-              {/* ── MORSE CODE DISPLAY ── */}
+              {/* â”€â”€ MORSE CODE DISPLAY â”€â”€ */}
               <motion.div
                 initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.8, delay: 0.1 }}
                 className="mb-8"
@@ -841,13 +846,13 @@ export default function WaitlistLanding() {
 
             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.3 }}
               className="mt-6 text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}>
-              Private beta · No credit card required · Cancel anytime
+              Private beta Â· No credit card required Â· Cancel anytime
             </motion.p>
           </div>
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
+      {/* â”€â”€ FOOTER â”€â”€ */}
       <footer className="w-full bg-[#0A0A0F] border-t border-white/[0.05] py-10">
         <div className="max-w-[1440px] mx-auto px-6 md:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center">

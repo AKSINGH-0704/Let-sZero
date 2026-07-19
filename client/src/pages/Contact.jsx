@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "wouter";
@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useSubmitGuard } from "@/hooks/useSubmitGuard";
 import { 
   Mail, 
   Clock, 
@@ -72,16 +73,34 @@ export default function Contact() {
     }
   });
 
-  const handleSubmit = (e) => {
+  // M35-C â€” guarded: three clicks previously produced three POST /api/contact,
+  // i.e. three duplicate enquiries from one visitor. The disabled button did
+  // not help, because it is disabled by a render that has not happened yet when
+  // the second click lands, and it never covered Enter-key submission.
+  const [handleSubmit, isSubmitting] = useSubmitGuard(async (e) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.email || !formData.reason || !formData.message) {
       toast({ title: "Please fill all required fields", variant: "destructive" });
       return;
     }
 
-    submitMutation.mutate(formData);
-  };
+    // The form previously accepted anything non-empty as an email, so a typo
+    // was only caught by the server and surfaced as a generic failure.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      toast({ title: "Enter a valid email address", variant: "destructive" });
+      return;
+    }
+
+    try {
+      await submitMutation.mutateAsync(formData);
+    } catch {
+      // onError already surfaced this; swallowed so the guard's finally runs
+      // and the form is usable again.
+    }
+  });
+
+  const pending = isSubmitting || submitMutation.isPending;
 
   if (submitted) {
     return (
@@ -207,10 +226,10 @@ export default function Contact() {
                   <Button 
                     type="submit" 
                     className="w-full gap-2"
-                    disabled={submitMutation.isPending}
+                    disabled={pending}
                     data-testid="button-submit-contact"
                   >
-                    {submitMutation.isPending ? (
+                    {pending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>

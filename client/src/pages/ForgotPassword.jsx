@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, Mail, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { useSubmitGuard } from "@/hooks/useSubmitGuard";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -13,7 +14,9 @@ export default function ForgotPassword() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleSubmit = async (e) => {
+  // M35-C â€” previously unguarded: it set isSubmitting but never checked it, so
+  // repeated clicks fired repeated password-reset emails to the same address.
+  const [handleSubmit] = useSubmitGuard(async (e) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
@@ -33,7 +36,7 @@ export default function ForgotPassword() {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  });
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">

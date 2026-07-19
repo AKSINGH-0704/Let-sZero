@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Redirect, Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
@@ -28,6 +28,7 @@ import {
   LogIn
 } from "lucide-react";
 import { SiGoogle, SiLinkedin } from "react-icons/si";
+import { useSubmitGuard } from "@/hooks/useSubmitGuard";
 
 function BrandingPanel() {
   return (
@@ -215,14 +216,18 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
     }
   }, []);
 
-  const handleSubmit = async (e) => {
+  // M35-C â€” previously unguarded. Repeated submits meant repeated
+  // authentication attempts for one intent, which is the worst place for it:
+  // it burns server-side rate limit budget and can lock a legitimate user out
+  // of their own account.
+  const [handleSubmit] = useSubmitGuard(async (e) => {
     e.preventDefault();
     try {
       await login({ username, password });
     } catch (err) {
       console.error("Login failed:", err);
     }
-  };
+  });
 
   const handleOAuthRedirect = (provider) => {
     if (provider === "Google") {
@@ -250,7 +255,7 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
               className="absolute top-3 right-3 text-destructive-foreground/60 hover:text-destructive-foreground transition-colors"
               aria-label="Dismiss"
             >
-              ✕
+              âœ•
             </button>
           </Alert>
         )}
@@ -392,7 +397,7 @@ function RequestAccessPanel({ onSignIn }) {
         </div>
         <h3 className="text-lg font-semibold mb-2">Get started with RepMail</h3>
         <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-          RepMail is an invite-only platform. Submit your details for admin review — our team will
+          RepMail is an invite-only platform. Submit your details for admin review â€” our team will
           reach out within 24 hours.
         </p>
       </div>
@@ -481,7 +486,7 @@ export default function Login() {
               <p className="text-muted-foreground mt-1 text-sm">
                 {activeTab === "signin"
                   ? "Access your campaigns, analytics, and team settings."
-                  : "Request access to the platform — our team reviews all applications."}
+                  : "Request access to the platform â€” our team reviews all applications."}
               </p>
             </div>
 
