@@ -43,19 +43,41 @@ function buildHeadInjection(meta, canonicalOrigin) {
   const ogImage = meta.ogImage ?? `${canonicalOrigin}/repmail-logo.png`;
   const jsonLd = typeof meta.jsonLd === "function" ? meta.jsonLd(canonicalUrl) : meta.jsonLd;
 
+  // M30 — every page previously declared og:type "website", including the 75
+  // articles. Open Graph's article type carries published/modified time, section
+  // and author, which are the freshness and hierarchy signals an article page
+  // exists to emit; declaring an article a "website" throws all of them away.
+  const ogType = meta.ogType ?? "website";
+
   const tags = [
     `<meta name="description" content="${escapeAttr(meta.description)}" />`,
     `<link rel="canonical" href="${escapeAttr(canonicalUrl)}" />`,
-    `<meta property="og:type" content="website" />`,
+    // Lets Google show a large image preview and an unclipped snippet. Without
+    // it the default is a small thumbnail, which is purely a lost opportunity.
+    `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />`,
+    `<meta property="og:type" content="${escapeAttr(ogType)}" />`,
+    `<meta property="og:site_name" content="LetsZero" />`,
+    `<meta property="og:locale" content="en_US" />`,
     `<meta property="og:title" content="${escapeAttr(meta.title)}" />`,
     `<meta property="og:description" content="${escapeAttr(meta.description)}" />`,
     `<meta property="og:url" content="${escapeAttr(canonicalUrl)}" />`,
     `<meta property="og:image" content="${escapeAttr(ogImage)}" />`,
+    `<meta property="og:image:alt" content="${escapeAttr(meta.title)}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${escapeAttr(meta.title)}" />`,
     `<meta name="twitter:description" content="${escapeAttr(meta.description)}" />`,
     `<meta name="twitter:image" content="${escapeAttr(ogImage)}" />`,
+    `<meta name="twitter:image:alt" content="${escapeAttr(meta.title)}" />`,
   ];
+
+  if (ogType === "article") {
+    if (meta.publishedTime) tags.push(`<meta property="article:published_time" content="${escapeAttr(meta.publishedTime)}" />`);
+    if (meta.modifiedTime) tags.push(`<meta property="article:modified_time" content="${escapeAttr(meta.modifiedTime)}" />`);
+    if (meta.section) tags.push(`<meta property="article:section" content="${escapeAttr(meta.section)}" />`);
+    for (const tag of meta.articleTags ?? []) {
+      tags.push(`<meta property="article:tag" content="${escapeAttr(tag)}" />`);
+    }
+  }
   if (jsonLd) {
     tags.push(`<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`);
   }

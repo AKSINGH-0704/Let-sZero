@@ -215,6 +215,15 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/ArticlePage.jsx",
     title: `${article.title} | ${RC_SUFFIX}`,
     description: article.description,
+    // M30 — Open Graph article signals, and a real per-URL sitemap lastmod.
+    // Both come from frontmatter the loader already parsed, so they cannot
+    // drift from the article they describe.
+    ogType: "article",
+    publishedTime: article.publishedAt,
+    modifiedTime: article.updatedAt ?? article.publishedAt,
+    section: article.academy.name,
+    articleTags: article.tags ?? [],
+    lastmod: article.updatedAt ?? article.publishedAt,
     jsonLd: (url) =>
       graph(
         buildArticleJsonLd(article, {
@@ -230,6 +239,16 @@ export async function getPublicRoutes({
       ),
   }));
 
+  // The most recent change among a set of articles, as an honest lastmod for
+  // the hub, path or collection that lists them. Returns undefined for an empty
+  // set, so the caller falls back to the build date rather than inventing one.
+  const bySlug = new Map(articles.map((a) => [a.slug, a]));
+  const newestOf = (list) => {
+    const dates = list.map((a) => a.updatedAt ?? a.publishedAt).filter(Boolean).sort();
+    return dates.length ? dates[dates.length - 1] : undefined;
+  };
+  const newestOfSlugs = (slugs = []) => newestOf(slugs.map((s) => bySlug.get(s)).filter(Boolean));
+
   const academiesWithContent = product.academies.filter((academy) =>
     articles.some((article) => article.academy.slug === academy.slug),
   );
@@ -238,6 +257,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/AcademyHubPage.jsx",
     title: `${academy.name} | ${RC_SUFFIX}`,
     description: academy.description,
+    lastmod: newestOf(articles.filter((a) => a.academy.slug === academy.slug)),
     jsonLd: (url) =>
       graph(
         webPageJsonLd(academy.name)(url),
@@ -250,6 +270,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/AuthorPage.jsx",
     title: `${author.name} | ${RC_SUFFIX}`,
     description: author.bio,
+    lastmod: newestOf(articles.filter((a) => a.author.slug === author.slug)),
     jsonLd: (url) =>
       graph(buildPersonJsonLd(author, { canonicalUrl: url }), rcBreadcrumbJsonLd(product, { articleTitle: author.name })),
   }));
@@ -260,6 +281,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/LearningPathPage.jsx",
     title: `${p.name} | ${RC_SUFFIX}`,
     description: p.description,
+    lastmod: newestOfSlugs(p.steps),
     jsonLd: (url) => graph(webPageJsonLd(p.name)(url), rcBreadcrumbJsonLd(product, { articleTitle: p.name })),
   }));
 
@@ -268,6 +290,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/CollectionPage.jsx",
     title: `${c.name} | ${RC_SUFFIX}`,
     description: c.description,
+    lastmod: newestOfSlugs(c.articleSlugs),
     jsonLd: (url) => graph(webPageJsonLd(c.name)(url), rcBreadcrumbJsonLd(product, { articleTitle: c.name })),
   }));
 

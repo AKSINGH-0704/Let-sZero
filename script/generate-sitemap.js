@@ -20,10 +20,16 @@ export async function generateSitemap({
   log = console.log,
 } = {}) {
   routes ??= await getPublicRoutes();
+  // M30 — every URL previously carried the build date, so on each deploy all 105
+  // pages claimed to have changed today. That is exactly the pattern Google
+  // discounts, and it destroys the freshness signal for the pages that genuinely
+  // did change. Routes derived from content now carry their own lastmod (the
+  // article's updatedAt, or an Academy/collection/path's newest member), and
+  // only the hand-written static routes fall back to the build date.
   const urls = routes
     .map((route) => {
       const loc = `${canonicalOrigin}${route.path === "/" ? "" : route.path}`;
-      return `  <url>\n    <loc>${escapeXml(loc)}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`;
+      return `  <url>\n    <loc>${escapeXml(loc)}</loc>\n    <lastmod>${escapeXml(route.lastmod ?? lastmod)}</lastmod>\n  </url>`;
     })
     .join("\n");
 
