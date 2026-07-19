@@ -75,7 +75,12 @@ export default function AllGuidesPage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-[color:var(--academy-accent)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {academy.name}
-                <span className="text-xs opacity-70">{list.length}</span>
+                {/* RC-1 — `opacity-70` on top of already-muted text dropped this
+                    count below the 4.5:1 AA threshold (axe color-contrast, 3
+                    nodes on this page). The pill's own muted-foreground passes
+                    on its own, and a count does not need to be dimmer than the
+                    label it belongs to. */}
+                <span className="text-xs tabular-nums">{list.length}</span>
               </a>
             ))}
           </nav>

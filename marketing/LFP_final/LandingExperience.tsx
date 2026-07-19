@@ -1549,7 +1549,12 @@ export default function LandingExperience() {
               </a>
             ))}
           </nav>
-          <p className="text-xs" style={{ color: "#6B7280", fontFamily: "'Inter', sans-serif" }}>
+          {/* RC-1 — #6B7280 on #0A0A0F measured 4.08:1, below the 4.5:1 AA
+              minimum for body text (Lighthouse color-contrast, the only
+              accessibility failure on this page). #7D8590 measures ~5.1:1 and
+              stays visibly dimmer than the #9CA3AF footer links, so the
+              hierarchy is preserved. */}
+          <p className="text-xs" style={{ color: "#7D8590", fontFamily: "'Inter', sans-serif" }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
           </p>
         </div>

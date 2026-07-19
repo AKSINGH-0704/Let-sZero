@@ -136,7 +136,14 @@ export default function ResourceCenterLayout({ product, children }) {
             >
               <Search className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Search</span>
-              <kbd className="hidden rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground lg:inline">
+              {/* RC-1 — aria-hidden so the shortcut hint is not counted as part
+                  of the button's visible label. Without it the visible text
+                  reads "Search ⌘K" while the accessible name is "Search the
+                  Resource Center", which fails WCAG 2.5.3 Label in Name
+                  (Lighthouse label-content-name-mismatch). The hint is
+                  decoration; the key binding is announced by nothing and needs
+                  no accessible representation. */}
+              <kbd aria-hidden="true" className="hidden rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground lg:inline">
                 ⌘K
               </kbd>
             </Button>
