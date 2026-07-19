@@ -65,6 +65,42 @@ async function loadManifest(distDir, log) {
   }
 }
 
+/**
+ * M34 — per-route font preload.
+ *
+ * The self-hosted faces are declared in the bundled CSS, so the browser cannot
+ * request one until that CSS has downloaded, parsed, and laid out text using
+ * it. Measured without a hint: the first font byte was requested at 3251ms on
+ * `/` and 4550ms on a Resource Center page. With `font-display: swap` that is
+ * not invisible text, but it is several seconds of fallback before the swap,
+ * which reads as a flash of unstyled text.
+ *
+ * A preload in client/index.html would fix that but is unconditional: index.html
+ * is one shell for every route, so preloading Space Grotesk there pulled 23KB
+ * into every Resource Center page, which only uses Open Sans.
+ *
+ * Since each route is prerendered into its own HTML file, the hint can instead
+ * be exact — only the faces that route paints above the fold. Anything else the
+ * page needs is still discovered from the stylesheet as before.
+ */
+const ROUTE_FONT_PRELOADS = [
+  // Pricing and payments are the only surfaces using the Fontshare families.
+  [/^\/pricing(\/|$)/, ["cabinet-grotesk-800-normal.woff2", "general-sans-400-normal.woff2"]],
+  // The Resource Center sets body copy in Open Sans throughout.
+  [/^\/repmail\/(learn|changelog)(\/|$)/, ["open-sans-300_800-normal.woff2"]],
+  [/^\/learn(\/|$)/, ["open-sans-300_800-normal.woff2"]],
+  // Marketing and product pages lead with a Space Grotesk headline.
+  [/^\/($|products\/)/, ["space-grotesk-300_700-normal.woff2"]],
+];
+
+function fontPreloadTagsFor(routePath) {
+  const match = ROUTE_FONT_PRELOADS.find(([re]) => re.test(routePath));
+  if (!match) return "";
+  return match[1]
+    .map((f) => `<link rel="preload" as="font" type="font/woff2" href="/fonts/${f}" crossorigin />`)
+    .join("\n    ");
+}
+
 function preloadTagsFor(manifest, componentPath) {
   if (!manifest || !componentPath) return "";
   const key = componentPath.replace(/^\//, "");
@@ -194,7 +230,9 @@ export async function prerenderRoutes({
 
         const bodyHtml = renderToString(app);
         const headInjection = buildHeadInjection(route, canonicalOrigin);
-        const preloads = preloadTagsFor(manifest, route.componentPath);
+        const preloads = [fontPreloadTagsFor(route.path), preloadTagsFor(manifest, route.componentPath)]
+          .filter(Boolean)
+          .join("\n    ");
 
         let pageHtml = baseHtml
           .replace(/<title>.*?<\/title>/s, `<title>${escapeAttr(route.title)}</title>`)

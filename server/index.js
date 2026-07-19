@@ -64,29 +64,23 @@ app.set("trust proxy", 1);
 // in some browsers). These are the minimum directives required for the checkout modal to open.
 // Full nonce-based CSP (eliminating 'unsafe-inline' for styles) is deferred to post-beta.
 //
-// RC-1 — font hosts added to style-src and font-src. client/index.html links
-// stylesheets from fonts.googleapis.com and api.fontshare.com, and client/src/index.css
-// @imports another from fonts.googleapis.com, but neither host was allowlisted, so
-// production had been blocking all three and rendering the entire site in fallback
-// fonts. This was suspected from M21-H onward and only confirmed here, by a
-// Lighthouse run reporting the CSP violations directly.
-//
-// Scoped to the four specific hosts actually referenced: the two stylesheet
-// origins, and the two origins their @font-face rules fetch the files from
-// (fonts.gstatic.com for Google, cdn.fontshare.com for Fontshare). No wildcards,
-// and script-src is untouched, so this widens styling and font fetching only.
-const FONT_STYLE_HOSTS = ["https://fonts.googleapis.com", "https://api.fontshare.com"];
-const FONT_FILE_HOSTS = ["https://fonts.gstatic.com", "https://cdn.fontshare.com"];
-
+// M34 — the font-host allowlist RC-1 added here is gone again, and this time
+// that is correct rather than a bug. RC-1 had to allow fonts.googleapis.com,
+// api.fontshare.com, fonts.gstatic.com and cdn.fontshare.com because the site
+// loaded its typefaces from them. The faces are now self-hosted under /fonts
+// (client/src/fonts.css), verified: zero references to any of those hosts
+// remain across every built asset. Removing them narrows the policy back to
+// 'self' for both styles and fonts, so a future third-party stylesheet cannot
+// load silently on the strength of an allowlist entry nobody needs.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc:  ["'self'", "https://checkout.razorpay.com"],
-      styleSrc:   ["'self'", "'unsafe-inline'", ...FONT_STYLE_HOSTS],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
       imgSrc:     ["'self'", "data:", "blob:"],
       connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
-      fontSrc:    ["'self'", ...FONT_FILE_HOSTS],
+      fontSrc:    ["'self'"],
       objectSrc:  ["'none'"],
       frameSrc:   ["https://api.razorpay.com"],
       baseUri:    ["'self'"],

@@ -1,9 +1,7 @@
-/* M33-B — the @import that used to sit here requested Space Grotesk, Inter and
-   JetBrains Mono, all three of which the <link> in client/index.html already
-   loads. It was a duplicate request, and an @import is the slowest way to load
-   a font: the browser cannot discover it until this stylesheet has itself been
-   downloaded and parsed, so it serialises behind the CSS instead of starting in
-   parallel with it. Removed; the families are unchanged. */
+/* M34 — fonts are now self-hosted (see fonts.css). This must stay the first
+   import so the @font-face declarations are registered before any rule that
+   references those families. */
+@import './fonts.css';
 
 @tailwind base;
 @tailwind components;

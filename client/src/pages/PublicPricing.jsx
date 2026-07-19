@@ -48,9 +48,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ─── Fontshare imports (added to <head> dynamically) ─────────────────────────
-const FONTSHARE_HREF =
-  "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=general-sans@400,500,600&display=swap";
+// M34 — the Fontshare stylesheet that used to be injected here is gone.
+// Cabinet Grotesk and General Sans are now self-hosted and declared in
+// client/src/fonts.css, so this injection was fetching the same five faces a
+// second time from cdn.fontshare.com: measured at 14 font requests across 3
+// origins and 339KB on this page, against 6 requests from 1 origin now.
 
 // ─── Pricing constants (mirrored from shared/schema.js) ──────────────────────
 const USD_RATE = 83.5;
@@ -445,16 +447,6 @@ export default function PublicPricing() {
   const [hoveredCol, setHoveredCol] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
   const [dedicatedIpNotified, setDedicatedIpNotified] = useState(false);
-
-  // Inject Fontshare CSS once
-  useEffect(() => {
-    if (!document.querySelector(`link[href="${FONTSHARE_HREF}"]`)) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = FONTSHARE_HREF;
-      document.head.appendChild(link);
-    }
-  }, []);
 
   // Sync credits → input field when slider moves
   useEffect(() => {
