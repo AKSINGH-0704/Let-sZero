@@ -195,6 +195,20 @@ function AppRoutes() {
   return (
     <ErrorBoundary resetKey={location}>
       <BrandingManager />
+      {/* M35-C â€” WCAG 2.4.1 (Bypass Blocks, Level A): the app had no skip link,
+          so a keyboard or screen-reader user had to tab the whole header on
+          every page before reaching content. Placed here rather than per-page
+          so it covers all routes from one definition, and it targets the
+          wrapper below rather than a <main> because the public marketing pages
+          do not render one. tabIndex={-1} is required: without it the heading
+          target is not focusable and the browser moves the caret but not
+          focus, so the next Tab would resume from the header again. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       {/* M32-B â€” one boundary covering every lazily-loaded route. Eagerly
           imported components (the prerendered public pages) never suspend, so
           they still render on the first frame and hydration is unaffected; only
@@ -202,6 +216,7 @@ function AppRoutes() {
           keep their own inner boundaries so moving between them does not
           re-trigger this full-screen loader for chunks already fetched. */}
       <Suspense fallback={<LoadingScreen />}>
+      <div id="main-content" tabIndex={-1} className="outline-none">
       <Switch>
         {import.meta.env.DEV && DesignPreview && (
           <Route path="/_design">
@@ -425,6 +440,7 @@ function AppRoutes() {
 
       <Route component={NotFound} />
     </Switch>
+      </div>
       </Suspense>
     </ErrorBoundary>
   );

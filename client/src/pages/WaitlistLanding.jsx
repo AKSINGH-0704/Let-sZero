@@ -314,6 +314,12 @@ function AnimatedDataFlow({ className = "" }) {
             key={ni}
             cx={n.cx} cy={n.cy} r={3}
             fill="#a78bfa"
+            // M35-C â€” once `r` is in `animate`, motion owns the attribute and the
+            // static r={3} no longer seeds it. Each node has its own delay, so
+            // during that window motion wrote r="undefined" and the browser
+            // rejected it: 12 console errors per load of this page. `initial`
+            // gives it a defined start; r={3} stays for the prerendered HTML.
+            initial={{ opacity: 0.3, r: 2 }}
             animate={{ opacity: [0.3, 1, 0.3], r: [2, 4, 2] }}
             transition={{ duration: 2.5 + (ni % 5) * 0.6, repeat: Infinity, ease: "easeInOut", delay: ni * 0.2 }}
           />

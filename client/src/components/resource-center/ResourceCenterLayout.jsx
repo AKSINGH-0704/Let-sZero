@@ -10,7 +10,7 @@
 // editorial header/footer. The header nav is computed from real content
 // (only Academies that actually have guides, and Getting Started only if the
 // path exists) so it never renders a dead link.
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { GraduationCap, Search, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,38 @@ export default function ResourceCenterLayout({ product, children }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [location] = useLocation();
 
+  // M35-C — the dialog opens from a global shortcut, so there is no trigger
+  // element for Radix to hand focus back to on close. It falls back to the
+  // node that was focused before open, which the surrounding re-render can
+  // replace: restoring focus to a now-detached node silently drops it to
+  // <body>, and the keyboard user loses their place in the tab order. We
+  // capture the origin ourselves and only trust it if it is still connected.
+  const focusOrigin = useRef(null);
+
+  const openSearch = useCallback((next) => {
+    setSearchOpen((wasOpen) => {
+      const willOpen = typeof next === "boolean" ? next : !wasOpen;
+      if (willOpen && !wasOpen) {
+        const el = document.activeElement;
+        focusOrigin.current = el && el !== document.body ? el : null;
+      }
+      return willOpen;
+    });
+  }, []);
+
+  const handleSearchOpenChange = useCallback((next) => {
+    if (!next) {
+      const origin = focusOrigin.current;
+      focusOrigin.current = null;
+      // Radix moves focus during its own close sequence, so reclaim it after.
+      requestAnimationFrame(() => {
+        const target = origin?.isConnected ? origin : document.getElementById("main-content");
+        target?.focus?.({ preventScroll: true });
+      });
+    }
+    setSearchOpen(next);
+  }, []);
+
   // Cmd/Ctrl+K from anywhere inside the Resource Center — not just the
   // homepage, where it used to live. Effect never runs during SSR, so this
   // is prerender-safe.
@@ -40,12 +72,12 @@ export default function ResourceCenterLayout({ product, children }) {
     function handleKeyDown(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setSearchOpen((open) => !open);
+        openSearch();
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [openSearch]);
 
   const articles = useMemo(() => getArticlesForProduct(product.slug), [product.slug]);
 
@@ -70,7 +102,7 @@ export default function ResourceCenterLayout({ product, children }) {
   const isActive = (href) => location === href;
 
   return (
-    <SearchContext.Provider value={() => setSearchOpen(true)}>
+    <SearchContext.Provider value={() => openSearch(true)}>
     {/* rc-editorial (M23-II) scopes the premium editorial palette to the
         Resource Center only — the app-wide M19 tokens are untouched. */}
     <div className="rc-editorial flex min-h-screen flex-col bg-background text-foreground" data-testid="resource-center-layout">
@@ -130,7 +162,7 @@ export default function ResourceCenterLayout({ product, children }) {
               variant="outline"
               size="sm"
               className="gap-2 text-muted-foreground"
-              onClick={() => setSearchOpen(true)}
+              onClick={() => openSearch(true)}
               data-testid="button-rc-header-search"
               aria-label="Search the Resource Center"
             >
@@ -196,7 +228,7 @@ export default function ResourceCenterLayout({ product, children }) {
 
       <ResourceCenterSearch
         open={searchOpen}
-        onOpenChange={setSearchOpen}
+        onOpenChange={handleSearchOpenChange}
         articles={articles}
         collections={collections}
         learningPaths={learningPaths}
