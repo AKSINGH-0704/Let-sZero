@@ -48,7 +48,9 @@ Lemlist is best known for personalization, custom images, dynamic landing pages,
 
 Lemlist prices by user. Its 2026 plans are Email Pro at $79 per user per month and Multichannel Expert at $109 per user per month, with roughly 20% off annually and an Enterprise tier carrying a five-seat minimum. Additional sending addresses beyond the included allotment run about $9 per mailbox per month. The practical consequence is that Lemlist's cost scales with headcount: a five-person team pays five times the per-seat rate before sending a single email.
 
-RepMail scales with sending, not seats. You buy credits, spend them on what you send, and they remain valid for six months. Every tier and the free trial include all features. For a small team that wants each member fully licensed in a multichannel suite, per-seat pricing is straightforward; for teams where sending volume, not headcount, is the real variable, consumption pricing tends to fit better.
+Per-seat pricing also multiplies every add-on by your headcount: LinkedIn and SMS steps at about $20 per user, lead credits from about $39 per user, and extra mailbox capacity at roughly $36 to $72 per user. At 25 seats those add-ons can exceed the base subscription, and [the full pricing breakdown](/repmail/learn/outreach/lemlist-pricing) works the arithmetic. [The full review](/repmail/learn/outreach/lemlist-review) covers who the product genuinely fits, and if rich personalization is putting your mail in spam, [the causes are here](/repmail/learn/outreach/lemlist-emails-going-to-spam).
+
+RepMail scales with sending, not seats. You buy credits, spend them on what you send, and they never expire. Every tier and the free trial include all features. For a small team that wants each member fully licensed in a multichannel suite, per-seat pricing is straightforward; for teams where sending volume, not headcount, is the real variable, consumption pricing tends to fit better.
 
 ## Personalization: visual vs. semantic
 

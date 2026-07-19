@@ -39,7 +39,7 @@ assets:
         - ["Smartlead", "Flat: $39 / $94 / $174 / $379/mo, unlimited mailboxes", "High-volume senders and agencies"]
         - ["Lemlist", "Per seat: $79 / $109 per user/mo", "Multichannel and visual personalization"]
         - ["Apollo", "Per seat: ~$49 / ~$79 / ~$119 per user/mo", "Data-first prospecting"]
-        - ["RepMail", "Pay-as-you-go credits, 6-month lifespan, AWS SES", "Metered sending with GPT-4o personalization"]
+        - ["RepMail", "Pay-as-you-go credits that never expire, AWS SES", "Metered sending with GPT-4o personalization"]
 ---
 
 "Best cold email software" has no single answer, because these tools are not really the same product. Some bundle a leads database, some are built around unlimited mailboxes, some are multichannel suites priced per seat, and some are metered sending layers. The useful question is not which is best overall, but which model fits how you actually work. Below is an honest map of the field, with pricing verified in July 2026, so confirm current numbers on each vendor's site before buying.
@@ -54,7 +54,13 @@ assets:
 
 **Apollo** is primarily a B2B data platform with sending bundled in, priced per user at roughly $49, $79, and $119 per month annually, with data credits that expire each cycle. It is a data-first choice, with a three-seat minimum on its top tier.
 
-**RepMail** is a pay-as-you-go sending layer on AWS SES. You buy credits, spend them on what you send, and they stay valid for six months. It focuses on native SES delivery, GPT-4o per-recipient personalization, and real-time bounce suppression, and it brings no built-in database.
+**RepMail** is a pay-as-you-go sending layer on AWS SES. You buy credits, spend them on what you send, and they never expire. It focuses on native SES delivery, GPT-4o per-recipient personalization, and real-time bounce suppression, and it brings no built-in database.
+
+## Going deeper on any one of them
+
+Each tool has a full pricing breakdown and a review: Instantly ([pricing](/repmail/learn/outreach/instantly-pricing), [review](/repmail/learn/outreach/instantly-review)), Smartlead ([pricing](/repmail/learn/outreach/smartlead-pricing), [review](/repmail/learn/outreach/smartlead-review)), Lemlist ([pricing](/repmail/learn/outreach/lemlist-pricing), [review](/repmail/learn/outreach/lemlist-review)), and Apollo ([pricing](/repmail/learn/outreach/apollo-pricing), [review](/repmail/learn/outreach/apollo-review)).
+
+If your shortlist is down to the three flat-rate sequencers, [Instantly vs. Smartlead vs. Lemlist](/repmail/learn/outreach/instantly-vs-smartlead-vs-lemlist) compares them directly. If you are buying for a specific situation, there are dedicated guides for [agencies managing multiple clients](/repmail/learn/outreach/best-cold-email-tools-for-agencies) and for [solo founders and small teams](/repmail/learn/outreach/best-cold-email-tools-for-solo-founders).
 
 ## Match the model to your sending
 

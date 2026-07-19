@@ -50,6 +50,10 @@ Consider two things Lemlist makes you weigh. **Cost structure**: per-seat pricin
 
 **Instantly** is the alternative if you want a flat plan with a built-in leads database, at $47 to $97 a month.
 
+## Before you switch
+
+Two things are worth checking first. If cost is the trigger, [the pricing breakdown](/repmail/learn/outreach/lemlist-pricing) shows exactly where per-seat billing compounds, and whether a different tier or fewer add-ons solves it. If deliverability is the trigger, [why Lemlist mail lands in spam](/repmail/learn/outreach/lemlist-emails-going-to-spam) is worth reading before you move, because the common causes are configuration and personalization choices that follow you to any other tool. [The full review](/repmail/learn/outreach/lemlist-review) covers what you would be giving up.
+
 ## The honest verdict
 
 If you need Lemlist's multichannel breadth and visual personalization, an alternative will feel narrower, that is genuinely Lemlist's strength. But if you are leaving over per-seat cost or because visual personalization is hurting your cold deliverability, RepMail's metered, text-first, SES-based model is the most direct answer. As always, the tool sets the ceiling; your list and authentication set the outcome.

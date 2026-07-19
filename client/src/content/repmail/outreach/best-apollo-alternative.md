@@ -50,6 +50,10 @@ Apollo's per-seat pricing (roughly $49 to $119 per user per month, with a three-
 
 **If you need the data itself**, dedicated B2B data providers exist as standalone sources. Many teams find that unbundling, sourcing data from one tool and sending through a dedicated engine, with re-verification in between, produces cleaner results than a single bundled platform.
 
+## Before you switch
+
+If bounce rate is what pushed you here, it is worth knowing that [most of it is fixable without changing data provider](/repmail/learn/outreach/apollo-bounce-rate), because the cause is usually verification timing rather than data quality. If cost is the issue, [the pricing analysis](/repmail/learn/outreach/apollo-pricing) covers the three-seat minimum and the per-cycle credit reset, and [the full review](/repmail/learn/outreach/apollo-review) covers where the all-in-one model genuinely holds up.
+
 ## The honest verdict
 
 If Apollo's database is what you rely on, no sending tool replaces it, and RepMail does not try to. But if your problem is bounces, deliverability, or the economics of bundled seats and expiring credits, the most reliable path is to treat data and sending as separate jobs: keep a data source you trust, and send through a dedicated, real-time-protected engine like RepMail.

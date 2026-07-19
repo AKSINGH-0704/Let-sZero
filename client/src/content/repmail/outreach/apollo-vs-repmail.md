@@ -10,7 +10,7 @@ tags: ["comparison", "cold-email-software", "apollo", "pricing", "deliverability
 keyTakeaways:
   - "Apollo is primarily a B2B data platform with sending bundled in; RepMail is a dedicated sending layer with no built-in database."
   - "Apollo is priced per user: Basic ~$49, Professional ~$79, Organization ~$119 per user per month annually, with a 3-seat minimum on Organization."
-  - "Apollo credits expire each billing cycle; RepMail credits carry a 6-month lifespan. They are complementary as much as competing tools."
+  - "Apollo credits expire each billing cycle; RepMail's purchased credits never expire. They are complementary as much as competing tools."
 prerequisites:
   - label: "What email infrastructure is"
     href: "/repmail/learn/infrastructure/email-infrastructure-explained"
@@ -37,7 +37,7 @@ assets:
         - ["Primary purpose", "B2B data platform", "Dedicated sending layer"]
         - ["Pricing", "Per user: ~$49 / ~$79 / ~$119 per user/mo annual", "Credit-based; free trial, all features on every tier"]
         - ["Lead data", "Built-in database", "Bring your own list"]
-        - ["Credit expiry", "Each billing cycle", "6-month credit lifespan"]
+        - ["Credit expiry", "Each billing cycle", "Purchased credits never expire"]
         - ["Sending", "Bundled, secondary", "Native AWS SES, primary focus"]
         - ["Bounce handling", "Basic", "Real-time AWS SNS suppression"]
 ---
@@ -48,7 +48,9 @@ Apollo and RepMail are often compared, but they are really built for different h
 
 Apollo is priced per user, with Basic around $49, Professional around $79, and Organization around $119 per user per month on annual billing, and 15 to 25% more on monthly billing. Organization carries a three-seat minimum, so its real entry price is closer to $357/month annually. Each plan allocates data credits that expire at the end of each billing cycle, and different actions cost different amounts, unlocking an email is one credit, a phone number is eight. The cost you actually incur is a function of seats plus data consumption.
 
-RepMail prices only for sending, by credit, and those credits stay valid for six months rather than expiring each cycle. There is no bundled database, because RepMail is not trying to be one; you bring your list. This makes the two genuinely complementary: a data platform and a sending engine are different products.
+Two details shape Apollo's real cost more than the per-seat rate: the Organization tier carries a three-seat minimum, making its practical entry roughly $357 a month annually, and credits reset each cycle rather than rolling over. [The full pricing analysis](/repmail/learn/outreach/apollo-pricing) works through whether the data bundle earns that, and [the full review](/repmail/learn/outreach/apollo-review) covers the all-in-one model. If verified contacts are still bouncing, [that has a specific set of causes](/repmail/learn/outreach/apollo-bounce-rate).
+
+RepMail prices only for sending, by credit, and those purchased credits never expire rather than lapsing each cycle. There is no bundled database, because RepMail is not trying to be one; you bring your list. This makes the two genuinely complementary: a data platform and a sending engine are different products.
 
 ## The data-decay problem
 

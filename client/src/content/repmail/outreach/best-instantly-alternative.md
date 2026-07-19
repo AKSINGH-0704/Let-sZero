@@ -20,7 +20,7 @@ faqs:
   - question: "What is the best alternative to Instantly?"
     answer: "It depends on what you value. RepMail suits teams that want pay-as-you-go credits on AWS SES with GPT-4o personalization. Smartlead suits high-volume senders who want unlimited mailboxes. Lemlist suits multichannel outreach. Match the model to how you send."
   - question: "Is RepMail cheaper than Instantly?"
-    answer: "Not automatically. Instantly is a flat rate; RepMail is metered by credit with a 6-month lifespan. Steady high-volume senders may prefer a flat plan; variable-volume senders usually waste less on consumption pricing. Model your real usage before comparing."
+    answer: "Not automatically. Instantly is a flat rate; RepMail is metered by credit, and purchased credits never expire. Steady high-volume senders may prefer a flat plan; variable-volume senders usually waste less on consumption pricing. Model your real usage before comparing."
 nextStep:
   label: "See the full comparison"
   href: "/repmail/learn/outreach/instantly-vs-repmail"
@@ -44,7 +44,9 @@ Decide three things first. Your **pricing model**: a flat subscription is predic
 
 ## The main alternatives
 
-**RepMail** is the closest fit for teams that want out of the flat-subscription model. It is pay-as-you-go by credit, with a 6-month credit lifespan, sends natively through AWS SES rather than connected mailboxes, personalizes each message with GPT-4o, and suppresses bounces in real time through AWS SNS. It brings no built-in database, so you supply the list.
+Before switching, it is worth being precise about what you are leaving. [Instantly's real cost](/repmail/learn/outreach/instantly-pricing) is often the trigger, since data and CRM are separate products, and [the full review](/repmail/learn/outreach/instantly-review) covers what the platform still does well. If your immediate problem is that campaigns have stopped sending, [that is usually fixable without switching](/repmail/learn/outreach/instantly-not-sending-emails).
+
+**RepMail** is the closest fit for teams that want out of the flat-subscription model. It is pay-as-you-go by credit, with purchased credits that never expire, sends natively through AWS SES rather than connected mailboxes, personalizes each message with GPT-4o, and suppresses bounces in real time through AWS SNS. It brings no built-in database, so you supply the list.
 
 **Smartlead** is the alternative for high-volume senders and agencies. Its plans run $39 to $379 a month with unlimited connected mailboxes on every tier, and it offers a white-label client portal. It stays mailbox-centric, but for pure volume that is a strength.
 

@@ -44,7 +44,9 @@ Weigh three things. **Pricing**: Smartlead's flat tiers ($39 to $379 a month) ar
 
 ## The main alternatives
 
-**RepMail** is the cloud-native, metered alternative. Instead of pools of mailboxes, it sends through AWS SES; instead of a flat subscription, it charges pay-as-you-go credits with a 6-month lifespan; and it adds GPT-4o per-recipient personalization plus real-time AWS SNS bounce suppression. It fits teams that would rather not run mailbox fleets.
+Most teams leaving Smartlead cite one of two reasons: add-on cost creep, covered in [the pricing breakdown](/repmail/learn/outreach/smartlead-pricing), or deliverability they cannot diagnose from inside the tool, covered in [what to check when placement drops](/repmail/learn/outreach/smartlead-deliverability-issues). [The full review](/repmail/learn/outreach/smartlead-review) is worth reading before you move, because its rotation and agency tooling are genuinely hard to replace.
+
+**RepMail** is the cloud-native, metered alternative. Instead of pools of mailboxes, it sends through AWS SES; instead of a flat subscription, it charges pay-as-you-go credits that never expire; and it adds GPT-4o per-recipient personalization plus real-time AWS SNS bounce suppression. It fits teams that would rather not run mailbox fleets.
 
 **Instantly** is the alternative if you want a flat plan with lead data built in, Growth at $47 and Hypergrowth at $97 a month, with the leads database billed separately.
 

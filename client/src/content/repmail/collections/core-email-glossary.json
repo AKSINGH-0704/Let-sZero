@@ -5,6 +5,7 @@
   "articleSlugs": [
     "spf", "dkim", "dmarc", "arc", "bimi",
     "smtp", "dns-records", "ptr-record", "mx-record",
-    "reputation", "spam-score", "inbox-placement", "bounce", "email-warmup"
+    "reputation", "spam-score", "inbox-placement", "bounce", "email-warmup",
+    "email-service-provider"
   ]
 }

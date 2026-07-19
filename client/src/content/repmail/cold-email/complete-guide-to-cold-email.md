@@ -53,6 +53,8 @@ Once you reach the inbox, the [subject line earns the open](/repmail/learn/cold-
 
 Most replies come from follow-ups, not the first touch. Learn [how many follow-ups](/repmail/learn/cold-email/how-many-follow-ups) to send and [what to A/B test first](/repmail/learn/cold-email/what-to-ab-test-first) when your numbers stall, so you improve the highest-leverage variable instead of guessing.
 
+Before you decide your numbers are bad, check them against [what good actually looks like](/repmail/learn/cold-email/cold-email-benchmarks). Reply rates vary enough by industry and list quality that "low" is only meaningful relative to a benchmark.
+
 ## Choose the right tool
 
 Cold email is a people-run workflow, so the platform matters. See [where RepMail fits in your workflow](/repmail/learn/cold-email/where-repmail-fits-in-your-workflow) and how the field compares in [best cold email software](/repmail/learn/outreach/best-cold-email-software). The wrong category of tool, a marketing platform repurposed for outreach, caps your results before you start.

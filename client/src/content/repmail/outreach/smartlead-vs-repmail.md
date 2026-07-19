@@ -38,7 +38,7 @@ assets:
         - ["Plans", "Base $39, Pro $94, Unlimited Smart $174, Prime $379/mo", "Credit-based; free trial, all features on every tier"]
         - ["Mailboxes", "Unlimited on all plans", "Native AWS SES, not per-mailbox"]
         - ["Personalization", "Spintax and variables", "GPT-4o per-recipient rewriting"]
-        - ["Credit expiry", "n/a (subscription)", "6-month credit lifespan"]
+        - ["Credit expiry", "n/a (subscription)", "Purchased credits never expire"]
         - ["Bounce handling", "Platform-managed", "Real-time AWS SNS suppression"]
 ---
 
@@ -48,7 +48,9 @@ Smartlead is one of the best-known cold email platforms, built around rotating a
 
 Smartlead's defining commercial feature is that every plan includes unlimited connected mailboxes. Its 2026 tiers are Base at $39/month, Pro at $94/month, Unlimited Smart at $174/month, and Unlimited Prime at $379/month, with roughly 17% off annually. Higher tiers lift the active-lead and monthly-email ceilings, and some capabilities, such as the white-label client portal, are billed per client on top of the plan. You pay the fixed tier price regardless of how much you send in a given month.
 
-RepMail charges by consumption instead. You buy credits, spend them on what you actually send, and the credits stay valid for six months rather than resetting monthly. Every tier and the free trial include the full feature set. For steady high-volume senders, Smartlead's flat unlimited model can be very cost-effective; for variable volume, metered credits waste less.
+What the tier price omits is how much of a working Smartlead setup is separately billed: data at about $59 a month, dedicated sending IPs at about $39 per server, and, notably, pre-send spam scoring as an add-on from about $49. A configured Pro plan lands nearer $200 than its $94 headline, and [the full pricing breakdown](/repmail/learn/outreach/smartlead-pricing) works through it. [The full review](/repmail/learn/outreach/smartlead-review) covers the product itself, and if placement is already slipping, [the diagnostic path is here](/repmail/learn/outreach/smartlead-deliverability-issues).
+
+RepMail charges by consumption instead. You buy credits, spend them on what you actually send, and the credits never expire rather than resetting monthly. Every tier and the free trial include the full feature set. For steady high-volume senders, Smartlead's flat unlimited model can be very cost-effective; for variable volume, metered credits waste less.
 
 ## Architecture: mailbox rotation vs. AWS SES
 
