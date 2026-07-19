@@ -60,21 +60,49 @@ describe("buildSearchIndex — proves search scales beyond articles without new 
     const index = buildSearchIndex(repmail, { articles: rawArticles });
     expect(index.some((e) => e.type === "academy")).toBe(true);
     expect(index.some((e) => e.type === "article")).toBe(true);
-    // every one of the 8 real Academies is in the index, not just articles
-    expect(index.filter((e) => e.type === "academy")).toHaveLength(8);
   });
 
   it("a query matching an Academy's own name/description surfaces the Academy itself, alongside any matching articles — one search, multiple content types, zero type-specific UI logic", () => {
     const index = buildSearchIndex(repmail, { articles: rawArticles });
-    // "Compliance" matches only the Academy (no article in the fixture set is tagged/titled with it)
-    const results = searchContent("compliance", index);
-    expect(results.some((r) => r.type === "academy" && r.title === "Compliance")).toBe(true);
+    // "Deliverability" matches the Academy the fixture articles live in, plus articles
+    const results = searchContent("deliverability", index);
+    expect(results.some((r) => r.type === "academy" && r.title === "Deliverability & Sender Reputation")).toBe(true);
+    expect(results.some((r) => r.type === "article")).toBe(true);
   });
 
-  it("works correctly with zero articles — an Academy-only index is still valid and searchable", () => {
-    const index = buildSearchIndex(repmail, { articles: [] });
-    expect(index).toHaveLength(8); // 8 Academies, 0 articles
-    const results = searchContent("deliverability", index);
-    expect(results[0].type).toBe("academy");
+  // M28-B — search was the last surface that could send a reader to an Academy
+  // with nothing published in it. Every other surface (header nav, CategoryRail,
+  // homepage cards, sitemap, prerender) already derives itself from real content.
+  it("indexes only Academies that have a published article, so search can never lead to an empty Academy", () => {
+    const index = buildSearchIndex(repmail, { articles: rawArticles });
+    const academies = index.filter((e) => e.type === "academy");
+    // the fixture articles all live in one Academy, so exactly one is live
+    expect(academies).toHaveLength(1);
+    expect(academies[0].url).toBe("/repmail/learn/deliverability");
+    // "Compliance" is a real taxonomy Academy with zero published articles —
+    // it must not be reachable through search
+    expect(searchContent("compliance", index).some((r) => r.type === "academy")).toBe(false);
+  });
+
+  it("works correctly with zero articles — an empty index rather than a list of empty Academies", () => {
+    expect(buildSearchIndex(repmail, { articles: [] })).toHaveLength(0);
+  });
+
+  // M28-B — collections and paths have been routed, prerendered destinations
+  // since M22-A but were never indexed, so search could not reach them.
+  it("indexes Collections and Learning Paths as first-class, navigable results", () => {
+    const index = buildSearchIndex(repmail, {
+      articles: rawArticles,
+      collections: [{ slug: "escaping-the-spam-folder", name: "Escaping the Spam Folder", description: "Why mail lands in spam and how to fix it.", articleSlugs: [] }],
+      learningPaths: [{ slug: "getting-started", name: "Getting Started", description: "From setup to first campaign.", steps: [] }],
+    });
+
+    const collection = searchContent("escaping the spam folder", index).find((r) => r.type === "collection");
+    expect(collection?.url).toBe("/repmail/learn/collections/escaping-the-spam-folder");
+    expect(collection?.subtitle).toBe("Collection");
+
+    const path = searchContent("getting started", index).find((r) => r.type === "path");
+    expect(path?.url).toBe("/repmail/learn/paths/getting-started");
+    expect(path?.subtitle).toBe("Learning path");
   });
 });

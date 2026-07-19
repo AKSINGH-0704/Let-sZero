@@ -10,7 +10,7 @@
 // entry's own `url` rather than a shape specific to articles.
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { FileText, BookOpen } from "lucide-react";
+import { FileText, BookOpen, Layers, Compass } from "lucide-react";
 import {
   CommandDialog,
   CommandInput,
@@ -24,13 +24,18 @@ import { searchContent, buildSearchIndex } from "@shared/content/search.js";
 const TYPE_ICONS = {
   article: FileText,
   academy: BookOpen,
+  collection: Layers,
+  path: Compass,
 };
 
-export default function ResourceCenterSearch({ open, onOpenChange, articles, product }) {
+export default function ResourceCenterSearch({ open, onOpenChange, articles, collections, learningPaths, product }) {
   const [query, setQuery] = useState("");
   const [, setLocation] = useLocation();
 
-  const index = useMemo(() => buildSearchIndex(product, { articles }), [product, articles]);
+  const index = useMemo(
+    () => buildSearchIndex(product, { articles, collections, learningPaths }),
+    [product, articles, collections, learningPaths]
+  );
   const results = useMemo(() => searchContent(query, index), [query, index]);
 
   const handleSelect = (entry) => {

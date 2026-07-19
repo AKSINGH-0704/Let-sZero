@@ -18,6 +18,7 @@ import ResourceCenterSearch from "./ResourceCenterSearch";
 import {
   getArticlesForProduct,
   getLearningPathsForProduct,
+  getCollectionsForProduct,
 } from "@/lib/resourceCenterContent";
 
 // Lets any descendant (e.g. a prominent homepage search trigger) open the
@@ -55,9 +56,15 @@ export default function ResourceCenterLayout({ product, children }) {
     return product.academies.filter((a) => withContent.has(a.slug));
   }, [articles, product.academies]);
 
+  // M28-B — collections and paths are searchable content types too, so the
+  // layout (which owns the single search dialog) loads them alongside articles
+  // rather than the dialog reaching for the loader itself.
+  const learningPaths = useMemo(() => getLearningPathsForProduct(product.slug), [product.slug]);
+  const collections = useMemo(() => getCollectionsForProduct(product.slug), [product.slug]);
+
   const gettingStarted = useMemo(
-    () => getLearningPathsForProduct(product.slug).find((p) => p.slug === "getting-started") ?? null,
-    [product.slug]
+    () => learningPaths.find((p) => p.slug === "getting-started") ?? null,
+    [learningPaths]
   );
 
   const isActive = (href) => location === href;
@@ -152,6 +159,8 @@ export default function ResourceCenterLayout({ product, children }) {
         open={searchOpen}
         onOpenChange={setSearchOpen}
         articles={articles}
+        collections={collections}
+        learningPaths={learningPaths}
         product={product}
       />
     </div>

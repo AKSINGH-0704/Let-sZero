@@ -61,15 +61,55 @@ export function academyToSearchEntry(academy, product) {
   };
 }
 
+export function collectionToSearchEntry(collection, product) {
+  return {
+    type: "collection",
+    title: collection.name,
+    description: collection.description,
+    tags: [],
+    url: `${product.basePath}/collections/${collection.slug}`,
+    subtitle: "Collection",
+  };
+}
+
+export function learningPathToSearchEntry(path, product) {
+  return {
+    type: "path",
+    title: path.name,
+    description: path.description,
+    tags: [],
+    url: `${product.basePath}/paths/${path.slug}`,
+    subtitle: "Learning path",
+  };
+}
+
 /**
  * Combines every currently-searchable content type into one flat index.
  * Extend by adding another `entries.push(...things.map(thingToSearchEntry))`
- * line as new content types ship (Templates/Tools/Comparisons/Glossary) —
- * searchContent() itself never changes.
+ * line as new content types ship — searchContent() itself never changes.
+ *
+ * M28-B — two corrections to what belongs in the index:
+ *
+ * 1. Only Academies that actually have a published article are indexed. Every
+ *    other navigation surface (the header nav, CategoryRail, the homepage
+ *    Academy cards, the sitemap, the prerender route list) already derives
+ *    itself from real content and so already omits the empty ones. Search was
+ *    the last surface still offering them, which made it the only way for a
+ *    reader to reach "This Academy is being written now" — a page that is
+ *    deliberately neither prerendered nor indexed. Derived from the articles
+ *    passed in, exactly like those other surfaces, so an Academy becomes
+ *    searchable by gaining content, not by being added to a list here.
+ *
+ * 2. Collections and learning paths are indexed. Both have been real, routed,
+ *    prerendered destinations since M22-A, but were never added here, so 11
+ *    live pages were unreachable through the site's primary discovery tool.
  */
-export function buildSearchIndex(product, { articles = [] } = {}) {
+export function buildSearchIndex(product, { articles = [], collections = [], learningPaths = [] } = {}) {
+  const liveAcademySlugs = new Set(articles.map((a) => a.academy.slug));
   const entries = [];
-  entries.push(...product.academies.map((a) => academyToSearchEntry(a, product)));
+  entries.push(...product.academies.filter((a) => liveAcademySlugs.has(a.slug)).map((a) => academyToSearchEntry(a, product)));
   entries.push(...articles.map((a) => articleToSearchEntry(a, product)));
+  entries.push(...collections.map((c) => collectionToSearchEntry(c, product)));
+  entries.push(...learningPaths.map((p) => learningPathToSearchEntry(p, product)));
   return entries;
 }
