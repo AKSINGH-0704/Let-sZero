@@ -159,12 +159,30 @@ export default function ResourceCenterLayout({ product, children }) {
             <GraduationCap className="h-4 w-4 text-primary" aria-hidden="true" />
             <span>{product.resourceCenterName}</span>
           </div>
-          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Resource Center footer">
-            <Link href={product.basePath} className="transition-colors hover:text-foreground">All guides</Link>
-            <Link href="/products/repmail" className="transition-colors hover:text-foreground">Product</Link>
-            <Link href="/pricing" className="transition-colors hover:text-foreground">Pricing</Link>
-            <Link href="/repmail/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
-            <Link href="/contact" className="transition-colors hover:text-foreground">Contact</Link>
+          {/* M31-D — these were 20px-tall hit targets, below the 24px WCAG 2.5.8
+              minimum. This is the same defect fixed in the marketing footer this
+              milestone, and it appears on all 105 Resource Center pages, so it
+              is corrected here despite the Resource Center otherwise being
+              frozen: it is link padding, not architecture or content.
+              Inline prose links and the breadcrumb trail are deliberately not
+              changed, because 2.5.8 exempts targets whose size is constrained by
+              the line-height of surrounding text. */}
+          <nav className="flex flex-wrap items-center gap-x-5" aria-label="Resource Center footer">
+            {[
+              { href: product.basePath, label: "All guides" },
+              { href: "/products/repmail", label: "Product" },
+              { href: "/pricing", label: "Pricing" },
+              { href: "/repmail/changelog", label: "Changelog" },
+              { href: "/contact", label: "Contact" },
+            ].map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className="inline-flex min-h-[24px] items-center rounded py-1 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {l.label}
+              </Link>
+            ))}
           </nav>
         </div>
       </footer>

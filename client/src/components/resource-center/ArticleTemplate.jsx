@@ -123,9 +123,12 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
           <ul className="space-y-3">
             {relatedArticles.map((related) => (
               <li key={related.slug}>
+                {/* M31-D — standalone navigation links, so the WCAG 2.5.8
+                    inline exception does not apply to them the way it does to
+                    prose links. They were 20px tall with no focus indicator. */}
                 <Link
                   href={`${product.basePath}/${related.academy.slug}/${related.slug}`}
-                  className="group flex items-center justify-between gap-3 text-sm"
+                  className="group flex min-h-[24px] items-center justify-between gap-3 rounded py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   data-testid={`link-related-${related.slug}`}
                 >
                   <span className="font-medium text-foreground group-hover:text-primary">{related.title}</span>

@@ -70,7 +70,16 @@ export function Prerequisites({ items, testId = "article-prerequisites" }) {
           <li key={i} className="flex items-start gap-2">
             <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
             {item.href ? (
-              <Link href={item.href} className="text-primary hover:underline" data-testid={`link-prereq-${i}`}>{item.label}</Link>
+              // M31-D — a standalone list link, not prose, so it needs a real
+              // target size and a focus indicator rather than relying on the
+              // WCAG 2.5.8 inline exception.
+              <Link
+                href={item.href}
+                className="inline-flex min-h-[24px] items-center rounded py-0.5 text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid={`link-prereq-${i}`}
+              >
+                {item.label}
+              </Link>
             ) : (
               <span>{item.label}</span>
             )}
