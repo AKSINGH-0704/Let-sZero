@@ -453,3 +453,29 @@ html, body {
   line-height: 1.7;
   color: hsl(var(--foreground));
 }
+
+/* ── M32-A — ambient background motion ─────────────────────────────────────
+   Decorative, infinite background animations (marked `data-ambient`) are
+   paused while the page is scrolling. See client/src/lib/ambientMotion.js for
+   the measurements: on /pricing this cut style recalculation during scroll by
+   73% and main-thread time by 50%, with non-overlapping distributions across
+   five runs per variant.
+
+   `!important` is required because these animations are declared as inline
+   styles on the elements themselves, and an inline style otherwise wins over
+   any stylesheet rule.
+
+   Scoped to [data-ambient] rather than `*` so a functional animation — a
+   spinner, a progress indicator — is never frozen mid-scroll and mistaken for
+   a hung UI. */
+html[data-scrolling] [data-ambient] {
+  animation-play-state: paused !important;
+}
+
+/* Ambient motion is decoration with no informational content, so reduced-motion
+   users get none of it rather than a slower version. */
+@media (prefers-reduced-motion: reduce) {
+  [data-ambient] {
+    animation: none !important;
+  }
+}

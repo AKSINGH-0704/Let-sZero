@@ -607,7 +607,7 @@ export default function PublicPricing() {
 
       {/* ── LAYER 1: Floating ambient orbs ─────────────────────────────── */}
       {/* Orb 1 — Cyan, hero/top-left */}
-      <div
+      <div data-ambient
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -624,7 +624,7 @@ export default function PublicPricing() {
         }}
       />
       {/* Orb 2 — Violet, upper-right */}
-      <div
+      <div data-ambient
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -641,7 +641,7 @@ export default function PublicPricing() {
         }}
       />
       {/* Orb 3 — Cyan, mid-page near plan cards */}
-      <div
+      <div data-ambient
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -658,7 +658,7 @@ export default function PublicPricing() {
         }}
       />
       {/* Orb 4 — Violet, lower/enterprise area */}
-      <div
+      <div data-ambient
         aria-hidden="true"
         style={{
           position: "absolute",
@@ -740,7 +740,7 @@ export default function PublicPricing() {
       </header>
 
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <section
+      <section data-ambient
         className="relative pt-24 pb-16 px-4 sm:px-6 text-center overflow-hidden"
         style={{
           background: "#06060B",
@@ -769,7 +769,7 @@ export default function PublicPricing() {
         />
 
         {/* Horizontal light beam — desktop only */}
-        <div
+        <div data-ambient
           aria-hidden="true"
           className="absolute left-0 w-full pointer-events-none hidden md:block"
           style={{
@@ -785,7 +785,7 @@ export default function PublicPricing() {
         {/* Floating particles — hero area */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true" style={{ zIndex: 0 }}>
           {PARTICLES.map((p, i) => (
-            <div
+            <div data-ambient
               key={i}
               className="absolute rounded-full"
               style={{
@@ -882,7 +882,7 @@ export default function PublicPricing() {
               Scroll to explore
             </span>
             <div className="w-6 h-10 rounded-full flex justify-center pt-2" style={{ border: "2px solid rgba(156,163,175,0.35)" }}>
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#00E5C8", animation: "scrollDot 2s ease-in-out infinite" }} />
+              <div data-ambient className="w-1.5 h-1.5 rounded-full" style={{ background: "#00E5C8", animation: "scrollDot 2s ease-in-out infinite" }} />
             </div>
           </div>
         </div>
@@ -2697,7 +2697,7 @@ function PlanCard({ plan, currency }) {
         whileHover={{ y: -8, transition: { duration: 0.2 } }}
       >
         {/* Ambient glow emission — behind the card */}
-        <div
+        <div data-ambient
           aria-hidden="true"
           style={{
             position: "absolute",

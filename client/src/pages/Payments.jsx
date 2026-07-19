@@ -653,7 +653,7 @@ export function PlanCard({ plan, currency, onPurchase, currentPlanId, isTrialUse
         style={{ zIndex: 10 }}
         whileHover={{ y: -8, transition: { duration: 0.2 } }}
       >
-        <div
+        <div data-ambient
           aria-hidden="true"
           style={{
             position: "absolute",
@@ -1386,7 +1386,7 @@ export default function Payments() {
         />
 
         {/* Orb 1 — Cyan */}
-        <div
+        <div data-ambient
           aria-hidden="true"
           style={{
             position: "absolute",
@@ -1404,7 +1404,7 @@ export default function Payments() {
         />
 
         {/* Orb 2 — Violet */}
-        <div
+        <div data-ambient
           aria-hidden="true"
           style={{
             position: "absolute",
