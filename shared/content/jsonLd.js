@@ -56,11 +56,29 @@ export function buildFaqJsonLd(faqs) {
   };
 }
 
+/**
+ * The breadcrumb trail for a Resource Center page, as [{ label, href }, ...]
+ * (last item has no href — it is the current page).
+ *
+ * M28-B — moved here from ResourceCenterBreadcrumb.jsx. It was always a pure
+ * function, but living in a .jsx file meant the build-time prerender pipeline
+ * (plain Node ESM, no JSX transform) could not import it, so prerendered pages
+ * shipped BlogPosting JSON-LD only — the BreadcrumbList was added client-side
+ * after hydration, where a crawler reading the served HTML never sees it.
+ * Living in shared/content/ it is genuinely one source of truth for all three
+ * consumers: the visual trail, the client JSON-LD, and the prerendered JSON-LD.
+ */
+export function buildBreadcrumbItems({ resourceCenterName, resourceCenterHref, academy, academyHref, articleTitle }) {
+  const items = [{ label: resourceCenterName, href: resourceCenterHref }];
+  if (academy) items.push({ label: academy.name, href: academyHref });
+  if (articleTitle) items.push({ label: articleTitle });
+  return items;
+}
+
 // breadcrumbItems: the same [{ label, href }, ...] shape
-// ResourceCenterBreadcrumb.jsx's buildBreadcrumbItems() already produces —
-// one source of truth for the visual trail and its structured-data twin,
-// not two hand-kept copies that could drift (the exact risk flagged and
-// avoided in M21-C's own code comments).
+// buildBreadcrumbItems() above produces — one source of truth for the visual
+// trail and its structured-data twin, not two hand-kept copies that could
+// drift (the exact risk flagged and avoided in M21-C's own code comments).
 export function buildBreadcrumbListJsonLd(breadcrumbItems, { canonicalOrigin }) {
   return {
     "@context": "https://schema.org",

@@ -63,8 +63,8 @@ describe("getPublicRoutes — derived from the real content, never hand-maintain
 
   it("every article route reuses buildArticleJsonLd — BlogPosting with an Organization author (repmail-team, ADR-014), built from the real frontmatter", () => {
     const route = findRoute("/repmail/learn/deliverability/why-your-emails-land-in-spam");
-    const jsonLd = route.jsonLd(`${CANONICAL}/deliverability/why-your-emails-land-in-spam`);
-    expect(jsonLd["@type"]).toBe("BlogPosting");
+    const nodes = route.jsonLd(`${CANONICAL}/deliverability/why-your-emails-land-in-spam`);
+    const jsonLd = nodes.find((n) => n["@type"] === "BlogPosting");
     expect(jsonLd.headline).toBe("Why Your Emails Land in Spam, and How to Fix It");
     expect(jsonLd.author).toEqual({
       "@type": "Organization",
@@ -73,12 +73,58 @@ describe("getPublicRoutes — derived from the real content, never hand-maintain
     });
   });
 
+  // M28-B — the client pages have always rendered BreadcrumbList (and FAQPage
+  // where the article has genuine Q&A) alongside the Article node, but via
+  // useJsonLd, which runs after hydration — so the HTML a crawler reads carried
+  // the Article node alone. The prerendered graph must match the client's.
+  it("an article route emits the full structured-data graph, not just the Article node", () => {
+    const route = findRoute("/repmail/learn/deliverability/why-your-emails-land-in-spam");
+    const nodes = route.jsonLd(`${CANONICAL}/deliverability/why-your-emails-land-in-spam`);
+    expect(Array.isArray(nodes)).toBe(true);
+
+    const breadcrumb = nodes.find((n) => n["@type"] === "BreadcrumbList");
+    expect(breadcrumb).toBeTruthy();
+    // The trail matches the URL hierarchy: Resource Center > Academy > article
+    expect(breadcrumb.itemListElement.map((i) => i.name)).toEqual([
+      "RepMail Resource Center",
+      "Deliverability & Sender Reputation",
+      "Why Your Emails Land in Spam, and How to Fix It",
+    ]);
+    expect(breadcrumb.itemListElement[1].item).toBe("https://www.letszero.in/repmail/learn/deliverability");
+    // the current page is the last crumb and carries no link
+    expect("item" in breadcrumb.itemListElement[2]).toBe(false);
+  });
+
+  it("emits FAQPage only for articles that have genuine Q&A", () => {
+    const withFaqs = articles.find((a) => a.faqs?.length > 0);
+    expect(withFaqs, "expected at least one article with FAQs").toBeTruthy();
+    const route = findRoute(`/repmail/learn/${withFaqs.academy.slug}/${withFaqs.slug}`);
+    const nodes = route.jsonLd(`${CANONICAL}/${withFaqs.academy.slug}/${withFaqs.slug}`);
+    expect(nodes.some((n) => n["@type"] === "FAQPage")).toBe(true);
+
+    const withoutFaqs = articles.find((a) => !a.faqs?.length);
+    if (withoutFaqs) {
+      const bare = findRoute(`/repmail/learn/${withoutFaqs.academy.slug}/${withoutFaqs.slug}`);
+      const bareNodes = bare.jsonLd(`${CANONICAL}/x`);
+      expect([bareNodes].flat().some((n) => n["@type"] === "FAQPage")).toBe(false);
+    }
+  });
+
+  it("Academy, path, and collection routes each carry a BreadcrumbList too", () => {
+    for (const p of ["/repmail/learn/deliverability", "/repmail/learn/paths/getting-started", "/repmail/learn/collections/complete-guides"]) {
+      const nodes = [findRoute(p).jsonLd(`https://www.letszero.in${p}`)].flat();
+      expect(nodes.some((n) => n["@type"] === "BreadcrumbList"), `no BreadcrumbList for ${p}`).toBe(true);
+    }
+  });
+
   it("the author route reuses buildPersonJsonLd — emits Organization, not Person, for the team byline", () => {
     const route = findRoute("/repmail/learn/authors/repmail-team");
-    const jsonLd = route.jsonLd(`${CANONICAL}/authors/repmail-team`);
-    expect(jsonLd["@type"]).toBe("Organization");
+    const nodes = [route.jsonLd(`${CANONICAL}/authors/repmail-team`)].flat();
+    const jsonLd = nodes.find((n) => n["@type"] === "Organization");
+    expect(jsonLd).toBeTruthy();
     expect(jsonLd.name).toBe("RepMail Team");
     expect("jobTitle" in jsonLd).toBe(false); // Person-only property, correctly absent
+    expect(nodes.some((n) => n["@type"] === "BreadcrumbList")).toBe(true);
   });
 
   it("every Resource Center route points at a real Resource Center page component", () => {

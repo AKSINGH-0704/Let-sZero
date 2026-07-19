@@ -30,7 +30,13 @@
 // backing content file to derive a title or description from.
 import { readdir, readFile } from "fs/promises";
 import path from "path";
-import { buildArticleJsonLd, buildPersonJsonLd } from "../shared/content/jsonLd.js";
+import {
+  buildArticleJsonLd,
+  buildPersonJsonLd,
+  buildBreadcrumbItems,
+  buildBreadcrumbListJsonLd,
+  buildFaqJsonLd,
+} from "../shared/content/jsonLd.js";
 import { loadAuthors, loadArticles } from "../shared/content/loader.js";
 import { PRODUCTS } from "../shared/content/taxonomy.js";
 
@@ -41,6 +47,34 @@ const RC_SUFFIX = "RepMail Resource Center";
 
 function webPageJsonLd(name) {
   return (url) => ({ "@context": "https://schema.org", "@type": "WebPage", name, url });
+}
+
+// M28-B — a page's structured data is a graph, not a single node. The client
+// pages have always rendered Article + BreadcrumbList (+ FAQPage where the
+// article has genuine Q&A) via useJsonLd, but that runs after hydration, so the
+// prerendered HTML a crawler reads carried only the first node. These helpers
+// build the same graph the matching page component builds, from the same
+// shared/content/jsonLd.js functions, so the two cannot drift.
+//
+// The prerenderer JSON.stringify's whatever it is given; an array serializes to
+// a single ld+json block holding multiple schema.org objects, which is valid and
+// is what Google's own multiple-types guidance recommends.
+function graph(...nodes) {
+  const present = nodes.filter(Boolean);
+  return present.length === 1 ? present[0] : present;
+}
+
+function rcBreadcrumbJsonLd(product, { academy, academyHref, articleTitle } = {}) {
+  return buildBreadcrumbListJsonLd(
+    buildBreadcrumbItems({
+      resourceCenterName: product.resourceCenterName,
+      resourceCenterHref: product.basePath,
+      academy,
+      academyHref,
+      articleTitle,
+    }),
+    { canonicalOrigin: ORIGIN },
+  );
 }
 
 export const STATIC_ROUTES = [
@@ -182,10 +216,18 @@ export async function getPublicRoutes({
     title: `${article.title} | ${RC_SUFFIX}`,
     description: article.description,
     jsonLd: (url) =>
-      buildArticleJsonLd(article, {
-        canonicalUrl: url,
-        authorUrl: `${ORIGIN}${base}/authors/${article.author.slug}`,
-      }),
+      graph(
+        buildArticleJsonLd(article, {
+          canonicalUrl: url,
+          authorUrl: `${ORIGIN}${base}/authors/${article.author.slug}`,
+        }),
+        rcBreadcrumbJsonLd(product, {
+          academy: article.academy,
+          academyHref: `${base}/${article.academy.slug}`,
+          articleTitle: article.title,
+        }),
+        buildFaqJsonLd(article.faqs),
+      ),
   }));
 
   const academiesWithContent = product.academies.filter((academy) =>
@@ -196,7 +238,11 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/AcademyHubPage.jsx",
     title: `${academy.name} | ${RC_SUFFIX}`,
     description: academy.description,
-    jsonLd: webPageJsonLd(academy.name),
+    jsonLd: (url) =>
+      graph(
+        webPageJsonLd(academy.name)(url),
+        rcBreadcrumbJsonLd(product, { academy, academyHref: `${base}/${academy.slug}` }),
+      ),
   }));
 
   const authorRoutes = [...authors.values()].map((author) => ({
@@ -204,7 +250,8 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/AuthorPage.jsx",
     title: `${author.name} | ${RC_SUFFIX}`,
     description: author.bio,
-    jsonLd: (url) => buildPersonJsonLd(author, { canonicalUrl: url }),
+    jsonLd: (url) =>
+      graph(buildPersonJsonLd(author, { canonicalUrl: url }), rcBreadcrumbJsonLd(product, { articleTitle: author.name })),
   }));
 
   const productDir = path.join(contentDir, productSlug);
@@ -213,7 +260,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/LearningPathPage.jsx",
     title: `${p.name} | ${RC_SUFFIX}`,
     description: p.description,
-    jsonLd: webPageJsonLd(p.name),
+    jsonLd: (url) => graph(webPageJsonLd(p.name)(url), rcBreadcrumbJsonLd(product, { articleTitle: p.name })),
   }));
 
   const collectionRoutes = (await readJsonDir(path.join(productDir, "collections"))).map((c) => ({
@@ -221,7 +268,7 @@ export async function getPublicRoutes({
     componentPath: "/src/pages/resource-center/CollectionPage.jsx",
     title: `${c.name} | ${RC_SUFFIX}`,
     description: c.description,
-    jsonLd: webPageJsonLd(c.name),
+    jsonLd: (url) => graph(webPageJsonLd(c.name)(url), rcBreadcrumbJsonLd(product, { articleTitle: c.name })),
   }));
 
   return [

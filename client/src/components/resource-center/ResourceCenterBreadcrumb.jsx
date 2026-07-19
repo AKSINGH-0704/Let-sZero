@@ -48,9 +48,7 @@ export default function ResourceCenterBreadcrumb({ items }) {
 
 // Shared by the article/Academy page templates and M21-E's BreadcrumbList
 // JSON-LD generator — one function, not two hand-kept copies of the same trail.
-export function buildBreadcrumbItems({ resourceCenterName, resourceCenterHref, academy, academyHref, articleTitle }) {
-  const items = [{ label: resourceCenterName, href: resourceCenterHref }];
-  if (academy) items.push({ label: academy.name, href: academyHref });
-  if (articleTitle) items.push({ label: articleTitle });
-  return items;
-}
+// M28-B moved the implementation to shared/content/jsonLd.js so the build-time
+// prerender pipeline (plain Node, cannot import JSX) can use it too; re-exported
+// here so every existing import site keeps working unchanged.
+export { buildBreadcrumbItems } from "@shared/content/jsonLd.js";
