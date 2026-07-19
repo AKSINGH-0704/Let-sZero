@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
+    "test:parallel": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
