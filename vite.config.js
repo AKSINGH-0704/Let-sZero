@@ -49,6 +49,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // PERF-007 — the prerender step needs to know which chunk backs each route
+    // component so it can emit a modulepreload hint for it. Without the
+    // manifest it would have to guess at hashed filenames. Written to
+    // dist/public/.vite/manifest.json, which script/prerender.js reads after
+    // the client build and before it renders any route.
+    manifest: true,
   },
   server: {
     fs: {

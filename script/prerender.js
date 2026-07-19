@@ -35,6 +35,63 @@ async function loadProviders(vite) {
 
 const DIST_DIR = path.resolve(import.meta.dirname, "..", "dist", "public");
 
+/**
+ * PERF-007 — modulepreload hints for the chunk backing a prerendered route.
+ *
+ * Measured on production, /repmail/learn at 4x CPU throttle: the entry chunk
+ * downloads 486-1121ms, but the route's own chunks are not requested until
+ * 1718ms, because React has to parse and execute the entry bundle before it
+ * reaches the dynamic import. The chunks themselves are small and download in
+ * ~350ms. The cost is serialisation, not bytes, and it showed up as 916ms of
+ * Suspense fallback covering already-correct prerendered HTML.
+ *
+ * A modulepreload link in the head lets the browser start those fetches while
+ * it is still parsing the document, in parallel with the entry bundle, so the
+ * chunk is in the memory cache by the time React asks for it.
+ *
+ * Emitted only for routes whose component is actually lazy-loaded on the
+ * client. The prerendered public pages that App.jsx imports eagerly already
+ * have their code in the entry chunk, and Vite writes modulepreload links for
+ * that graph into index.html itself.
+ */
+async function loadManifest(distDir, log) {
+  try {
+    return JSON.parse(await readFile(path.join(distDir, ".vite", "manifest.json"), "utf-8"));
+  } catch {
+    // Manifest absent (e.g. an older build) is not fatal: no hints are emitted
+    // and behaviour is exactly what it was before this optimisation.
+    log("[prerender] no Vite manifest found — skipping modulepreload hints");
+    return null;
+  }
+}
+
+function preloadTagsFor(manifest, componentPath) {
+  if (!manifest || !componentPath) return "";
+  const key = componentPath.replace(/^\//, "");
+  const root = manifest[key];
+  if (!root) return "";
+
+  // Walk the chunk's own static imports so the whole subtree is warm, not just
+  // the entry point of it. Depth-bounded and de-duplicated: this is a latency
+  // hint, and preloading an unbounded graph would compete for the same
+  // connections it is meant to free up.
+  const files = new Set();
+  const seen = new Set();
+  const visit = (k, depth) => {
+    if (depth > 2 || seen.has(k)) return;
+    seen.add(k);
+    const entry = manifest[k];
+    if (!entry) return;
+    if (entry.file) files.add(entry.file);
+    for (const imp of entry.imports ?? []) visit(imp, depth + 1);
+  };
+  visit(key, 0);
+
+  return [...files]
+    .map((f) => `<link rel="modulepreload" href="/${f}" />`)
+    .join("\n    ");
+}
+
 function buildHeadInjection(meta, canonicalOrigin) {
   const canonicalUrl = `${canonicalOrigin}${meta.path === "/" ? "" : meta.path}`;
   // No per-page OG image asset pipeline exists yet (that's design-system
@@ -97,6 +154,7 @@ export async function prerenderRoutes({
   routes ??= await getPublicRoutes();
   const baseHtmlPath = path.join(distDir, "index.html");
   const baseHtml = await readFile(baseHtmlPath, "utf-8");
+  const manifest = await loadManifest(distDir, log);
 
   const vite = await createServer({
     server: { middlewareMode: true },
@@ -136,10 +194,11 @@ export async function prerenderRoutes({
 
         const bodyHtml = renderToString(app);
         const headInjection = buildHeadInjection(route, canonicalOrigin);
+        const preloads = preloadTagsFor(manifest, route.componentPath);
 
         let pageHtml = baseHtml
           .replace(/<title>.*?<\/title>/s, `<title>${escapeAttr(route.title)}</title>`)
-          .replace("</head>", `    ${headInjection}\n  </head>`)
+          .replace("</head>", `    ${headInjection}${preloads ? "\n    " + preloads : ""}\n  </head>`)
           .replace('<div id="root"></div>', `<div id="root">${bodyHtml}</div>`);
 
         // Flat "route.html" files, not "route/index.html" — paired with
