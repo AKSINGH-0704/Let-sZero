@@ -76,7 +76,13 @@ describe("latestGuides", () => {
   it("returns the requested number, newest wave first", () => {
     const result = latestGuides(realArticles, { limit: 6 });
     expect(result).toHaveLength(6);
-    expect(result[0].publishedAt).toBe("2026-07-17");
+    // Derived rather than hardcoded: this previously asserted a literal date and
+    // broke the moment a new content wave shipped, which is a property of the
+    // fixture rather than of the ordering behaviour being tested.
+    const newest = realArticles
+      .map((a) => a.publishedAt)
+      .sort((a, b) => new Date(b) - new Date(a))[0];
+    expect(result[0].publishedAt).toBe(newest);
   });
 
   it("leads with real pillar content, not 15 glossary definitions", () => {

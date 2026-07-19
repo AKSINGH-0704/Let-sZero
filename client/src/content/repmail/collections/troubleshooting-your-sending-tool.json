@@ -1,0 +1,11 @@
+{
+  "slug": "troubleshooting-your-sending-tool",
+  "name": "Troubleshooting Your Sending Tool",
+  "description": "Diagnostic guides for when your sending platform stops working: stalled campaigns, falling deliverability, spam placement, and bounce rates that will not come down.",
+  "articleSlugs": [
+    "instantly-not-sending-emails",
+    "smartlead-deliverability-issues",
+    "lemlist-emails-going-to-spam",
+    "apollo-bounce-rate"
+  ]
+}

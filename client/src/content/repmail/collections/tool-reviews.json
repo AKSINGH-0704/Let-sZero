@@ -1,0 +1,11 @@
+{
+  "slug": "tool-reviews",
+  "name": "Tool Reviews",
+  "description": "Candid reviews of the major cold email and sales engagement platforms: what each one is genuinely good at, where its architecture limits you, and who it actually fits.",
+  "articleSlugs": [
+    "instantly-review",
+    "smartlead-review",
+    "lemlist-review",
+    "apollo-review"
+  ]
+}
