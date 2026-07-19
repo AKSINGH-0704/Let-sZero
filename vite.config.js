@@ -20,6 +20,24 @@ export default defineConfig({
       : []),
   ],
   resolve: {
+    // M31-A — marketing/LFP_final is a standalone sub-project with its own
+    // package.json, so `npm install` inside it creates a nested node_modules
+    // holding a second copy of react, react-dom and the motion packages. The
+    // main app imports that folder through the @marketing alias, so
+    // AnimatePresence would call hooks against the nested React while
+    // react-dom/server rendered with the root one. Two React copies means
+    // ReactCurrentDispatcher.current is null in the second, which surfaced as
+    // "Cannot read properties of null (reading 'useContext')" and made the
+    // prerender of "/" fall back to an empty SPA shell.
+    //
+    // That nested folder is gitignored, so Railway never had it and production
+    // "/" has always prerendered correctly. But it breaks the build for any
+    // developer who has installed it, and it reports as a SKIP rather than a
+    // failure, so the build looks fine while silently shipping one fewer
+    // prerendered page. dedupe makes single-instance resolution a property of
+    // the config instead of a property of whoever's machine is building, and
+    // it also guarantees the client bundle can never ship React twice.
+    dedupe: ["react", "react-dom", "framer-motion", "motion", "lucide-react"],
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
