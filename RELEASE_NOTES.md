@@ -2,13 +2,68 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-14
+**Last updated:** 2026-07-19
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v1.10 (2026-07-14)
+## Current Release — v2.0.0 (2026-07-19)
+
+A major release. The RepMail Resource Center grew from a small set of guides into a full knowledge platform, and both it and the LetsZero website were hardened for production.
+
+### A complete cold email knowledge base
+
+The Resource Center at **letszero.in/repmail/learn** now holds **75 in-depth guides** across six topic areas, up from 11.
+
+- **Deliverability & Sender Reputation** (20 guides) — authentication, warm-up, spam scores, bounces, blacklists, and inbox placement.
+- **Outreach & Sales Engagement** (24 guides) — head-to-head tool comparisons, alternatives, pricing breakdowns, candid reviews, and troubleshooting guides for the major cold email platforms.
+- **Cold Email** (8 guides) — subject lines, personalization, follow-up cadence, benchmarks, and A/B testing.
+- **Glossary** (15 definitions) — SPF, DKIM, DMARC, ARC, BIMI, SMTP, MX and PTR records, and more, each linking to its full guide.
+- **Email Infrastructure** (4 guides) and **Email Sending Platform** (4 guides).
+
+### Ways to find what you need
+
+- **Three learning paths** — Getting Started, Deliverability Mastery, and Email Infrastructure End to End — walk you through a topic in order, with Previous and Next navigation on every step.
+- **Eleven curated collections**, grouped by what you are actually trying to do: Pricing Explained, Tool Reviews, Troubleshooting Your Sending Tool, Complete Guides, Escaping the Spam Folder, Email Authentication Essentials, and more.
+- **An All Guides index** listing every guide grouped by topic, so nothing is more than one click from the homepage.
+- **Site-wide search** (⌘K from any page) covering guides, topics, collections, and learning paths.
+- **Related guides** on every article, generated from shared topics rather than hand-maintained lists.
+
+### A serious fix worth naming
+
+For a period, the Resource Center rendered as empty in the browser: topic pages reported that they were "being written", learning paths showed no steps, and individual guides could return a not-found page — even though every guide was published and correct. The cause was a compatibility fault in how article files were read inside the browser. It has been fixed, and the entire site is now checked in a real browser before release, not only on the server. If you visited the Resource Center and found it empty, it works now.
+
+### Corrections to published information
+
+- **Credits never expire.** Several guides had stated that purchased credits lapse after six months. That was wrong and contradicted our pricing page. Every affected page has been corrected. Purchased credits do not expire.
+- **Competitor pricing** in comparison guides was reviewed for internal consistency and each page states the date it was checked, with a reminder to confirm current pricing on the vendor's own site.
+
+### Design and readability
+
+- Topic pages, article pages and lists were reworked for a cleaner reading experience: a comfortable line length for long-form text, consistent spacing, and artwork that scales correctly rather than being cut off at the edges of its card.
+- The site was checked at six screen sizes from small phones to ultra-wide displays. Layout problems found at tablet width — including a header where the search button was pushed off-screen and unreachable — have been fixed.
+- Reference tables inside guides can now be scrolled with a keyboard, not only a mouse or touch.
+- Links and buttons across the site meet accessibility guidance for target size, and now show a clear outline when reached by keyboard.
+- Text contrast was measured and corrected where it fell below the accessibility standard.
+
+### Fonts now load correctly
+
+The site's typefaces were being blocked by a browser security policy, so pages rendered in fallback fonts. The policy has been corrected and the intended typography now loads.
+
+### Findability
+
+Every guide is now pre-rendered as a real page for search engines, listed in the sitemap, and published to the Resource Center's RSS feed. Guides carry structured data describing the article, its position in the site, and its questions and answers. Sitemap dates now reflect when a page's content actually changed rather than when the site was last deployed.
+
+### For developers
+
+Local development can no longer connect to the production database by accident. The server refuses to start if a non-production process points at a remote database, and explains how to configure a local one.
+
+This release does not change how campaigns send, how credits are counted, or how payments are processed.
+
+---
+
+## Previous Release — v1.10 (2026-07-14)
 
 ### You can always buy credits
 

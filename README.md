@@ -347,6 +347,8 @@ No database. No Redis. No AWS credentials. The in-memory storage shim handles ev
 
 Server starts at `http://localhost:5000`.
 
+**Local development cannot reach the production database.** Outside `NODE_ENV=production`, the server refuses to start if `DATABASE_URL` points at a remote host (`server/databaseGuard.js`), and prints how to fix it. Environment files load in precedence order — real environment variables, then `.env.local`, then `.env` — so create a gitignored `.env.local` to point at a local Postgres, or set `DATABASE_URL=` there to use in-memory storage. Copy `.env.example` for the full list. If you genuinely need the remote database from a dev machine, make it deliberate: `ALLOW_REMOTE_DB=1 npm run dev`.
+
 <br/>
 
 <div align="center">
@@ -365,7 +367,7 @@ Server starts at `http://localhost:5000`.
 | `OPENAI_API_KEY` | GPT-4 access |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Razorpay payment credentials |
 | `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook HMAC-SHA256 secret |
-| `SESSION_SECRET` | Express session signing key |
+| `ALLOW_REMOTE_DB` | Dev-only escape hatch. Set to `1` to let a non-production process connect to a remote database |
 | `APP_URL` | Production URL (used in unsubscribe footer links) |
 | `REPMAIL_PUBLIC` | Set to `true` to enable full API in production |
 | `RECOVERY_EMAIL` | Emergency recovery contact address |
@@ -377,12 +379,16 @@ Server starts at `http://localhost:5000`.
 <br/>
 
 ```bash
-npm run dev        # Development — HMR + in-memory storage
-npm run build      # Production build: Vite → dist/public/ + esbuild → dist/index.cjs
-npm run start      # Start production server
-npm run db:push    # Push Drizzle schema to PostgreSQL
-npm run check      # TypeScript type check
+npm run dev            # Development — HMR + in-memory storage
+npm run build          # Production build: Vite → dist/public/ + prerender → esbuild → dist/index.cjs
+npm run start          # Start production server
+npm test               # Full suite, run serially (see vitest.config.js for why)
+npm run test:parallel  # Faster, but DB-backed suites are contention-flaky
+npm run db:push        # Push Drizzle schema to PostgreSQL
+npm run check          # TypeScript type check
 ```
+
+`npm run build` also prerenders every public route to static HTML, regenerates `sitemap.xml` from the real content, and writes the Resource Center RSS feed. A new Resource Center markdown file is picked up by all three automatically.
 
 <br/>
 
