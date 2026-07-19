@@ -47,9 +47,15 @@ For a period, the Resource Center rendered as empty in the browser: topic pages 
 - Links and buttons across the site meet accessibility guidance for target size, and now show a clear outline when reached by keyboard.
 - Text contrast was measured and corrected where it fell below the accessibility standard.
 
-### Fonts now load correctly
+### Fonts now load correctly, and faster
 
-The site's typefaces were being blocked by a browser security policy, so pages rendered in fallback fonts. The policy has been corrected and the intended typography now loads.
+The site's typefaces were being blocked by a browser security policy, so pages rendered in fallback fonts. That is fixed, and the intended typography now loads.
+
+They are also now served directly from letszero.in rather than from Google Fonts and Fontshare. Pages no longer wait on two outside services before they can finish drawing, which made every page measurably quicker: on a mid-range phone the largest piece of content now appears **1.4 to 2 seconds sooner** on every public page. The typefaces themselves are unchanged.
+
+### Faster pages generally
+
+Beyond fonts, this release cut the JavaScript every visitor downloads by roughly two thirds, stopped background animations from competing with scrolling on the pricing page, and made guides start rendering sooner. Scrolling the pricing page is measurably smoother, and nothing on the site shifts around as it loads.
 
 ### Findability
 
