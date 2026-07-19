@@ -63,15 +63,30 @@ app.set("trust proxy", 1);
 // lumberjack.razorpay.com (connect — Razorpay analytics; omitting causes silent checkout failure
 // in some browsers). These are the minimum directives required for the checkout modal to open.
 // Full nonce-based CSP (eliminating 'unsafe-inline' for styles) is deferred to post-beta.
+//
+// RC-1 — font hosts added to style-src and font-src. client/index.html links
+// stylesheets from fonts.googleapis.com and api.fontshare.com, and client/src/index.css
+// @imports another from fonts.googleapis.com, but neither host was allowlisted, so
+// production had been blocking all three and rendering the entire site in fallback
+// fonts. This was suspected from M21-H onward and only confirmed here, by a
+// Lighthouse run reporting the CSP violations directly.
+//
+// Scoped to the four specific hosts actually referenced: the two stylesheet
+// origins, and the two origins their @font-face rules fetch the files from
+// (fonts.gstatic.com for Google, cdn.fontshare.com for Fontshare). No wildcards,
+// and script-src is untouched, so this widens styling and font fetching only.
+const FONT_STYLE_HOSTS = ["https://fonts.googleapis.com", "https://api.fontshare.com"];
+const FONT_FILE_HOSTS = ["https://fonts.gstatic.com", "https://cdn.fontshare.com"];
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc:  ["'self'", "https://checkout.razorpay.com"],
-      styleSrc:   ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'", ...FONT_STYLE_HOSTS],
       imgSrc:     ["'self'", "data:", "blob:"],
       connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
-      fontSrc:    ["'self'"],
+      fontSrc:    ["'self'", ...FONT_FILE_HOSTS],
       objectSrc:  ["'none'"],
       frameSrc:   ["https://api.razorpay.com"],
       baseUri:    ["'self'"],
