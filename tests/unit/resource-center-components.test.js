@@ -164,6 +164,20 @@ describe("resource-center component templates render for real (SSR), with real t
     expect(html).toContain("This Academy is being written now.");
   });
 
+  // M28-B — the empty state's primary CTA pointed at the Resource Center
+  // homepage, so "Browse published guides" sent the reader back to where they
+  // started rather than to the index of every published guide.
+  it("the empty Academy's 'Browse published guides' CTA opens the All Guides index, not the homepage it was clicked from", async () => {
+    const { Router } = await vite.ssrLoadModule("wouter");
+    const AcademyHubTemplate = await loadDefault("/src/components/resource-center/AcademyHubTemplate.jsx");
+    const html = renderToString(withRouter(Router, React.createElement(AcademyHubTemplate, {
+      product: repmail,
+      academy: fixtureAcademy,
+      articles: [],
+    })));
+    expect(html).toMatch(/data-testid="link-empty-browse"\s+href="\/repmail\/learn\/guides"/);
+  });
+
   it("AuthorPageTemplate renders the author's real bio and their publication list", async () => {
     const { Router } = await vite.ssrLoadModule("wouter");
     const AuthorPageTemplate = await loadDefault("/src/components/resource-center/AuthorPageTemplate.jsx");

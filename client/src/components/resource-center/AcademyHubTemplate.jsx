@@ -83,7 +83,7 @@ export default function AcademyHubTemplate({ product, academy, articles, liveSlu
               </ul>
             )}
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button asChild><Link href={product.basePath} data-testid="link-empty-browse">Browse published guides</Link></Button>
+              <Button asChild><Link href={`${product.basePath}/guides`} data-testid="link-empty-browse">Browse published guides</Link></Button>
               <Button asChild variant="outline"><Link href={`${product.basePath}/paths/getting-started`}>Start with the basics</Link></Button>
             </div>
           </section>
