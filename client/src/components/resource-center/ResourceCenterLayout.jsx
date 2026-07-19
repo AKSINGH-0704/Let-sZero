@@ -85,11 +85,25 @@ export default function ResourceCenterLayout({ product, children }) {
               <GraduationCap className="h-4 w-4" aria-hidden="true" />
             </span>
             <span className="text-sm font-semibold tracking-tight">
-              {product.name} <span className="text-muted-foreground">Resource Center</span>
+              {product.name}{" "}
+              {/* The qualifier is the first thing worth dropping on a narrow
+                  bar: the mark plus product name still identifies the page. */}
+              <span className="hidden text-muted-foreground sm:inline">Resource Center</span>
             </span>
           </Link>
 
-          <nav className="ml-2 hidden items-center gap-1 md:flex" aria-label="Resource Center sections">
+          {/* M30 — the academy nav needs ~600px once every Academy is live, so at
+              the old `md` breakpoint (768px) the bar laid out to 1018px and
+              body{overflow-x:hidden} silently ate the last 250px: the search
+              button and the product link were unreachable between roughly 768
+              and 1020px. Two changes make that structurally impossible rather
+              than tuned-for-today: the nav only appears at `lg`, and it is
+              `min-w-0 flex-1 overflow-x-auto` so it yields space instead of
+              pushing its siblings out when more Academies are added. */}
+          <nav
+            className="ml-2 hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            aria-label="Resource Center sections"
+          >
             {gettingStarted && (
               <Link
                 href={`${product.basePath}/paths/${gettingStarted.slug}`}
@@ -111,7 +125,7 @@ export default function ResourceCenterLayout({ product, children }) {
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               size="sm"

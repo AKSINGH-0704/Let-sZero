@@ -8,6 +8,7 @@ import { Check, ArrowRight, Sparkles } from "lucide-react";
 import ResourceCenterBreadcrumb, { buildBreadcrumbItems } from "./ResourceCenterBreadcrumb";
 import CategoryRail from "./CategoryRail";
 import GuideRow from "./GuideRow";
+import AcademyWatermark from "./AcademyWatermark";
 import { academyTheme, academyAccentStyle } from "./academyTheme";
 import { academyEditorial } from "./academyEditorial";
 import { Button } from "@/components/ui/button";
@@ -45,16 +46,19 @@ export default function AcademyHubTemplate({ product, academy, articles, liveSlu
         {/* Branded header */}
         <header className="relative mt-5 overflow-hidden rounded-2xl border border-card-border bg-card p-6 sm:p-8">
           <div className="absolute inset-0 rc-dot-grid opacity-50" aria-hidden="true" />
-          <Icon className="pointer-events-none absolute -right-6 -top-6 h-40 w-40 text-[color:var(--academy-accent)]/10" aria-hidden="true" strokeWidth={1} />
-          <div className="relative">
+          <AcademyWatermark Icon={Icon} />
+          {/* Reserve the watermark's column so the heading and description never
+              run underneath it. The padding matches the mark's responsive
+              widths, so text reflows with the art rather than colliding. */}
+          <div className="relative sm:pr-32 md:pr-40 lg:pr-52">
             <div className="mb-4 flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[color:var(--academy-accent)]/12 text-[color:var(--academy-accent)]" aria-hidden="true">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[color:var(--academy-accent)]/12 text-[color:var(--academy-accent)]" aria-hidden="true">
                 <Icon className="h-6 w-6" />
               </span>
               <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--academy-accent)]">Academy</span>
             </div>
             <h1 className="mb-2 text-3xl font-bold tracking-tight text-balance sm:text-4xl">{academy.name}</h1>
-            <p className="max-w-2xl text-lg text-muted-foreground">{academy.description}</p>
+            <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">{academy.description}</p>
             {list.length > 0 && (
               <p className="mt-3 text-sm text-muted-foreground">{list.length} guide{list.length === 1 ? "" : "s"} and growing</p>
             )}

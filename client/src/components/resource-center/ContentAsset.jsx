@@ -33,16 +33,26 @@ function TemplateBody({ content }) {
   );
 }
 
-function TableBody({ content }) {
+function TableBody({ content, title }) {
   const headers = content?.headers ?? [];
   const rows = content?.rows ?? [];
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
+    // M30 — a reference table is wider than a phone (measured: 427px of table
+    // in a 291px column at 375px). The container already scrolled, but a
+    // scrollable region that is not keyboard focusable is unreachable without a
+    // pointer, which fails WCAG 2.1.1. role + tabIndex + an accessible name make
+    // it a real, focusable region; the ring makes that focus visible.
+    <div
+      role="region"
+      aria-label={title ? `${title} (scrollable table)` : "Scrollable table"}
+      tabIndex={0}
+      className="overflow-x-auto rounded-lg border border-border outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-muted/50">
             {headers.map((h) => (
-              <th key={h} className="px-3 py-2.5 text-left font-semibold">{h}</th>
+              <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-semibold">{h}</th>
             ))}
           </tr>
         </thead>
@@ -93,7 +103,7 @@ export default function ContentAsset({ asset }) {
         </div>
       </CardHeader>
       <CardContent>
-        {BodyRenderer ? <BodyRenderer content={asset.content} /> : null}
+        {BodyRenderer ? <BodyRenderer content={asset.content} title={asset.title} /> : null}
       </CardContent>
     </Card>
   );

@@ -74,8 +74,14 @@ export default function ArticleTemplate({ article, author, product, readingTimeM
           (never user input — same trust boundary as source), so
           dangerouslySetInnerHTML is the standard SSG pattern here, not an XSS
           shortcut. */}
+      {/* M30 — measure. `max-w-none` removed the typography plugin's own line
+          length, so body copy ran the full 768px column, about 95 characters
+          per line against a 50-75 comfortable range. Constraining the block
+          elements to 68ch rather than narrowing the article keeps headings,
+          tables and figures full width while bringing running text back to a
+          readable measure. */}
       <div
-        className="prose prose-neutral max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-headings:font-semibold prose-headings:tracking-tight prose-a:font-medium prose-a:text-primary hover:prose-a:underline prose-li:my-1"
+        className="prose prose-neutral max-w-none dark:prose-invert prose-headings:scroll-mt-20 prose-headings:font-semibold prose-headings:tracking-tight prose-a:font-medium prose-a:text-primary hover:prose-a:underline prose-li:my-1 prose-p:max-w-[68ch] prose-ul:max-w-[68ch] prose-ol:max-w-[68ch] prose-blockquote:max-w-[68ch] lg:prose-lg lg:prose-p:max-w-[68ch] lg:prose-ul:max-w-[68ch] lg:prose-ol:max-w-[68ch]"
         data-testid="article-body"
         dangerouslySetInnerHTML={{ __html: article.bodyHtml ?? "" }}
       />
