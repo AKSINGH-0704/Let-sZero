@@ -999,17 +999,23 @@ export default function PublicPricing() {
                       "aria-valuetext": `${fmtNum(estimatorCredits)} credits`,
                     }}
                   />
-                  {/* Tick marks — jump to common presets */}
-                  <div className="flex justify-between mt-3">
+                  {/* Tick marks — jump to common presets.
+                      M35-D — these look like passive tick labels but are real
+                      controls, and they measured 12x16px: below the WCAG 2.5.8
+                      24px minimum and awkward to hit with a thumb. The label
+                      stays visually small (it is a tick, not a button) while
+                      padding grows the hit area; -my-1 keeps the row's visual
+                      rhythm so the larger target costs no vertical space. */}
+                  <div className="flex justify-between mt-3 -my-1">
                     {["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"].map((label, i) => (
                       <button
                         key={label}
                         onClick={() => setCredits(CREDIT_PRESETS[i])}
-                        className="text-xs transition-colors"
+                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
                         style={{
                           color: credits === CREDIT_PRESETS[i] ? "#00E5C8" : "#3A3A50",
                           fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: "9px",
+                          fontSize: "10px",
                           letterSpacing: "0.05em",
                         }}
                         aria-label={`Select ${CREDIT_PRESETS[i].toLocaleString()} credits`}
@@ -1265,10 +1271,19 @@ export default function PublicPricing() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                {/* Desktop: 5-col grid */}
+                {/* Desktop: 5-col grid.
+                    M35-D — this was an inline repeat(5, 1fr) from `md` (768px)
+                    up. `1fr` is minmax(auto, 1fr), so a track never shrinks
+                    below its content's min-content width (~185px per card):
+                    five cards need ~925px, and between 768 and ~1023px the
+                    fifth was pushed past the viewport where the ancestor's
+                    overflow-x-hidden clipped it. scrollWidth stayed equal to
+                    clientWidth, so there was no scrollbar either — the Volume
+                    Pricing plan was simply unreachable on an iPad. Column
+                    counts now come from breakpoints, which the inline style
+                    could not express. */}
                 <motion.div
-                  className="hidden md:grid gap-5"
-                  style={{ gridTemplateColumns: "repeat(5, 1fr)" }}
+                  className="hidden gap-5 md:grid md:grid-cols-3 lg:grid-cols-5"
                   initial="hidden"
                   whileInView="visible"
                   viewport={{ once: true, margin: "-80px" }}
@@ -2297,7 +2312,11 @@ export default function PublicPricing() {
           <div className="flex items-center">
             <img src="/repmail-logo-white.png" alt="RepMail" className="h-10 w-auto" style={{ objectFit: "contain" }} />
           </div>
-          <div className="flex items-center gap-6">
+          {/* M35-D — these are flex children, not inline text, so WCAG 2.5.8's
+              inline exception does not apply: they measured 16px tall. The gap
+              drops to 4 because each link now carries its own padding, keeping
+              the row's overall width roughly unchanged on a 360px screen. */}
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
             {[
               { href: "/", label: "Home" },
               { href: "/products/repmail", label: "Product" },
@@ -2309,7 +2328,7 @@ export default function PublicPricing() {
               <Link
                 key={label}
                 href={href}
-                className="text-xs transition-colors"
+                className="inline-flex min-h-[24px] items-center px-1 text-xs transition-colors"
                 style={{ color: "#55556A" }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#8888A0")}
                 onMouseLeave={e => (e.currentTarget.style.color = "#55556A")}

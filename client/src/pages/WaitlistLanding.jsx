@@ -542,9 +542,11 @@ export default function WaitlistLanding() {
           </motion.div>
 
           <div className="flex items-center gap-4">
-            <a href="/"                  className="hidden sm:inline-flex text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Home</a>
-            <a href="/products/repmail"  className="hidden sm:inline-flex text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>RepMail</a>
-            <a href="/login"             className="hidden sm:inline-flex text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Sign In</a>
+            {/* M35-D â€” 20px tall as flex children; these are visible from `sm`
+                up, which includes touch tablets, so they need a real target. */}
+            <a href="/"                  className="hidden sm:inline-flex min-h-[24px] items-center px-1 text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Home</a>
+            <a href="/products/repmail"  className="hidden sm:inline-flex min-h-[24px] items-center px-1 text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>RepMail</a>
+            <a href="/login"             className="hidden sm:inline-flex min-h-[24px] items-center px-1 text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Sign In</a>
             <a
               href="#waitlist-cta"
               className="px-5 py-2.5 text-sm rounded-xl font-medium transition-all hover:shadow-xl active:scale-95 relative overflow-hidden group"
@@ -864,10 +866,12 @@ export default function WaitlistLanding() {
           <div className="flex items-center">
             <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
           </div>
-          <div className="flex items-center gap-6">
-            <a href="/privacy" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
-            <a href="/terms" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
-            <a href="/contact" className="text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
+          {/* M35-D — flex children, so WCAG 2.5.8's inline exception does not
+              apply; they measured 16px tall. Padding brings them to 24px. */}
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <a href="/privacy" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
+            <a href="/terms" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
+            <a href="/contact" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
           </div>
           <p className="text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.

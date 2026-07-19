@@ -181,7 +181,8 @@ export default function ResourceCenterLayout({ product, children }) {
             </Button>
             <Link
               href="/products/repmail"
-              className="hidden items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground sm:flex"
+              // M35-D — a flex child at 20px tall, below the WCAG 2.5.8 minimum.
+              className="hidden min-h-[24px] items-center gap-1 px-1 text-sm text-muted-foreground transition-colors hover:text-foreground sm:flex"
               data-testid="link-rc-back-to-product"
             >
               {product.name} <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
