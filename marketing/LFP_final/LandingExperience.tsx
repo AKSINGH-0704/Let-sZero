@@ -31,6 +31,15 @@ import {
   X
 } from "lucide-react";
 
+// M31-B — one definition for the desktop nav's interactive text, so target size
+// and focus state cannot drift between the five items the way they had. The
+// visual treatment is unchanged (text-sm, gray-400, white on hover); the
+// additions are vertical padding, which lifts a 20px hit target past the 24px
+// WCAG 2.5.8 minimum, and a focus-visible ring, which these controls had no
+// equivalent of at all.
+const NAV_LINK_CLASS =
+  "inline-flex items-center rounded py-2 text-sm text-gray-400 transition-colors hover:text-white focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40";
+
 export default function LandingExperience() {
   const [isProductsOpen, setIsProductsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -134,9 +143,20 @@ export default function LandingExperience() {
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-12 h-16 md:h-20 flex items-center justify-between">
           {/* Logo + Brand */}
           <div className="flex items-center gap-2 md:gap-3">
+            {/* M31-C — the 1024x1024 source is 165KB and is displayed here at
+                36-64px. It stays in client/public because it is also the
+                og:image, where a large square is wanted; the UI now loads a
+                192px variant (9KB) that still covers the 64px lg size at 3x.
+                width/height carry the intrinsic 1:1 ratio so the browser
+                reserves the box before decode (CLS), while CSS keeps the
+                existing responsive display heights. */}
             <img
-              src="/letszero-logo.png"
+              src="/letszero-logo-192.png"
               alt="LetsZero"
+              width={192}
+              height={192}
+              fetchPriority="high"
+              decoding="async"
               style={{ height: "36px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.08)" }}
               className="md:h-[48px] lg:h-[64px]"
             />
@@ -149,9 +169,13 @@ export default function LandingExperience() {
           <div className="hidden md:flex items-center gap-8">
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setIsProductsOpen(!isProductsOpen)}
                 onBlur={() => setTimeout(() => setIsProductsOpen(false), 150)}
-                className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                onKeyDown={(e) => { if (e.key === "Escape") setIsProductsOpen(false); }}
+                aria-expanded={isProductsOpen}
+                aria-haspopup="menu"
+                className={`gap-1.5 ${NAV_LINK_CLASS}`}
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
                 Products
@@ -215,18 +239,26 @@ export default function LandingExperience() {
                 )}
               </AnimatePresence>
             </div>
-            <a href="#products" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Features
-            </a>
-            <a href="/pricing" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Pricing
-            </a>
-            <a href="/repmail/learn" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Resources
-            </a>
-            <a href="#contact" className="text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: "'Inter', sans-serif" }}>
-              Contact
-            </a>
+            {/* M31-B — these were 20px-tall hit targets with no visible focus
+                state. Vertical padding brings them past the 24px WCAG 2.5.8
+                minimum without moving anything visually (the row is
+                items-center), and focus-visible gives keyboard users the
+                indicator they had none of. */}
+            {[
+              { href: "#products", label: "Features" },
+              { href: "/pricing", label: "Pricing" },
+              { href: "/repmail/learn", label: "Resources" },
+              { href: "#contact", label: "Contact" },
+            ].map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                className={NAV_LINK_CLASS}
+                style={{ fontFamily: "'Inter', sans-serif" }}
+              >
+                {link.label}
+              </a>
+            ))}
           </div>
 
           {/* Desktop Action Buttons */}
@@ -772,7 +804,9 @@ export default function LandingExperience() {
                       className="w-16 h-16 mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center"
                       whileHover={{ rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
                     >
-                      <img src="/repmail-logo-white.png" alt="RepMail" style={{ width: "38px", height: "38px", objectFit: "contain" }} />
+                      {/* M31-C — intrinsic dimensions so the box is reserved before
+                      decode; below the fold, so lazy. */}
+                  <img src="/repmail-logo-white.png" alt="RepMail" width={38} height={38} loading="lazy" decoding="async" style={{ width: "38px", height: "38px", objectFit: "contain" }} />
                     </motion.div>
 
                     {/* Content */}
@@ -1478,22 +1512,43 @@ export default function LandingExperience() {
       <footer className="w-full border-t border-white/[0.05] py-10" style={{ background: "#0A0A0F" }}>
         <div className="max-w-[1440px] mx-auto px-6 md:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center">
-            <img src="/letszero-logo.png" alt="LetsZero" style={{ height: "44px", width: "auto", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }} />
+            {/* M31-B — explicit intrinsic dimensions so the browser reserves the
+                box before the image decodes (this is a CLS source otherwise),
+                and lazy+async because the footer is always below the fold. */}
+            <img
+              src="/letszero-logo-192.png"
+              alt="LetsZero"
+              width={44}
+              height={44}
+              loading="lazy"
+              decoding="async"
+              style={{ height: "44px", width: "44px", objectFit: "contain", borderRadius: "8px", background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }}
+            />
           </div>
-          <div className="flex items-center gap-6">
-            <a href="/repmail/learn" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Resources</a>
-            <a href="/privacy" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Privacy</a>
-            <a href="/terms" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Terms</a>
-            <a href="/contact" className="text-xs transition-colors" style={{ color: "#9CA3AF", fontFamily: "'Inter', sans-serif" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#E5E7EB")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#9CA3AF")}>Contact</a>
-          </div>
+          {/* M31-B — these were 12px text with no padding, giving 16px-tall hit
+              targets against the 24px WCAG 2.5.8 minimum, and their hover state
+              was applied by onMouseEnter/onMouseLeave writing inline styles,
+              which a keyboard user never triggers and which left no visible
+              focus indicator at all. Same colours, now expressed as classes so
+              hover and focus-visible behave identically, plus vertical padding
+              to reach a legitimate target size. */}
+          <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1" aria-label="Footer">
+            {[
+              { href: "/repmail/learn", label: "Resources" },
+              { href: "/privacy", label: "Privacy" },
+              { href: "/terms", label: "Terms" },
+              { href: "/contact", label: "Contact" },
+            ].map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="inline-flex min-h-[24px] items-center rounded py-1 text-xs text-[#9CA3AF] transition-colors hover:text-[#E5E7EB] focus-visible:text-[#E5E7EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                style={{ fontFamily: "'Inter', sans-serif" }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
           <p className="text-xs" style={{ color: "#6B7280", fontFamily: "'Inter', sans-serif" }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
           </p>
