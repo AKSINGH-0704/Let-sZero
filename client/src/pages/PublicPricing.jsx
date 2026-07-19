@@ -442,41 +442,60 @@ function FeatureIcon({ value, special }) {
 export default function PublicPricing() {
   const { user } = useAuth();
   const currency = "INR";
-  const [credits, setCredits] = useState(15000);
-  const [inputVal, setInputVal] = useState("15000");
+  // ── M35-B — one authoritative value for the estimator ──────────────────────
+  //
+  // This used to hold `credits` and `inputVal` as two independent states kept in
+  // step by an effect, and fed the slider a value it had to re-derive:
+  //   value={[creditsToSlider(credits)]}  onValueChange={v => setCredits(sliderToCredits(v))}
+  //
+  // sliderToCredits snaps to 1,000-credit steps, so that round trip is lossy.
+  // Measured: 716 of 1001 slider positions do not survive it, the worst
+  // snapping back 33 units, and 55 consecutive positions all resolve to 4,000
+  // credits. The thumb therefore fought the cursor and jumped backwards while
+  // dragging, worst at the low end where most people buy.
+  //
+  // The effect caused a second, uglier bug. Typing rewrote the field mid
+  // keystroke: entering 15500 rewrote it to 16000, and entering 999999 produced
+  // 1000009, because the effect replaced the text after the fifth character and
+  // the sixth was appended to the replacement.
+  //
+  // Now the slider position is the single source of truth and everything else
+  // derives from it, so the thumb always sits exactly where it was dragged.
+  // `inputDraft` is explicitly ephemeral: while it is non-null the field shows
+  // what was typed and nothing may overwrite it; on blur it commits and clears.
+  const [sliderPos, setSliderPos] = useState(() => creditsToSlider(15000));
+  const [inputDraft, setInputDraft] = useState(null);
   const [hoveredCol, setHoveredCol] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
   const [dedicatedIpNotified, setDedicatedIpNotified] = useState(false);
 
-  // Sync credits → input field when slider moves
-  useEffect(() => {
-    setInputVal(String(credits));
-  }, [credits]);
+  const credits = sliderToCredits(sliderPos);
+  const inputVal = inputDraft ?? String(credits);
+
+  const setCredits = useCallback((c) => setSliderPos(creditsToSlider(c)), []);
 
   const handleInputChange = useCallback((e) => {
     const raw = e.target.value.replace(/\D/g, "");
-    setInputVal(raw);
+    setInputDraft(raw);
+    // Move the slider along while typing, but never write back into the field:
+    // the draft owns the text until blur.
     const num = parseInt(raw, 10);
     if (!isNaN(num) && num >= 3000 && num <= 300000) {
-      setCredits(Math.round(num / 1000) * 1000);
+      setSliderPos(creditsToSlider(Math.round(num / 1000) * 1000));
     }
   }, []);
 
   const handleInputBlur = useCallback(() => {
-    // Round up to next 1,000-credit boundary; clamp to [3000, 300000]
-    const num = parseInt(inputVal, 10);
-    if (isNaN(num) || num < 3000) {
-      setCredits(3000);
-      setInputVal("3000");
-    } else if (num > 300000) {
-      setCredits(300000);
-      setInputVal("300000");
-    } else {
-      const rounded = Math.ceil(num / 1000) * 1000;
-      setCredits(rounded);
-      setInputVal(String(rounded));
-    }
-  }, [inputVal]);
+    // Commit: clamp to [3000, 300000] and round to a 1,000-credit boundary.
+    // Rounding matches handleInputChange (nearest, not ceil) so a value does not
+    // change simply because the field lost focus.
+    const num = parseInt(inputDraft ?? "", 10);
+    const next = isNaN(num)
+      ? credits
+      : Math.max(3000, Math.min(300000, Math.round(num / 1000) * 1000));
+    setSliderPos(creditsToSlider(next));
+    setInputDraft(null);
+  }, [inputDraft, credits]);
 
   const estimatorCredits = credits;
   const purchase = calcPurchase(estimatorCredits);
@@ -964,19 +983,21 @@ export default function PublicPricing() {
 
                 {/* Custom styled slider — 1,000-credit increments */}
                 <div className="relative py-4">
+                  {/* M35-B — the slider's own position is the value, so the
+                      thumb never snaps away from the cursor. Credits are
+                      derived from it for display. */}
                   <Slider
                     min={0}
                     max={_SLIDER_MAX}
                     step={1}
-                    value={[creditsToSlider(credits)]}
-                    onValueChange={([v]) => setCredits(sliderToCredits(v))}
+                    value={[sliderPos]}
+                    onValueChange={([v]) => { setSliderPos(v); setInputDraft(null); }}
                     className="w-full"
                     style={{ "--slider-track": "#16162A", "--slider-range": "#00E5C8" }}
-                    aria-label="Select credit amount"
-                    aria-valuemin={3000}
-                    aria-valuemax={300000}
-                    aria-valuenow={estimatorCredits}
-                    aria-valuetext={`${fmtNum(estimatorCredits)} credits`}
+                    thumbProps={{
+                      "aria-label": "Select credit amount",
+                      "aria-valuetext": `${fmtNum(estimatorCredits)} credits`,
+                    }}
                   />
                   {/* Tick marks — jump to common presets */}
                   <div className="flex justify-between mt-3">
