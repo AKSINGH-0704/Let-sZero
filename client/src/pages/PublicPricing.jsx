@@ -1013,7 +1013,14 @@ export default function PublicPricing() {
                         onClick={() => setCredits(CREDIT_PRESETS[i])}
                         className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
                         style={{
-                          color: credits === CREDIT_PRESETS[i] ? "#00E5C8" : "#3A3A50",
+                          // M35-F — the inactive colour was #3A3A50 on #0B0B12,
+                          // which measures 1.77:1 against the 4.5:1 WCAG 1.4.3
+                          // minimum: the unselected presets were very nearly
+                          // invisible. #7878A0 is the secondary text colour
+                          // already used directly below this row and measures
+                          // 4.67:1, so this needs no new palette entry. The
+                          // active state stays #00E5C8 and remains distinct.
+                          color: credits === CREDIT_PRESETS[i] ? "#00E5C8" : "#7878A0",
                           fontFamily: "'JetBrains Mono', monospace",
                           fontSize: "10px",
                           letterSpacing: "0.05em",
@@ -1112,7 +1119,7 @@ export default function PublicPricing() {
                           className="rounded-lg px-3 py-2 text-sm"
                           style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                         >
-                          <span style={{ color: "#7878A0", fontSize: "11px" }}>Total credits</span>
+                          <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Total credits</span>
                           <div
                             style={{ color: "#F0F0F5", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
                             className="font-bold text-base"
@@ -1135,7 +1142,7 @@ export default function PublicPricing() {
                                 border: "1px solid rgba(52,211,153,0.2)",
                               }}
                             >
-                              <span style={{ color: "#7878A0", fontSize: "11px" }}>Bonus credits</span>
+                              <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Bonus credits</span>
                               <div
                                 style={{ color: "#34D399", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
                                 className="font-bold text-base"
@@ -1150,7 +1157,7 @@ export default function PublicPricing() {
                           className="rounded-lg px-3 py-2 text-sm"
                           style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                         >
-                          <span style={{ color: "#7878A0", fontSize: "11px" }}>Cost per email</span>
+                          <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Cost per email</span>
                           <div
                             style={{ color: "#F0F0F5", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
                             className="font-bold text-base"
@@ -1788,7 +1795,17 @@ export default function PublicPricing() {
             className="rounded-xl overflow-hidden"
             style={{ border: "1px solid #1A1A2E" }}
           >
-            <div className="overflow-x-auto">
+            {/* M35-F — below ~440px this scrolls horizontally, and a scroll
+                container that is not focusable cannot be panned by keyboard at
+                all (WCAG 2.1.1; axe scrollable-region-focusable, mobile only).
+                tabIndex makes it reachable and arrow-key scrollable; the role
+                and label stop it announcing as an unnamed group. */}
+            <div
+              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+              tabIndex={0}
+              role="region"
+              aria-label="Volume pricing table, scrollable horizontally"
+            >
             <div style={{ minWidth: "440px" }}>
             {/* Table header */}
             <div
@@ -1939,7 +1956,15 @@ export default function PublicPricing() {
             className="rounded-2xl overflow-hidden"
             style={{ border: "1px solid #1A1A2E" }}
           >
-            <div className="overflow-x-auto">
+            {/* M35-F — same WCAG 2.1.1 issue as the volume table above: a
+                720px-wide comparison table in a scroll container that keyboard
+                users could not reach or pan. */}
+            <div
+              className="overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+              tabIndex={0}
+              role="region"
+              aria-label="Plan comparison table, scrollable horizontally"
+            >
               <table className="w-full" style={{ minWidth: "720px" }}>
                 {/* Sticky header */}
                 <thead>
@@ -2329,15 +2354,18 @@ export default function PublicPricing() {
                 key={label}
                 href={href}
                 className="inline-flex min-h-[24px] items-center px-1 text-xs transition-colors"
-                style={{ color: "#55556A" }}
-                onMouseEnter={e => (e.currentTarget.style.color = "#8888A0")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#55556A")}
+                // M35-F — #55556A on the #06060B footer measures 2.78:1, under
+                // the 4.5:1 WCAG 1.4.3 minimum. #7878A0 measures 4.80:1 and is
+                // already this page's secondary text colour.
+                style={{ color: "#7878A0" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#B0B0C8")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#7878A0")}
               >
                 {label}
               </Link>
             ))}
           </div>
-          <div className="text-xs" style={{ color: "#3A3A50" }}>
+          <div className="text-xs" style={{ color: "#7878A0" }}>
             © {new Date().getFullYear()} LetsZero. All rights reserved.
           </div>
         </div>

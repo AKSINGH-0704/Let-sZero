@@ -82,7 +82,12 @@ describe("T-2 — invite-accept plan resolution must match invite-creation's che
     expect(rawPlanLimit).not.toBe(limit);
   });
 
-  it("still correctly blocks accept once the Root Admin's real seat limit (25, shared by every plan below Enterprise) is reached", { timeout: 15000 }, async () => {
+  // M35-F — this carried an explicit { timeout: 15000 }, tighter than the
+  // suite's own 30s default, on the one test that has to seed 25 users to
+  // reach the seat limit. It measured 28s on a loaded machine and failed the
+  // whole gate. The assertion is about seat-limit behaviour, not speed, so the
+  // override is removed and the global timeout applies.
+  it("still correctly blocks accept once the Root Admin's real seat limit (25, shared by every plan below Enterprise) is reached", async () => {
     const rootAdmin = await makeUser({ role: USER_ROLES.ROOT_ADMIN, plan: "starter" }); // limit 25
     const subAdmin = await makeUser({ role: USER_ROLES.SUB_ADMIN, parentId: rootAdmin.id, plan: "free" });
     // Fill the Sub-Admin's own direct-child count to the inherited limit.

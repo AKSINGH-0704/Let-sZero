@@ -190,12 +190,19 @@ export default function Contact() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Reason for Contact *</Label>
-                    <Select 
-                      value={formData.reason} 
+                    {/* M35-F — the Label carried no htmlFor and the trigger no
+                        id, so they were never associated: axe reported a
+                        critical button-name violation and a screen reader
+                        announced an unnamed combobox. Associating them (rather
+                        than bolting on an aria-label) keeps the accessible name
+                        identical to the visible text, which is also what WCAG
+                        2.5.3 Label in Name wants. */}
+                    <Label htmlFor="contact-reason">Reason for Contact *</Label>
+                    <Select
+                      value={formData.reason}
                       onValueChange={(value) => setFormData(prev => ({ ...prev, reason: value }))}
                     >
-                      <SelectTrigger data-testid="select-contact-reason">
+                      <SelectTrigger id="contact-reason" data-testid="select-contact-reason">
                         <SelectValue placeholder="Select a reason" />
                       </SelectTrigger>
                       <SelectContent>

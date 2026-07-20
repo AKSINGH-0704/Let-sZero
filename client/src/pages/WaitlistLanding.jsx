@@ -911,11 +911,13 @@ export default function WaitlistLanding() {
           {/* M35-D — flex children, so WCAG 2.5.8's inline exception does not
               apply; they measured 16px tall. Padding brings them to 24px. */}
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-            <a href="/privacy" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
-            <a href="/terms" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
-            <a href="/contact" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-600 hover:text-gray-400 transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
+            <a href="/privacy" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
+            <a href="/terms" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
+            <a href="/contact" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
           </div>
-          <p className="text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}>
+          {/* M35-F — text-gray-600 on #0a0a0f measures 2.61:1, below the 4.5:1
+              WCAG 1.4.3 minimum. gray-400 measures 7.77:1 on the same ground. */}
+          <p className="text-xs text-gray-400" style={{ fontFamily: FONT_BODY }}>
             &copy; {new Date().getFullYear()} LetsZero. All rights reserved.
           </p>
         </div>
