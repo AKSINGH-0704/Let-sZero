@@ -45,7 +45,12 @@ export default function ResourceCenterSearch({ open, onOpenChange, articles, col
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Search the ${product.resourceCenterName}`}
+      description={`Find guides and resources in the ${product.resourceCenterName}. Results update as you type.`}
+    >
       <CommandInput
         placeholder={`Search the ${product.resourceCenterName}...`}
         value={query}

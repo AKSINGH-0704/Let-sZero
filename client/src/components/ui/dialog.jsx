@@ -38,7 +38,12 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+      {/* RC-1 — the close affordance was a bare 16px icon: a `target-size`
+          (WCAG 2.5.8, serious) failure axe reports on every dialog in the
+          app. `p-1` grows the hit area to 24px and `-m-1` pulls the box back
+          by the same 4px, so the icon renders in exactly its original
+          position — the target grows outward, nothing moves. */}
+      <DialogPrimitive.Close className="absolute right-4 top-4 -m-1 inline-flex items-center justify-center p-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
         <X className="h-4 w-4" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
