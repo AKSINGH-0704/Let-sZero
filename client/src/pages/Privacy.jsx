@@ -68,7 +68,7 @@ export default function Privacy() {
         >
           <p
             className="text-xs font-semibold mb-3 uppercase tracking-widest"
-            style={{ color: "#55556A" }}
+            style={{ color: "#7878A0" }}
           >
             Contents
           </p>
@@ -88,7 +88,7 @@ export default function Privacy() {
               ["#contact",       "12.", "Contact"],
             ].map(([href, num, title]) => (
               <li key={href} className="flex items-start gap-2 text-sm">
-                <span className="flex-shrink-0" style={{ color: "#55556A", minWidth: "1.5rem" }}>
+                <span className="flex-shrink-0" style={{ color: "#7878A0", minWidth: "1.5rem" }}>
                   {num}
                 </span>
                 <a
@@ -109,7 +109,7 @@ export default function Privacy() {
             products. Our products are available at{" "}
             <span style={{ color: "#00E5C8" }}>letszero.in</span>. For privacy-related inquiries,
             contact us at{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8", textDecoration: "underline" }}>
               support@letszero.in
             </a>
             .
@@ -270,7 +270,7 @@ export default function Privacy() {
           </ul>
           <p className="mt-4">
             To exercise any of these rights, email{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8", textDecoration: "underline" }}>
               support@letszero.in
             </a>
             . We will respond within 30 days.
@@ -286,7 +286,7 @@ export default function Privacy() {
           <p className="mt-3">
             No system is entirely secure. If you discover a security vulnerability, please report
             it to{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8", textDecoration: "underline" }}>
               support@letszero.in
             </a>{" "}
             before public disclosure.
@@ -298,7 +298,7 @@ export default function Privacy() {
             LetsZero products are not directed at children under 13. We do not knowingly collect
             personal data from children. If you believe we have received data from a child, contact
             us immediately at{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#00E5C8", textDecoration: "underline" }}>
               support@letszero.in
             </a>
             .
@@ -333,7 +333,7 @@ export default function Privacy() {
             <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Solutions Private Limited</p>
             <p className="mt-1">
               Email:{" "}
-              <a href="mailto:support@letszero.in" style={{ color: "#00E5C8" }}>
+              <a href="mailto:support@letszero.in" style={{ color: "#00E5C8", textDecoration: "underline" }}>
                 support@letszero.in
               </a>
             </p>
@@ -352,7 +352,7 @@ export default function Privacy() {
       {/* Footer */}
       <footer className="border-t" style={{ background: "#06060B", borderColor: "#1A1A2E" }}>
         <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm" style={{ color: "#55556A" }}>
+          <div className="flex items-center gap-2 text-sm" style={{ color: "#7878A0" }}>
             <img
               src="/letszero-logo.png"
               alt="LetsZero"
@@ -361,7 +361,7 @@ export default function Privacy() {
             />
             <span>&copy; {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
-          <div className="flex items-center gap-6 text-sm" style={{ color: "#55556A" }}>
+          <div className="flex items-center gap-6 text-sm" style={{ color: "#7878A0" }}>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>

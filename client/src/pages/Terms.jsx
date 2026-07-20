@@ -26,7 +26,7 @@ export default function Terms() {
             <Link href="/login">
               <span
                 className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
-                style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#8B5CF6" }}
+                style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)", color: "#A78BFA" }}
               >
                 Sign In
               </span>
@@ -68,7 +68,7 @@ export default function Terms() {
         >
           <p
             className="text-xs font-semibold mb-3 uppercase tracking-widest"
-            style={{ color: "#55556A" }}
+            style={{ color: "#7878A0" }}
           >
             Contents
           </p>
@@ -89,7 +89,7 @@ export default function Terms() {
               ["#contact",        "13.", "Contact"],
             ].map(([href, num, title]) => (
               <li key={href} className="flex items-start gap-2 text-sm">
-                <span className="flex-shrink-0" style={{ color: "#55556A", minWidth: "1.5rem" }}>
+                <span className="flex-shrink-0" style={{ color: "#7878A0", minWidth: "1.5rem" }}>
                   {num}
                 </span>
                 <a
@@ -132,7 +132,7 @@ export default function Terms() {
             <li>
               You are responsible for maintaining the security of your credentials. If you suspect
               unauthorized access, notify us immediately at{" "}
-              <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
+              <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 support@letszero.in
               </a>
               .
@@ -230,7 +230,7 @@ export default function Terms() {
             product&rsquo;s supplemental terms. As a general principle, refund requests for
             recently purchased plans or credits may be honoured within a reasonable window where
             minimal usage has occurred. To request a refund, contact us at{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
               support@letszero.in
             </a>{" "}
             with your transaction details. We reserve the right to deny refund requests where
@@ -283,7 +283,7 @@ export default function Terms() {
           <p className="mt-4">
             For minor violations, we will issue a warning before suspension where practicable.
             You may appeal a suspension by contacting{" "}
-            <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
+            <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
               support@letszero.in
             </a>
             . Refunds will not be issued for accounts terminated for violations of these Terms.
@@ -342,7 +342,7 @@ export default function Terms() {
             <p style={{ color: "#F0F0F5", fontWeight: 600 }}>LetsZero Solutions Private Limited</p>
             <p className="mt-1">
               Email:{" "}
-              <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6" }}>
+              <a href="mailto:support@letszero.in" style={{ color: "#8B5CF6", textDecoration: "underline" }}>
                 support@letszero.in
               </a>
             </p>
@@ -361,7 +361,7 @@ export default function Terms() {
       {/* Footer */}
       <footer className="border-t" style={{ background: "#06060B", borderColor: "#1A1A2E" }}>
         <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-sm" style={{ color: "#55556A" }}>
+          <div className="flex items-center gap-2 text-sm" style={{ color: "#7878A0" }}>
             <img
               src="/letszero-logo.png"
               alt="LetsZero"
@@ -370,7 +370,7 @@ export default function Terms() {
             />
             <span>&copy; {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
-          <div className="flex items-center gap-6 text-sm" style={{ color: "#55556A" }}>
+          <div className="flex items-center gap-6 text-sm" style={{ color: "#7878A0" }}>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
