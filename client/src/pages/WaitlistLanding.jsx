@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   ArrowUpRight, Mail, Shield, BarChart3, ChevronDown,
   Loader2, Check, AlertCircle, Send, Sparkles, Users, Globe2, Lock,
@@ -63,6 +63,10 @@ const MORSE_SEQ = (() => {
 function MorseCodeDisplay() {
   const [activeIdx, setActiveIdx] = useState(0);
   const TICK_MS = 260; // ms per symbol
+  // M35-E — the travelling highlight is decorative and never stops, so under
+  // reduced motion the dots keep their colour change (not motion) but lose the
+  // scale pop, which is the part that reads as movement.
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     const total = MORSE_SEQ.length;
@@ -96,7 +100,7 @@ function MorseCodeDisplay() {
                 : isPast
                 ? "0 0 4px rgba(167,139,250,0.2)"
                 : "none",
-              scale: isActive ? 1.4 : 1,
+              scale: reduceMotion ? 1 : isActive ? 1.4 : 1,
             }}
             transition={{ duration: 0.15 }}
             style={{
@@ -196,16 +200,22 @@ const BADGE_COLORS = {
 
 function FloatingMetricCard({ card, index }) {
   const Icon = card.icon;
+  // M35-E — the entrance (fade and settle) is kept because it is finite and
+  // communicates that the card has arrived; only the endless vertical drift is
+  // dropped, which is the part WCAG 2.2.2 is concerned with.
+  const reduceMotion = useReducedMotion();
   return (
     <motion.div
       className="absolute hidden xl:block"
       style={{ right: card.right, top: card.top, rotate: card.rotate }}
       initial={{ opacity: 0, y: 30, scale: 0.9 }}
-      animate={{ opacity: 1, y: card.animY, scale: 1 }}
+      animate={{ opacity: 1, y: reduceMotion ? 0 : card.animY, scale: 1 }}
       transition={{
         opacity: { duration: 0.7, delay: 0.8 + index * 0.25 },
         scale:   { duration: 0.7, delay: 0.8 + index * 0.25 },
-        y:       { duration: card.duration, repeat: Infinity, ease: "easeInOut", delay: card.delay },
+        y: reduceMotion
+          ? { duration: 0.7, delay: 0.8 + index * 0.25 }
+          : { duration: card.duration, repeat: Infinity, ease: "easeInOut", delay: card.delay },
       }}
     >
       <div
@@ -279,6 +289,10 @@ function FloatingMetricCards() {
 // â”€â”€â”€ ANIMATED DATA-FLOW SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Continuous SVG line animation â€” email delivery paths
 function AnimatedDataFlow({ className = "" }) {
+  // M35-E — decorative only: the dashes travelling along each path and the
+  // pulsing nodes carry no information, so reduced-motion users get the static
+  // diagram rather than a slower version of the animation.
+  const reduceMotion = useReducedMotion();
   const PATHS = [
     "M 0 80 C 120 40, 200 140, 320 80 S 480 20, 600 80 S 760 140, 900 80",
     "M 0 160 C 100 100, 220 220, 360 150 S 520 60, 680 150 S 820 220, 960 160",
@@ -305,7 +319,7 @@ function AnimatedDataFlow({ className = "" }) {
             stroke="url(#flowGrad)"
             strokeWidth="1.5"
             strokeDasharray="12 6"
-            animate={{ strokeDashoffset: [0, -36] }}
+            animate={reduceMotion ? undefined : { strokeDashoffset: [0, -36] }}
             transition={{ duration: 3 + pi * 0.8, repeat: Infinity, ease: "linear" }}
           />
         ))}
@@ -320,7 +334,7 @@ function AnimatedDataFlow({ className = "" }) {
             // rejected it: 12 console errors per load of this page. `initial`
             // gives it a defined start; r={3} stays for the prerendered HTML.
             initial={{ opacity: 0.3, r: 2 }}
-            animate={{ opacity: [0.3, 1, 0.3], r: [2, 4, 2] }}
+            animate={reduceMotion ? { opacity: 0.6, r: 3 } : { opacity: [0.3, 1, 0.3], r: [2, 4, 2] }}
             transition={{ duration: 2.5 + (ni % 5) * 0.6, repeat: Infinity, ease: "easeInOut", delay: ni * 0.2 }}
           />
         ))}
@@ -339,6 +353,21 @@ function AnimatedDataFlow({ className = "" }) {
 
 // â”€â”€â”€ ANIMATED BACKGROUND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AnimatedBackground() {
+  // M35-E — these orbs are the one piece of infinite background motion on the
+  // public site that ignored prefers-reduced-motion. /pricing's equivalent orbs
+  // are plain divs carrying data-ambient, so the stylesheet rule switches them
+  // off (measured: 15 moving elements -> 0). These are motion.div driven by
+  // framer-motion through JS, where `animation: none` in CSS has nothing to
+  // act on, so they kept drifting: 63 moving elements with reduce set.
+  //
+  // Gated with the hook rather than MotionConfig because two motion packages
+  // are installed (framer-motion 11 and motion 12, both in vite's dedupe list)
+  // and a provider at the App root did not reach these components — measured,
+  // not assumed. The hook is read inside the component that uses it, so there
+  // is no context to cross.
+  const reduceMotion = useReducedMotion();
+  const drift = (keyframes) => (reduceMotion ? undefined : keyframes);
+
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
       <div className="absolute inset-0 bg-gradient-to-br from-[#0D0D18] via-[#0A0A0F] to-[#08080E]" />
@@ -351,7 +380,7 @@ function AnimatedBackground() {
           top: "-10%", right: "5%",
           background: "radial-gradient(circle, rgba(139,92,246,0.18) 0%, rgba(139,92,246,0.04) 70%, transparent 100%)",
         }}
-        animate={{ x: [0, 60, -40, 0], y: [0, -50, 30, 0], scale: [1, 1.12, 0.94, 1] }}
+        animate={drift({ x: [0, 60, -40, 0], y: [0, -50, 30, 0], scale: [1, 1.12, 0.94, 1] })}
         transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
       />
 
@@ -363,7 +392,7 @@ function AnimatedBackground() {
           bottom: "-5%", left: "5%",
           background: "radial-gradient(circle, rgba(6,182,212,0.14) 0%, rgba(6,182,212,0.03) 70%, transparent 100%)",
         }}
-        animate={{ x: [0, -50, 30, 0], y: [0, 40, -30, 0], scale: [1, 0.92, 1.08, 1] }}
+        animate={drift({ x: [0, -50, 30, 0], y: [0, 40, -30, 0], scale: [1, 0.92, 1.08, 1] })}
         transition={{ duration: 28, repeat: Infinity, ease: "easeInOut" }}
       />
 
@@ -375,7 +404,7 @@ function AnimatedBackground() {
           top: "40%", right: "20%",
           background: "radial-gradient(circle, rgba(245,158,11,0.08) 0%, transparent 70%)",
         }}
-        animate={{ x: [0, 40, -20, 0], y: [0, -30, 50, 0] }}
+        animate={drift({ x: [0, 40, -20, 0], y: [0, -30, 50, 0] })}
         transition={{ duration: 35, repeat: Infinity, ease: "easeInOut" }}
       />
 
@@ -385,7 +414,13 @@ function AnimatedBackground() {
           key={p.id}
           className="absolute rounded-full bg-white"
           style={{ width: p.size, height: p.size, left: `${p.x}%`, top: `${p.y}%` }}
-          animate={{ opacity: [p.opacity * 0.3, p.opacity, p.opacity * 0.3], scale: [1, 1.4, 1] }}
+          // M35-E — the opacity fade is kept (it is a 2-5% shimmer, imperceptible
+          // as motion); only the scale pulse, which is a transform, is dropped.
+          animate={
+            reduceMotion
+              ? { opacity: [p.opacity * 0.3, p.opacity, p.opacity * 0.3] }
+              : { opacity: [p.opacity * 0.3, p.opacity, p.opacity * 0.3], scale: [1, 1.4, 1] }
+          }
           transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
@@ -528,6 +563,7 @@ const TRUST_STATS = [
 
 // â”€â”€â”€ MAIN COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function WaitlistLanding() {
+  const reduceMotion = useReducedMotion();
   return (
     <div className="min-h-screen w-full bg-[#0A0A0F] overflow-x-hidden">
 
@@ -579,7 +615,13 @@ export default function WaitlistLanding() {
                 animate={{ boxShadow: ["0 0 20px rgba(139,92,246,0.15)", "0 0 32px rgba(139,92,246,0.28)", "0 0 20px rgba(139,92,246,0.15)"] }}
                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
               >
-                <motion.div className="w-1.5 h-1.5 rounded-full bg-violet-400" animate={{ opacity: [1, 0.3, 1], scale: [1, 0.7, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+                {/* M35-E — the dot's opacity pulse is kept (it reads as a "live"
+                    indicator, and opacity is not motion); the scale pulse is not. */}
+                <motion.div
+                  className="w-1.5 h-1.5 rounded-full bg-violet-400"
+                  animate={reduceMotion ? { opacity: [1, 0.3, 1] } : { opacity: [1, 0.3, 1], scale: [1, 0.7, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
                 <span className="text-sm text-violet-300" style={{ fontFamily: FONT_MONO }}>Private Beta</span>
                 <Sparkles className="w-3.5 h-3.5 text-violet-400/70" />
               </motion.div>

@@ -336,6 +336,16 @@ html, body {
     border-radius: inherit;
     z-index: 999;
     /* sits in front of content */
+
+    /* M35-E — this overlay is how every shared Button, Badge and menu item
+       shows hover and press feedback, and its background-color swapped with no
+       transition, so those states snapped on and off. Bespoke marketing buttons
+       ease at 0.15s, which made the shared components look comparatively abrupt
+       next to them. Measured on /contact: both real controls reported
+       transition-duration 0s against 0.15s for the equivalents on /pricing.
+       Uses the existing --duration-fast token rather than a new value, and
+       transitions only background-color so nothing moves or reflows. */
+    transition: background-color var(--duration-fast, 120ms) var(--ease-standard, ease);
   }
 
   .hover-elevate:hover:not(.no-default-hover-elevate)::after,
@@ -479,6 +489,21 @@ html[data-scrolling] [data-ambient] {
    users get none of it rather than a slower version. */
 @media (prefers-reduced-motion: reduce) {
   [data-ambient] {
+    animation: none !important;
+  }
+
+  /* M35-E — the rule above only reaches elements we remembered to mark. These
+     three Tailwind utilities are decorative by definition and loop forever,
+     which is what WCAG 2.2.2 (Level A) is about, so they are named directly.
+
+     `animate-spin` is deliberately absent: it is the loading spinner. Freezing
+     it would leave a stopped spinner on screen during a real pending request —
+     reading as a hung UI, which is worse for everyone including the users this
+     rule exists to protect. Same reasoning as the [data-ambient] scoping above:
+     stop decoration, never stop feedback. */
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce {
     animation: none !important;
   }
 }
