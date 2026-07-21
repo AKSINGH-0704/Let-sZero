@@ -30,8 +30,17 @@ function ReadinessItem({ state, label, detail, href }) {
       {detail && <span className="text-muted-foreground">— {detail}</span>}
     </div>
   );
+  // M37: measured at 16px tall — a WCAG 2.5.8 (target size) failure, and these
+  // are the two links a customer taps to fix the exact thing blocking their
+  // first campaign ("Sending domain — not verified yet"). `-my-1` pulls the box
+  // back by the padding it adds, so the target grows to 24px outward without
+  // moving the row or changing the panel's rhythm — the same technique RC-1
+  // used on the dialog close button.
   return href ? (
-    <Link href={href} className="rounded hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <Link
+      href={href}
+      className="-my-1 inline-flex items-center rounded py-1 hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       {content}
     </Link>
   ) : content;
