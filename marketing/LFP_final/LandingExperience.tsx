@@ -166,7 +166,13 @@ export default function LandingExperience() {
           </div>
 
           {/* Desktop Navigation Menu */}
-          <div className="hidden md:flex items-center gap-8">
+          {/* M36 — the desktop bar used to switch on at `md` (768px), but brand +
+              five links at gap-8 + two buttons need ~870px. Between 768 and
+              1023 the three justify-between groups had nowhere to go and drew
+              on top of each other: the wordmark overlapped "Products" and the
+              buttons covered "Contact". The bar now waits for `lg`, where it
+              genuinely fits, and the hamburger covers tablet widths. */}
+          <div className="hidden lg:flex items-center gap-6 xl:gap-8">
             <div className="relative">
               <button
                 type="button"
@@ -262,7 +268,7 @@ export default function LandingExperience() {
           </div>
 
           {/* Desktop Action Buttons */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <button
               onClick={() => window.location.href = '/login'}
               className="px-4 py-2 text-sm font-medium rounded-lg transition-all"
@@ -312,7 +318,7 @@ export default function LandingExperience() {
 
           {/* Mobile Hamburger */}
           <button
-            className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
           >
@@ -328,7 +334,7 @@ export default function LandingExperience() {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.25 }}
-              className="md:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]/98 backdrop-blur-xl"
+              className="lg:hidden overflow-hidden border-t border-white/5 bg-[#0A0A0F]/98 backdrop-blur-xl"
             >
               <div className="px-4 py-4 space-y-1">
                 <button onClick={() => { window.location.href = '/products/repmail'; setMobileMenuOpen(false); }}

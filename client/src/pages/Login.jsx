@@ -166,30 +166,25 @@ function FloatingVisual() {
 }
 
 function TabSwitcher({ activeTab, onChange }) {
+  // M36 — at 360px "Request Access" wrapped onto a second line and left its
+  // icon stranded beside the gap, making the two tabs different heights. The
+  // label is held on one line and the type/padding step down on small screens
+  // so it fits the half-width tab instead.
+  const tabClass = (tab) =>
+    `flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+      activeTab === tab
+        ? "bg-background text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground"
+    }`;
+
   return (
     <div className="flex bg-muted/50 rounded-lg p-1 gap-1">
-      <button
-        type="button"
-        onClick={() => onChange("signin")}
-        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200 ${
-          activeTab === "signin"
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        <LogIn className="h-3.5 w-3.5" />
+      <button type="button" onClick={() => onChange("signin")} className={tabClass("signin")}>
+        <LogIn className="h-3.5 w-3.5 shrink-0" />
         Sign In
       </button>
-      <button
-        type="button"
-        onClick={() => onChange("request")}
-        className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all duration-200 ${
-          activeTab === "request"
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        <UserPlus className="h-3.5 w-3.5" />
+      <button type="button" onClick={() => onChange("request")} className={tabClass("request")}>
+        <UserPlus className="h-3.5 w-3.5 shrink-0" />
         Request Access
       </button>
     </div>
@@ -216,7 +211,7 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
     }
   }, []);
 
-  // M35-C â€” previously unguarded. Repeated submits meant repeated
+  // M35-C — previously unguarded. Repeated submits meant repeated
   // authentication attempts for one intent, which is the worst place for it:
   // it burns server-side rate limit budget and can lock a legitimate user out
   // of their own account.
@@ -255,7 +250,7 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
               className="absolute top-3 right-3 text-destructive-foreground/60 hover:text-destructive-foreground transition-colors"
               aria-label="Dismiss"
             >
-              âœ•
+              ✕
             </button>
           </Alert>
         )}
@@ -397,7 +392,7 @@ function RequestAccessPanel({ onSignIn }) {
         </div>
         <h3 className="text-lg font-semibold mb-2">Get started with RepMail</h3>
         <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-          RepMail is an invite-only platform. Submit your details for admin review â€” our team will
+          RepMail is an invite-only platform. Submit your details for admin review — our team will
           reach out within 24 hours.
         </p>
       </div>
@@ -486,7 +481,7 @@ export default function Login() {
               <p className="text-muted-foreground mt-1 text-sm">
                 {activeTab === "signin"
                   ? "Access your campaigns, analytics, and team settings."
-                  : "Request access to the platform â€” our team reviews all applications."}
+                  : "Request access to the platform — our team reviews all applications."}
               </p>
             </div>
 

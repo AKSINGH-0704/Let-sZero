@@ -117,7 +117,7 @@ function MorseCodeDisplay() {
         className="ml-3 text-[9px] tracking-[0.25em] text-violet-400/40 uppercase select-none"
         style={{ fontFamily: FONT_MONO }}
       >
-        EARLYÂ·ACCESS
+        EARLY·ACCESS
       </span>
     </div>
   );
@@ -149,7 +149,7 @@ const METRIC_CARDS = [
     borderColor: "rgba(139,92,246,0.22)",
     label: "Anti-Spam Check",
     primary: "Score: 12",
-    secondary: "Safe to send âœ“",
+    secondary: "Safe to send ✓",
     badge: { text: "Safe", color: "violet" },
     right: "18%", top: "39%",
     animY: [0, 16, -8, 0],
@@ -180,7 +180,7 @@ const METRIC_CARDS = [
     glowColor: "rgba(245,158,11,0.12)",
     borderColor: "rgba(245,158,11,0.20)",
     label: "Open Rate",
-    primary: "â†‘ 34.2%",
+    primary: "↑ 34.2%",
     secondary: "vs 22.1% avg",
     badge: { text: "+12%", color: "amber" },
     right: "20%", top: "78%",
@@ -287,7 +287,7 @@ function FloatingMetricCards() {
 }
 
 // â”€â”€â”€ ANIMATED DATA-FLOW SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Continuous SVG line animation â€” email delivery paths
+// Continuous SVG line animation — email delivery paths
 function AnimatedDataFlow({ className = "" }) {
   // M35-E — decorative only: the dashes travelling along each path and the
   // pulsing nodes carry no information, so reduced-motion users get the static
@@ -328,7 +328,7 @@ function AnimatedDataFlow({ className = "" }) {
             key={ni}
             cx={n.cx} cy={n.cy} r={3}
             fill="#a78bfa"
-            // M35-C â€” once `r` is in `animate`, motion owns the attribute and the
+            // M35-C — once `r` is in `animate`, motion owns the attribute and the
             // static r={3} no longer seeds it. Each node has its own delay, so
             // during that window motion wrote r="undefined" and the browser
             // rejected it: 12 console errors per load of this page. `initial`
@@ -372,7 +372,7 @@ function AnimatedBackground() {
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
       <div className="absolute inset-0 bg-gradient-to-br from-[#0D0D18] via-[#0A0A0F] to-[#08080E]" />
 
-      {/* Violet orb â€” drifts slowly */}
+      {/* Violet orb — drifts slowly */}
       <motion.div
         className="absolute rounded-full blur-[140px]"
         style={{
@@ -462,7 +462,7 @@ function WaitlistForm({ variant = "hero" }) {
   const [errorMessage, setErrorMessage] = useState("");
   const inputRef = useRef(null);
 
-  // M35-C â€” the guard below used to read `status`, which is React state and so
+  // M35-C — the guard below used to read `status`, which is React state and so
   // still reads "idle" for every click delivered before the next render.
   // Measured: three clicks produced three POST /api/waitlist. useSubmitGuard
   // holds the flag in a ref, which mutates synchronously and wins that race.
@@ -506,7 +506,11 @@ function WaitlistForm({ variant = "hero" }) {
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-md">
-      <div className="flex gap-2">
+      {/* M36 — the button is whitespace-nowrap, so on a 360px screen it took its
+          full width and left the email field ~130px wide: the placeholder read
+          "you@comp" and a typed address was never fully visible. The row stacks
+          below `sm`, where there is no width to share. */}
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
           <input
@@ -525,7 +529,7 @@ function WaitlistForm({ variant = "hero" }) {
         <button
           type="submit"
           disabled={status === "loading"}
-          className="px-5 py-3 bg-white text-black rounded-xl font-medium text-sm transition-all hover:bg-gray-100 hover:shadow-xl hover:shadow-white/20 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+          className="px-5 py-3 bg-white text-black rounded-xl font-medium text-sm transition-all hover:bg-gray-100 hover:shadow-xl hover:shadow-white/20 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap"
           style={{ fontFamily: FONT_BODY }}
         >
           {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <><span>Request Access</span><ArrowUpRight className="w-3.5 h-3.5" /></>}
@@ -578,7 +582,7 @@ export default function WaitlistLanding() {
           </motion.div>
 
           <div className="flex items-center gap-4">
-            {/* M35-D â€” 20px tall as flex children; these are visible from `sm`
+            {/* M35-D — 20px tall as flex children; these are visible from `sm`
                 up, which includes touch tablets, so they need a real target. */}
             <a href="/"                  className="hidden sm:inline-flex min-h-[24px] items-center px-1 text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Home</a>
             <a href="/products/repmail"  className="hidden sm:inline-flex min-h-[24px] items-center px-1 text-sm text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>RepMail</a>
@@ -662,7 +666,7 @@ export default function WaitlistLanding() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.5 }}
               className="mt-5 text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}
             >
-              Now onboarding early operators Â· Rolling invitations Â· No spam, ever
+              Now onboarding early operators · Rolling invitations · No spam, ever
             </motion.p>
           </div>
         </div>
@@ -799,7 +803,7 @@ export default function WaitlistLanding() {
               <h2 className="text-3xl md:text-4xl font-semibold text-white mb-8" style={{ fontFamily: FONT_HEADING }}>Building the infrastructure layer<br />for modern outbound</h2>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.6, delay: 0.14 }} className="space-y-5 text-left md:text-center">
-              <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>LetsZero is building a unified system where campaign automation, deliverability intelligence, and performance analytics work together â€” not as separate products, but as one coherent infrastructure.</p>
+              <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>LetsZero is building a unified system where campaign automation, deliverability intelligence, and performance analytics work together — not as separate products, but as one coherent infrastructure.</p>
               <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>We started with RepMail because email is still the backbone of B2B outbound. The architecture is designed to extend into messaging, notifications, and multi-channel orchestration.</p>
               <p className="text-gray-400 leading-relaxed" style={{ fontFamily: FONT_BODY }}>Built for teams who want control, clarity, and scale. No black boxes. No vendor lock-in. Just infrastructure that works.</p>
             </motion.div>
@@ -809,17 +813,17 @@ export default function WaitlistLanding() {
             >
               <div className="flex items-center gap-2">
                 <motion.div className="w-2 h-2 rounded-full bg-emerald-400" animate={{ opacity: [1, 0.4, 1], scale: [1, 0.8, 1] }} transition={{ duration: 2, repeat: Infinity }} style={{ boxShadow: "0 0 8px rgba(52,211,153,0.6)" }} />
-                <span className="text-sm text-gray-300" style={{ fontFamily: FONT_BODY }}>RepMail Â· Live</span>
+                <span className="text-sm text-gray-300" style={{ fontFamily: FONT_BODY }}>RepMail · Live</span>
               </div>
               <div className="w-px h-5 bg-white/10" />
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub Â· Planned</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>MessageHub · Planned</span>
               </div>
               <div className="w-px h-5 bg-white/10 hidden sm:block" />
               <div className="hidden sm:flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-gray-600" />
-                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream Â· Future</span>
+                <span className="text-sm text-gray-500" style={{ fontFamily: FONT_BODY }}>NotifyStream · Future</span>
               </div>
             </motion.div>
           </div>
@@ -896,7 +900,7 @@ export default function WaitlistLanding() {
 
             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.3 }}
               className="mt-6 text-xs text-gray-600" style={{ fontFamily: FONT_BODY }}>
-              Private beta Â· No credit card required Â· Cancel anytime
+              Private beta · No credit card required · Cancel anytime
             </motion.p>
           </div>
         </div>

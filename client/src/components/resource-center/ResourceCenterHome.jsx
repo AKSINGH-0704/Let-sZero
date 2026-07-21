@@ -243,10 +243,14 @@ export default function ResourceCenterHome({
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
                         <Compass className="h-5 w-5" />
                       </span>
-                      <div className="flex-1">
-                        <div className="mb-0.5 flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        {/* M36 — on a 360px card a long path name wraps, and the
+                            step count was squeezed to its minimum and broke
+                            across two lines beside it. Wrapping the row keeps
+                            the count intact on its own line instead. */}
+                        <div className="mb-0.5 flex flex-wrap items-baseline gap-x-2">
                           <h3 className="font-semibold tracking-tight">{path.name}</h3>
-                          {path.steps && <span className="text-xs text-muted-foreground">{path.steps.length} steps</span>}
+                          {path.steps && <span className="whitespace-nowrap text-xs text-muted-foreground">{path.steps.length} steps</span>}
                         </div>
                         <p className="text-sm text-muted-foreground">{path.description}</p>
                       </div>

@@ -1792,9 +1792,19 @@ export default function PublicPricing() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ duration: 0.6 }}
-            className="rounded-xl overflow-hidden"
+            className="relative rounded-xl overflow-hidden"
             style={{ border: "1px solid #1A1A2E" }}
           >
+            {/* M36 — the scrolling was accessible but invisible: at 360px the
+                last row read as "Contact Sales for cust" hard-cut against the
+                border, with nothing to say more content lay to the right. This
+                fade only renders at widths where the 440px table genuinely
+                overflows, so it never appears over a table that already fits. */}
+            <div
+              aria-hidden="true"
+              className="hidden max-[471px]:block pointer-events-none absolute inset-y-0 right-0 z-10 w-10"
+              style={{ background: "linear-gradient(to right, rgba(8,8,15,0), rgba(8,8,15,0.95))" }}
+            />
             {/* M35-F — below ~440px this scrolls horizontally, and a scroll
                 container that is not focusable cannot be panned by keyboard at
                 all (WCAG 2.1.1; axe scrollable-region-focusable, mobile only).
@@ -1864,9 +1874,12 @@ export default function PublicPricing() {
                     {priceDisplay}
                   </div>
                   <div className="text-right">
+                    {/* M36 — the five-figure bonuses ("+10,000", "+30,000") broke
+                        between the glyph and the number inside the pill, leaving
+                        a two-line badge in an otherwise one-line row. */}
                     {row.bonus > 0 ? (
                       <span
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                        className="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-0.5 rounded-full text-xs font-semibold"
                         style={{
                           background: "rgba(52,211,153,0.1)",
                           border: "1px solid rgba(52,211,153,0.2)",
@@ -1953,9 +1966,16 @@ export default function PublicPricing() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-80px" }}
             transition={{ duration: 0.6 }}
-            className="rounded-2xl overflow-hidden"
+            className="relative rounded-2xl overflow-hidden"
             style={{ border: "1px solid #1A1A2E" }}
           >
+            {/* M36 — same missing affordance as the volume table; this one is
+                720px wide, so it overflows on every phone and most tablets. */}
+            <div
+              aria-hidden="true"
+              className="hidden max-[767px]:block pointer-events-none absolute inset-y-0 right-0 z-20 w-10"
+              style={{ background: "linear-gradient(to right, rgba(8,8,15,0), rgba(8,8,15,0.95))" }}
+            />
             {/* M35-F — same WCAG 2.1.1 issue as the volume table above: a
                 720px-wide comparison table in a scroll container that keyboard
                 users could not reach or pan. */}

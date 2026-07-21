@@ -243,6 +243,12 @@ export default function ResourceCenterLayout({ product, children }) {
 function navLinkClass(active) {
   return [
     "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+    // M36 — M30 made this nav `overflow-x-auto` so it would yield space rather
+    // than push the search button off the bar, but the links themselves were
+    // still shrinkable and wrappable. At 1024px "Email Sending Platform" broke
+    // onto three lines, grew the header, and collided with the search control.
+    // Holding each link on one line lets the container scroll as intended.
+    "shrink-0 whitespace-nowrap",
     active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
   ].join(" ");
 }

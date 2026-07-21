@@ -273,7 +273,12 @@ export default function Landing() {
             </span>
           </motion.div>
         </div>
-        <div className="flex items-center space-x-3">
+        {/* M36 — at 768/820 this row was ~840px wide inside a 720px container, so
+            the wordmark drew over "Pricing" and "Request Early Access" ran off
+            the right edge. Dropping the widest secondary button to `lg` and
+            tightening the gap keeps the primary nav usable on tablet rather
+            than hiding all of it behind a breakpoint. */}
+        <div className="flex items-center space-x-2 lg:space-x-3">
           <Link href="/pricing" className="hidden md:block">
             <Button
               variant="ghost"
@@ -317,7 +322,7 @@ export default function Landing() {
               </Button>
             </Link>
           </motion.div>
-          <motion.div className="hidden md:block" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <motion.div className="hidden lg:block" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <Link href="/early-access">
               <Button
                 variant="outline"
@@ -443,10 +448,16 @@ export default function Landing() {
               </div>
               
               {/* Dashboard content */}
-              <div className="p-6">
-                <div className="flex gap-6">
+              {/* M36 — this mockup was authored at desktop width only: a fixed
+                  192px sidebar plus an unconditional 4-column stat grid left
+                  ~78px of main content at 360px, so the stat cards overflowed
+                  the card and were cut off by the rounded-corner overflow-hidden
+                  above. The sidebar is decorative, so it is dropped below `sm`
+                  and the stats fall back to two columns until there is room. */}
+              <div className="p-4 sm:p-6">
+                <div className="flex gap-4 sm:gap-6">
                   {/* Sidebar preview */}
-                  <div className="w-48 space-y-3">
+                  <div className="hidden sm:block w-40 md:w-48 shrink-0 space-y-3">
                     <div className="flex items-center gap-2 px-3 py-2 bg-cyan-500/20 rounded-lg border border-cyan-500/30">
                       <div className="w-4 h-4 bg-cyan-400/50 rounded" />
                       <span className="text-sm text-cyan-300">Dashboard</span>
@@ -460,9 +471,9 @@ export default function Landing() {
                   </div>
                   
                   {/* Main content */}
-                  <div className="flex-1 space-y-4">
+                  <div className="min-w-0 flex-1 space-y-4">
                     {/* Stats row */}
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                       {[
                         { label: 'Available Credits', value: '7,500', trend: '+12%', color: 'text-cyan-400' },
                         { label: 'Emails Sent', value: '28,543', trend: '+8%', color: 'text-emerald-400' },
@@ -471,7 +482,7 @@ export default function Landing() {
                       ].map((stat, i) => (
                         <motion.div 
                           key={i}
-                          className="bg-slate-800/50 border border-white/5 rounded-xl p-4"
+                          className="bg-slate-800/50 border border-white/5 rounded-xl p-3 sm:p-4"
                           initial={{ opacity: 0, y: 20 }}
                           whileInView={{ opacity: 1, y: 0 }}
                           viewport={{ once: true }}
@@ -485,8 +496,11 @@ export default function Landing() {
                     </div>
                     
                     {/* Chart placeholder */}
-                    <div className="bg-slate-800/50 border border-white/5 rounded-xl p-4 h-40">
-                      <div className="flex items-center justify-between mb-4">
+                    <div className="bg-slate-800/50 border border-white/5 rounded-xl p-3 sm:p-4">
+                      {/* M36 — the two labels used to collide and stack onto three
+                          lines inside a fixed h-40 box; wrapping them and letting
+                          the box grow keeps the bars on the baseline. */}
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-4">
                         <span className="text-sm text-slate-400">Campaign Performance</span>
                         <span className="text-xs text-slate-500">Last 30 days</span>
                       </div>
@@ -610,7 +624,7 @@ export default function Landing() {
       {/* Trust Bar */}
       <section className="relative z-10 container mx-auto px-6 py-16">
         <motion.div 
-          className="max-w-6xl mx-auto bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-12"
+          className="max-w-6xl mx-auto bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 sm:p-8 md:p-12"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
@@ -642,7 +656,7 @@ export default function Landing() {
           viewport={{ once: true }}
           variants={fadeInUp}
         >
-          <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-10">
+          <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6 sm:p-8 md:p-10">
             <h3 className="text-xl font-bold text-white mb-2 text-center">Built on proven infrastructure</h3>
             <p className="text-slate-400 text-sm text-center mb-8">Every component is production-grade — no placeholder integrations.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -667,19 +681,23 @@ export default function Landing() {
       {/* CTA Section */}
       <section className="relative z-10 container mx-auto px-6 py-20">
         <motion.div 
-          className="max-w-4xl mx-auto text-center space-y-8 bg-gradient-to-br from-cyan-500/10 to-indigo-500/10 backdrop-blur-xl border border-white/10 rounded-3xl p-16"
+          className="max-w-4xl mx-auto text-center space-y-6 sm:space-y-8 bg-gradient-to-br from-cyan-500/10 to-indigo-500/10 backdrop-blur-xl border border-white/10 rounded-3xl p-8 sm:p-12 md:p-16"
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
           variants={scaleIn}
         >
-          <h2 className="text-4xl font-bold text-white">Ready to run your first campaign?</h2>
-          <p className="text-xl text-slate-300">Start with 500 free credits. No subscription required.</p>
-          <motion.div whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.98 }}>
-            <Link href="/login">
-              <Button 
+          {/* M36 — p-16 was unconditional: at 360px it left 232px of content box,
+              narrower than this button's intrinsic width, so the button spilled
+              past the card's rounded border and the copy wrapped to four lines.
+              Padding now scales, and the button goes full-width on mobile. */}
+          <h2 className="text-3xl sm:text-4xl font-bold text-white">Ready to run your first campaign?</h2>
+          <p className="text-lg sm:text-xl text-slate-300">Start with 500 free credits. No subscription required.</p>
+          <motion.div className="flex justify-center" whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.98 }}>
+            <Link href="/login" className="w-full sm:w-auto">
+              <Button
                 size="lg"
-                className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-lg px-10 h-14 shadow-xl shadow-cyan-500/25 transition-all"
+                className="w-full sm:w-auto bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-base sm:text-lg px-6 sm:px-10 h-14 shadow-xl shadow-cyan-500/25 transition-all"
               >
                 Start Your Free Trial
                 <ArrowRight className="ml-2 w-5 h-5" />
