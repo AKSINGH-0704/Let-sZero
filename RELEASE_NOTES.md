@@ -2,13 +2,42 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-19
+**Last updated:** 2026-07-21
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.0.0 (2026-07-19)
+## Current Release — v2.1.0 (2026-07-21)
+
+A quality release for the RepMail app itself. Where v2.0.0 focused on the public website and Resource Center, this one goes through the signed-in application — the dashboard, the campaign builder, contacts, templates, domains, team management and billing — and fixes how it behaves on real devices.
+
+### The app now works properly on a phone
+
+- **Dialogs fit the screen they open on.** Previously a dialog taller than the available space could be cut off at the top *and* bottom with no way to scroll to the rest — so on a phone held sideways, buttons like **Save** and **Cancel** could be out of reach entirely. Every dialog in the app now sizes itself to the viewport and scrolls internally, and sits inside the screen edges instead of flush against them.
+- **The campaign builder's progress indicator is readable on mobile.** The seven-step row needed more width than a phone has, which pushed the final step off-screen and flattened the connecting line. On smaller screens it is now a clear progress bar showing the step name and how many remain; on tablets and desktops the familiar seven-step rail is unchanged, with its connectors and labels rendering correctly at every width.
+- **Page headings no longer collide with their buttons.** On Team Management, Templates and Contacts, the action buttons could overlap the page title on narrow screens — on Team Management that made **Invite User** unreadable and untappable, which was the first thing a customer saw after buying credits on a phone.
+- **Wide tables can be reached with a keyboard.** Team Management and the audit log scroll sideways when they're wider than the screen; that scrolling is now reachable without a mouse.
+
+### Smaller, easier-to-hit controls fixed
+
+Several links and buttons were below the recommended minimum tap size, including the domain and sender-identity links in the campaign builder, the "How custom domains work" toggle, and the template preview and delete buttons — which also had no descriptive label for screen readers. All now meet the minimum target size and are properly labelled.
+
+### A calmer first run after purchase
+
+Buying credits and then landing on the dashboard could explain Teams twice in a row — once on the purchase confirmation and again a moment later on the dashboard. Whichever appears first now does the explaining. The purchase confirmation also holds still while you read it, instead of letting the page drift behind it.
+
+### Security and privacy hardening
+
+Access controls on internal platform-operations endpoints were tightened so that platform-wide diagnostics — AI usage totals and cross-account delivery health — are reachable only by LetsZero platform staff. Customer accounts, including workspace administrators, see only their own workspace's data. There is no evidence of any customer data having been accessed improperly, and no customer-facing feature changed as a result.
+
+### Consistency
+
+Capitalisation and empty-state wording were made consistent across the app, so the same action is worded the same way everywhere. Every amount you see in RepMail is now shown in rupees; the dollar figures that previously appeared on the dashboard were RepMail's own internal service costs, not yours, and are no longer shown to customers.
+
+---
+
+## Previous Release — v2.0.0 (2026-07-19)
 
 A major release. The RepMail Resource Center grew from a small set of guides into a full knowledge platform, and both it and the LetsZero website were hardened for production.
 
