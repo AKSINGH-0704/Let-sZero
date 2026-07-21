@@ -291,4 +291,61 @@ describe("Tenant isolation — cross-workspace access must be denied", () => {
     const deactivateGrandchild = await api("DELETE", `/api/users/${gcId}`, { cookie: a.cookie });
     expect(deactivateGrandchild.status).toBe(200);
   });
+
+  // ── M37: the two internal operations panels ────────────────────────────────
+  //
+  // Both were gated on req.isRootAdmin / rootAdminMiddleware, which any
+  // customer's own workspace owner satisfies (and so does isSecondaryRoot).
+  // Behind them sat genuinely platform-wide data: AI spend aggregated across
+  // every tenant, and a delivery-health payload listing other tenants' email
+  // addresses. The mutations on the delivery-health panel were already
+  // platform-operator-only, so the reads were the doors left open.
+  //
+  // These assert the *shape of the gate*, not the numbers — the numbers are
+  // whatever the shared in-memory store happens to hold when the suite runs.
+
+  it("GET /api/dashboard/stats: a customer's own Root Admin never receives the platform-wide aiStats block", async () => {
+    const a = await makeWorkspace();
+
+    const stats = await api("GET", "/api/dashboard/stats", { cookie: a.cookie });
+    expect(stats.status).toBe(200);
+    expect(stats.json).not.toHaveProperty("aiStats");
+
+    // The workspace-scoped figures must still be there — the fix separated the
+    // two flags, it did not narrow what a workspace owner legitimately sees.
+    expect(stats.json).toHaveProperty("totalCampaigns");
+    expect(stats.json).toHaveProperty("monthlyChart");
+  });
+
+  it("GET /api/dashboard/stats: a secondary-root user does not receive aiStats either", async () => {
+    const a = await makeWorkspace();
+    const createSub = await api("POST", "/api/users", {
+      cookie: a.cookie,
+      body: { username: "a_sr_" + Math.random().toString(36).slice(2), email: `a_sr_${Math.random().toString(36).slice(2)}@example.com`, password: "pw-x", role: "SUB_ADMIN" },
+    });
+    const grant = await api("POST", "/api/admin/grant-root-access", { cookie: a.cookie, body: { userId: createSub.json.id } });
+    expect(grant.status).toBe(200);
+
+    const srCookie = await sessionCookieFor(createSub.json.id);
+    await api("POST", "/api/auth/reset-password", { cookie: srCookie, body: { newPassword: "sr-reset-pw" } });
+
+    const stats = await api("GET", "/api/dashboard/stats", { cookie: srCookie });
+    expect(stats.status).toBe(200);
+    expect(stats.json).not.toHaveProperty("aiStats");
+  });
+
+  it("GET /api/admin/delivery-health: forbidden to a customer's own Root Admin", async () => {
+    const a = await makeWorkspace();
+    const health = await api("GET", "/api/admin/delivery-health", { cookie: a.cookie });
+    expect(health.status).toBe(403);
+  });
+
+  it("GET /api/auth/me: isPlatformOperator is false for a customer's own Root Admin", async () => {
+    const a = await makeWorkspace();
+    const me = await api("GET", "/api/auth/me", { cookie: a.cookie });
+    expect(me.status).toBe(200);
+    expect(me.json.isPlatformOperator).toBe(false);
+    // Still a ROOT_ADMIN — the two are deliberately different signals.
+    expect(me.json.role).toBe(USER_ROLES.ROOT_ADMIN);
+  });
 });

@@ -945,6 +945,12 @@ export async function registerRoutes(httpServer, app) {
         ...req.user,
         isDormant: req.user.isDormant ?? false,
         isSecondaryRoot: req.user.isSecondaryRoot ?? false,
+        // M37 — the client needs the same signal the server gates on, so the
+        // two internal operations panels (AI spend, platform delivery health)
+        // are drawn under exactly the condition their endpoints allow. Derived,
+        // never stored: same ADMIN_USERNAME identity check as
+        // platformOperatorMiddleware.
+        isPlatformOperator: req.isPlatformOperator === true,
         effectivePlan,
         aiDailyLimit: rawLimit === Infinity ? null : rawLimit,
       });
@@ -1179,7 +1185,27 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/dashboard/stats", authMiddleware, async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats(req.user.id, req.isRootAdmin);
+      // M37 — was req.isRootAdmin. The aiStats block getDashboardStats returns
+      // under this flag is NOT workspace-scoped: it aggregates the whole
+      // aiUsageLogs table and its topAiSpenders list joins users across every
+      // tenant. req.isRootAdmin is satisfied by any customer's own ROOT_ADMIN
+      // and by isSecondaryRoot, which is exactly the gap TRUST-016/TRUST-027
+      // enumerated and re-gated elsewhere; this endpoint was missed. A
+      // secondary-root user in a customer workspace could read platform-wide
+      // AI spend from this payload even though the UI never drew it for them.
+      // M37 — two flags, deliberately not one. isRootAdmin widens the campaign
+      // figures to the caller's own WORKSPACE (correct for any workspace owner,
+      // and unchanged). The second flag attaches aiStats, which
+      // getDashboardStats aggregates across the whole aiUsageLogs table with no
+      // tenant scope and whose topAiSpenders joins users from every tenant —
+      // so it is gated on the single platform-operated account, not on
+      // req.isRootAdmin. req.isRootAdmin is satisfied by any customer's own
+      // ROOT_ADMIN and by isSecondaryRoot, which is exactly the gap
+      // TRUST-016/TRUST-027 enumerated and re-gated elsewhere; this endpoint
+      // was missed, so a secondary-root user in a customer workspace could read
+      // platform-wide AI spend from this payload even though the UI never drew
+      // it for them.
+      const stats = await storage.getDashboardStats(req.user.id, req.isRootAdmin, req.isPlatformOperator);
       const isAdmin = req.user.role === "ROOT_ADMIN" || req.user.role === "SUB_ADMIN" || req.user.isSecondaryRoot;
       if (isAdmin) {
         const teamStats = await storage.getTeamStats(req.user.id);
@@ -3602,7 +3628,13 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.get("/api/admin/delivery-health", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  // M37 — was rootAdminMiddleware. getDeliveryHealthStats() is platform-wide:
+  // totals across every campaign on the platform, and a topBouncers list
+  // carrying other tenants' email addresses. The pause/resume mutations this
+  // same panel drives were already platformOperatorMiddleware (TRUST-027), so
+  // the read was the one door left open — and it was the door with the customer
+  // data behind it.
+  app.get("/api/admin/delivery-health", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       const stats = await storage.getDeliveryHealthStats();
       res.json(stats);

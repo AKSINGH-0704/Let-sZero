@@ -76,6 +76,11 @@ export function AuthProvider({ children }) {
   const isSubAdmin = user?.role === "SUB_ADMIN";
   const isSecondaryRoot = user?.isSecondaryRoot === true;
   const isAdmin = isRootAdmin || isSubAdmin || isSecondaryRoot;
+  // M37 — the single platform-operated account, as the server computes it. Note
+  // this is NOT isRootAdmin: a customer's own workspace owner is also a
+  // ROOT_ADMIN. Only ever gate genuinely platform-wide operational surfaces on
+  // this; anything a customer should see belongs behind isAdmin/isRootAdmin.
+  const isPlatformOperator = user?.isPlatformOperator === true;
 
   const value = {
     user,
@@ -85,6 +90,7 @@ export function AuthProvider({ children }) {
     isSubAdmin,
     isSecondaryRoot,
     isAdmin,
+    isPlatformOperator,
     mustResetPassword,
     login,
     logout,

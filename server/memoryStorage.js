@@ -1360,7 +1360,7 @@ export const memoryStorage = {
     return log;
   },
 
-  async getDashboardStats(userId, isRootAdmin) {
+  async getDashboardStats(userId, isRootAdmin, includePlatformAiStats) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
 
     // Mirrors dbStorage.getDashboardStats field-for-field (storage.js) — this
@@ -1400,7 +1400,7 @@ export const memoryStorage = {
       monthlyChart: buildMonthlyChart(campaignsList),
     };
 
-    if (!isRootAdmin) return base;
+    if (!includePlatformAiStats) return base;
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     // All AI analytics scoped to 30 days — matches getDashboardStats in dbStorage

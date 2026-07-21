@@ -88,7 +88,7 @@ const PLAN_LABELS = {
 const ACTIVE_POLL_INTERVAL_MS = 8000;
 
 export default function Dashboard() {
-  const { user, isAdmin, isRootAdmin } = useAuth();
+  const { user, isAdmin, isRootAdmin, isPlatformOperator } = useAuth();
 
   // The poll/live-indicator trigger is deliberately "is anything RUNNING right
   // now," not stats.activeCampaigns — that aggregate also counts PAUSED and
@@ -865,15 +865,39 @@ export default function Dashboard() {
           )}
         </motion.div>
 
-        {/* Delivery health panel — ROOT_ADMIN only */}
-        {isRootAdmin && (
+        {/* Platform delivery health — PLATFORM OPERATOR only.
+            M37: this shows platform-wide send/bounce/complaint totals and names
+            the top bouncing accounts by email address, and its Pause All action
+            has always been platformOperatorMiddleware — so for any other admin
+            it was other tenants' data above a button that could only 403. It is
+            an operations console, not a customer surface. */}
+        {isPlatformOperator && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
             <DeliveryHealthPanel />
           </motion.div>
         )}
 
-        {/* AI Analytics — ROOT_ADMIN only */}
-        {isRootAdmin && stats?.aiStats && (
+        {/* AI cost analytics — PLATFORM OPERATOR only.
+            M37. The operator asked whether a customer should be reading
+            "$0.0484" on a product priced in INR. The answer is that a customer
+            should never have been reading this panel at all: the figures are
+            RepMail's own model-provider spend across every tenant, not the
+            viewer's, and "Top AI Spenders" ranks accounts from other
+            workspaces. Converting it to INR would have made a cross-tenant
+            operations metric look like a customer's own bill.
+
+            So it stays in USD — that is the currency RepMail is actually billed
+            in, and an FX conversion would invent a rate on a real cost — and it
+            moves behind the platform-operator gate that its data always
+            implied.
+
+            Customers are not left without an AI usage number: the one that
+            means something to them, generations remaining against their daily
+            limit, is already shown at the point of use in the campaign wizard
+            (AiPreview, SpamAnalyzer, TemplateBuilder) and per-member on Team
+            Management. Nothing was removed from the customer's view that they
+            could act on. */}
+        {isPlatformOperator && stats?.aiStats && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.25 }}>
             <Card className="border-card-border">
               <CardHeader className="pb-4">
@@ -883,29 +907,35 @@ export default function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Total Cost</p>
-                    <p className="text-2xl font-semibold">${(stats.aiStats.totalAiCostUsd ?? 0).toFixed(4)}</p>
+                {/* M37: three text-2xl figures in a fixed 3-column grid had no
+                    room to sit side by side on a phone — "$0.0484" and "44" ran
+                    together with the labels wrapping mid-phrase. Two columns
+                    below sm, three from sm, and the figures step down a size on
+                    the narrowest screens. `tabular-nums` keeps the columns from
+                    jittering as values change. */}
+                <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Total cost (USD)</p>
+                    <p className="text-xl font-semibold tabular-nums sm:text-2xl">${(stats.aiStats.totalAiCostUsd ?? 0).toFixed(4)}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Total Calls</p>
-                    <p className="text-2xl font-semibold">{formatNumber(stats.aiStats.totalAiCalls ?? 0)}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Total calls</p>
+                    <p className="text-xl font-semibold tabular-nums sm:text-2xl">{formatNumber(stats.aiStats.totalAiCalls ?? 0)}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Cache Hit Rate</p>
-                    <p className="text-2xl font-semibold">{parseFloat(stats.aiStats.cacheHitRate ?? 0).toFixed(1)}%</p>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Cache hit rate</p>
+                    <p className="text-xl font-semibold tabular-nums sm:text-2xl">{parseFloat(stats.aiStats.cacheHitRate ?? 0).toFixed(1)}%</p>
                   </div>
                 </div>
 
                 {Array.isArray(stats.aiStats.aiCostByEndpoint) && stats.aiStats.aiCostByEndpoint.length > 0 && (
                   <div className="mb-6">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Cost by Endpoint</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Cost by endpoint (USD)</p>
                     <div className="space-y-2">
                       {stats.aiStats.aiCostByEndpoint.map((item) => (
-                        <div key={item.endpoint} className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">{item.endpoint}</span>
-                          <span className="font-medium">${Number(item.totalCost).toFixed(4)}</span>
+                        <div key={item.endpoint} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.endpoint}</span>
+                          <span className="shrink-0 font-medium tabular-nums">${Number(item.totalCost).toFixed(4)}</span>
                         </div>
                       ))}
                     </div>
@@ -914,12 +944,21 @@ export default function Dashboard() {
 
                 {stats.aiStats.topAiSpenders && stats.aiStats.topAiSpenders.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Top AI Spenders</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Top AI spenders (USD)</p>
                     <div className="space-y-2">
                       {stats.aiStats.topAiSpenders.slice(0, 5).map((spender, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground truncate max-w-[200px]">{spender.email || spender.userId}</span>
-                          <span className="font-medium">${Number(spender.totalCost).toFixed(4)}</span>
+                        <div key={i} className="flex items-center justify-between gap-3 text-sm">
+                          {/* M37: read `email`, which neither storage adapter has
+                              ever returned — both return `username` — so this
+                              always fell through to the raw UUID. That is why the
+                              operator's screenshot is a column of
+                              "0986a738-b651-4d98-…". `min-w-0` lets the truncate
+                              actually engage inside the flex row, which
+                              max-w-[200px] alone did not do at narrow widths. */}
+                          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                            {spender.username || spender.userId}
+                          </span>
+                          <span className="shrink-0 font-medium tabular-nums">${Number(spender.totalCost).toFixed(4)}</span>
                         </div>
                       ))}
                     </div>

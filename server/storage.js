@@ -1553,7 +1553,18 @@ const dbStorage = {
     return log;
   },
 
-  async getDashboardStats(userId, isRootAdmin) {
+  // M37 — these two flags used to be one, and that conflation is what let
+  // platform-wide AI spend onto a customer-reachable payload:
+  //
+  //   isRootAdmin              widens the campaign query from "my campaigns" to
+  //                            "my WORKSPACE's campaigns". Workspace-scoped, and
+  //                            correct for any workspace owner.
+  //   includePlatformAiStats   attaches the aiStats block, which is aggregated
+  //                            across EVERY tenant and is not scoped at all.
+  //
+  // One parameter meant "show me my whole workspace" and "show me the whole
+  // platform" were the same request. They are not. Keep them separate.
+  async getDashboardStats(userId, isRootAdmin, includePlatformAiStats) {
     const campaignsList = await this.getCampaigns(userId, isRootAdmin);
 
     // Aggregate engagement metrics directly from loaded campaigns (no extra query).
@@ -1598,7 +1609,7 @@ const dbStorage = {
       monthlyChart:       buildMonthlyChart(campaignsList),
     };
 
-    if (!isRootAdmin) return base;
+    if (!includePlatformAiStats) return base;
 
     // AI cost analytics — root admin only
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
