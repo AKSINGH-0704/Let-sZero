@@ -86,15 +86,16 @@ export default function ContactLibrary() {
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <BookUser className="w-7 h-7 text-primary" />
-            <div>
+        {/* M37: same non-wrapping header rule as Users and Templates. */}
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <BookUser className="w-7 h-7 shrink-0 text-primary" />
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold">Contacts</h1>
               <p className="text-muted-foreground text-sm">Manage reusable contact lists for your email campaigns</p>
             </div>
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button className="shrink-0" onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New List
           </Button>
@@ -156,12 +157,19 @@ export default function ContactLibrary() {
                   </div>
                   <p className="text-xs text-muted-foreground">Created {formatDate(list.createdAt)}</p>
                   <div className="mt-auto">
-                    <Link href={`/app/contacts/${list.id}`}>
-                      <Button variant="outline" size="sm" className="w-full">
+                    {/* M37: was <Link><Button>, which renders a <button> nested
+                        inside an <a> — two interactive elements one inside the
+                        other — and left the anchor itself only 22px tall (WCAG
+                        2.5.8) because an inline <a> takes its height from
+                        line-height, not from the button it wraps. `asChild`
+                        makes the anchor BE the button: one element, correct
+                        semantics, full 36px target. */}
+                    <Button asChild variant="outline" size="sm" className="w-full">
+                      <Link href={`/app/contacts/${list.id}`}>
                         Open
                         <ArrowRight className="w-3 h-3 ml-2" />
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

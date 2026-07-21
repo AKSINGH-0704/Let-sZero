@@ -196,15 +196,17 @@ export default function Templates() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
+        {/* Header — M37: measured overflowing to 340px in a 320px viewport,
+            which put the "Create Template" button partly off-screen. Same
+            responsive rule as @/components/common/PageHeader. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Email Templates</h1>
             <p className="text-slate-600 dark:text-slate-400 mt-1">Create and manage your email templates</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-template">
+              <Button className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-template">
                 <Plus className="h-5 w-5" />
                 Create Template
               </Button>

@@ -2,8 +2,25 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const Table = React.forwardRef(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+// M37 — the wrapper already scrolls horizontally (`overflow-auto`), which is the
+// right behaviour: the Team Management table lays out to 859px and the audit log
+// to 986px, and squeezing either into 320px would destroy them. What it was
+// missing is keyboard reach. A scrollable region that cannot be focused fails
+// WCAG 2.1.1 outright — a keyboard or switch user had no way to move the audit
+// log sideways to the columns they needed. `role="region"` + `tabIndex={0}` +
+// an accessible name is the same remedy already applied to the Resource Center's
+// reference tables in M30; this puts it in the shared primitive so every table
+// in the authenticated app inherits it.
+//
+// `label` names the region. It falls back to a generic name rather than being
+// required, so no existing call site breaks, but callers should pass one.
+const Table = React.forwardRef(({ className, label, ...props }, ref) => (
+  <div
+    className="relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    role="region"
+    aria-label={label || "Table, scrollable horizontally"}
+    tabIndex={0}
+  >
     <table
       ref={ref}
       className={cn("w-full caption-bottom text-sm", className)}

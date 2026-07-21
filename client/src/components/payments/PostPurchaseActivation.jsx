@@ -33,6 +33,7 @@ import { CheckCircle, Users, Globe, Shield, Mail, ArrowRight, X } from "lucide-r
 import { MAX_TEAM_MEMBERS } from "@shared/schema";
 import { useAuth } from "@/context/AuthContext";
 import { formatNumber } from "@/lib/utils";
+import { markTeamsEducationSeen } from "@/lib/teamsEducation";
 
 // The paid tiers, and only the paid tiers. MAX_TEAM_MEMBERS also carries
 // free/trial seat limits (both 25, uniform since M20), so matching a plan name
@@ -145,6 +146,20 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   // moment later would flash Teams education at a customer who already has a
   // team, which is the exact thing this variant exists to prevent.
   const showTeamIntro = teamIntroEligible && !teamUsageLoading && !hasTeamMembers;
+
+  // M37 — M26 established that nobody should be educated about Teams twice, but
+  // that only ever held inside this component. TeamsWelcomeModal introduces
+  // Teams again on the next dashboard visit, and it could not see this panel's
+  // state, so a customer who signed up and bought credits in one session got
+  // both: shared domains and roles explained here, then "How many people do you
+  // plan to work with?" and shared domains and roles explained again a moment
+  // later. Recording it against the shared flag closes that.
+  //
+  // Only when the FULL variant actually renders. The compact variant teaches
+  // nothing, so it must not suppress the education that would otherwise follow.
+  useEffect(() => {
+    if (showTeamIntro && user?.id) markTeamsEducationSeen(user.id);
+  }, [showTeamIntro, user?.id]);
 
   const seatCopy = seatLimit === Infinity
     ? "unlimited teammates"

@@ -26,8 +26,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
+import { hasSeenTeamsEducation, markTeamsEducationSeen } from "@/lib/teamsEducation";
 
-const SEEN_KEY_PREFIX = "repmail_teams_welcome_seen_";
 const STEPS = ["question", "education", "done"];
 
 const ANSWERS = [
@@ -75,14 +75,15 @@ export default function TeamsWelcomeModal() {
 
   useEffect(() => {
     if (!isRootAdmin || !user?.id) return;
-    const seen = localStorage.getItem(SEEN_KEY_PREFIX + user.id) === "1";
-    if (!seen) setOpen(true);
+    // M37: shared with PostPurchaseActivation, so a customer who just had Teams
+    // explained on the activation panel is not asked "How many people do you
+    // plan to work with?" the moment they land on the dashboard. See
+    // @/lib/teamsEducation.
+    if (!hasSeenTeamsEducation(user.id)) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRootAdmin, user?.id]);
 
-  const markSeen = () => {
-    if (user?.id) localStorage.setItem(SEEN_KEY_PREFIX + user.id, "1");
-  };
+  const markSeen = () => markTeamsEducationSeen(user?.id);
 
   const handleOpenChange = (next) => {
     if (!next) markSeen();
@@ -188,12 +189,20 @@ export default function TeamsWelcomeModal() {
               <DialogTitle className="pt-2">You're all set</DialogTitle>
               <DialogDescription>{completion.note}</DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:justify-end">
-              <Button variant="outline" onClick={() => goToLink(completion.linkTo)} data-testid="button-teams-welcome-link">
-                {completion.linkLabel}
-              </Button>
+            {/* M37: was `flex-col-reverse`, which reverses the VISUAL order but
+                not the DOM order. On a phone a sighted user saw "Got it" first
+                and "Go to Team Management" second, while a keyboard or screen
+                reader user met them the other way round — WCAG 1.3.2 / 2.4.3.
+                Ordering the DOM the way it is actually read on mobile (primary
+                first) and using `sm:flex-row-reverse` to put the primary on the
+                right at desktop keeps both presentations conventional without
+                the two orders ever disagreeing. */}
+            <div className="flex flex-col gap-2 pt-3 sm:flex-row-reverse sm:justify-start">
               <Button onClick={finish} data-testid="button-teams-welcome-done">
                 Got it
+              </Button>
+              <Button variant="outline" onClick={() => goToLink(completion.linkTo)} data-testid="button-teams-welcome-link">
+                {completion.linkLabel}
               </Button>
             </div>
           </>

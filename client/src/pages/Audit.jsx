@@ -235,7 +235,17 @@ export default function Audit() {
                               {config.label}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-muted-foreground max-w-xs truncate">
+                          {/* M37: the truncation here is deliberate (details run
+                              to ~1,000px and would wreck the row), but there was
+                              no way to read the full value at all — an audit log
+                              you cannot fully read is a poor audit log. `title`
+                              exposes it on hover and to assistive tech without
+                              adding a detail view this milestone has no mandate
+                              to design. */}
+                          <TableCell
+                            className="text-muted-foreground max-w-xs truncate"
+                            title={formatDetails(log.details)}
+                          >
                             {formatDetails(log.details)}
                           </TableCell>
                           <TableCell className="text-muted-foreground">

@@ -399,17 +399,26 @@ export default function Users() {
     <AppLayout>
       <div className="space-y-6">
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
+        {/* Header.
+            M37: was `flex items-center justify-between` with no wrap, so at 320
+            and 390 the action cluster sat on top of the h1 and "Invite User"
+            ran off the right edge — unreadable and unclickable. This is the
+            screen the post-purchase "Go to Team Management" CTA lands on, so
+            it was the first thing a customer saw after paying, on a phone.
+            The rule here is the one @/components/common/PageHeader already
+            uses: stack below sm, row from sm, min-w-0 on the text so it can
+            shrink, shrink-0 on the actions so they never compress. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white">User Management</h1>
             <p className="text-slate-600 dark:text-slate-400 mt-1">Manage team members and their permissions</p>
           </div>
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
             {isRootAdmin && (
               <span className="text-xs text-muted-foreground">{secondaryRootCount}/2 secondary admins</span>
             )}
-            <div className="flex gap-2">
+            {/* flex-wrap so the two buttons stack rather than overflow at 320. */}
+            <div className="flex flex-wrap gap-2">
             {/* Invite User (Recommended) */}
             <Dialog open={isInviteOpen} onOpenChange={(open) => { setIsInviteOpen(open); if (!open) setInviteFieldErrors({}); }}>
               <DialogTrigger asChild>

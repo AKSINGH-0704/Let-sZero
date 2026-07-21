@@ -354,7 +354,10 @@ export default function History() {
                   <Link href="/app/campaigns/new">
                     <Button data-testid="button-create-first-campaign">
                       <Send className="mr-2 h-4 w-4" aria-hidden="true" />
-                      Create Your First Campaign
+                      {/* M37: sentence case, matching Dashboard.jsx and
+                          DomainDetail.jsx. The same CTA existed in two
+                          capitalisations across three empty states. */}
+                      Create your first campaign
                     </Button>
                   </Link>
                 )}
