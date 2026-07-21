@@ -268,6 +268,30 @@ html, body {
  */
 @layer utilities {
 
+  /* M37 — the single fix for every modal in the app.
+   *
+   * Dialog/AlertDialog content is centred with `top:50%` + `translateY(-50%)`,
+   * so any dialog taller than the viewport overflows BOTH ends at once. It has
+   * no max-height and no overflow of its own, and Radix locks body scroll while
+   * a dialog is open — so the clipped part was not merely ugly, it was
+   * unreachable. Measured at 667x375 (a phone in landscape): the New Template
+   * dialog sat at top:-143 / bottom:519 with overflow-y "visible" and did not
+   * move under a 400px scroll gesture. Its Save and Cancel buttons could not be
+   * reached by any means; only Escape or the browser back button got the
+   * customer out, losing whatever they had typed.
+   *
+   * Two max-height declarations on purpose: `dvh` tracks the *dynamic* viewport
+   * on mobile (URL bar shown or hidden), which `vh` does not, and the plain
+   * `vh` line stays first as the fallback for engines without `dvh`.
+   * `overscroll-behavior: contain` stops a scroll that reaches the end of the
+   * dialog from chaining to the page behind it. */
+  .dialog-viewport-fit {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   /* Hide ugly search cancel button in Chrome until we can style it properly */
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;

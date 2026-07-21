@@ -73,6 +73,17 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   // Dialog styling — considered and rejected migrating for that reason).
   // Without this, Tab can cycle focus into page content hidden behind the
   // overlay, and there was no keyboard-only way to dismiss.
+  // M37 — this hand-rolled overlay never locked page scroll, unlike the Radix
+  // primitive it deliberately does not use. The page behind it scrolled under
+  // touch, so on a phone the activation panel drifted over moving content.
+  // Restores the previous value rather than assuming "" (the customer may have
+  // arrived from a surface that set its own).
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
   useEffect(() => {
     dialogRef.current?.focus();
     const handleKeyDown = (e) => {
@@ -156,7 +167,14 @@ export default function PostPurchaseActivation({ payment, onClose }) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        // M37: `overflow-y-auto` on the backdrop plus `my-auto` on the panel is
+        // the fix for the FULL variant, which is ~640px tall — taller than any
+        // phone in landscape and taller than a 320x568 portrait screen. Before
+        // this the panel was centred by `items-center` and simply overflowed
+        // both ends of a fixed, unscrollable box, putting "Invite your team" and
+        // "Continue to Dashboard" out of reach on the one screen that has to
+        // work: the one a customer sees right after paying.
+        className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/70 p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="activation-title"
@@ -165,14 +183,21 @@ export default function PostPurchaseActivation({ payment, onClose }) {
           ref={dialogRef}
           tabIndex={-1}
           {...motionProps}
-          className="relative w-full max-w-lg rounded-2xl p-7 md:p-8 outline-none"
+          className="relative my-auto w-full max-w-lg shrink-0 rounded-2xl p-7 md:p-8 outline-none"
           style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
           data-testid={showTeamIntro ? "activation-full" : "activation-compact"}
         >
           <button
             onClick={handleDismiss}
             aria-label="Close and continue to dashboard"
-            className="absolute right-4 top-4 rounded p-1 text-[#55556A] transition-colors hover:text-[#F0F0F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+            // M37: `#55556A` is the exact colour RC-2 replaced everywhere else
+            // for failing AA on these dark surfaces; `#7878A0` is the settled
+            // replacement (4.63:1 on #0C0C14). This close button was missed
+            // because RC-2 measured pages at rest and this one only renders
+            // after a real payment. `p-2` takes the target from 24px to 32px —
+            // the dismiss control on a post-payment overlay is a bad place to
+            // sit exactly on the WCAG 2.5.8 minimum.
+            className="absolute right-4 top-4 rounded p-2 -m-1 text-[#7878A0] transition-colors hover:text-[#F0F0F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
           >
             <X className="h-4 w-4" />
           </button>

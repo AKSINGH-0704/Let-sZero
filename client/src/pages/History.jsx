@@ -382,7 +382,11 @@ export default function History() {
 
       {/* Campaign detail dialog */}
       <Dialog open={!!viewCampaign} onOpenChange={(open) => !open && setViewCampaign(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* M37: `max-h-[90vh] overflow-y-auto` dropped — this was the one call
+            site that had patched the missing height cap locally. DialogContent
+            now caps every dialog, so the local override is redundant (and its
+            `vh` unit was the wrong one on mobile). */}
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{viewCampaign?.name}</DialogTitle>
             <DialogDescription>
