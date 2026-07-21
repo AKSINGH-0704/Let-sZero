@@ -254,6 +254,45 @@ function rootAdminMiddleware(req, res, next) {
 // resume, per-user sender-health resume) to mineRootAdmin only. Previously
 // these used rootAdminMiddleware, which any customer's own ROOT_ADMIN also
 // satisfies — the exact gap TRUST-016 identified and TRUST-027 enumerated.
+//
+// TRUST-028 — THE INVARIANT THIS GATE EXISTS TO ENFORCE:
+//
+//   Any handler that returns data with no tenant predicate must require
+//   platform-operator privileges — regardless of who "owns" that data.
+//
+// The wording matters, because the previous framing is what let two endpoints
+// through. TRUST-027 examined /api/admin/queue/status and
+// /api/admin/contact-submissions and explicitly recorded them as "not
+// affected / genuinely global, no fix needed", on the grounds that they are
+// "BullMQ depth, not tenant data" and "public sales leads, not tenant data".
+//
+// Both judgements are right about OWNERSHIP and wrong about CONTENT:
+//   - queue/status is not tenant data in aggregate, but getFailed() returns job
+//     payloads carrying campaignId and userId from every tenant.
+//   - contact submissions are not submitted by a tenant, but they are RepMail's
+//     inbound sales pipeline — names, addresses and free-text messages — and a
+//     customer reading them is a commercial-confidentiality exposure even
+//     though it is not, strictly, a tenant-isolation one.
+//
+// So "is this tenant data?" is the wrong question; it produced a defensible
+// answer twice and the wrong outcome twice. "Is this scoped to the caller?" is
+// the right one. Where the answer is no, the caller must be staff.
+//
+// Note also that `rootAdminMiddleware` is not a smell in itself — it is correct
+// on /api/audit-logs, which really is workspace-scoped — so its presence on an
+// unscoped handler looks right on inspection. The gate cannot be audited
+// without reading what the handler actually returns.
+//
+// Two corollaries worth keeping in mind when adding a route:
+//   1. A route need not live under /api/admin to be platform-wide. The worst
+//      instance found so far was GET /api/dashboard/stats, which is
+//      authMiddleware-only and CONDITIONALLY attached a platform-wide block —
+//      invisible to any audit that greps for admin middleware.
+//   2. `req.isRootAdmin` includes isSecondaryRoot, which is granted to users
+//      inside customer workspaces. "Root admin" never meant "our staff."
+//
+// Enforced by tests/unit/tenant-isolation.test.js, which walks the live Express
+// route table and fails on any /api/admin route reachable by a non-operator.
 function platformOperatorMiddleware(req, res, next) {
   if (!req.isPlatformOperator) {
     return res.status(403).json({ message: "Forbidden" });
@@ -3548,7 +3587,20 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.get("/api/admin/contact-submissions", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  // TRUST-028 — was rootAdminMiddleware. getContactSubmissions() applies no
+  // tenant predicate at all (`db.select().from(contactSubmissions)` with only
+  // an ORDER BY and a LIMIT), so this returned the marketing site's contact
+  // form submissions — names, email addresses and free-text message bodies —
+  // to any caller holding root-tier privileges, including a secondary-root user
+  // inside a customer workspace.
+  //
+  // TRUST-027 looked at this endpoint and cleared it as "public sales leads,
+  // not tenant data". The ownership claim is correct and the conclusion is not:
+  // these are RepMail's inbound sales pipeline, and the customers reading them
+  // may be the competitors named in them. There is no per-tenant version of
+  // this data to scope it to, which is precisely why it has to be operator-only
+  // rather than scoped.
+  app.get("/api/admin/contact-submissions", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       const submissions = await storage.getContactSubmissions({ limit: 100 });
       res.json(submissions);
@@ -3603,7 +3655,16 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // ── Admin: BullMQ queue depth + last 10 failed jobs ──────────────────────────
-  app.get("/api/admin/queue/status", authMiddleware, rootAdminMiddleware, async (req, res) => {
+  // TRUST-028 — was rootAdminMiddleware. This reads the BullMQ queue directly
+  // rather than through storage, which is why a storage-layer review alone
+  // would miss it.
+  //
+  // TRUST-027 cleared this one as "BullMQ depth, not tenant data". True of the
+  // counts; not true of the payload directly beneath them — getFailed() returns
+  // up to ten jobs whose `data` carries campaignId and userId from whichever
+  // tenants happen to have failing jobs. The aggregate was assessed and the
+  // list underneath it was not.
+  app.get("/api/admin/queue/status", authMiddleware, platformOperatorMiddleware, async (req, res) => {
     try {
       const queue = getCampaignQueue();
       if (!queue) {

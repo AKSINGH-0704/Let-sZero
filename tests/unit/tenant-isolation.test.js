@@ -26,12 +26,15 @@ vi.mock("../../server/email.js", () => ({
 let httpServer;
 let baseUrl;
 let storage;
+// Hoisted for the TRUST-028 invariant test, which walks the live Express route
+// table to find /api/admin routes rather than trusting a hand-written list.
+let app;
 
 beforeAll(async () => {
   ({ storage } = await import("../../server/storage.js"));
   const { registerRoutes } = await import("../../server/routes.js");
 
-  const app = express();
+  app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   httpServer = createServer(app);
@@ -347,5 +350,199 @@ describe("Tenant isolation — cross-workspace access must be denied", () => {
     expect(me.json.isPlatformOperator).toBe(false);
     // Still a ROOT_ADMIN — the two are deliberately different signals.
     expect(me.json.role).toBe(USER_ROLES.ROOT_ADMIN);
+  });
+});
+
+// ── TRUST-028: unscoped platform data requires the platform operator ─────────
+//
+// The invariant, stated in terms of DATA rather than routes:
+//
+//   Any handler whose storage call carries no tenant predicate must require
+//   platform-operator privileges, whatever the route is named and whatever
+//   middleware looks appropriate.
+//
+// TRUST-027 enumerated mutations and was silent about reads, so the reads it
+// did not name kept rootAdminMiddleware while returning other tenants' rows.
+// These tests protect the invariant rather than the enumeration: the last block
+// walks the live Express route table, so a NEW unscoped admin route added later
+// fails here without anyone remembering this file exists.
+describe("TRUST-028 — unscoped platform data is platform-operator-only", () => {
+  // Every persona that holds some flavour of elevated privilege, plus a plain
+  // member. Only the first is RepMail staff; the rest all live inside a
+  // customer workspace, and the middle two both satisfy req.isRootAdmin.
+  async function makePersonas() {
+    // The platform operator is identified by username, exactly as
+    // platformOperatorMiddleware and initializeRootAdmin() identify it. Read
+    // the env the same way the server does rather than hard-coding "admin".
+    const operatorUsername = process.env.ADMIN_USERNAME || "admin";
+    const operator = await storage.getUserByUsername(operatorUsername);
+    expect(operator, `platform operator "${operatorUsername}" must exist`).toBeTruthy();
+
+    // initializeRootAdmin() seeds this account with mustResetPassword: true, and
+    // authMiddleware 403s every non-exempt path until it is cleared. Without
+    // this the operator would appear to fail its own authorization checks and
+    // the suite would report a gate as "too tight" when it is exactly right.
+    const operatorCookie = await sessionCookieFor(operator.id);
+    await api("POST", "/api/auth/reset-password", {
+      cookie: operatorCookie,
+      body: { newPassword: "operator-reset-pw" },
+    });
+
+    const rootWorkspace = await makeWorkspace();
+
+    // Secondary root: a SUB_ADMIN granted root-tier access inside a customer
+    // workspace. req.isRootAdmin is TRUE for this account and
+    // req.isPlatformOperator is false — the account TRUST-028 exists for.
+    const subForGrant = await api("POST", "/api/users", {
+      cookie: rootWorkspace.cookie,
+      body: { username: "t28_sr_" + Math.random().toString(36).slice(2), email: `t28_sr_${Math.random().toString(36).slice(2)}@example.com`, password: "pw-x", role: "SUB_ADMIN" },
+    });
+    const grant = await api("POST", "/api/admin/grant-root-access", {
+      cookie: rootWorkspace.cookie,
+      body: { userId: subForGrant.json.id },
+    });
+    expect(grant.status).toBe(200);
+
+    // Plain sub-admin: elevated within the workspace, but not root-tier.
+    const plainSub = await api("POST", "/api/users", {
+      cookie: rootWorkspace.cookie,
+      body: { username: "t28_sa_" + Math.random().toString(36).slice(2), email: `t28_sa_${Math.random().toString(36).slice(2)}@example.com`, password: "pw-x", role: "SUB_ADMIN" },
+    });
+
+    // Plain member. A root/secondary-root may only create sub-admins, so the
+    // USER has to be created by the plain sub-admin.
+    const plainSubCookie = await sessionCookieFor(plainSub.json.id);
+    await api("POST", "/api/auth/reset-password", { cookie: plainSubCookie, body: { newPassword: "sa-reset-pw" } });
+    const member = await api("POST", "/api/users", {
+      cookie: plainSubCookie,
+      body: { username: "t28_u_" + Math.random().toString(36).slice(2), email: `t28_u_${Math.random().toString(36).slice(2)}@example.com`, password: "pw-x", role: "USER" },
+    });
+    expect(member.status).toBe(201);
+
+    const secondaryRootCookie = await sessionCookieFor(subForGrant.json.id);
+    const memberCookie = await sessionCookieFor(member.json.id);
+
+    // Accounts created through POST /api/users are seeded mustResetPassword,
+    // and authMiddleware 403s every non-exempt path until that is cleared.
+    // Clearing it matters for correctness of these tests, not convenience: a
+    // persona still carrying the flag 403s on EVERYTHING, so an authorization
+    // test asserting 403 would pass without the gate under test existing at
+    // all. This is the difference between proving a gate and proving nothing.
+    for (const cookie of [secondaryRootCookie, memberCookie]) {
+      await api("POST", "/api/auth/reset-password", { cookie, body: { newPassword: "persona-reset-pw" } });
+    }
+
+    const personas = {
+      operator: { label: "Platform Operator", cookie: operatorCookie, expected: 200 },
+      customerRoot: { label: "Customer Root Admin", cookie: rootWorkspace.cookie, expected: 403 },
+      secondaryRoot: { label: "Secondary Root", cookie: secondaryRootCookie, expected: 403 },
+      subAdmin: { label: "Sub Admin", cookie: plainSubCookie, expected: 403 },
+      member: { label: "Workspace User", cookie: memberCookie, expected: 403 },
+    };
+
+    // Liveness guard, for the same reason. Every persona must be able to reach
+    // an ordinary authenticated endpoint; if one cannot, its 403s below are
+    // meaningless and this fails loudly here instead of passing quietly there.
+    for (const persona of Object.values(personas)) {
+      const alive = await api("GET", "/api/auth/me", { cookie: persona.cookie });
+      expect(alive.status, `${persona.label} must be a usable session`).toBe(200);
+      const ordinary = await api("GET", "/api/campaigns", { cookie: persona.cookie });
+      expect(ordinary.status, `${persona.label} must reach an ordinary endpoint`).toBe(200);
+    }
+
+    return personas;
+  }
+
+  // The endpoints corrected in this patch. Both return data with no tenant
+  // predicate: getContactSubmissions() selects the whole table, and the queue
+  // route reads BullMQ directly and returns failed jobs carrying campaignId and
+  // userId from every tenant.
+  const CORRECTED = [
+    "/api/admin/contact-submissions",
+    "/api/admin/queue/status",
+  ];
+
+  for (const endpoint of CORRECTED) {
+    it(`GET ${endpoint}: operator 200, every workspace-side role 403`, async () => {
+      const p = await makePersonas();
+      for (const persona of Object.values(p)) {
+        const res = await api("GET", endpoint, { cookie: persona.cookie });
+        expect(
+          res.status,
+          `${persona.label} expected ${persona.expected} on ${endpoint}, got ${res.status}`,
+        ).toBe(persona.expected);
+      }
+    });
+  }
+
+  it("the previously-corrected endpoints stay closed (delivery-health, aiStats)", async () => {
+    const p = await makePersonas();
+
+    for (const persona of [p.customerRoot, p.secondaryRoot, p.subAdmin, p.member]) {
+      const health = await api("GET", "/api/admin/delivery-health", { cookie: persona.cookie });
+      expect(health.status, `${persona.label} on delivery-health`).toBe(403);
+
+      const stats = await api("GET", "/api/dashboard/stats", { cookie: persona.cookie });
+      expect(stats.status).toBe(200);
+      expect(stats.json, `${persona.label} must not receive aiStats`).not.toHaveProperty("aiStats");
+    }
+
+    const opHealth = await api("GET", "/api/admin/delivery-health", { cookie: p.operator.cookie });
+    expect(opHealth.status).toBe(200);
+    const opStats = await api("GET", "/api/dashboard/stats", { cookie: p.operator.cookie });
+    expect(opStats.json).toHaveProperty("aiStats");
+  });
+
+  // The invariant itself, rather than a list of endpoints. Walks the live
+  // Express route table so a NEW /api/admin route added later is caught here
+  // even though nobody thought to update this file.
+  //
+  // Deliberately BEHAVIOURAL, not name-based: it calls each route and checks
+  // the response, because the whole lesson of TRUST-027/028 is that middleware
+  // names do not tell you whether the data underneath is scoped. Three domain
+  // routes guard themselves with an inline req.isPlatformOperator check rather
+  // than the middleware, and this test is satisfied by either.
+  it("INVARIANT: no /api/admin route is reachable by a non-operator", async () => {
+    const p = await makePersonas();
+
+    const stack = app._router?.stack ?? [];
+    const adminRoutes = stack
+      .filter((l) => l.route?.path?.startsWith?.("/api/admin"))
+      .map((l) => ({ path: l.route.path, methods: Object.keys(l.route.methods) }));
+
+    // If this ever returns nothing the test has silently stopped testing.
+    expect(adminRoutes.length, "expected to discover /api/admin routes").toBeGreaterThan(5);
+
+    // Workspace-scoped by design: these act only on the caller's OWN workspace
+    // (both resolve the target through getWorkspaceMemberIds), so they are
+    // correctly reachable by a customer's root admin and are not TRUST-028
+    // subjects. Any OTHER route must be operator-only.
+    const WORKSPACE_SCOPED = new Set([
+      "/api/admin/grant-root-access",
+      "/api/admin/revoke-root-access",
+    ]);
+
+    const violations = [];
+    for (const { path, methods } of adminRoutes) {
+      if (WORKSPACE_SCOPED.has(path)) continue;
+      // Only probe routes we can call without inventing a resource id; a
+      // parameterised route would 404 before reaching its gate and prove
+      // nothing either way.
+      if (path.includes(":")) continue;
+      if (!methods.includes("get")) continue;
+
+      for (const persona of [p.customerRoot, p.secondaryRoot, p.subAdmin, p.member]) {
+        const res = await api("GET", path, { cookie: persona.cookie });
+        if (res.status !== 403) {
+          violations.push(`${persona.label} got ${res.status} on GET ${path} (expected 403)`);
+        }
+      }
+      const asOperator = await api("GET", path, { cookie: p.operator.cookie });
+      if (asOperator.status === 403) {
+        violations.push(`Platform Operator got 403 on GET ${path} — gate is too tight`);
+      }
+    }
+
+    expect(violations, violations.join("\n")).toEqual([]);
   });
 });
