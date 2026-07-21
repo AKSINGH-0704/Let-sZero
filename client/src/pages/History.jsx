@@ -350,16 +350,16 @@ export default function History() {
                     ? "Try adjusting your search terms or filters to find what you're looking for"
                     : "Your campaign history will appear here once you send your first email campaign"}
                 </p>
+                {/* M37: asChild for the same reason as Dashboard/ContactLibrary,
+                    and sentence case to match the other two empty states —
+                    this CTA existed in two capitalisations across three. */}
                 {!(searchQuery || statusFilter !== "all") && (
-                  <Link href="/app/campaigns/new">
-                    <Button data-testid="button-create-first-campaign">
+                  <Button asChild data-testid="button-create-first-campaign">
+                    <Link href="/app/campaigns/new">
                       <Send className="mr-2 h-4 w-4" aria-hidden="true" />
-                      {/* M37: sentence case, matching Dashboard.jsx and
-                          DomainDetail.jsx. The same CTA existed in two
-                          capitalisations across three empty states. */}
                       Create your first campaign
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 )}
               </div>
             )}

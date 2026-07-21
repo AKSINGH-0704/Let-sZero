@@ -423,13 +423,21 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
                 <CardContent className="pt-4">
                   <div className="flex items-start justify-between mb-2">
                     <CardTitle className="text-lg">{template.name}</CardTitle>
+                    {/* M37: measured 18x36 at every viewport — an icon button
+                        with no shrink-0 next to an unconstrained title, so a
+                        long template name compressed it well under the 24px
+                        WCAG 2.5.8 minimum. It also had no accessible name at
+                        all (icon-only, no label), so a screen reader announced
+                        it as just "button" — WCAG 4.1.2. */}
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="shrink-0"
+                      aria-label={`Preview template: ${template.name}`}
                       onClick={() => setPreviewTemplate(template)}
                       data-testid={`button-preview-${template.id}`}
                     >
-                      <Eye className="h-4 w-4" />
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                   <CardDescription className="line-clamp-2 mb-3">
@@ -471,10 +479,11 @@ Use placeholders like {{name}}, {{company}}, {{category}} for personalization."
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-9 w-9 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-700 hover:text-red-600 dark:hover:text-red-400"
+                          className="h-9 w-9 shrink-0 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-700 hover:text-red-600 dark:hover:text-red-400"
+                          aria-label={`Delete template: ${template.name}`}
                           data-testid={`button-delete-${template.id}`}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>

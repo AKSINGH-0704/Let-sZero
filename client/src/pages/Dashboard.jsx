@@ -853,12 +853,16 @@ export default function Dashboard() {
                   <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
                     Start engaging with your audience by creating your first email campaign
                   </p>
-                  <Link href="/app/campaigns/new">
-                    <Button className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-create-first-campaign">
-                      <Plus className="mr-2 h-4 w-4" />
+                  {/* M37: asChild — see ContactLibrary. <Link><Button> renders a
+                      <button> nested inside an <a>, and leaves the anchor 22px
+                      tall (WCAG 2.5.8) because an inline <a> is sized by
+                      line-height, not by the button it wraps. */}
+                  <Button asChild className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]" data-testid="button-create-first-campaign">
+                    <Link href="/app/campaigns/new">
+                      <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
                       Create your first campaign
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                 </>
               )}
             </div>
