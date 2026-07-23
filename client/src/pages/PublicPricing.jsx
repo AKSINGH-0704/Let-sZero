@@ -939,7 +939,11 @@ export default function PublicPricing() {
             <div className="grid md:grid-cols-2 gap-10">
               {/* Left: Slider + input */}
               <div>
-                <div className="flex items-end justify-between mb-4">
+                {/* M38 — stack the credit total above the input on narrow
+                    screens. Side by side, a wide total like "1,00,000" ran into
+                    the "Enter exact amount" label and its field; going inline
+                    only at sm keeps the desktop layout untouched. */}
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-4">
                   <div>
                     <div
                       className="text-3xl font-bold mb-1"
