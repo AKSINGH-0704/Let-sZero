@@ -1001,36 +1001,43 @@ export default function PublicPricing() {
                     }}
                   />
                   {/* Tick marks — jump to common presets.
-                      M35-D — these look like passive tick labels but are real
-                      controls, and they measured 12x16px: below the WCAG 2.5.8
-                      24px minimum and awkward to hit with a thumb. The label
-                      stays visually small (it is a tick, not a button) while
-                      padding grows the hit area; -my-1 keeps the row's visual
-                      rhythm so the larger target costs no vertical space. */}
-                  <div className="flex justify-between mt-3 -my-1">
-                    {["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"].map((label, i) => (
-                      <button
-                        key={label}
-                        onClick={() => setCredits(CREDIT_PRESETS[i])}
-                        className="inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
-                        style={{
-                          // M35-F — the inactive colour was #3A3A50 on #0B0B12,
-                          // which measures 1.77:1 against the 4.5:1 WCAG 1.4.3
-                          // minimum: the unselected presets were very nearly
-                          // invisible. #7878A0 is the secondary text colour
-                          // already used directly below this row and measures
-                          // 4.67:1, so this needs no new palette entry. The
-                          // active state stays #00E5C8 and remains distinct.
-                          color: credits === CREDIT_PRESETS[i] ? "#00E5C8" : "#7878A0",
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: "10px",
-                          letterSpacing: "0.05em",
-                        }}
-                        aria-label={`Select ${CREDIT_PRESETS[i].toLocaleString()} credits`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                      M38 — each tick is positioned from the SAME creditsToSlider()
+                      scale that drives the thumb, so a preset's label sits exactly
+                      under the thumb when that preset is selected. Previously the
+                      row used `justify-between` (even, linear spacing) while the
+                      thumb moves on a log scale, so the active tick drifted from
+                      the thumb by up to ~22px at 390px — the "highlighted tick vs
+                      thumb" desync Phase 4 called out. One source of truth now, so
+                      the alignment holds at every viewport width.
+                      M35-D — these are real controls, so each keeps a ≥24px hit
+                      target (WCAG 2.5.8) even though the label text stays small.
+                      M35-F — inactive colour is #7878A0 (4.7:1); #3A3A50 measured
+                      1.77:1 and was nearly invisible. */}
+                  <div className="relative mt-3 h-6">
+                    {CREDIT_PRESETS.map((value, i) => {
+                      const frac = creditsToSlider(value) / _SLIDER_MAX; // 0..1, log scale
+                      return (
+                        <button
+                          key={value}
+                          onClick={() => setCredits(value)}
+                          className="absolute top-0 inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+                          style={{
+                            // The thumb centre travels between one thumb-radius (10px)
+                            // and full width minus a radius, so tick centres use the
+                            // same inset to line up under it.
+                            left: `calc(10px + ${frac} * (100% - 20px))`,
+                            transform: "translateX(-50%)",
+                            color: credits === value ? "#00E5C8" : "#7878A0",
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: "10px",
+                            letterSpacing: "0.05em",
+                          }}
+                          aria-label={`Select ${value.toLocaleString()} credits`}
+                        >
+                          {["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"][i]}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
