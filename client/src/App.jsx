@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+// M39 Phase 1B — validated post-login return path (open-redirect guarded).
+import { safeNextPath } from "@/lib/commerce/purchaseIntent";
 
 // Central brand registry.
 // Add a new entry here when a new product launches â€” no logic changes needed.
@@ -237,7 +239,9 @@ function AppRoutes() {
       </Route>
 
       <Route path="/login">
-        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <Login />}
+        {() => isAuthenticated
+          ? <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} />
+          : <Login />}
       </Route>
 
       <Route path="/pricing">

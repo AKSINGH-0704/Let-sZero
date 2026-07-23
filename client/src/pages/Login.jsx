@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect } from "react";
 import { Redirect, Link, useLocation } from "wouter";
+import { safeNextPath } from "@/lib/commerce/purchaseIntent";
 import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -446,7 +447,9 @@ export default function Login() {
   const [activeTab, setActiveTab] = useState("signin");
 
   if (isAuthenticated) {
-    return <Redirect to="/app/dashboard" />;
+    // M39 Phase 1B — honour a validated post-login return path so a purchase started
+    // while signed out resumes at checkout; falls back to the dashboard.
+    return <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} />;
   }
 
   return (

@@ -12,6 +12,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import AppLayout from "@/components/layout/AppLayout";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invalidateAfter } from "@/lib/queryInvalidation";
+// M39 Phase 1B — shared commerce layer: one canonical checkout, server quotes,
+// and the purchase-intent lifecycle (resume a purchase started before login).
+import { initiatePurchase } from "@/lib/commerce/checkout";
+import { fetchQuote } from "@/lib/commerce/quote";
+import { loadPurchaseIntent, clearPurchaseIntent } from "@/lib/commerce/purchaseIntent";
 import { useToast } from "@/hooks/use-toast";
 import {
   Check, X, Sparkles, Mail, Shield, CreditCard, Zap, Users, ArrowRight,
@@ -1250,10 +1255,43 @@ export default function Payments() {
         setShowConfirmModal(true);
       }
     }
-    // Clean up ?plan=... from the URL without navigation. (Post-purchase
+
+    // M39 Phase 1B — resume a purchase intent that was configured elsewhere (e.g. the
+    // public pricing slider) and survived login. A custom credit amount is priced by
+    // the SERVER; we synthesise a confirm-modal tier from that authoritative quote so
+    // the customer confirms the exact amount and bonus before paying.
+    const resume = params.get("resume") === "1";
+    const intent = loadPurchaseIntent();
+    if (resume && intent && intent.credits != null && intent.planId == null) {
+      fetchQuote({ credits: intent.credits })
+        .then(q => {
+          if (q && !q.isEnterprise && q.amountMajor != null) {
+            setSelectedTier({
+              id: "custom",
+              name: `Custom · ${q.credits.toLocaleString()} credits`,
+              credits: q.credits,
+              totalCredits: q.totalCredits,
+              bonusCredits: q.bonusCredits,
+              priceINR: q.amountMajor,
+              isCustomAmount: true,
+              features: {},
+            });
+            setShowConfirmModal(true);
+          } else {
+            clearPurchaseIntent();
+          }
+        })
+        .catch(() => clearPurchaseIntent());
+    } else if (resume && intent && intent.planId) {
+      const plan = PLANS.find(p => p.id === intent.planId);
+      if (plan && !plan.isCustom) { setSelectedTier(plan); setShowConfirmModal(true); }
+      else clearPurchaseIntent();
+    }
+
+    // Clean up ?plan=.../?resume=1 from the URL without navigation. (Post-purchase
     // activation is now the PostPurchaseActivation overlay shown directly
     // from ProcessPayment, M20-C — no ?paid=1/?activate=team round-trip.)
-    if (params.has("plan")) {
+    if (params.has("plan") || params.has("resume")) {
       window.history.replaceState({}, "", "/app/payments");
     }
   }, []);
@@ -1267,15 +1305,11 @@ export default function Payments() {
   });
 
   const initiateMutation = useMutation({
-    mutationFn: async (tierId) => {
-      const res = await apiRequest("POST", "/api/payments/initiate", {
-        planId: tierId,
-        currency: "INR",
-        paymentMethod: "UPI",
-      });
-      return res.json();
-    },
+    // Accepts either { planId } or { credits } — the single canonical checkout entry
+    // (M39 Phase 1B). Named plans and custom amounts share one initiation path.
+    mutationFn: async (params) => initiatePurchase({ ...params, currency: "INR", paymentMethod: "UPI" }),
     onSuccess: (data) => {
+      clearPurchaseIntent();
       invalidateAfter("creditsChanged", { extraKeys: [["/api/payments"]] });
       setShowConfirmModal(false);
       setSelectedTier(null);
@@ -1297,9 +1331,11 @@ export default function Payments() {
   };
 
   const handleConfirmPurchase = () => {
-    if (selectedTier) {
-      initiateMutation.mutate(selectedTier.id);
-    }
+    if (!selectedTier) return;
+    // Custom amount → { credits }; named plan → { planId }. One entry, two selections.
+    initiateMutation.mutate(
+      selectedTier.isCustomAmount ? { credits: selectedTier.credits } : { planId: selectedTier.id }
+    );
   };
 
   const formatPrice = (plan) => {
@@ -1322,7 +1358,9 @@ export default function Payments() {
   // so the trial card offers the claim only while it is genuinely still claimable.
   const isTrialUser = Boolean(user?.isTrialUser);
   const currentPlanName = PLANS.find(p => p.id === currentPlanId)?.name || null;
-  const selectedTierState = selectedTier
+  // A custom-amount tier is always purchasable (it is not a plan the user can already
+  // "hold"), so it skips the plan-availability state machine.
+  const selectedTierState = selectedTier && !selectedTier.isCustomAmount
     ? getPlanPurchaseState({ plan: selectedTier, effectivePlan: currentPlanId, isTrialUser })
     : null;
 

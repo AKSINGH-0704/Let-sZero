@@ -5,7 +5,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback, Fragment } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import {
   motion,
@@ -51,6 +51,9 @@ import { cn } from "@/lib/utils";
 // M39 Phase 1 — the pricing FORMULA is imported from the single shared authority,
 // never re-implemented here. This page renders; the server decides the charge.
 import { calculateCreditPurchase } from "@shared/schema";
+// M39 Phase 1B — shared commerce layer: persist purchase intent and route through
+// the one canonical checkout, so a configured amount survives login and is resumed.
+import { savePurchaseIntent, buildLoginWithResume } from "@/lib/commerce/purchaseIntent";
 
 // M34 — the Fontshare stylesheet that used to be injected here is gone.
 // Cabinet Grotesk and General Sans are now self-hosted and declared in
@@ -423,6 +426,7 @@ function FeatureIcon({ value, special }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PublicPricing() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const currency = "INR";
   // ── M35-B — one authoritative value for the estimator ──────────────────────
   //
@@ -498,14 +502,14 @@ export default function PublicPricing() {
   // purchasable pack we deep-link it (the payments page opens its confirm modal on ?plan=);
   // otherwise we land on the plan grid, because /api/payments/initiate only accepts a plan
   // id and cannot transact an arbitrary credit amount (see PAY-006).
-  const estimatorPlan = PLANS.find(
-    p => !p.isCustom && !p.isTrial && p.credits === estimatorCredits
-  );
-  const estimatorHref = !user
-    ? "/login"
-    : estimatorPlan
-    ? `/app/payments?plan=${estimatorPlan.id}`
-    : "/app/payments";
+  // M39 Phase 1B — the estimator is now genuinely purchasable. Any configured amount
+  // is a valid custom purchase (the server prices and validates it — MD-003/MD-007),
+  // so we persist the intent and route through the ONE canonical checkout, resuming
+  // after login if the visitor is anonymous. Purchase intent is never lost.
+  const handleEstimatorBuy = () => {
+    savePurchaseIntent({ credits: estimatorCredits });
+    navigate(user ? "/app/payments?resume=1" : buildLoginWithResume("/app/payments?resume=1"));
+  };
 
   const formatPrice = (inr, usd) => {
     if (currency === "INR") return fmtINR(inr);
@@ -1160,30 +1164,26 @@ export default function PublicPricing() {
                         </div>
                       </div>
 
-                      <Link
-                        href={estimatorHref}
-                        className="block mt-6"
+                      <button
+                        onClick={handleEstimatorBuy}
+                        className="w-full mt-6 py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                        style={{
+                          background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
+                          color: "#06060B",
+                          boxShadow: "0 4px 20px rgba(0,229,200,0.2)",
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,229,200,0.3)";
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,229,200,0.2)";
+                        }}
                       >
-                        <button
-                          className="w-full py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2"
-                          style={{
-                            background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
-                            color: "#06060B",
-                            boxShadow: "0 4px 20px rgba(0,229,200,0.2)",
-                          }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.transform = "translateY(-2px)";
-                            e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,229,200,0.3)";
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.transform = "translateY(0)";
-                            e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,229,200,0.2)";
-                          }}
-                        >
-                          Buy {fmtNum(estimatorCredits)} Credits
-                          <ArrowRight className="w-4 h-4" />
-                        </button>
-                      </Link>
+                        Buy {fmtNum(estimatorCredits)} Credits
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
