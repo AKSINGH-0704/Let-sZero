@@ -2,13 +2,27 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-23
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.1.0 (2026-07-21)
+## Current Release — v2.1.1 (2026-07-23)
+
+A focused quality release for the **pricing page** on phones and tablets.
+
+### Pricing reads correctly on a phone
+
+- **The cost estimator no longer overlaps itself.** When you entered a large number of credits, the big total could run into the amount field beside it. The total and the input now sit on separate lines on small screens, so both stay clear.
+- **The slider is precise.** The highlighted amount below the slider now sits exactly under the handle at every screen size — previously the handle and its label could drift apart, most noticeably at the higher amounts.
+- **The Teams plan comparison is easier to read.** Each plan's seat count and price now sit on a tidy line of their own instead of wrapping awkwardly, and several captions that were too faint to read comfortably now meet accessibility contrast standards.
+
+These changes are visual and behavioural only — pricing, credits, bonuses and every amount are unchanged.
+
+---
+
+## Previous Release — v2.1.0 (2026-07-21)
 
 A quality release for the RepMail app itself. Where v2.0.0 focused on the public website and Resource Center, this one goes through the signed-in application — the dashboard, the campaign builder, contacts, templates, domains, team management and billing — and fixes how it behaves on real devices.
 
