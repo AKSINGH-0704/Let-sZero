@@ -14,6 +14,7 @@ import {
   animate,
 } from "framer-motion";
 import { Slider } from "@/components/ui/slider";
+import TeamCapabilities from "@/components/pricing/TeamCapabilities";
 import {
   Accordion,
   AccordionContent,
@@ -1419,83 +1420,11 @@ export default function PublicPricing() {
                   className="rounded-2xl p-8 md:p-10 mb-8"
                   style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                 >
-                  <div className="grid md:grid-cols-2 gap-10">
-                    <div>
-                      <div className="text-xs uppercase tracking-widest mb-4" style={{ color: "#7878A0" }}>Team Capacity by Plan</div>
-                      <div className="space-y-2">
-                        {[
-                          { plan: "Free Trial", seats: "25", color: "#9CA3AF" },
-                          { plan: "Starter", seats: "25", color: "#60A5FA" },
-                          { plan: "Growth", seats: "25", color: "#00E5C8" },
-                          { plan: "Scale", seats: "25", color: "#A78BFA" },
-                          { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
-                        ].map(({ plan, seats, color }) => {
-                          // Price/credits come from the same PLANS array the Individual
-                          // tab's cards render from — the Teams tab shouldn't require
-                          // switching tabs just to see what a plan actually costs.
-                          const planData = PLANS.find(p => p.name === plan);
-                          return (
-                            <div key={plan} className="flex items-center justify-between py-2.5 px-4 rounded-xl" style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}>
-                              <span className="text-xs font-semibold" style={{ color }}>{plan}</span>
-                              <span className="text-xs text-right" style={{ color: "#B8B8D0" }}>
-                                {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
-                                {planData && (
-                                  <span style={{ color: "#55556A" }}>
-                                    {" · "}{planData.isCustom ? "Custom pricing" : `${fmtINR(planData.priceINR)} · ${fmtNum(planData.totalCredits)} credits`}
-                                  </span>
-                                )}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs mt-4" style={{ color: "#55556A" }}>
-                        Every plan — including the free trial — includes up to 25 team seats at no additional cost.
-                      </p>
-                    </div>
-
-                    <div>
-                      <div className="text-xs uppercase tracking-widest mb-5" style={{ color: "#7878A0" }}>Role capabilities</div>
-                      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #1A1A2E" }}>
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr style={{ background: "#08080F" }}>
-                              <th className="px-4 py-3 text-left font-semibold" style={{ color: "#7878A0" }}>Capability</th>
-                              <th className="px-3 py-3 text-center font-semibold" style={{ color: "#00E5C8" }}>Admin</th>
-                              <th className="px-3 py-3 text-center font-semibold" style={{ color: "#60A5FA" }}>Manager</th>
-                              <th className="px-3 py-3 text-center font-semibold" style={{ color: "#A78BFA" }}>Member</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[
-                              ["Purchase credits", true, false, false],
-                              ["Allocate credits", true, true, false],
-                              ["Create team members", true, true, false],
-                              ["View all campaigns", true, "Own team", "Own only"],
-                              ["View audit logs", true, "Own team", "Own only"],
-                              ["Send campaigns", true, true, true],
-                              ["Manage templates", true, true, true],
-                            ].map(([cap, a, m, u], i) => (
-                              <tr key={cap} style={{ background: i % 2 === 0 ? "#0C0C14" : "#0A0A12", borderTop: "1px solid rgba(26,26,46,0.5)" }}>
-                                <td className="px-4 py-2.5" style={{ color: "#B8B8D0" }}>{cap}</td>
-                                {[a, m, u].map((v, j) => (
-                                  <td key={j} className="px-3 py-2.5 text-center">
-                                    {v === true
-                                      ? <Check className="w-3.5 h-3.5 mx-auto" style={{ color: "#34D399" }} />
-                                      : v === false
-                                      ? <X className="w-3.5 h-3.5 mx-auto" style={{ color: "#F87171" }} />
-                                      : <span style={{ color: "#9898B8", fontSize: "10px" }}>{v}</span>
-                                    }
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="text-xs mt-4" style={{ color: "#55556A" }}>Team seats are included in every plan, free trial included.</p>
-                    </div>
-                  </div>
+                  <TeamCapabilities
+                    plans={PLANS}
+                    formatPlanPrice={(p) => fmtINR(p.priceINR)}
+                    rolesNote="Team seats are included in every plan, free trial included."
+                  />
                 </motion.div>
 
                 {/* Team action cards */}
