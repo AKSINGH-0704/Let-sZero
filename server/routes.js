@@ -16,6 +16,7 @@ import { verifySnsMessage } from "./sns.js";
 import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
+import { generateQuote, isCurrencySupported, MAX_SELF_SERVE_CREDITS, PRICING_VERSION } from "../shared/pricing.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
@@ -3295,8 +3296,26 @@ export async function registerRoutes(httpServer, app) {
         freeTrialCredits: FREE_TRIAL_CREDITS,
         creditValidityMonths: null,
         minCreditPurchase: MIN_CREDIT_PURCHASE,
+        maxSelfServeCredits: MAX_SELF_SERVE_CREDITS,
+        pricingVersion: PRICING_VERSION,
         lastUpdated: new Date().toISOString(),
       });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Canonical server-authoritative pricing quote (M39 Phase 1 — decision D1).
+  // The client sends a named planId OR a custom credit amount; the SERVER computes
+  // price, bonus, and total. This quote — never any client-supplied value — is the
+  // reference that checkout and the credit ledger consume. A custom amount above the
+  // self-serve maximum returns { isEnterprise:true } rather than a price.
+  app.post("/api/pricing/quote", async (req, res) => {
+    try {
+      const { planId, credits, currency = "INR" } = req.body || {};
+      const quote = generateQuote({ planId, credits, currency });
+      if (quote.error) return res.status(400).json({ message: quote.error, code: quote.code });
+      res.json({ quote, pricingVersion: PRICING_VERSION });
     } catch (error) {
       res.status(500).json({ message: error.message });
     }
@@ -3313,69 +3332,101 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/payments/initiate", authMiddleware, async (req, res) => {
     try {
-      const { planId, paymentMethod, currency = "INR" } = req.body;
-      
-      const plan = PRICING_PLANS[planId];
-      if (!plan) {
-        return res.status(400).json({ message: "Invalid plan selected" });
-      }
+      const { planId, credits: customCredits, paymentMethod, currency = "INR" } = req.body;
 
-      // Handle Trial plan - one-time credit grant (atomic, cannot be repeated)
-      if (plan.isTrial) {
-        const claimed = await storage.claimTrialCredits(req.user.id, plan.credits);
-        if (!claimed) {
-          return res.status(409).json({ message: "Free trial credits have already been claimed." });
-        }
-
-        const payment = await storage.createPayment({
-          userId: req.user.id,
-          planName: plan.name,
-          credits: plan.totalCredits,
-          amountUsd: 0,
-          amountInr: 0,
-          amountLocal: 0,
-          currency: "INR",
-          exchangeRate: "1",
-          paymentMethod: "FREE",
-          status: PAYMENT_STATUS.SUCCESS,
-        });
-
-        await storage.createAuditLog({
-          userId: req.user.id,
-          action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
-          details: { amount: plan.credits, paymentId: payment.id, planName: plan.name }
-        });
-
-        res.json({
-          payment,
-          redirectUrl: `/app/payments`,
-          currency: "INR"
-        });
-        return;
-      }
-
-      // Admin-only plans (dev_test) are blocked for regular users
-      if (plan.isAdminOnly && !["ROOT_ADMIN", "SUB_ADMIN"].includes(req.user.role)) {
-        return res.status(403).json({ message: "Admin access required for this plan" });
-      }
-
-      if (!SUPPORTED_CURRENCIES[currency]) {
+      if (!isCurrencySupported(currency)) {
         return res.status(400).json({ message: "Unsupported currency" });
       }
 
-      const exchangeRate = DEFAULT_EXCHANGE_RATE;
-      const planWithPrices = getPlanWithPrices(plan, exchangeRate);
+      // ── Resolve to a normalized, SERVER-COMPUTED purchase (M39 Phase 1, D1) ──
+      // Either a named plan or a custom self-serve credit amount. The client never
+      // supplies a price; price/bonus/total come from the pricing engine's quote.
+      let purchase; // { planName, grantCredits, amountInr, amountUsd, metaExtra }
 
-      const amountUsd = Math.round(planWithPrices.priceUsd);
-      const amountInr = Math.round(planWithPrices.priceInr);
-      const amountLocal = Math.round(currency === "INR" ? amountInr : amountUsd);
+      if (planId == null && customCredits != null) {
+        // Custom self-serve amount — real custom purchasing, server-quoted.
+        const quote = generateQuote({ credits: customCredits, currency });
+        if (quote.isEnterprise) {
+          return res.status(409).json({ message: "This amount is handled by our sales team. Please contact sales.", code: "ENTERPRISE_REQUIRED", isEnterprise: true });
+        }
+        if (quote.error) {
+          return res.status(400).json({ message: quote.error, code: quote.code });
+        }
+        // Persist under the mapped plan name so plan-gated entitlements and the
+        // webhook/verify plan upgrade (which map by planName) stay correct; the
+        // exact custom amount and bonus are kept in metadata for the receipt.
+        const mappedPlan = PRICING_PLANS[quote.planId];
+        purchase = {
+          planName: mappedPlan.name,
+          grantCredits: quote.totalCredits,
+          amountInr: quote.amountMajor,
+          amountUsd: Math.round(quote.amountMajor / DEFAULT_EXCHANGE_RATE),
+          metaExtra: { custom: true, requestedCredits: quote.credits, bonusCredits: quote.bonusCredits, pricingVersion: quote.pricingVersion },
+        };
+      } else {
+        // Named plan.
+        const plan = PRICING_PLANS[planId];
+        if (!plan) {
+          return res.status(400).json({ message: "Invalid plan selected" });
+        }
+
+        // Handle Trial plan - one-time credit grant (atomic, cannot be repeated)
+        if (plan.isTrial) {
+          const claimed = await storage.claimTrialCredits(req.user.id, plan.credits);
+          if (!claimed) {
+            return res.status(409).json({ message: "Free trial credits have already been claimed." });
+          }
+          const payment = await storage.createPayment({
+            userId: req.user.id,
+            planName: plan.name,
+            credits: plan.totalCredits,
+            amountUsd: 0,
+            amountInr: 0,
+            amountLocal: 0,
+            currency: "INR",
+            exchangeRate: "1",
+            paymentMethod: "FREE",
+            status: PAYMENT_STATUS.SUCCESS,
+          });
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
+            details: { amount: plan.credits, paymentId: payment.id, planName: plan.name }
+          });
+          res.json({ payment, redirectUrl: `/app/payments`, currency: "INR" });
+          return;
+        }
+
+        // Enterprise is not self-serve purchasable (handled by sales — Phase 4).
+        if (plan.isCustom) {
+          return res.status(409).json({ message: "Enterprise plans are handled by our sales team.", code: "ENTERPRISE_REQUIRED", isEnterprise: true });
+        }
+
+        // Admin-only plans (dev_test) are blocked for regular users
+        if (plan.isAdminOnly && !["ROOT_ADMIN", "SUB_ADMIN"].includes(req.user.role)) {
+          return res.status(403).json({ message: "Admin access required for this plan" });
+        }
+
+        purchase = {
+          planName: plan.name,
+          grantCredits: plan.totalCredits,
+          amountInr: plan.priceInr,
+          amountUsd: Math.round(plan.priceInr / DEFAULT_EXCHANGE_RATE),
+          metaExtra: null,
+        };
+      }
+
+      const exchangeRate = DEFAULT_EXCHANGE_RATE;
+      const amountInr = purchase.amountInr;
+      const amountUsd = purchase.amountUsd;
+      const amountLocal = amountInr; // INR is the only active currency (D2)
 
       // Dev mode: simulate payment success immediately (no real gateway needed)
       if (process.env.NODE_ENV !== "production") {
         const payment = await storage.createPayment({
           userId: req.user.id,
-          planName: plan.name,
-          credits: plan.totalCredits,
+          planName: purchase.planName,
+          credits: purchase.grantCredits,
           amountUsd,
           amountInr,
           amountLocal,
@@ -3383,16 +3434,17 @@ export async function registerRoutes(httpServer, app) {
           exchangeRate: exchangeRate.toString(),
           paymentMethod: "SIMULATED",
           status: PAYMENT_STATUS.SUCCESS,
+          ...(purchase.metaExtra ? { metadata: purchase.metaExtra } : {}),
         });
-        await storage.addCredits(req.user.id, plan.totalCredits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
+        await storage.addCredits(req.user.id, purchase.grantCredits, AUDIT_ACTIONS.PAYMENT_SUCCESS, {
           paymentId: payment.id,
-          planName: plan.name
+          planName: purchase.planName
         });
         // Matches the real Razorpay-verify/webhook completion paths exactly —
         // without this, a simulated dev-mode purchase never updates .plan,
         // so plan-gated behavior (team-member limits, AI quota, campaign/
         // template limits) can never be exercised or tested locally.
-        await upgradePlanIfHigher(req.user.id, plan.name, payment.id);
+        await upgradePlanIfHigher(req.user.id, purchase.planName, payment.id);
         res.json({ payment, redirectUrl: `/app/payments` });
         return;
       }
@@ -3409,8 +3461,8 @@ export async function registerRoutes(httpServer, app) {
 
         const payment = await storage.createPayment({
           userId: req.user.id,
-          planName: plan.name,
-          credits: plan.totalCredits,
+          planName: purchase.planName,
+          credits: purchase.grantCredits,
           amountUsd,
           amountInr,
           amountLocal,
@@ -3419,7 +3471,7 @@ export async function registerRoutes(httpServer, app) {
           paymentMethod: "RAZORPAY",
           status: PAYMENT_STATUS.PENDING,
           // Store both IDs so ProcessPayment can reopen the modal without a server round-trip
-          metadata: { razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
+          metadata: { razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID, ...(purchase.metaExtra || {}) },
         });
 
         return res.json({

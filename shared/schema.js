@@ -791,6 +791,18 @@ export function calculateCreditPurchase(credits) {
   };
 }
 
+// A paid plan is a fixed-quantity credit pack whose price and bonus are DERIVED
+// from the single pricing formula (calculateCreditPurchase) rather than restated.
+// This removes the duplicate hardcoded numbers that previously had to be kept in
+// sync by hand; the plan declares only its credit quantity and marketing metadata.
+// (M39 Phase 1 — single pricing authority. Trial/enterprise/dev_test are not
+// volume-tier purchases, so they keep explicit values.)
+function derivePaidPlan(meta) {
+  const q = calculateCreditPurchase(meta.credits);
+  if (!q) throw new Error(`derivePaidPlan: ${meta.id} credits ${meta.credits} outside CREDIT_TIERS`);
+  return { ...meta, bonusCredits: q.bonusCredits, totalCredits: q.totalCredits, priceInr: q.priceINR, priceUsd: q.priceUSD };
+}
+
 export const PRICING_PLANS = {
   trial: {
     id: "trial", name: "Free Trial",
@@ -798,24 +810,9 @@ export const PRICING_PLANS = {
     priceUsd: 0, priceInr: 0,
     isTrial: true, type: "trial",
   },
-  starter: {
-    id: "starter", name: "Starter",
-    credits: 3000, bonusCredits: 0, totalCredits: 3000,
-    priceUsd: +(390 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 390,
-    type: "payg",
-  },
-  growth: {
-    id: "growth", name: "Growth",
-    credits: 15000, bonusCredits: 1250, totalCredits: 16250,
-    priceUsd: +(1800 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 1800,
-    isPopular: true, type: "payg",
-  },
-  scale: {
-    id: "scale", name: "Scale",
-    credits: 50000, bonusCredits: 4545, totalCredits: 54545,
-    priceUsd: +(5500 / DEFAULT_EXCHANGE_RATE).toFixed(2), priceInr: 5500,
-    type: "bulk",
-  },
+  starter: derivePaidPlan({ id: "starter", name: "Starter", credits: 3000, type: "payg" }),
+  growth:  derivePaidPlan({ id: "growth", name: "Growth", credits: 15000, isPopular: true, type: "payg" }),
+  scale:   derivePaidPlan({ id: "scale", name: "Scale", credits: 50000, type: "bulk" }),
   enterprise: {
     id: "enterprise", name: "Enterprise",
     credits: null, bonusCredits: null, totalCredits: null,

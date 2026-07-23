@@ -48,6 +48,9 @@ import {
   Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+// M39 Phase 1 — the pricing FORMULA is imported from the single shared authority,
+// never re-implemented here. This page renders; the server decides the charge.
+import { calculateCreditPurchase } from "@shared/schema";
 
 // M34 — the Fontshare stylesheet that used to be injected here is gone.
 // Cabinet Grotesk and General Sans are now self-hosted and declared in
@@ -55,17 +58,10 @@ import { cn } from "@/lib/utils";
 // second time from cdn.fontshare.com: measured at 14 font requests across 3
 // origins and 339KB on this page, against 6 requests from 1 origin now.
 
-// ─── Pricing constants (mirrored from shared/schema.js) ──────────────────────
+// ─── Display constant. The pricing tiers/price/bonus formula is NOT here — it is
+//     imported from the shared engine (calculateCreditPurchase). USD_RATE is a
+//     display-only conversion; the authoritative charge is always the server quote.
 const USD_RATE = 83.5;
-
-const CREDIT_TIERS = [
-  { min: 3000,   max: 9999,   perCredit: 0.13, prevRate: null },
-  { min: 10000,  max: 29999,  perCredit: 0.12, prevRate: 0.13 },
-  { min: 30000,  max: 99999,  perCredit: 0.11, prevRate: 0.12 },
-  { min: 100000, max: 300000, perCredit: 0.10, prevRate: 0.11 },
-];
-
-
 
 const CREDIT_PRESETS = [3000, 5000, 10000, 15000, 25000, 50000, 100000, 200000, 300000];
 
@@ -82,10 +78,6 @@ const PARTICLES = [
   { size: 2.4, left: 38,  top: 14,  color: "rgba(255,255,255,0.12)", duration: 23, delay: 5,   animIdx: 2 },
   { size: 1.8, left: 72,  top: 20,  color: "rgba(139,92,246,0.20)", duration: 30, delay: 2,   animIdx: 0 },
 ];
-
-function getCreditTier(credits) {
-  return CREDIT_TIERS.find(t => credits >= t.min && credits <= t.max) || null;
-}
 
 // ─── Logarithmic slider scale (3K–300K spans 2 orders of magnitude) ───────────
 // A linear slider makes 10K look identical to 3K. Log scale spaces them evenly.
@@ -104,20 +96,9 @@ function sliderToCredits(pos) {
   return Math.max(3000, Math.min(300000, Math.round(raw / 1000) * 1000));
 }
 
-function calcPurchase(credits) {
-  const tier = getCreditTier(credits);
-  if (!tier) return null;
-  const priceINR = Math.round(credits * tier.perCredit);
-  const bonus = tier.prevRate
-    ? Math.floor(credits * (tier.prevRate - tier.perCredit) / tier.perCredit)
-    : 0;
-  return {
-    priceINR,
-    priceUSD: +(priceINR / USD_RATE).toFixed(2),
-    bonusCredits: bonus,
-    totalCredits: credits + bonus,
-  };
-}
+// Single source: the shared pricing engine. Returns { priceINR, priceUSD,
+// bonusCredits, totalCredits, ... } — identical numbers, no local formula copy.
+const calcPurchase = calculateCreditPurchase;
 
 function fmtNum(n) {
   return n == null ? "—" : n.toLocaleString("en-IN");
