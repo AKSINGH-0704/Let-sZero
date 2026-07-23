@@ -2109,7 +2109,7 @@ export default function PublicPricing() {
                 }}
               >
                 {currency === "INR" ? "₹1,800" : "$21.56"}
-                <span className="text-sm font-normal" style={{ color: "#55556A" }}>/mo</span>
+                <span className="text-sm font-normal" style={{ color: "#7878A0" }}>/mo</span>
               </div>
               <button
                 onClick={() => setDedicatedIpNotified(true)}
@@ -2284,7 +2284,9 @@ export default function PublicPricing() {
             { icon: <Check className="w-4 h-4" />, label: "No Hidden Fees" },
           ].map(({ icon, label }) => (
             <div key={label} className="flex items-center gap-2 text-sm font-medium" style={{ color: "#8888A0" }}>
-              <span style={{ color: "#5A5A78" }}>{icon}</span>
+              {/* M38 — #5A5A78 measured ~2.9:1; these trust icons carry meaning
+                  alongside their label, so lift to the #7878A0 text floor. */}
+              <span style={{ color: "#7878A0" }}>{icon}</span>
               {label}
             </div>
           ))}
