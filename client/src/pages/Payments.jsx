@@ -30,6 +30,8 @@ import TeamCapabilities from "@/components/pricing/TeamCapabilities";
 // pricing page (one source of truth); formatters come from the commerce layer.
 import PricingCard from "@/components/pricing/PricingCard";
 import { PLAN_CATALOG } from "@/lib/commerce/planCatalog";
+// M39 Phase 4 — one canonical enterprise entry point.
+import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "@shared/enterprise";
 import { fmtNum } from "@/lib/commerce/format";
 
 // The in-app payments page renders the shared card in "app" mode (its CTA transacts).
@@ -682,7 +684,7 @@ export default function Payments() {
   const handlePurchase = (tierId) => {
     const plan = PLANS.find(p => p.id === tierId);
     if (plan.isCustom) {
-      setLocation(`/contact?reason=enterprise&plan=${encodeURIComponent(plan.name)}`);
+      setLocation(buildEnterpriseContactPath({ plan: plan.name }));
       return;
     }
     setSelectedTier(plan);
@@ -1191,7 +1193,7 @@ export default function Payments() {
                       ))}
                     </ul>
                     <button
-                      onClick={() => setLocation("/contact?reason=enterprise")}
+                      onClick={() => setLocation(ENTERPRISE_CONTACT_PATH)}
                       className="mt-5 w-full py-3 rounded-xl text-sm font-semibold transition-all"
                       style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#A78BFA" }}
                       onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.2)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; }}

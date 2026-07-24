@@ -14,6 +14,9 @@
 
 import { calculateCreditPurchase } from "@shared/schema";
 import { USD_DISPLAY_RATE } from "./config";
+// M39 Phase 4 — the one canonical enterprise "Contact Sales" path (shared/enterprise.js),
+// so this CTA converges with every other enterprise entry point.
+import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 
 // ── Feature matrix — the per-plan capability grid the cards render. ───────────
 // Identical shape for every purchasable/marketed plan; special plans (enterprise,
@@ -88,7 +91,7 @@ const ENTERPRISE = {
   isCustom: true,
   cta: "Contact Sales",
   // Only consumed by the marketing card's custom branch; the in-app card ignores it.
-  ctaHref: "/contact?reason=SALES",
+  ctaHref: ENTERPRISE_CONTACT_PATH,
   features: FEATURES.enterprise,
 };
 

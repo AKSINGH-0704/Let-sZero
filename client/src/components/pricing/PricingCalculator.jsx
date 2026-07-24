@@ -16,6 +16,7 @@ import { motion, AnimatePresence, useMotionValue, animate } from "framer-motion"
 import { Building2, ArrowRight } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { calculateCreditPurchase } from "@shared/schema";
+import { buildEnterpriseContactPath } from "@shared/enterprise";
 import { fmtNum, fmtUSD } from "@/lib/commerce/format";
 import { CREDIT_PRESETS, MIN_CREDITS, MAX_CREDITS, CREDIT_STEP } from "@/lib/commerce/config";
 
@@ -258,7 +259,7 @@ export default function PricingCalculator({ currency = "INR", onBuy, initialCred
                 <p className="text-sm mb-6" style={{ color: "#A8A8C0" }}>
                   For custom volume requirements, contact our sales team for tailored pricing.
                 </p>
-                <Link href="/contact?reason=SALES">
+                <Link href={buildEnterpriseContactPath({ credits: MAX_CREDITS })}>
                   <button
                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
                     style={{

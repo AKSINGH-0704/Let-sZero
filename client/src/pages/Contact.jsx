@@ -47,17 +47,33 @@ export default function Contact() {
   const [location] = useLocation();
   const [submitted, setSubmitted] = useState(false);
   
-  // Parse query params for context from Payments page
+  // Parse query params for context. M39 Phase 4 — every enterprise CTA now routes
+  // through shared/enterprise.js buildEnterpriseContactPath, which sends a VALID
+  // reason (SALES) plus intent=enterprise. Previously the payments page sent
+  // reason=enterprise, which was mapped to "ENTERPRISE_PRICING" — a value in neither
+  // the reason enum nor the dropdown, so the form select showed nothing and the
+  // submission failed validation. We now prefill a valid reason and, for an
+  // enterprise intent, default to Sales with an enterprise message.
   const searchParams = new URLSearchParams(location.split('?')[1] || "");
   const contextPlan = searchParams.get("plan");
   const contextReason = searchParams.get("reason");
-  
+  const contextCredits = searchParams.get("credits");
+  const isEnterpriseIntent = searchParams.get("intent") === "enterprise" || contextReason === "enterprise";
+  const validReasons = REASONS.map(r => r.value);
+
+  const prefilledReason = validReasons.includes(contextReason)
+    ? contextReason
+    : (isEnterpriseIntent ? "SALES" : "");
+  const enterpriseMessage = isEnterpriseIntent
+    ? `I'm interested in enterprise pricing${contextPlan ? ` for the ${contextPlan} plan` : ""}${contextCredits ? ` (~${Number(contextCredits).toLocaleString("en-IN")} credits)` : ""}.`
+    : "";
+
   const [formData, setFormData] = useState({
     name: user?.username || "",
     email: user?.email || "",
     company: "",
-    reason: contextReason === "enterprise" ? "ENTERPRISE_PRICING" : "",
-    message: contextPlan ? `I'm interested in enterprise pricing for the ${contextPlan} plan.` : ""
+    reason: prefilledReason,
+    message: enterpriseMessage
   });
 
   const submitMutation = useMutation({

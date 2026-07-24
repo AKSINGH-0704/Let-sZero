@@ -53,6 +53,8 @@ import { savePurchaseIntent, buildLoginWithResume } from "@/lib/commerce/purchas
 import PricingCard from "@/components/pricing/PricingCard";
 import PricingCalculator from "@/components/pricing/PricingCalculator";
 import { MARKETING_PLANS } from "@/lib/commerce/planCatalog";
+// M39 Phase 4 — one canonical enterprise entry point.
+import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 import { fmtNum, fmtINR, fmtUSD } from "@/lib/commerce/format";
 
 // M34 — the Fontshare stylesheet that used to be injected here is gone.
@@ -914,7 +916,7 @@ export default function PublicPricing() {
                       ))}
                     </ul>
                     <Link
-                      href="/contact?reason=SALES"
+                      href={ENTERPRISE_CONTACT_PATH}
                       className="mt-5 flex items-center justify-center w-full py-3 rounded-xl text-sm font-semibold transition-all"
                       style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#A78BFA" }}
                       onMouseEnter={e => { e.currentTarget.style.background = "rgba(139,92,246,0.2)"; e.currentTarget.style.borderColor = "rgba(139,92,246,0.5)"; }}
@@ -1265,7 +1267,7 @@ export default function PublicPricing() {
                 300,000+
               </div>
               <div className="text-right col-span-3">
-                <Link href="/contact?reason=SALES">
+                <Link href={ENTERPRISE_CONTACT_PATH}>
                   <span
                     className="inline-flex items-center gap-1.5 text-sm font-medium"
                     style={{ color: "#8B5CF6", cursor: "pointer" }}
@@ -1657,7 +1659,7 @@ export default function PublicPricing() {
             For enterprise needs or custom volume requirements, contact our sales team
             for a tailored solution with dedicated support and SLA.
           </p>
-          <Link href="/contact?reason=SALES">
+          <Link href={ENTERPRISE_CONTACT_PATH}>
             <motion.button
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.97 }}

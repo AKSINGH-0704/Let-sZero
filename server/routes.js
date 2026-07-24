@@ -16,6 +16,7 @@ import { verifySnsMessage } from "./sns.js";
 import crypto from "crypto";
 import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
+import { provisionEnterprise } from "./enterprise.js";
 import { generateQuote, isCurrencySupported, MAX_SELF_SERVE_CREDITS, PRICING_VERSION } from "../shared/pricing.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
@@ -3655,6 +3656,30 @@ export async function registerRoutes(httpServer, app) {
     } catch (error) {
       console.error("[REFUND] Error:", error.message);
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // M39 Phase 4 — operator-initiated enterprise provisioning (D3 / MD-005 spine reuse).
+  // Enterprise billing is invoice-first and settled off-platform, so provisioning is an
+  // operator action, not a self-serve checkout. It REUSES the plan + credit spine
+  // (upgradePlanIfHigher + ledgered addCredits) and records the CONTRACT → PROVISIONED
+  // transition. Platform-operator only — never customer-reachable.
+  app.post("/api/admin/enterprise/provision", authMiddleware, async (req, res) => {
+    try {
+      if (!req.isPlatformOperator) return res.status(403).json({ message: "Forbidden" });
+      const { userId, credits = 0, planName, dealRef } = req.body || {};
+      if (!userId) return res.status(400).json({ message: "userId is required" });
+
+      const result = await provisionEnterprise(userId, {
+        credits: Number(credits) || 0,
+        planName: planName || "enterprise",
+        actor: req.user.username,
+        dealRef: dealRef || null,
+      });
+      res.json({ ...result, user: storage.sanitizeUser(result.user) });
+    } catch (error) {
+      console.error("[ENTERPRISE] Provision error:", error.message);
+      res.status(400).json({ message: error.message });
     }
   });
 
