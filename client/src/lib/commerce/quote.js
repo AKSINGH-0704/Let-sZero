@@ -4,8 +4,12 @@
 // here is the only value the UI may treat as a price; the client never computes a
 // charge basis (M39 decision MD-003 / D1). Both LetsZero and RepMail purchase
 // surfaces call this — there is no second copy of quote logic.
+//
+// M39 Phase 1C — quote requests/responses emit commerce events for future analytics.
 
 import { apiRequest } from "@/lib/queryClient";
+import { DEFAULT_CURRENCY } from "./config";
+import { emitCommerceEvent, CommerceEvents } from "./events";
 
 /**
  * Fetch a canonical pricing quote for a named plan OR a custom credit amount.
@@ -13,8 +17,10 @@ import { apiRequest } from "@/lib/queryClient";
  * @throws if the request is invalid (e.g. below minimum) — callers that drive a
  *         clamped slider will not hit this; ad-hoc callers should catch.
  */
-export async function fetchQuote({ planId, credits, currency = "INR" } = {}) {
+export async function fetchQuote({ planId, credits, currency = DEFAULT_CURRENCY } = {}) {
+  emitCommerceEvent(CommerceEvents.QUOTE_REQUESTED, { planId, credits, currency });
   const res = await apiRequest("POST", "/api/pricing/quote", { planId, credits, currency });
   const data = await res.json();
+  emitCommerceEvent(CommerceEvents.QUOTE_RECEIVED, { quote: data.quote });
   return data.quote;
 }

@@ -4,16 +4,13 @@
  * Standalone page (no app shell), accessible without authentication.
  */
 
-import { useState, useRef, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import {
   motion,
   AnimatePresence,
-  useMotionValue,
-  animate,
 } from "framer-motion";
-import { Slider } from "@/components/ui/slider";
 import TeamCapabilities from "@/components/pricing/TeamCapabilities";
 import {
   Accordion,
@@ -48,12 +45,15 @@ import {
   Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-// M39 Phase 1 — the pricing FORMULA is imported from the single shared authority,
-// never re-implemented here. This page renders; the server decides the charge.
-import { calculateCreditPurchase } from "@shared/schema";
-// M39 Phase 1B — shared commerce layer: persist purchase intent and route through
+// M39 Phase 1B/1C — shared commerce layer: persist purchase intent and route through
 // the one canonical checkout, so a configured amount survives login and is resumed.
 import { savePurchaseIntent, buildLoginWithResume } from "@/lib/commerce/purchaseIntent";
+// M39 Phase 1C — the plan list, plan card, and credit estimator are shared components
+// consumed by both this public pricing page and the in-app payments page.
+import PricingCard from "@/components/pricing/PricingCard";
+import PricingCalculator from "@/components/pricing/PricingCalculator";
+import { MARKETING_PLANS } from "@/lib/commerce/planCatalog";
+import { fmtNum, fmtINR, fmtUSD } from "@/lib/commerce/format";
 
 // M34 — the Fontshare stylesheet that used to be injected here is gone.
 // Cabinet Grotesk and General Sans are now self-hosted and declared in
@@ -61,12 +61,11 @@ import { savePurchaseIntent, buildLoginWithResume } from "@/lib/commerce/purchas
 // second time from cdn.fontshare.com: measured at 14 font requests across 3
 // origins and 339KB on this page, against 6 requests from 1 origin now.
 
-// ─── Display constant. The pricing tiers/price/bonus formula is NOT here — it is
-//     imported from the shared engine (calculateCreditPurchase). USD_RATE is a
-//     display-only conversion; the authoritative charge is always the server quote.
+// ─── Display constant. The pricing tiers/price/bonus formula is NOT here — plan
+//     numbers come from the shared catalog; USD_RATE is a display-only conversion
+//     used by the volume table. The authoritative charge is always the server quote.
 const USD_RATE = 83.5;
 
-const CREDIT_PRESETS = [3000, 5000, 10000, 15000, 25000, 50000, 100000, 200000, 300000];
 
 // ─── Pre-computed particle config (deterministic — no Math.random in render) ─
 const PARTICLES = [
@@ -82,166 +81,10 @@ const PARTICLES = [
   { size: 1.8, left: 72,  top: 20,  color: "rgba(139,92,246,0.20)", duration: 30, delay: 2,   animIdx: 0 },
 ];
 
-// ─── Logarithmic slider scale (3K–300K spans 2 orders of magnitude) ───────────
-// A linear slider makes 10K look identical to 3K. Log scale spaces them evenly.
-const _LOG_MIN = Math.log10(3000);
-const _LOG_MAX = Math.log10(300000);
-const _SLIDER_MAX = 1000;
 
-function creditsToSlider(c) {
-  const clamped = Math.max(3000, Math.min(300000, c));
-  return Math.round(((Math.log10(clamped) - _LOG_MIN) / (_LOG_MAX - _LOG_MIN)) * _SLIDER_MAX);
-}
 
-function sliderToCredits(pos) {
-  const t = pos / _SLIDER_MAX;
-  const raw = Math.pow(10, _LOG_MIN + t * (_LOG_MAX - _LOG_MIN));
-  return Math.max(3000, Math.min(300000, Math.round(raw / 1000) * 1000));
-}
-
-// Single source: the shared pricing engine. Returns { priceINR, priceUSD,
-// bonusCredits, totalCredits, ... } — identical numbers, no local formula copy.
-const calcPurchase = calculateCreditPurchase;
-
-function fmtNum(n) {
-  return n == null ? "—" : n.toLocaleString("en-IN");
-}
-
-function fmtINR(n) {
-  return n == null ? "—" : `₹${n.toLocaleString("en-IN")}`;
-}
-
-function fmtUSD(n) {
-  if (n == null) return "—";
-  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-// ─── Plan data ────────────────────────────────────────────────────────────────
-const PLANS = [
-  {
-    id: "trial",
-    name: "Free Trial",
-    credits: 500,
-    bonusCredits: 0,
-    totalCredits: 500,
-    priceINR: 0,
-    priceUSD: 0,
-    isTrial: true,
-    cta: "Start Free Trial",
-    ctaHref: "/login",
-    features: {
-      campaigns: "1",
-      templates: "3",
-      scheduling: false,
-      teamMembers: "25",
-      auditExport: false,
-      bonusCredits: false,
-      aiPersonalization: true,
-      spamAnalysis: true,
-      analytics: true,
-      contactUpload: true,
-      templateBuilder: true,
-    },
-  },
-  {
-    id: "starter",
-    name: "Starter",
-    credits: 3000,
-    bonusCredits: 0,
-    totalCredits: 3000,
-    priceINR: 390,
-    priceUSD: +(390 / USD_RATE).toFixed(2),
-    cta: "Get Started",
-    ctaHref: "/login",
-    features: {
-      campaigns: "5",
-      templates: "10",
-      scheduling: true,
-      teamMembers: "25",
-      auditExport: false,
-      bonusCredits: false,
-      aiPersonalization: true,
-      spamAnalysis: true,
-      analytics: true,
-      contactUpload: true,
-      templateBuilder: true,
-    },
-  },
-  {
-    id: "growth",
-    name: "Growth",
-    credits: 15000,
-    bonusCredits: 1250,
-    totalCredits: 16250,
-    priceINR: 1800,
-    priceUSD: +(1800 / USD_RATE).toFixed(2),
-    isPopular: true,
-    cta: "Get Started",
-    ctaHref: "/login",
-    features: {
-      campaigns: "10",
-      templates: "25",
-      scheduling: true,
-      teamMembers: "25",
-      auditExport: false,
-      bonusCredits: "+1,250",
-      aiPersonalization: true,
-      spamAnalysis: true,
-      analytics: true,
-      contactUpload: true,
-      templateBuilder: true,
-    },
-  },
-  {
-    id: "scale",
-    name: "Scale",
-    credits: 50000,
-    bonusCredits: 4545,
-    totalCredits: 54545,
-    priceINR: 5500,
-    priceUSD: +(5500 / USD_RATE).toFixed(2),
-    cta: "Get Started",
-    ctaHref: "/login",
-    features: {
-      campaigns: "20",
-      templates: "100",
-      scheduling: true,
-      teamMembers: "25",
-      auditExport: true,
-      bonusCredits: "+4,545",
-      aiPersonalization: true,
-      spamAnalysis: true,
-      analytics: true,
-      contactUpload: true,
-      templateBuilder: true,
-    },
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    credits: null,
-    bonusCredits: null,
-    totalCredits: null,
-    priceINR: null,
-    priceUSD: null,
-    isCustom: true,
-    cta: "Contact Sales",
-    ctaHref: "/contact?reason=SALES",
-    features: {
-      campaigns: "Unlimited",
-      templates: "Unlimited",
-      scheduling: true,
-      teamMembers: "Unlimited",
-      auditExport: true,
-      bonusCredits: "Custom",
-      aiPersonalization: true,
-      spamAnalysis: true,
-      analytics: true,
-      contactUpload: true,
-      templateBuilder: true,
-    },
-  },
-];
+// M39 Phase 1C — the marketing plan list is the shared catalog (5 customer-facing plans).
+const PLANS = MARKETING_PLANS;
 
 // ─── Comparison table data ────────────────────────────────────────────────────
 const COMPARISON_CATEGORIES = [
@@ -347,40 +190,7 @@ const cardVariant = {
   },
 };
 
-const popularCardVariant = {
-  hidden: { opacity: 0, y: 60, scale: 0.88, rotate: 1 },
-  visible: {
-    opacity: 1, y: 0, scale: 1, rotate: 0,
-    transition: { type: "spring", stiffness: 90, damping: 14 },
-  },
-};
 
-// ─── Animated number hook ─────────────────────────────────────────────────────
-// snapKey: when this value changes, skip animation and jump instantly (e.g. currency switch)
-function useAnimatedNumber(value, snapKey) {
-  const motionVal = useMotionValue(value);
-  const [display, setDisplay] = useState(value);
-  const prevSnapKey = useRef(snapKey);
-
-  useEffect(() => {
-    const shouldSnap = snapKey !== undefined && snapKey !== prevSnapKey.current;
-    prevSnapKey.current = snapKey;
-
-    if (shouldSnap) {
-      motionVal.set(value);
-      setDisplay(value);
-      return;
-    }
-    const ctrl = animate(motionVal, value, {
-      duration: 0.4,
-      ease: "easeOut",
-      onUpdate: (v) => setDisplay(Math.round(v)),
-    });
-    return ctrl.stop;
-  }, [value, snapKey, motionVal]);
-
-  return display;
-}
 
 // ─── Cell renderer for comparison table ──────────────────────────────────────
 function CellValue({ val }) {
@@ -398,116 +208,23 @@ function CellValue({ val }) {
   return <span style={{ color: "#7878A0" }}>—</span>;
 }
 
-// ─── Feature row icon ─────────────────────────────────────────────────────────
-function FeatureIcon({ value, special }) {
-  if (special) return (
-    <span
-      className="inline-flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0"
-      style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.25)" }}
-    >
-      <Sparkles className="w-3 h-3" style={{ color: "#F59E0B" }} />
-    </span>
-  );
-  if (value === true || value === "true") return (
-    <span
-      className="inline-flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0"
-      style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)" }}
-    >
-      <Check className="w-3 h-3" style={{ color: "#34D399" }} />
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0" style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)" }}>
-      <X className="w-3 h-3" style={{ color: "#F87171" }} />
-    </span>
-  );
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function PublicPricing() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const currency = "INR";
-  // ── M35-B — one authoritative value for the estimator ──────────────────────
-  //
-  // This used to hold `credits` and `inputVal` as two independent states kept in
-  // step by an effect, and fed the slider a value it had to re-derive:
-  //   value={[creditsToSlider(credits)]}  onValueChange={v => setCredits(sliderToCredits(v))}
-  //
-  // sliderToCredits snaps to 1,000-credit steps, so that round trip is lossy.
-  // Measured: 716 of 1001 slider positions do not survive it, the worst
-  // snapping back 33 units, and 55 consecutive positions all resolve to 4,000
-  // credits. The thumb therefore fought the cursor and jumped backwards while
-  // dragging, worst at the low end where most people buy.
-  //
-  // The effect caused a second, uglier bug. Typing rewrote the field mid
-  // keystroke: entering 15500 rewrote it to 16000, and entering 999999 produced
-  // 1000009, because the effect replaced the text after the fifth character and
-  // the sixth was appended to the replacement.
-  //
-  // Now the slider position is the single source of truth and everything else
-  // derives from it, so the thumb always sits exactly where it was dragged.
-  // `inputDraft` is explicitly ephemeral: while it is non-null the field shows
-  // what was typed and nothing may overwrite it; on blur it commits and clears.
-  const [sliderPos, setSliderPos] = useState(() => creditsToSlider(15000));
-  const [inputDraft, setInputDraft] = useState(null);
   const [hoveredCol, setHoveredCol] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
   const [dedicatedIpNotified, setDedicatedIpNotified] = useState(false);
 
-  const credits = sliderToCredits(sliderPos);
-  const inputVal = inputDraft ?? String(credits);
 
-  const setCredits = useCallback((c) => setSliderPos(creditsToSlider(c)), []);
-
-  const handleInputChange = useCallback((e) => {
-    const raw = e.target.value.replace(/\D/g, "");
-    setInputDraft(raw);
-    // Move the slider along while typing, but never write back into the field:
-    // the draft owns the text until blur.
-    const num = parseInt(raw, 10);
-    if (!isNaN(num) && num >= 3000 && num <= 300000) {
-      setSliderPos(creditsToSlider(Math.round(num / 1000) * 1000));
-    }
-  }, []);
-
-  const handleInputBlur = useCallback(() => {
-    // Commit: clamp to [3000, 300000] and round to a 1,000-credit boundary.
-    // Rounding matches handleInputChange (nearest, not ceil) so a value does not
-    // change simply because the field lost focus.
-    const num = parseInt(inputDraft ?? "", 10);
-    const next = isNaN(num)
-      ? credits
-      : Math.max(3000, Math.min(300000, Math.round(num / 1000) * 1000));
-    setSliderPos(creditsToSlider(next));
-    setInputDraft(null);
-  }, [inputDraft, credits]);
-
-  const estimatorCredits = credits;
-  const purchase = calcPurchase(estimatorCredits);
-  const isMaxCredits = credits >= 300000;
-
-  const estimPrice = purchase
-    ? (currency === "INR" ? purchase.priceINR : purchase.priceUSD)
-    : 0;
-  const estimTotal = purchase ? purchase.totalCredits : 0;
-  const estimBonus = purchase ? purchase.bonusCredits : 0;
-
-  const animatedPrice = useAnimatedNumber(estimPrice, currency);
-  const animatedTotal = useAnimatedNumber(estimTotal, currency);
-
-  // The estimator's CTA used to point at `?plan=${purchase.id}`, but calcPurchase() returns
-  // no id — so every signed-in customer was sent to `/app/payments?plan=undefined`, which
-  // matches no plan and silently opens nothing. Where the chosen amount is exactly a
-  // purchasable pack we deep-link it (the payments page opens its confirm modal on ?plan=);
-  // otherwise we land on the plan grid, because /api/payments/initiate only accepts a plan
-  // id and cannot transact an arbitrary credit amount (see PAY-006).
-  // M39 Phase 1B — the estimator is now genuinely purchasable. Any configured amount
-  // is a valid custom purchase (the server prices and validates it — MD-003/MD-007),
-  // so we persist the intent and route through the ONE canonical checkout, resuming
-  // after login if the visitor is anonymous. Purchase intent is never lost.
-  const handleEstimatorBuy = () => {
-    savePurchaseIntent({ credits: estimatorCredits });
+  // M39 Phase 1B/1C — the estimator is genuinely purchasable. Any configured amount is a
+  // valid custom purchase (the server prices and validates it — MD-003/MD-007), so we
+  // persist the intent and route through the ONE canonical checkout, resuming after login
+  // if the visitor is anonymous. Purchase intent is never lost.
+  const handleEstimatorBuy = (credits) => {
+    savePurchaseIntent({ credits });
     navigate(user ? "/app/payments?resume=1" : buildLoginWithResume("/app/payments?resume=1"));
   };
 
@@ -900,296 +617,7 @@ export default function PublicPricing() {
       {/* ── Credit Estimator ──────────────────────────────────────────────── */}
       <section id="credit-estimator" className="relative px-4 sm:px-6 pb-24" style={{ background: "#06060B", zIndex: 2 }}>
         <div className="max-w-5xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className="rounded-2xl p-4 sm:p-8 md:p-10"
-            style={{
-              background: "rgba(12,12,20,0.8)",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-              border: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
-            {/* Section label */}
-            <div
-              className="flex items-center gap-3 mb-8"
-              style={{ color: "#00E5C8", fontSize: "11px", fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase" }}
-            >
-              <div style={{ width: 40, height: 1, background: "#00E5C8" }} />
-              Estimate Your Cost
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-10">
-              {/* Left: Slider + input */}
-              <div>
-                {/* M38 — stack the credit total above the input on narrow
-                    screens. Side by side, a wide total like "1,00,000" ran into
-                    the "Enter exact amount" label and its field; going inline
-                    only at sm keeps the desktop layout untouched. */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-4">
-                  <div>
-                    <div
-                      className="text-3xl font-bold mb-1"
-                      style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F0F0F5", fontVariantNumeric: "tabular-nums" }}
-                    >
-                      {fmtNum(estimatorCredits)}
-                    </div>
-                    <div className="text-sm" style={{ color: "#9898B8" }}>credits</div>
-                  </div>
-
-                  {/* Direct input */}
-                  <div>
-                    <label
-                      htmlFor="credit-input"
-                      className="block text-xs mb-1.5"
-                      style={{ color: "#B8B8D0", letterSpacing: "0.1em", textTransform: "uppercase" }}
-                    >
-                      Enter exact amount
-                    </label>
-                    <input
-                      id="credit-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={inputVal}
-                      onChange={handleInputChange}
-                      onBlur={handleInputBlur}
-                      className="rounded-lg px-3 py-2 text-sm font-mono text-right outline-none transition-all"
-                      style={{
-                        width: "130px",
-                        background: "#16162A",
-                        border: "1px solid #2A2A45",
-                        color: "#F0F0F5",
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                      onFocus={e => (e.currentTarget.style.borderColor = "#00E5C8")}
-                      onBlurCapture={e => (e.currentTarget.style.borderColor = "#2A2A45")}
-                      aria-label="Enter credit amount"
-                    />
-                  </div>
-                </div>
-
-                {/* Custom styled slider — 1,000-credit increments */}
-                <div className="relative py-4">
-                  {/* M35-B — the slider's own position is the value, so the
-                      thumb never snaps away from the cursor. Credits are
-                      derived from it for display. */}
-                  <Slider
-                    min={0}
-                    max={_SLIDER_MAX}
-                    step={1}
-                    value={[sliderPos]}
-                    onValueChange={([v]) => { setSliderPos(v); setInputDraft(null); }}
-                    className="w-full"
-                    style={{ "--slider-track": "#16162A", "--slider-range": "#00E5C8" }}
-                    thumbProps={{
-                      "aria-label": "Select credit amount",
-                      "aria-valuetext": `${fmtNum(estimatorCredits)} credits`,
-                    }}
-                  />
-                  {/* Tick marks — jump to common presets.
-                      M38 — each tick is positioned from the SAME creditsToSlider()
-                      scale that drives the thumb, so a preset's label sits exactly
-                      under the thumb when that preset is selected. Previously the
-                      row used `justify-between` (even, linear spacing) while the
-                      thumb moves on a log scale, so the active tick drifted from
-                      the thumb by up to ~22px at 390px — the "highlighted tick vs
-                      thumb" desync Phase 4 called out. One source of truth now, so
-                      the alignment holds at every viewport width.
-                      M35-D — these are real controls, so each keeps a ≥24px hit
-                      target (WCAG 2.5.8) even though the label text stays small.
-                      M35-F — inactive colour is #7878A0 (4.7:1); #3A3A50 measured
-                      1.77:1 and was nearly invisible. */}
-                  <div className="relative mt-3 h-6">
-                    {CREDIT_PRESETS.map((value, i) => {
-                      const frac = creditsToSlider(value) / _SLIDER_MAX; // 0..1, log scale
-                      return (
-                        <button
-                          key={value}
-                          onClick={() => setCredits(value)}
-                          className="absolute top-0 inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
-                          style={{
-                            // The thumb centre travels between one thumb-radius (10px)
-                            // and full width minus a radius, so tick centres use the
-                            // same inset to line up under it.
-                            left: `calc(10px + ${frac} * (100% - 20px))`,
-                            transform: "translateX(-50%)",
-                            color: credits === value ? "#00E5C8" : "#7878A0",
-                            fontFamily: "'JetBrains Mono', monospace",
-                            fontSize: "10px",
-                            letterSpacing: "0.05em",
-                          }}
-                          aria-label={`Select ${value.toLocaleString()} credits`}
-                        >
-                          {["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"][i]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <p className="text-xs mt-4" style={{ color: "#7878A0" }}>
-                  Minimum purchase: 3,000 credits · Credits never expire
-                </p>
-              </div>
-
-              {/* Right: Result display */}
-              <div
-                className="rounded-xl p-6 flex flex-col justify-center relative overflow-hidden"
-                style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}
-              >
-                <AnimatePresence mode="wait">
-                  {isMaxCredits ? (
-                    <motion.div
-                      key="contact-sales"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="text-center"
-                    >
-                      <Building2
-                        className="w-10 h-10 mx-auto mb-4"
-                        style={{ color: "#8B5CF6" }}
-                      />
-                      <div
-                        className="text-xl font-bold mb-2"
-                        style={{ fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif", color: "#F0F0F5" }}
-                      >
-                        300,000+ Credits?
-                      </div>
-                      <p className="text-sm mb-6" style={{ color: "#A8A8C0" }}>
-                        For custom volume requirements, contact our sales team for tailored pricing.
-                      </p>
-                      <Link href="/contact?reason=SALES">
-                        <button
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                          style={{
-                            background: "rgba(139,92,246,0.15)",
-                            border: "1px solid rgba(139,92,246,0.4)",
-                            color: "#8B5CF6",
-                          }}
-                        >
-                          Contact Sales <ArrowRight className="w-4 h-4" />
-                        </button>
-                      </Link>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="estimate-result"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                    >
-                      <div
-                        className="text-xs mb-2 uppercase tracking-widest"
-                        style={{ color: "#B8B8D0", letterSpacing: "0.2em" }}
-                      >
-                        Total cost
-                      </div>
-                      <div
-                        className="text-5xl font-bold mb-1"
-                        style={{
-                          fontFamily: "'JetBrains Mono', monospace",
-                          color: "#F0F0F5",
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        <AnimatePresence mode="wait">
-                          <motion.span
-                            key={`${currency}-${estimPrice}`}
-                            initial={{ opacity: 0, y: -8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 8 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            {currency === "INR"
-                              ? `₹${animatedPrice.toLocaleString("en-IN")}`
-                              : fmtUSD(estimPrice)}
-                          </motion.span>
-                        </AnimatePresence>
-                      </div>
-
-                      <div className="flex flex-wrap gap-3 mt-4">
-                        <div
-                          className="rounded-lg px-3 py-2 text-sm"
-                          style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
-                        >
-                          <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Total credits</span>
-                          <div
-                            style={{ color: "#F0F0F5", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
-                            className="font-bold text-base"
-                          >
-                            {animatedTotal.toLocaleString()}
-                          </div>
-                        </div>
-
-                        <AnimatePresence>
-                          {estimBonus > 0 && (
-                            <motion.div
-                              key="bonus"
-                              initial={{ opacity: 0, scale: 0.8 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.8 }}
-                              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                              className="rounded-lg px-3 py-2 text-sm"
-                              style={{
-                                background: "rgba(52,211,153,0.08)",
-                                border: "1px solid rgba(52,211,153,0.2)",
-                              }}
-                            >
-                              <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Bonus credits</span>
-                              <div
-                                style={{ color: "#34D399", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
-                                className="font-bold text-base"
-                              >
-                                +{estimBonus.toLocaleString()}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <div
-                          className="rounded-lg px-3 py-2 text-sm"
-                          style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
-                        >
-                          <span style={{ color: "#8A8AB0", fontSize: "11px" }}>Cost per email</span>
-                          <div
-                            style={{ color: "#F0F0F5", fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums" }}
-                            className="font-bold text-base"
-                          >
-                            ₹{purchase ? (purchase.priceINR / estimatorCredits).toFixed(2) : "—"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={handleEstimatorBuy}
-                        className="w-full mt-6 py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2"
-                        style={{
-                          background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
-                          color: "#06060B",
-                          boxShadow: "0 4px 20px rgba(0,229,200,0.2)",
-                        }}
-                        onMouseEnter={e => {
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                          e.currentTarget.style.boxShadow = "0 8px 30px rgba(0,229,200,0.3)";
-                        }}
-                        onMouseLeave={e => {
-                          e.currentTarget.style.transform = "translateY(0)";
-                          e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,229,200,0.2)";
-                        }}
-                      >
-                        Buy {fmtNum(estimatorCredits)} Credits
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </motion.div>
+          <PricingCalculator currency={currency} onBuy={handleEstimatorBuy} />
         </div>
       </section>
 
@@ -1290,7 +718,7 @@ export default function PublicPricing() {
                   variants={staggerContainer}
                 >
                   {PLANS.map(plan => (
-                    <PlanCard key={plan.id} plan={plan} currency={currency} />
+                    <PricingCard key={plan.id} plan={plan} currency={currency} mode="marketing" user={user} />
                   ))}
                 </motion.div>
                 {/* Mobile */}
@@ -1302,7 +730,7 @@ export default function PublicPricing() {
                   variants={staggerContainer}
                 >
                   {mobilePlans.map(plan => (
-                    <PlanCard key={plan.id} plan={plan} currency={currency} />
+                    <PricingCard key={plan.id} plan={plan} currency={currency} mode="marketing" user={user} />
                   ))}
                 </motion.div>
               </motion.div>
@@ -2314,435 +1742,5 @@ export default function PublicPricing() {
         </div>
       </footer>
     </div>
-  );
-}
-
-// ─── Plan Card Component ──────────────────────────────────────────────────────
-function PlanCard({ plan, currency }) {
-  const { user } = useAuth();
-  const ctaHref = plan.isCustom
-    ? plan.ctaHref
-    : user
-      ? (plan.isTrial ? "/app/payments" : `/app/payments?plan=${plan.id}`)
-      : "/login";
-  const displayPrice = plan.isCustom
-    ? null
-    : plan.isTrial
-    ? 0
-    : currency === "INR"
-    ? plan.priceINR
-    : plan.priceUSD;
-
-  const perCreditRate = plan.isCustom || plan.isTrial
-    ? null
-    : currency === "INR"
-    ? `₹${(plan.priceINR / plan.credits).toFixed(2)}`
-    : `$${(plan.priceUSD / plan.credits).toFixed(4)}`;
-
-  const features = [
-    {
-      label: "AI Personalization",
-      icon: <Sparkles className="w-3.5 h-3.5" />,
-      val: plan.features.aiPersonalization,
-      badge: { text: "AI", color: "#F59E0B", bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.25)" },
-    },
-    {
-      label: "AI Spam Analysis",
-      icon: <Shield className="w-3.5 h-3.5" />,
-      val: plan.features.spamAnalysis,
-      badge: { text: "AI", color: "#F59E0B", bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.25)" },
-    },
-    {
-      label: `${plan.features.campaigns} active campaign${plan.features.campaigns === "1" ? "" : "s"}`,
-      icon: <Mail className="w-3.5 h-3.5" />,
-      val: true,
-    },
-    {
-      label: `${plan.features.templates} saved template${plan.features.templates === "1" ? "" : "s"}`,
-      icon: <Bot className="w-3.5 h-3.5" />,
-      val: true,
-    },
-    {
-      label: plan.features.scheduling ? "Campaign scheduling" : "No scheduling",
-      icon: <Calendar className="w-3.5 h-3.5" />,
-      val: plan.features.scheduling,
-    },
-    {
-      label: `${plan.features.teamMembers} team members`,
-      icon: <Users className="w-3.5 h-3.5" />,
-      val: true,
-    },
-    {
-      label: "Analytics dashboard",
-      icon: <BarChart3 className="w-3.5 h-3.5" />,
-      val: plan.features.analytics,
-    },
-    {
-      label: "Audit log export",
-      icon: <Lock className="w-3.5 h-3.5" />,
-      val: plan.features.auditExport,
-      badge: plan.features.auditExport
-        ? { text: "Pro", color: "#60A5FA", bg: "rgba(96,165,250,0.1)", border: "rgba(96,165,250,0.25)" }
-        : null,
-    },
-    {
-      label: "Contact upload",
-      icon: <Zap className="w-3.5 h-3.5" />,
-      val: plan.features.contactUpload,
-    },
-    {
-      label: "Template builder",
-      icon: <Globe className="w-3.5 h-3.5" />,
-      val: plan.features.templateBuilder,
-    },
-    ...(plan.features.bonusCredits
-      ? [{
-          label: `${plan.features.bonusCredits} bonus credits`,
-          icon: <Handshake className="w-3.5 h-3.5" />,
-          val: true,
-          badge: { text: "Bonus", color: "#34D399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.2)" },
-        }]
-      : []),
-  ];
-
-  const cardAccentColor = plan.isPopular
-    ? "#00E5C8"
-    : plan.isCustom
-    ? "#8B5CF6"
-    : plan.isTrial
-    ? "#34D399"
-    : plan.id === "starter"
-    ? "#60A5FA"
-    : "#00B8E0";
-
-  const CardContent = (
-    <div
-      className="relative flex flex-col h-full rounded-2xl transition-all"
-      style={{
-        background: plan.isPopular
-          ? "linear-gradient(160deg, #0F0F20 0%, #0C0C18 100%)"
-          : plan.isCustom
-          ? "linear-gradient(160deg, #0F0C1A 0%, #0C0C14 100%)"
-          : "#0C0C14",
-        boxShadow: plan.isPopular ? "0 0 80px rgba(0,229,200,0.06)" : "none",
-        willChange: "transform",
-      }}
-    >
-      {/* Top accent line */}
-      <div style={{ height: "2px", borderRadius: "16px 16px 0 0", background: `linear-gradient(90deg, ${cardAccentColor} 0%, transparent 80%)`, opacity: plan.isPopular ? 1 : 0.6 }} />
-      <div className="p-6 flex flex-col flex-1">
-      {/* Most Popular badge */}
-      {plan.isPopular && (
-        <div
-          className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest whitespace-nowrap"
-          style={{
-            background: "#00E5C8",
-            color: "#06060B",
-            boxShadow: "0 4px 20px rgba(0,229,200,0.35)",
-            letterSpacing: "0.15em",
-          }}
-        >
-          Most Popular
-        </div>
-      )}
-
-      {/* Plan name */}
-      <div
-        className="text-xs font-bold uppercase tracking-widest mb-4 mt-2"
-        style={{
-          color: plan.isPopular
-            ? "#00E5C8"
-            : plan.isCustom
-            ? "#A78BFA"
-            : plan.isTrial
-            ? "#6EE7B7"
-            : plan.id === "starter"
-            ? "#93C5FD"
-            : "#38BDF8",
-          letterSpacing: "0.15em",
-          fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif",
-        }}
-      >
-        {plan.name}
-      </div>
-
-      {/* Credit count */}
-      {plan.isCustom ? (
-        <div className="flex items-center gap-2 mb-1">
-          <Building2 className="w-5 h-5 flex-shrink-0" style={{ color: "#8B5CF6" }} />
-          <div
-            className="text-xl font-bold"
-            style={{
-              fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif",
-              color: "#C8B4F8",
-            }}
-          >
-            Volume Pricing
-          </div>
-        </div>
-      ) : (
-        <>
-          <div
-            className="text-2xl font-bold mb-1"
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              color: "#F0F0F5",
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {fmtNum(plan.totalCredits)}
-          </div>
-          <div className="text-xs mb-2" style={{ color: "#7878A0" }}>
-            credits
-            {plan.isTrial && " · no card required"}
-          </div>
-        </>
-      )}
-
-      {/* Bonus credits badge */}
-      <AnimatePresence>
-        {plan.bonusCredits > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-full text-xs font-semibold mb-3"
-            style={{
-              background: "rgba(52,211,153,0.1)",
-              border: "1px solid rgba(52,211,153,0.2)",
-              color: "#34D399",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            ✦ +{fmtNum(plan.bonusCredits)} bonus
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Price */}
-      <div className="mb-1">
-        {plan.isCustom ? (
-          <div>
-            <span
-              className="text-2xl font-bold"
-              style={{ color: "#A78BFA", fontFamily: "'Cabinet Grotesk', 'Space Grotesk', sans-serif" }}
-            >
-              Tailored to your scale
-            </span>
-            <div className="text-xs mt-1" style={{ color: "#7878A0" }}>Custom volume · Priority support</div>
-          </div>
-        ) : plan.isTrial ? (
-          <span
-            className="text-4xl font-bold"
-            style={{
-              color: "#F0F0F5",
-              fontFamily: "'JetBrains Mono', monospace",
-              fontVariantNumeric: "tabular-nums",
-              ...(plan.isPopular
-                ? { textShadow: "0 0 40px rgba(0,229,200,0.2), 0 0 80px rgba(0,229,200,0.1)" }
-                : {}),
-            }}
-          >
-            Free
-          </span>
-        ) : (
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={`${plan.id}-${currency}`}
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ duration: 0.2 }}
-              className="text-4xl font-bold"
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                color: "#F0F0F5",
-                fontVariantNumeric: "tabular-nums",
-                display: "inline-block",
-                ...(plan.isPopular
-                  ? { textShadow: "0 0 40px rgba(0,229,200,0.2)" }
-                  : {}),
-              }}
-            >
-              {currency === "INR"
-                ? `₹${fmtNum(plan.priceINR)}`
-                : `$${plan.priceUSD?.toFixed(2)}`}
-            </motion.span>
-          </AnimatePresence>
-        )}
-      </div>
-      {perCreditRate && (
-        <div className="text-xs mb-5" style={{ color: "#7878A0" }}>
-          {perCreditRate} per credit
-        </div>
-      )}
-      {!perCreditRate && !plan.isCustom && <div className="mb-5" />}
-
-      {/* Divider */}
-      <div className="mb-5" style={{ height: 1, background: "#1A1A2E" }} />
-
-      {/* Features */}
-      <ul className="space-y-3 flex-1 mb-6">
-        {features.map(({ label, icon, val, badge }) => (
-          <li key={label} className="flex items-start gap-3 text-xs">
-            <FeatureIcon value={val} special={val === "ai"} />
-            <div className="flex flex-wrap items-center gap-1.5" style={{ lineHeight: 1.5 }}>
-              <span
-                style={{
-                  color: val === false ? "#7878A0" : "#D1D5DB",
-                  textDecoration: val === false ? "line-through" : "none",
-                }}
-              >
-                {label}
-              </span>
-              {badge && val !== false && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold"
-                  style={{
-                    color: badge.color,
-                    background: badge.bg,
-                    border: `1px solid ${badge.border}`,
-                    fontSize: "9px",
-                    letterSpacing: "0.05em",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {badge.text}
-                </span>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      {/* CTA */}
-      <Link href={ctaHref}>
-        <button
-          className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-          style={
-            plan.isPopular
-              ? {
-                  background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)",
-                  color: "#06060B",
-                  boxShadow: "0 4px 24px rgba(0,229,200,0.35), 0 0 60px rgba(0,229,200,0.15)",
-                  fontWeight: 700,
-                }
-              : plan.isCustom
-              ? {
-                  background: "rgba(139,92,246,0.1)",
-                  border: "1px solid rgba(139,92,246,0.45)",
-                  color: "#A78BFA",
-                  boxShadow: "0 0 20px rgba(139,92,246,0.1)",
-                }
-              : plan.isTrial
-              ? {
-                  background: "linear-gradient(135deg, rgba(52,211,153,0.15) 0%, rgba(0,229,200,0.1) 100%)",
-                  border: "1px solid rgba(52,211,153,0.35)",
-                  color: "#34D399",
-                  boxShadow: "0 0 20px rgba(52,211,153,0.08)",
-                }
-              : {
-                  background: "#16162A",
-                  border: "1px solid #2A2A45",
-                  color: "#E5E7EB",
-                }
-          }
-          onMouseEnter={e => {
-            const el = e.currentTarget;
-            if (plan.isPopular) {
-              el.style.transform = "translateY(-2px)";
-              el.style.boxShadow = "0 10px 40px rgba(0,229,200,0.45), 0 0 80px rgba(0,229,200,0.2)";
-            } else if (plan.isCustom) {
-              el.style.background = "rgba(139,92,246,0.2)";
-              el.style.borderColor = "rgba(139,92,246,0.65)";
-              el.style.boxShadow = "0 0 30px rgba(139,92,246,0.15)";
-            } else {
-              el.style.transform = "translateY(-1px)";
-              el.style.background = plan.isTrial
-                ? "linear-gradient(135deg, rgba(52,211,153,0.22) 0%, rgba(0,229,200,0.15) 100%)"
-                : "#1E1E38";
-              if (plan.isTrial) el.style.boxShadow = "0 0 30px rgba(52,211,153,0.12)";
-            }
-          }}
-          onMouseLeave={e => {
-            const el = e.currentTarget;
-            el.style.transform = "translateY(0)";
-            if (plan.isPopular) {
-              el.style.boxShadow = "0 4px 24px rgba(0,229,200,0.35), 0 0 60px rgba(0,229,200,0.15)";
-            } else if (plan.isCustom) {
-              el.style.background = "rgba(139,92,246,0.1)";
-              el.style.borderColor = "rgba(139,92,246,0.45)";
-              el.style.boxShadow = "0 0 20px rgba(139,92,246,0.1)";
-            } else if (plan.isTrial) {
-              el.style.background = "linear-gradient(135deg, rgba(52,211,153,0.15) 0%, rgba(0,229,200,0.1) 100%)";
-              el.style.boxShadow = "0 0 20px rgba(52,211,153,0.08)";
-            } else {
-              el.style.background = "#16162A";
-            }
-          }}
-        >
-          {plan.cta}
-          <ArrowRight className="w-3.5 h-3.5" />
-        </button>
-      </Link>
-      </div>{/* end p-6 wrapper */}
-    </div>
-  );
-
-  // Gradient border wrapper for Most Popular card
-  if (plan.isPopular) {
-    return (
-      <motion.div
-        variants={popularCardVariant}
-        className="relative pt-3.5"
-        style={{ zIndex: 10 }}
-        whileHover={{ y: -8, transition: { duration: 0.2 } }}
-      >
-        {/* Ambient glow emission — behind the card */}
-        <div data-ambient
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: -1,
-            borderRadius: "16px",
-            background: "radial-gradient(ellipse at center, rgba(0,229,200,0.10) 0%, transparent 65%)",
-            filter: "blur(32px)",
-            animation: "popularGlowPulse 5s ease-in-out infinite",
-            pointerEvents: "none",
-          }}
-        />
-        {/* Gradient border via p-px trick */}
-        <div
-          className="rounded-2xl p-px"
-          style={{
-            background: "linear-gradient(135deg, #00E5C8 0%, #8B5CF6 50%, #00E5C8 100%)",
-            boxShadow: "0 0 80px rgba(0,229,200,0.08)",
-          }}
-        >
-          {CardContent}
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div
-      variants={cardVariant}
-      className="relative"
-      style={{
-        borderRadius: "16px",
-        border: plan.isCustom ? "1px solid rgba(139,92,246,0.15)" : "1px solid #1A1A2E",
-      }}
-      whileHover={{
-        y: -6,
-        borderColor: plan.isCustom ? "rgba(139,92,246,0.3)" : "#2A2A45",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-        transition: { duration: 0.2 },
-      }}
-    >
-      {CardContent}
-    </motion.div>
   );
 }

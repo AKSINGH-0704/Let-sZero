@@ -8,20 +8,36 @@
 // Keeping one entry means there is exactly one place that talks to
 // /api/payments/initiate, so retries, error handling, and future gateways are
 // changed once rather than per surface.
+//
+// M39 Phase 1C — currency/payment defaults come from the shared commerce config,
+// and each initiation emits a commerce event for future analytics.
 
 import { apiRequest } from "@/lib/queryClient";
+import { DEFAULT_CURRENCY, DEFAULT_PAYMENT_METHOD } from "./config";
+import { emitCommerceEvent, CommerceEvents } from "./events";
 
 /**
  * Begin a purchase. Provide EITHER planId (named plan) OR credits (custom amount).
  * @returns {Promise<object>} initiate response: { payment, redirectUrl, gateway?, ... }.
  */
-export async function initiatePurchase({ planId, credits, currency = "INR", paymentMethod = "UPI" } = {}) {
+export async function initiatePurchase({
+  planId,
+  credits,
+  currency = DEFAULT_CURRENCY,
+  paymentMethod = DEFAULT_PAYMENT_METHOD,
+} = {}) {
+  const isCustom = credits != null && planId == null;
   const body = { currency, paymentMethod };
-  if (credits != null && planId == null) {
+  if (isCustom) {
     body.credits = credits;
   } else {
     body.planId = planId;
   }
+  emitCommerceEvent(CommerceEvents.CHECKOUT_STARTED, {
+    selection: isCustom ? { credits } : { planId },
+    currency,
+    paymentMethod,
+  });
   const res = await apiRequest("POST", "/api/payments/initiate", body);
   return res.json();
 }

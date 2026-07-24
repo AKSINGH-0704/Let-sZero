@@ -7,9 +7,17 @@
 // and resumed at the canonical checkout entry.
 //
 // This module is pure and framework-free so it is unit-testable without a DOM render.
+//
+// M39 Phase 1C — the storage key, lifetime, and post-login fallback path now come
+// from the shared commerce config; lifecycle transitions emit commerce events.
 
-const KEY = "repmail.purchaseIntent.v1";
-const TTL_MS = 60 * 60 * 1000; // 1 hour — a stale intent must not silently reappear.
+import {
+  PURCHASE_INTENT_KEY as KEY,
+  PURCHASE_INTENT_TTL_MS as TTL_MS,
+  DEFAULT_POST_LOGIN_PATH,
+  RESUME_CHECKOUT_PATH,
+} from "./config";
+import { emitCommerceEvent, CommerceEvents } from "./events";
 
 function storage() {
   // sessionStorage may be unavailable (SSR/prerender, privacy mode). Fail soft.
@@ -25,8 +33,11 @@ export function savePurchaseIntent(intent) {
   const s = storage();
   if (!s || !intent) return null;
   const record = { ...intent, savedAt: Date.now() };
-  try { s.setItem(KEY, JSON.stringify(record)); return record; }
-  catch { return null; }
+  try {
+    s.setItem(KEY, JSON.stringify(record));
+    emitCommerceEvent(CommerceEvents.INTENT_SAVED, { intent: record });
+    return record;
+  } catch { return null; }
 }
 
 /** Load a non-expired purchase intent, or null. Expired intents are cleared. */
@@ -43,7 +54,10 @@ export function loadPurchaseIntent() {
 export function clearPurchaseIntent() {
   const s = storage();
   if (!s) return;
-  try { s.removeItem(KEY); } catch { /* ignore */ }
+  try {
+    s.removeItem(KEY);
+    emitCommerceEvent(CommerceEvents.INTENT_CLEARED, {});
+  } catch { /* ignore */ }
 }
 
 /**
@@ -63,7 +77,7 @@ export function intentToCheckoutParams(intent) {
  * (absolute URL, protocol-relative //host, backslash tricks, embedded scheme) is
  * rejected in favour of the fallback. Security-critical — unit-tested.
  */
-export function safeNextPath(next, fallback = "/app/dashboard") {
+export function safeNextPath(next, fallback = DEFAULT_POST_LOGIN_PATH) {
   if (typeof next !== "string" || next.length === 0) return fallback;
   if (!next.startsWith("/")) return fallback;      // must be root-relative
   if (next.startsWith("//")) return fallback;      // protocol-relative → off-origin
@@ -76,6 +90,6 @@ export function safeNextPath(next, fallback = "/app/dashboard") {
 }
 
 /** Build a login URL that returns to the resume destination after authentication. */
-export function buildLoginWithResume(resumePath = "/app/payments?resume=1") {
+export function buildLoginWithResume(resumePath = RESUME_CHECKOUT_PATH) {
   return `/login?next=${encodeURIComponent(resumePath)}`;
 }
