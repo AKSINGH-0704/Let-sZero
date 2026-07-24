@@ -311,11 +311,12 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
               className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
               onClick={() => setShowPassword(!showPassword)}
               tabIndex={-1}
+              aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? (
-                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                <EyeOff className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               ) : (
-                <Eye className="h-4 w-4 text-muted-foreground" />
+                <Eye className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               )}
             </Button>
           </div>
@@ -355,7 +356,7 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
           onClick={() => handleOAuthRedirect("Google")}
           data-testid="button-google"
         >
-          <SiGoogle className="h-4 w-4" />
+          <SiGoogle className="h-4 w-4" aria-hidden="true" />
           <span>Google</span>
         </Button>
         <Button
@@ -365,7 +366,7 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
           onClick={() => handleOAuthRedirect("LinkedIn")}
           data-testid="button-linkedin"
         >
-          <SiLinkedin className="h-4 w-4" />
+          <SiLinkedin className="h-4 w-4" aria-hidden="true" />
           <span>LinkedIn</span>
         </Button>
       </div>
