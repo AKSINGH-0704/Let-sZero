@@ -3603,6 +3603,61 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // M39 Phase 2 — operator-initiated refund (D4 / MD-006). Platform-operator only:
+  // a refund reverses money and credits, so it is never a customer-reachable action.
+  // Flow: record intent → issue the provider (money) refund when a real gateway
+  // transaction exists → apply the local credit reversal via the state machine.
+  // storage.refundPayment auto-reverses only when the balance can absorb the full
+  // clawback; a consumed-credit payment is flagged for manual review instead of
+  // being forced negative. The call is idempotent (already-refunded → no-op).
+  app.post("/api/admin/payments/:id/refund", authMiddleware, async (req, res) => {
+    try {
+      if (!req.isPlatformOperator) return res.status(403).json({ message: "Forbidden" });
+      const { id } = req.params;
+      const reason = (req.body && typeof req.body.reason === "string" && req.body.reason.trim()) || "operator_refund";
+
+      const payment = await storage.getPayment(id);
+      if (!payment) return res.status(404).json({ message: "Payment not found" });
+      if (payment.status === PAYMENT_STATUS.REFUNDED) {
+        return res.json({ payment, refunded: false, alreadyRefunded: true });
+      }
+      if (payment.status !== PAYMENT_STATUS.SUCCESS) {
+        return res.status(409).json({ message: `Only a completed payment can be refunded (status: ${payment.status})` });
+      }
+
+      await storage.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_REFUND_INITIATED,
+        targetType: "payment",
+        targetId: id,
+        details: { reason, actor: req.user.username },
+      });
+
+      // Issue the provider (money) refund first for a real Razorpay transaction, so
+      // a failure here stops before any local credit change. Skipped when Razorpay
+      // isn't configured (dev) or the transaction isn't a gateway payment id.
+      let providerRefundId = null;
+      if (rzp && typeof payment.transactionId === "string" && /^pay_/.test(payment.transactionId)) {
+        try {
+          const r = await rzp.payments.refund(payment.transactionId, {
+            speed: "normal",
+            notes: { reason, initiatedBy: req.user.username },
+          });
+          providerRefundId = r?.id || null;
+        } catch (e) {
+          console.error("[REFUND] Provider refund failed:", e.message);
+          return res.status(502).json({ message: `Provider refund failed: ${e.message}` });
+        }
+      }
+
+      const result = await storage.refundPayment(id, { reason, actor: req.user.username, providerRefundId });
+      res.json(result);
+    } catch (error) {
+      console.error("[REFUND] Error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/contact", async (req, res) => {
     try {
       const parsed = contactSubmissionSchema.safeParse(req.body);

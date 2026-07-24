@@ -26,6 +26,8 @@ import {
 // Static imports - tree-shaking will handle unused code in prod
 import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
+// M39 Phase 2 — the single source of truth for legal payment status transitions.
+import { canTransition } from "../shared/paymentStateMachine.js";
 
 // Use imports only when not in dev mode
 const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
@@ -1913,6 +1915,99 @@ const dbStorage = {
     });
   },
 
+  // M39 Phase 2 — refund lifecycle (D4 / MD-006). Automate a refund ONLY where
+  // financial integrity is guaranteed: when the customer's balance can absorb the
+  // full clawback of this payment's credits without going negative. When the
+  // credits have been consumed (or allocated to sub-users), a full clawback would
+  // force a negative balance — so we do NOT auto-reverse; we flag the payment for
+  // manual operator review and leave its status untouched. The database is the
+  // source of truth: never lose money, never partially apply, never go negative.
+  //
+  // Returns one of:
+  //   { refunded: true, payment }                           — auto-reversed
+  //   { refunded: false, manualReview: true, shortfall }    — consumed → review
+  //   { refunded: false, alreadyRefunded: true, payment }   — idempotent no-op
+  //   { refunded: false, error: "not_refundable", fromStatus } — not a SUCCESS payment
+  async refundPayment(paymentId, { reason = "operator_refund", actor = "system", providerRefundId = null } = {}) {
+    const payment = await this.getPayment(paymentId);
+    if (!payment) throw new Error("Payment not found");
+
+    // Idempotent: a payment already refunded is a success no-op (duplicate provider
+    // refund webhook / double operator click must not clawback twice).
+    if (payment.status === PAYMENT_STATUS.REFUNDED) {
+      return { payment, refunded: false, alreadyRefunded: true };
+    }
+    // Only a completed payment can be refunded (state machine: SUCCESS → REFUNDED).
+    if (!canTransition(payment.status, PAYMENT_STATUS.REFUNDED)) {
+      return { payment, refunded: false, error: "not_refundable", fromStatus: payment.status };
+    }
+
+    const user = await this.getUserById(payment.userId);
+    const balanceBefore = user?.creditsRemaining ?? 0;
+
+    // Integrity gate (MD-006): the full clawback must keep the balance ≥ 0.
+    if (balanceBefore < payment.credits) {
+      const shortfall = payment.credits - balanceBefore;
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_REFUND_MANUAL_REVIEW,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { reason, actor, credits: payment.credits, creditsRemaining: balanceBefore, shortfall, providerRefundId },
+      });
+      // Record the review flag on the payment WITHOUT changing its status — the
+      // refund is unresolved until an operator decides how to handle the shortfall.
+      await db.update(payments)
+        .set({ metadata: sql`COALESCE(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ refundReview: true, refundReason: reason, refundShortfall: shortfall, providerRefundId })}::jsonb` })
+        .where(eq(payments.id, paymentId));
+      return { payment: await this.getPayment(paymentId), refunded: false, manualReview: true, shortfall };
+    }
+
+    // Auto-refund path — atomic. The conditional UPDATE (WHERE status = 'SUCCESS')
+    // makes this idempotent under concurrency: only the caller that flips
+    // SUCCESS → REFUNDED (1 row) reverses the credits; a racing caller sees 0 rows.
+    let refunded = false;
+    await db.transaction(async (tx) => {
+      const transitioned = await tx.update(payments)
+        .set({
+          status: PAYMENT_STATUS.REFUNDED,
+          metadata: sql`COALESCE(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId })}::jsonb`,
+        })
+        .where(and(eq(payments.id, paymentId), eq(payments.status, PAYMENT_STATUS.SUCCESS)))
+        .returning({ id: payments.id });
+
+      if (transitioned.length === 0) return; // concurrent refund won; no credit mutation
+
+      // Reverse the purchase: a purchase added to credits_received, so a refund
+      // subtracts from it. Guaranteed ≥ 0 by the integrity gate above.
+      await tx.update(users)
+        .set({ creditsReceived: sql`credits_received - ${payment.credits}`, updatedAt: new Date() })
+        .where(eq(users.id, payment.userId));
+
+      await tx.insert(creditTransactions).values({
+        userId: payment.userId,
+        type: "refund",
+        amount: -payment.credits,
+        balanceBefore,
+        balanceAfter: balanceBefore - payment.credits,
+        description: `Refund for ${payment.invoiceNumber} (${payment.planName}) — ${reason}`,
+      });
+      refunded = true;
+    });
+
+    if (refunded) {
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_REFUNDED,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { credits: payment.credits, reason, actor, providerRefundId, balanceBefore, balanceAfter: balanceBefore - payment.credits },
+      });
+    }
+
+    return { payment: await this.getPayment(paymentId), refunded };
+  },
+
   async getPayment(id) {
     const [payment] = await db.select().from(payments).where(eq(payments.id, id));
     return payment || null;
@@ -1921,6 +2016,16 @@ const dbStorage = {
   async getPaymentByRazorpayOrderId(orderId) {
     const [payment] = await db.select().from(payments)
       .where(sql`metadata->>'razorpay_order_id' = ${orderId}`);
+    return payment || null;
+  },
+
+  // M39 Phase 2 — reconcile provider-initiated refunds/disputes: the refund/dispute
+  // webhook payloads carry the Razorpay payment id, which completePayment stored as
+  // transactionId. Used only for refund reconciliation, so a plain equality lookup.
+  async getPaymentByTransactionId(transactionId) {
+    if (!transactionId) return null;
+    const [payment] = await db.select().from(payments)
+      .where(eq(payments.transactionId, transactionId));
     return payment || null;
   },
 

@@ -18,6 +18,8 @@ import {
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
 import { PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
+// M39 Phase 2 — same payment state machine the production backend uses, kept in parity.
+import { canTransition } from "../shared/paymentStateMachine.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -1664,12 +1666,35 @@ export const memoryStorage = {
     return { payment, credited: true };
   },
 
+  // M39 Phase 2 — parity with dbStorage.cancelPayment. Previously missing here, so
+  // POST /api/payments/:id/fail with { cancelled: true } threw in dev/in-memory.
+  async cancelPayment(paymentId) {
+    const payment = store.payments.get(paymentId);
+    if (!payment) throw new Error("Payment not found");
+    if (!canTransition(payment.status, PAYMENT_STATUS.CANCELLED)) return; // never downgrade a completed payment
+
+    payment.status = PAYMENT_STATUS.CANCELLED;
+
+    await this.createAuditLog({
+      userId: payment.userId,
+      action: AUDIT_ACTIONS.PAYMENT_CANCELLED,
+      targetType: "payment",
+      targetId: paymentId,
+      details: { reason: "User cancelled" }
+    });
+  },
+
   async failPayment(paymentId, reason) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
-    
+    // M39 Phase 2 — never downgrade a completed (or otherwise terminal) payment.
+    // Previously this set FAILED unconditionally, so a late payment.failed webhook
+    // arriving after success could downgrade a paid payment in memory (a parity
+    // defect vs the Postgres backend, which already guarded this).
+    if (!canTransition(payment.status, PAYMENT_STATUS.FAILED)) return;
+
     payment.status = PAYMENT_STATUS.FAILED;
-    
+
     await this.createAuditLog({
       userId: payment.userId,
       action: AUDIT_ACTIONS.PAYMENT_FAILED,
@@ -1679,8 +1704,87 @@ export const memoryStorage = {
     });
   },
 
+  // M39 Phase 2 — refund lifecycle (D4 / MD-006), in parity with dbStorage.refundPayment.
+  // Auto-reverse only when the balance can absorb the full clawback; otherwise flag
+  // for manual operator review and leave the payment status untouched.
+  async refundPayment(paymentId, { reason = "operator_refund", actor = "system", providerRefundId = null } = {}) {
+    const payment = store.payments.get(paymentId);
+    if (!payment) throw new Error("Payment not found");
+
+    if (payment.status === PAYMENT_STATUS.REFUNDED) {
+      return { payment, refunded: false, alreadyRefunded: true };
+    }
+    if (!canTransition(payment.status, PAYMENT_STATUS.REFUNDED)) {
+      return { payment, refunded: false, error: "not_refundable", fromStatus: payment.status };
+    }
+
+    const user = store.users.get(payment.userId);
+    const balanceBefore = user
+      ? (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
+      : 0;
+
+    if (balanceBefore < payment.credits) {
+      const shortfall = payment.credits - balanceBefore;
+      payment.metadata = { ...(payment.metadata || {}), refundReview: true, refundReason: reason, refundShortfall: shortfall, providerRefundId };
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_REFUND_MANUAL_REVIEW,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { reason, actor, credits: payment.credits, creditsRemaining: balanceBefore, shortfall, providerRefundId },
+      });
+      return { payment, refunded: false, manualReview: true, shortfall };
+    }
+
+    payment.status = PAYMENT_STATUS.REFUNDED;
+    payment.metadata = { ...(payment.metadata || {}), refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId };
+    if (user) {
+      user.creditsReceived -= payment.credits;
+      user.updatedAt = new Date();
+    }
+
+    const txId = generateUUID();
+    store.creditTransactions.set(txId, {
+      id: txId,
+      userId: payment.userId,
+      type: "refund",
+      amount: -payment.credits,
+      balanceBefore,
+      balanceAfter: balanceBefore - payment.credits,
+      description: `Refund for ${payment.invoiceNumber} (${payment.planName}) — ${reason}`,
+      createdAt: new Date(),
+    });
+
+    await this.createAuditLog({
+      userId: payment.userId,
+      action: AUDIT_ACTIONS.PAYMENT_REFUNDED,
+      targetType: "payment",
+      targetId: paymentId,
+      details: { credits: payment.credits, reason, actor, providerRefundId, balanceBefore, balanceAfter: balanceBefore - payment.credits },
+    });
+
+    return { payment, refunded: true };
+  },
+
   async getPayment(id) {
     return store.payments.get(id) || null;
+  },
+
+  // M39 Phase 2 — parity with dbStorage; supports refund/dispute webhook reconciliation.
+  async getPaymentByRazorpayOrderId(orderId) {
+    if (!orderId) return null;
+    for (const p of store.payments.values()) {
+      if (p.metadata && p.metadata.razorpay_order_id === orderId) return p;
+    }
+    return null;
+  },
+
+  async getPaymentByTransactionId(transactionId) {
+    if (!transactionId) return null;
+    for (const p of store.payments.values()) {
+      if (p.transactionId === transactionId) return p;
+    }
+    return null;
   },
 
   async getUserPayments(userId) {

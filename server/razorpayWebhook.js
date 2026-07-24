@@ -115,22 +115,82 @@ export async function razorpayWebhookHandler(req, res) {
       await storage.failPayment(repPayment.id, reason);
       console.log(`[RZP-WEBHOOK] payment.failed — ${repPayment.id} marked failed: ${reason}`);
 
+    } else if (eventType === "refund.created" || eventType === "refund.processed") {
+      // M39 Phase 2 — reconcile a provider/dashboard-initiated refund into our ledger.
+      // The refund entity carries the Razorpay payment id, which completePayment
+      // stored as our transactionId. refundPayment is idempotent (already-refunded →
+      // no-op) so an operator refund already applied here won't double-clawback, and a
+      // consumed-credit refund is flagged for manual review rather than forced negative.
+      const refund = event.payload?.refund?.entity;
+      const rzpPaymentId = refund?.payment_id;
+      if (!rzpPaymentId) {
+        console.warn(`[RZP-WEBHOOK] ${eventType} — missing payment_id in payload`);
+        return res.status(200).json({ received: true });
+      }
+      const repPayment = await storage.getPaymentByTransactionId(rzpPaymentId);
+      if (!repPayment) {
+        console.warn(`[RZP-WEBHOOK] ${eventType} — no RepMail payment for txn ${rzpPaymentId}`);
+        Sentry.captureMessage("PAYMENT_REFUND_ORPHAN: provider refund with no matching RepMail payment", {
+          level: "error",
+          extra: { razorpayPaymentId: rzpPaymentId, refundId: refund?.id },
+        });
+        return res.status(200).json({ received: true });
+      }
+      const result = await storage.refundPayment(repPayment.id, {
+        reason: `provider_refund:${eventType}`,
+        actor: "razorpay_webhook",
+        providerRefundId: refund?.id || null,
+      });
+      if (result.manualReview) {
+        console.warn(`[RZP-WEBHOOK] ${eventType} — payment ${repPayment.id} flagged for manual review (consumed credits, shortfall ${result.shortfall})`);
+        Sentry.captureMessage("PAYMENT_REFUND_MANUAL_REVIEW: consumed credits cannot be auto-clawed back", {
+          level: "warning",
+          extra: { paymentId: repPayment.id, shortfall: result.shortfall, refundId: refund?.id },
+        });
+      } else {
+        console.log(`[RZP-WEBHOOK] ${eventType} — payment ${repPayment.id} refund reconciled (refunded=${result.refunded}, alreadyRefunded=${!!result.alreadyRefunded})`);
+      }
+
     } else if (eventType === "payment.dispute.created") {
       const dispute = event.payload?.dispute?.entity;
       console.warn(`[RZP-WEBHOOK] DISPUTE CREATED — id=${dispute?.id} amount=${dispute?.amount} reason=${dispute?.reason_code}`);
-      // TODO: flag payment for manual review when dispute management is added
+      // A created dispute is not yet a money movement — flag for operator awareness
+      // (a lost dispute below is what triggers the credit reversal).
+      Sentry.captureMessage("PAYMENT_DISPUTE_CREATED: payment under dispute, monitor for outcome", {
+        level: "warning",
+        extra: { disputeId: dispute?.id, amount: dispute?.amount, reasonCode: dispute?.reason_code, paymentId: dispute?.payment_id },
+      });
 
     } else if (eventType === "payment.dispute.won") {
       const dispute = event.payload?.dispute?.entity;
       console.log(`[RZP-WEBHOOK] Dispute WON — id=${dispute?.id}`);
 
     } else if (eventType === "payment.dispute.lost") {
+      // M39 Phase 2 — a lost dispute reverses the money at the bank, so the credits
+      // must be reversed too. Route through the same refund spine: auto-reverse when
+      // the balance can absorb it, else flag for manual review. Never forces negative.
       const dispute = event.payload?.dispute?.entity;
-      console.warn(`[RZP-WEBHOOK] Dispute LOST — id=${dispute?.id} — credits may need manual adjustment`);
-      Sentry.captureMessage("PAYMENT_DISPUTE_LOST: manual credit adjustment may be required", {
-        level: "warning",
-        extra: { disputeId: dispute?.id, amount: dispute?.amount },
-      });
+      console.warn(`[RZP-WEBHOOK] Dispute LOST — id=${dispute?.id} — reversing credits`);
+      const rzpPaymentId = dispute?.payment_id;
+      const repPayment = rzpPaymentId ? await storage.getPaymentByTransactionId(rzpPaymentId) : null;
+      if (repPayment) {
+        const result = await storage.refundPayment(repPayment.id, {
+          reason: `dispute_lost:${dispute?.id}`,
+          actor: "razorpay_webhook",
+          providerRefundId: null,
+        });
+        Sentry.captureMessage(
+          result.manualReview
+            ? "PAYMENT_DISPUTE_LOST: consumed credits — manual credit adjustment required"
+            : "PAYMENT_DISPUTE_LOST: credits reversed automatically",
+          { level: "warning", extra: { disputeId: dispute?.id, paymentId: repPayment.id, refunded: result.refunded, shortfall: result.shortfall } }
+        );
+      } else {
+        Sentry.captureMessage("PAYMENT_DISPUTE_LOST: no matching RepMail payment — manual review", {
+          level: "error",
+          extra: { disputeId: dispute?.id, razorpayPaymentId: rzpPaymentId, amount: dispute?.amount },
+        });
+      }
 
     } else if (eventType === "payment.dispute.closed") {
       const dispute = event.payload?.dispute?.entity;
