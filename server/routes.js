@@ -58,6 +58,29 @@ const aiLimiter = rateLimit({
   message: { message: "Too many AI requests. Please wait a moment before generating more content." },
 });
 
+// M39 Phase 5 — public form abuse protection. /api/contact and /api/waitlist were
+// unauthenticated and unlimited (spam / email-flood surfaces): 8 submissions per IP
+// per 15 minutes is generous for a human and stops automated flooding.
+const publicFormLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many submissions. Please try again in a few minutes." },
+});
+
+// M39 Phase 5 — payment initiation is an authenticated commercial mutation (creates
+// a payment row + Razorpay order). Keyed per user: 20 per 10 minutes is far above a
+// real buyer's cadence but caps runaway order creation from a stuck client or abuse.
+const paymentInitiateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `pay:${req.user?.id ?? "anon"}`,
+  message: { message: "Too many payment attempts. Please wait a moment and try again." },
+});
+
 // 5 invite sends/resends per admin per hour
 const inviteLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -3331,7 +3354,7 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/payments/initiate", authMiddleware, async (req, res) => {
+  app.post("/api/payments/initiate", authMiddleware, paymentInitiateLimiter, async (req, res) => {
     try {
       const { planId, credits: customCredits, paymentMethod, currency = "INR" } = req.body;
 
@@ -3683,7 +3706,7 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
-  app.post("/api/contact", async (req, res) => {
+  app.post("/api/contact", publicFormLimiter, async (req, res) => {
     try {
       const parsed = contactSubmissionSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -3698,7 +3721,7 @@ export async function registerRoutes(httpServer, app) {
   });
 
   // ==================== WAITLIST ====================
-  app.post("/api/waitlist", async (req, res) => {
+  app.post("/api/waitlist", publicFormLimiter, async (req, res) => {
     try {
       const parsed = waitlistSchema.safeParse(req.body);
       if (!parsed.success) {

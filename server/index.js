@@ -45,6 +45,7 @@ import { addCampaignJob, getCampaignQueue } from "./queue.js";
 import { runSchemaCheck } from "./schemaCheck.js";
 import { RECONCILIATION_MIN_AGE_MS, RECONCILIATION_MAX_AGE_MS } from "./campaignConfig.js";
 import { razorpayWebhookHandler } from "./razorpayWebhook.js";
+import { correlationId } from "./correlationId.js";
 import { INACTIVITY_THRESHOLDS, AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
 import { runDomainVerificationPoll } from "./domainManager.js";
 import { verifyAiHealth } from "./ai.js";
@@ -54,6 +55,16 @@ const httpServer = createServer(app);
 // Trust Railway's load balancer so req.ip resolves to the real client IP from
 // X-Forwarded-For. Without this, all clients share the same rate-limit bucket.
 app.set("trust proxy", 1);
+
+// M39 Phase 5 — request correlation IDs. First in the pipeline so EVERY request
+// (including the raw-body Razorpay webhook registered below) gets a stable id on
+// req.id and an X-Request-Id response header, and every Sentry event is tagged with
+// it — so a log line, an alert, and a customer report can be traced to one request.
+app.use(correlationId);
+app.use((req, _res, next) => {
+  try { Sentry.getCurrentScope().setTag("request_id", req.id); } catch { /* Sentry may be a no-op */ }
+  next();
+});
 
 // Security headers. HSTS enabled for production; helmet is a no-op in dev where HTTPS is absent.
 // CSP: 'unsafe-inline' is required for style-src because shadcn/ui, Tailwind, and the HTML
