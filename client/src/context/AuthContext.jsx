@@ -1,8 +1,18 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+// M39 Phase 3 — cross-tab auth synchronization so login AND logout propagate to
+// every tab immediately (not just this one). See client/src/lib/authSync.js.
+import { broadcastAuth, subscribeAuth, AUTH_EVENTS } from "@/lib/authSync";
 
 const AuthContext = createContext(null);
+
+// Applied both to this tab's own logout and to a logout broadcast from another tab,
+// so the two paths converge on identical local state.
+function applyLocalLogout() {
+  queryClient.setQueryData(["/api/auth/me"], null);
+  queryClient.clear();
+}
 
 export function AuthProvider({ children }) {
   const [isInitialized, setIsInitialized] = useState(false);
@@ -20,6 +30,20 @@ export function AuthProvider({ children }) {
     setIsInitialized(true);
   }, []);
 
+  // Mirror auth transitions announced by other tabs. A logout elsewhere clears this
+  // tab's state; a login elsewhere invalidates so this tab re-reads the now-valid
+  // session. Symmetric with the mutations below, so the whole browser stays in one
+  // auth state regardless of which tab acted or whether this tab has focus.
+  useEffect(() => {
+    return subscribeAuth((type) => {
+      if (type === AUTH_EVENTS.LOGOUT) {
+        applyLocalLogout();
+      } else if (type === AUTH_EVENTS.LOGIN) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
+    });
+  }, []);
+
   const loginMutation = useMutation({
     mutationFn: async (credentials) => {
       const res = await apiRequest("POST", "/api/auth/login", credentials);
@@ -27,6 +51,7 @@ export function AuthProvider({ children }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      broadcastAuth(AUTH_EVENTS.LOGIN); // tell other tabs to re-read the session
     }
   });
 
@@ -40,8 +65,8 @@ export function AuthProvider({ children }) {
       }
     },
     onSuccess: () => {
-      queryClient.setQueryData(["/api/auth/me"], null);
-      queryClient.clear();
+      applyLocalLogout();
+      broadcastAuth(AUTH_EVENTS.LOGOUT); // tell other tabs to clear immediately
     }
   });
 
