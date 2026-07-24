@@ -206,4 +206,30 @@ describe("refund lifecycle (D4 / MD-006)", () => {
     await storage.refundPayment(p.id, { reason: "net_zero" });
     expect(await balanceOf(u.id)).toBe(start);
   });
+
+  // The invariant the refund-concurrency hardening upholds: when the balance can
+  // absorb only ONE of two refundable payments, the second falls to manual review
+  // rather than driving the balance negative. In-memory this is proven sequentially
+  // (safe by construction — single-threaded); the Postgres backend makes the
+  // concurrent case behave identically via a FOR UPDATE row lock, so the outcome
+  // asserted here is the same one guaranteed under true concurrency.
+  it("two refunds when the balance absorbs only one: first auto, second manual review, never negative", async () => {
+    const u = await makeUser(); // no seed
+    const p1 = await makePendingPayment(u.id, 3000);
+    const p2 = await makePendingPayment(u.id, 3000);
+    await storage.completePayment(p1.id, "txn_c1");
+    await storage.completePayment(p2.id, "txn_c2");        // balance now 6000
+    await storage.updateUser(u.id, { creditsUsed: 3000 }); // remaining 3000 — absorbs exactly one
+
+    const r1 = await storage.refundPayment(p1.id, { reason: "c" });
+    const r2 = await storage.refundPayment(p2.id, { reason: "c" });
+
+    expect(r1.refunded).toBe(true);
+    expect(r2.refunded).toBe(false);
+    expect(r2.manualReview).toBe(true);
+    expect(r2.shortfall).toBe(3000);
+    expect(await balanceOf(u.id)).toBe(0);                 // never negative
+    expect((await storage.getPayment(p1.id)).status).toBe(PAYMENT_STATUS.REFUNDED);
+    expect((await storage.getPayment(p2.id)).status).toBe(PAYMENT_STATUS.SUCCESS); // unresolved, operator-recoverable
+  });
 });

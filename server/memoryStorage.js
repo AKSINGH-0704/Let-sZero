@@ -1707,6 +1707,13 @@ export const memoryStorage = {
   // M39 Phase 2 — refund lifecycle (D4 / MD-006), in parity with dbStorage.refundPayment.
   // Auto-reverse only when the balance can absorb the full clawback; otherwise flag
   // for manual operator review and leave the payment status untouched.
+  //
+  // Concurrency: this in-memory backend is safe BY CONSTRUCTION — the balance read
+  // and the credit mutation below run with NO `await` between them, so in the
+  // single-threaded event loop two concurrent refunds serialize (the first runs its
+  // whole synchronous read→check→clawback before the second starts) and the balance
+  // can never go negative. The Postgres backend gets the same guarantee via a
+  // `SELECT … FOR UPDATE` row lock inside its transaction (see dbStorage.refundPayment).
   async refundPayment(paymentId, { reason = "operator_refund", actor = "system", providerRefundId = null } = {}) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");

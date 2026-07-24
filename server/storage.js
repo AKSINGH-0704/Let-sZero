@@ -1942,70 +1942,89 @@ const dbStorage = {
       return { payment, refunded: false, error: "not_refundable", fromStatus: payment.status };
     }
 
-    const user = await this.getUserById(payment.userId);
-    const balanceBefore = user?.creditsRemaining ?? 0;
-
-    // Integrity gate (MD-006): the full clawback must keep the balance ≥ 0.
-    if (balanceBefore < payment.credits) {
-      const shortfall = payment.credits - balanceBefore;
-      await this.createAuditLog({
-        userId: payment.userId,
-        action: AUDIT_ACTIONS.PAYMENT_REFUND_MANUAL_REVIEW,
-        targetType: "payment",
-        targetId: paymentId,
-        details: { reason, actor, credits: payment.credits, creditsRemaining: balanceBefore, shortfall, providerRefundId },
-      });
-      // Record the review flag on the payment WITHOUT changing its status — the
-      // refund is unresolved until an operator decides how to handle the shortfall.
-      await db.update(payments)
-        .set({ metadata: sql`COALESCE(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ refundReview: true, refundReason: reason, refundShortfall: shortfall, providerRefundId })}::jsonb` })
-        .where(eq(payments.id, paymentId));
-      return { payment: await this.getPayment(paymentId), refunded: false, manualReview: true, shortfall };
-    }
-
-    // Auto-refund path — atomic. The conditional UPDATE (WHERE status = 'SUCCESS')
-    // makes this idempotent under concurrency: only the caller that flips
-    // SUCCESS → REFUNDED (1 row) reverses the credits; a racing caller sees 0 rows.
-    let refunded = false;
+    // The integrity decision (auto-reverse vs. manual review) AND the credit
+    // clawback happen in ONE serialized critical section. We lock the user row
+    // FOR UPDATE inside the transaction and read the balance there, so two
+    // concurrent refunds of DIFFERENT payments for the SAME user run one-at-a-time
+    // and each sees the balance AFTER the previous refund's clawback — the balance
+    // can never be driven negative (MD-006 upheld by construction, not by low
+    // probability). Reading it outside the transaction (the prior approach) left a
+    // window where both refunds passed a stale check and over-clawed. The
+    // conditional UPDATE on the payment row remains the per-payment idempotency gate.
+    let outcome = null; // { kind, balanceBefore?, shortfall? }
     await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ received: users.creditsReceived, allocated: users.creditsAllocated, used: users.creditsUsed })
+        .from(users)
+        .where(eq(users.id, payment.userId))
+        .for("update");
+      if (!locked) { outcome = { kind: "user_not_found" }; return; }
+
+      const balanceBefore = (locked.received ?? 0) - (locked.allocated ?? 0) - (locked.used ?? 0);
+      const canAbsorb = balanceBefore >= payment.credits;
+
+      // Claim THIS payment (idempotency gate: WHERE status = 'SUCCESS'). The auto
+      // path flips status → REFUNDED; the manual-review path records only the review
+      // flag and leaves status SUCCESS so an operator can resolve it later.
+      const claimMeta = canAbsorb
+        ? { refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId }
+        : { refundReview: true, refundReason: reason, refundShortfall: payment.credits - balanceBefore, providerRefundId };
       const transitioned = await tx.update(payments)
         .set({
-          status: PAYMENT_STATUS.REFUNDED,
-          metadata: sql`COALESCE(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId })}::jsonb`,
+          ...(canAbsorb ? { status: PAYMENT_STATUS.REFUNDED } : {}),
+          metadata: sql`COALESCE(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify(claimMeta)}::jsonb`,
         })
         .where(and(eq(payments.id, paymentId), eq(payments.status, PAYMENT_STATUS.SUCCESS)))
         .returning({ id: payments.id });
+      if (transitioned.length === 0) { outcome = { kind: "concurrent" }; return; } // a racing refund of THIS payment won
 
-      if (transitioned.length === 0) return; // concurrent refund won; no credit mutation
-
-      // Reverse the purchase: a purchase added to credits_received, so a refund
-      // subtracts from it. Guaranteed ≥ 0 by the integrity gate above.
-      await tx.update(users)
-        .set({ creditsReceived: sql`credits_received - ${payment.credits}`, updatedAt: new Date() })
-        .where(eq(users.id, payment.userId));
-
-      await tx.insert(creditTransactions).values({
-        userId: payment.userId,
-        type: "refund",
-        amount: -payment.credits,
-        balanceBefore,
-        balanceAfter: balanceBefore - payment.credits,
-        description: `Refund for ${payment.invoiceNumber} (${payment.planName}) — ${reason}`,
-      });
-      refunded = true;
+      if (canAbsorb) {
+        await tx.update(users)
+          .set({ creditsReceived: sql`credits_received - ${payment.credits}`, updatedAt: new Date() })
+          .where(eq(users.id, payment.userId));
+        await tx.insert(creditTransactions).values({
+          userId: payment.userId,
+          type: "refund",
+          amount: -payment.credits,
+          balanceBefore,
+          balanceAfter: balanceBefore - payment.credits,
+          description: `Refund for ${payment.invoiceNumber} (${payment.planName}) — ${reason}`,
+        });
+        outcome = { kind: "refunded", balanceBefore };
+      } else {
+        outcome = { kind: "manual_review", balanceBefore, shortfall: payment.credits - balanceBefore };
+      }
     });
 
-    if (refunded) {
+    if (outcome?.kind === "refunded") {
       await this.createAuditLog({
         userId: payment.userId,
         action: AUDIT_ACTIONS.PAYMENT_REFUNDED,
         targetType: "payment",
         targetId: paymentId,
-        details: { credits: payment.credits, reason, actor, providerRefundId, balanceBefore, balanceAfter: balanceBefore - payment.credits },
+        details: { credits: payment.credits, reason, actor, providerRefundId, balanceBefore: outcome.balanceBefore, balanceAfter: outcome.balanceBefore - payment.credits },
       });
+      return { payment: await this.getPayment(paymentId), refunded: true };
     }
-
-    return { payment: await this.getPayment(paymentId), refunded };
+    if (outcome?.kind === "manual_review") {
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_REFUND_MANUAL_REVIEW,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { reason, actor, credits: payment.credits, creditsRemaining: outcome.balanceBefore, shortfall: outcome.shortfall, providerRefundId },
+      });
+      return { payment: await this.getPayment(paymentId), refunded: false, manualReview: true, shortfall: outcome.shortfall };
+    }
+    if (outcome?.kind === "concurrent") {
+      // A racing refund of the same payment committed first — treat as an idempotent no-op.
+      const fresh = await this.getPayment(paymentId);
+      return { payment: fresh, refunded: false, alreadyRefunded: fresh?.status === PAYMENT_STATUS.REFUNDED };
+    }
+    if (outcome?.kind === "user_not_found") {
+      return { payment, refunded: false, error: "user_not_found" };
+    }
+    return { payment: await this.getPayment(paymentId), refunded: false };
   },
 
   async getPayment(id) {
