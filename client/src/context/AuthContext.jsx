@@ -9,9 +9,22 @@ const AuthContext = createContext(null);
 
 // Applied both to this tab's own logout and to a logout broadcast from another tab,
 // so the two paths converge on identical local state.
-function applyLocalLogout() {
-  queryClient.setQueryData(["/api/auth/me"], null);
+//
+// Order matters (M39 post-deploy fix): clear() FIRST to drop every cached
+// user-scoped query, THEN plant `null` as the authoritative auth value. Because
+// the `/api/auth/me` observer runs with `staleTime: Infinity`, that planted null
+// is treated as fresh and renders the tab logged-out immediately — no network
+// refetch required. The previous order (setQueryData → clear) wiped the null it
+// had just set, leaving a *receiving* (broadcast) tab to reach the logged-out
+// state only if clear() happened to trigger a server refetch. In a background
+// tab it often did not: refetchOnWindowFocus is a no-op under staleTime:Infinity
+// (the query is never stale), so that second tab could keep showing its stale
+// authenticated view. Planting null last removes the dependency on any refetch.
+// Exported for tests/unit/auth-logout-cache.test.js — the defect this guards
+// against lives in the cache-mutation order, so the order is what a test asserts.
+export function applyLocalLogout() {
   queryClient.clear();
+  queryClient.setQueryData(["/api/auth/me"], null);
 }
 
 export function AuthProvider({ children }) {

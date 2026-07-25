@@ -37,7 +37,14 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
         // (measured: zero gutter at 320 and 390 for all five dialogs audited).
         // `.dialog-viewport-fit` caps the height and gives the dialog its own
         // scrollbar — see the comment on that utility in index.css.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 dialog-viewport-fit data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+        // M39 post-deploy fix (Investigation 4/5): `grid-cols-1` — i.e.
+        // `minmax(0,1fr)` — replaces the bare `grid`'s implicit `auto` column.
+        // An `auto` column sizes to its items' max-content, so a long campaign
+        // title made the DialogHeader ~460px wide *inside* the 328px dialog and
+        // spilled the stat cards off-screen (measured). A 1fr track with a 0 min
+        // forces children to wrap at the dialog's real width. `overflow-x-hidden`
+        // is a backstop so nothing else can ever push a sideways scrollbar.
+        "fixed left-[50%] top-[50%] z-50 grid grid-cols-1 w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-x-hidden border bg-background p-6 shadow-lg duration-200 dialog-viewport-fit data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
         className
       )}
       {...props}
@@ -57,10 +64,21 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
 ))
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
+// M39 post-deploy fix (Investigation 4): the close affordance is absolutely
+// positioned at `right-4 top-4`, so any header content in the top-right corner
+// slides underneath it. On mobile the old `text-center` made it worse — a long
+// title expands symmetrically toward *both* edges, driving its right end straight
+// under the X (see the reported Campaign-detail screenshots). Two changes fix it
+// for every Dialog at once: `pr-8` reserves a gutter wide enough to clear the
+// ~24px close target, and left-aligning the header (these are content dialogs,
+// not centered alerts — AlertDialog keeps its own centered header) stops the
+// title/date from ever reaching that corner.
 const DialogHeader = ({ className, ...props }) => (
   <div
     className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left",
+      // min-w-0 lets the header shrink inside the grid track so a long title
+      // wraps instead of setting the column's width (see DialogContent note).
+      "flex flex-col space-y-1.5 text-left pr-8 min-w-0",
       className
     )}
     {...props}

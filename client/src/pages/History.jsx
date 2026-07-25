@@ -412,8 +412,9 @@ export default function History() {
 
             return (
               <div className="space-y-4 pt-2">
-                {/* Stats row */}
-                <div className="grid grid-cols-4 gap-3 text-center">
+                {/* Stats row — 2×2 on phones so the four cards never force the
+                    dialog to scroll sideways; 4-up once there's room (M39 fix). */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   <div className="rounded-lg border p-3">
                     <div className="text-2xl font-semibold text-green-600">{formatNumber(viewCampaign.sentEmails)}</div>
                     <div className="text-xs text-muted-foreground mt-1">Sent</div>
@@ -505,9 +506,12 @@ export default function History() {
                   </div>
                 )}
 
-                {/* Engagement metrics — populated by SNS events after send */}
+                {/* Engagement metrics — populated by SNS events after send.
+                    Five cards: 2-up on phones, 3-up on small screens, all five in
+                    a row from md up (the old grid-cols-4 both overflowed phones and
+                    left "Unsub Rate" orphaned on its own row at desktop). */}
                 {viewCampaign.sentEmails > 0 && (
-                  <div className="grid grid-cols-4 gap-3 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-center">
                     <div className="rounded-lg border p-3">
                       <div className="flex items-center justify-center gap-1.5 mb-0.5">
                         <Send className="h-4 w-4 text-blue-500" aria-hidden="true" />

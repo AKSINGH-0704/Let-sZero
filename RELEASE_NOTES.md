@@ -2,13 +2,35 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-25
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.1.1 (2026-07-23)
+## Current Release — v2.1.2 (2026-07-25)
+
+A focused quality release from real hands-on testing of the live app on desktop and phone.
+
+### Buy an exact number of credits from inside the app
+
+- **The credit slider is now on the billing page.** The same "estimate your cost" slider from the public pricing page is now built into the signed-in **Buy Credits** page. Drag the slider or type an exact amount to see the price, bonus credits and cost per email update live, then buy — right alongside the preset packs. The amount is still priced and charged by our server; the slider only helps you choose.
+
+### Signing out behaves the way you expect
+
+- **Logging out in one tab now logs you out everywhere.** If you had RepMail open in two tabs and signed out of one, the other tab could stay signed in until you reloaded it. Both tabs now sign out together, immediately.
+- **A clear way back to LetsZero after signing out.** Signing out now returns you to the LetsZero home page rather than leaving you on the sign-in screen with no obvious way back to the wider platform.
+
+### Campaign details read correctly on a phone
+
+- **The close button no longer overlaps the campaign title.** On a phone, opening a campaign's details could put the ✕ button on top of the campaign name and date. The heading now sits clear of the close button and wraps neatly, at every screen width down to the smallest phones.
+- **No more sideways-scrolling or half-cut cards.** The stats inside the campaign details (Sent, Failed, Reach, Open rate and so on) could spill off the right edge of the phone screen. They now arrange themselves two-across on phones and fill out to a single row on larger screens — nothing is clipped, and the panel never scrolls sideways.
+
+These changes are visual, behavioural and navigational only — pricing, credits, bonuses and every amount are unchanged.
+
+---
+
+## Previous Release — v2.1.1 (2026-07-23)
 
 A focused quality release for the **pricing page** on phones and tablets.
 

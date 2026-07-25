@@ -29,6 +29,11 @@ import TeamCapabilities from "@/components/pricing/TeamCapabilities";
 // M39 Phase 1C — the plan list and the plan card are now shared with the public
 // pricing page (one source of truth); formatters come from the commerce layer.
 import PricingCard from "@/components/pricing/PricingCard";
+// M39 post-deploy fix (Investigation 1): the same shared credit estimator the
+// public pricing page renders — reused here, not duplicated, so the authenticated
+// purchase experience matches the marketing page. Its onBuy goes through the exact
+// server-quote → confirm-modal path a resumed intent already uses below.
+import PricingCalculator from "@/components/pricing/PricingCalculator";
 import { PLAN_CATALOG } from "@/lib/commerce/planCatalog";
 // M39 Phase 4 — one canonical enterprise entry point.
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "@shared/enterprise";
@@ -606,6 +611,41 @@ export default function Payments() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  // Open the confirm modal for a custom (slider-chosen) credit amount. The amount
+  // is priced by the SERVER (MD-003) — the client never asserts a price — so we
+  // fetch an authoritative quote and synthesise the confirm tier from it. Shared
+  // by the in-app estimator's Buy button and by a purchase intent resumed after
+  // login, so both reach checkout through one path.
+  const openCustomAmountConfirm = (credits, { onReject } = {}) => {
+    return fetchQuote({ credits })
+      .then(q => {
+        if (q && !q.isEnterprise && q.amountMajor != null) {
+          setSelectedTier({
+            id: "custom",
+            name: `Custom · ${q.credits.toLocaleString()} credits`,
+            credits: q.credits,
+            totalCredits: q.totalCredits,
+            bonusCredits: q.bonusCredits,
+            priceINR: q.amountMajor,
+            isCustomAmount: true,
+            features: {},
+          });
+          setShowConfirmModal(true);
+        } else {
+          onReject?.();
+        }
+      })
+      .catch(() => onReject?.());
+  };
+
+  // The in-app estimator's Buy CTA (Investigation 1). Same server-quoted confirm
+  // path as a resumed intent — no parallel checkout, no client-trusted price. The
+  // calculator itself routes 300k+ amounts to Contact Sales, so onBuy only ever
+  // fires for a purchasable amount.
+  const handleEstimatorBuy = (credits) => {
+    openCustomAmountConfirm(credits);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const planParam = params.get("plan");
@@ -624,25 +664,7 @@ export default function Payments() {
     const resume = params.get("resume") === "1";
     const intent = loadPurchaseIntent();
     if (resume && intent && intent.credits != null && intent.planId == null) {
-      fetchQuote({ credits: intent.credits })
-        .then(q => {
-          if (q && !q.isEnterprise && q.amountMajor != null) {
-            setSelectedTier({
-              id: "custom",
-              name: `Custom · ${q.credits.toLocaleString()} credits`,
-              credits: q.credits,
-              totalCredits: q.totalCredits,
-              bonusCredits: q.bonusCredits,
-              priceINR: q.amountMajor,
-              isCustomAmount: true,
-              features: {},
-            });
-            setShowConfirmModal(true);
-          } else {
-            clearPurchaseIntent();
-          }
-        })
-        .catch(() => clearPurchaseIntent());
+      openCustomAmountConfirm(intent.credits, { onReject: clearPurchaseIntent });
     } else if (resume && intent && intent.planId) {
       const plan = PLANS.find(p => p.id === intent.planId);
       if (plan && !plan.isCustom) { setSelectedTier(plan); setShowConfirmModal(true); }
@@ -902,6 +924,16 @@ export default function Payments() {
               </div>
             </div>
           </motion.div>
+
+          {/* ── Credit estimator (Investigation 1) ───────────────────────────
+              The same shared PricingCalculator the public pricing page renders —
+              buy an exact credit amount with the slider, priced by the server and
+              confirmed through the existing modal. Just the calculator: none of
+              the marketing sections around it. max-w-5xl mirrors the public page's
+              estimator container so the two experiences match. */}
+          <div className="max-w-5xl mx-auto w-full">
+            <PricingCalculator currency={currency} onBuy={handleEstimatorBuy} />
+          </div>
 
           {/* ── Page heading + currency toggle ──────────────────────────── */}
           <motion.div

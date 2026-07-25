@@ -46,8 +46,19 @@ import { getInitials } from "@/lib/utils";
 export default function Navbar() {
   const { user, logout, isAdmin, isRootAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // M39 post-deploy fix (Investigation 3): RepMail is a product *within* LetsZero,
+  // so signing out returns the customer to the LetsZero platform home rather than
+  // stranding them on the bare /login form with no obvious way back to the parent
+  // site. logout() always resolves (its mutationFn swallows network errors and
+  // still clears local state), so navigating after it is safe in every case.
+  const handleLogout = async () => {
+    setMobileOpen(false);
+    await logout();
+    navigate("/");
+  };
 
   const workflowItems = [
     { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -187,7 +198,7 @@ export default function Navbar() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={logout}
+                onClick={handleLogout}
                 className="text-destructive focus:text-destructive cursor-pointer"
                 data-testid="menu-logout"
               >
@@ -269,7 +280,7 @@ export default function Navbar() {
               Profile
             </Link>
             <button
-              onClick={() => { setMobileOpen(false); logout(); }}
+              onClick={handleLogout}
               className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
             >
               <LogOut className="h-4 w-4 shrink-0" />
