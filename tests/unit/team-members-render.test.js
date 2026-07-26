@@ -103,9 +103,30 @@ describe("M41 — Team Members page renders the reused team experience", () => {
 
   it("shows a read-only note to a plain member (no management UI)", () => {
     const html = renderToString(makeTree(seededClient({
-      me: { id: "u9", username: "member", role: "USER", effectivePlan: "growth" },
+      // A plain member always has a parentId (they belong under an owner/manager).
+      me: { id: "u9", username: "member", role: "USER", parentId: "root1", effectivePlan: "growth" },
     })));
     expect(html).toContain("Team is managed by your workspace owner");
     expect(html).not.toContain("Add Team Member");
+  });
+
+  // M41-FIX — the self-service customer case: a top-level account (role USER,
+  // parentId null) IS the workspace owner and must get the full management UI on
+  // their own workspace, not the "managed by your workspace owner" read-only note.
+  // This is the exact account shape in the production QA (role USER, STARTER plan).
+  it("gives a top-level workspace owner (role USER, no parent) the full management UI", () => {
+    const html = renderToString(makeTree(seededClient({
+      me: { id: "owner9", username: "saikrishnar", email: "s@x.com", role: "USER", parentId: null, effectivePlan: "starter", isPlatformOperator: false },
+      users: [
+        { id: "m1", username: "alice", email: "alice@x.com", role: "USER", isActive: true, isActiveThisWeek: true, creditsRemaining: 100, lastActivityAt: new Date().toISOString() },
+      ],
+      invites: [{ id: "i1", email: "carol@x.com", role: "USER", createdAt: new Date().toISOString() }],
+    })));
+    expect(html).toContain("Team Members");
+    expect(html).toContain("Add Team Member");
+    expect(html).toContain("seats used");
+    expect(html).toContain("alice");
+    expect(html).toContain("Pending invites");
+    expect(html).not.toContain("Team is managed by your workspace owner");
   });
 });

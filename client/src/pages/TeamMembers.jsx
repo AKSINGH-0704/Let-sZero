@@ -104,9 +104,14 @@ function StatusBadge({ member }) {
 }
 
 export default function TeamMembers() {
-  const { user, isRootAdmin, isSubAdmin, isSecondaryRoot } = useAuth();
+  const { user, isRootAdmin, isSubAdmin, isSecondaryRoot, isWorkspaceOwner, canManageTeam } = useAuth();
   const { toast } = useToast();
-  const isAdmin = isRootAdmin || isSubAdmin || isSecondaryRoot;
+  // M41-FIX — the page's management gate was isAdmin (ROOT_ADMIN/SUB_ADMIN/
+  // secondary root), which excludes a self-service customer (role USER). Their
+  // own workspace owner therefore saw the "managed by your workspace owner"
+  // read-only note on THEIR OWN workspace. canManageTeam includes the owner,
+  // matching the server's adminMiddleware.
+  const canManage = canManageTeam;
   const search = useSearch();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -117,13 +122,16 @@ export default function TeamMembers() {
   const [removeTarget, setRemoveTarget] = useState(null);
 
   // Server RBAC (see routes.js POST /api/users, /api/users/invite):
-  //   ROOT_ADMIN / secondary root → create Managers; invite Members OR Managers
-  //   SUB_ADMIN                    → create + invite Members only
-  const createUserRoles = (isRootAdmin || isSecondaryRoot) ? ["SUB_ADMIN"] : ["USER"];
-  const inviteUserRoles = (isRootAdmin || isSecondaryRoot) ? ["USER", "SUB_ADMIN"] : ["USER"];
+  //   Workspace owner (the "Admin") → create/invite Managers OR Members
+  //   ROOT_ADMIN / secondary root   → create Managers; invite Members OR Managers
+  //   SUB_ADMIN                     → create + invite Members only
+  const createUserRoles = isWorkspaceOwner
+    ? ["SUB_ADMIN", "USER"]
+    : (isRootAdmin || isSecondaryRoot) ? ["SUB_ADMIN"] : ["USER"];
+  const inviteUserRoles = (isRootAdmin || isSecondaryRoot || isWorkspaceOwner) ? ["USER", "SUB_ADMIN"] : ["USER"];
 
-  const { data: members, isLoading } = useQuery({ queryKey: ["/api/users"], enabled: isAdmin });
-  const { data: invites, isLoading: invitesLoading } = useQuery({ queryKey: ["/api/invites"], enabled: isAdmin });
+  const { data: members, isLoading } = useQuery({ queryKey: ["/api/users"], enabled: canManage });
+  const { data: invites, isLoading: invitesLoading } = useQuery({ queryKey: ["/api/invites"], enabled: canManage });
 
   // Seat math — identical source and rule as the server's claimWorkspaceSeat:
   // included = MAX_TEAM_MEMBERS[effectivePlan]; used = ACTIVE members (owner excluded,
@@ -157,9 +165,9 @@ export default function TeamMembers() {
   // opens the Add dialog immediately — no redundant second click (mirrors the
   // M20-C activation behaviour, now pointed at this customer page).
   useEffect(() => {
-    if (isAdmin && new URLSearchParams(search).get("invite") === "1") openAdd();
+    if (canManage && new URLSearchParams(search).get("invite") === "1") openAdd();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [canManage]);
 
   const inviteMutation = useMutation({
     mutationFn: async (data) => {
@@ -233,9 +241,10 @@ export default function TeamMembers() {
 
   const submitting = inviteMutation.isPending || createMutation.isPending;
 
-  // ── Non-admins: read-only note (mirrors server adminMiddleware — a member cannot
-  //    list or manage the workspace) ──────────────────────────────────────────
-  if (!isAdmin) {
+  // ── Plain members: read-only note (mirrors server adminMiddleware — a member,
+  //    i.e. a USER *with* a parentId, cannot list or manage the workspace). The
+  //    workspace owner and managers fall through to the full experience below.
+  if (!canManage) {
     return (
       <AppLayout>
         <div className="mx-auto max-w-2xl py-16 text-center">

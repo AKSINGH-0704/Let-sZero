@@ -65,6 +65,15 @@ async function login(username, password) {
   return `token=${token}`;
 }
 
+// Mint a session cookie directly (bypasses the login rate-limiter, which is
+// cumulative per-IP across this file's many logins). Same pattern as
+// m20-workspace.test.js. Used where we only need an authenticated session, not to
+// exercise the login route itself.
+async function sessionCookieFor(userId) {
+  const session = await storage.createSession(userId);
+  return `token=${session.token}`;
+}
+
 function extractInviteToken(emailText) {
   const m = emailText.match(/[?&]token=([a-f0-9]+)/);
   return m?.[1] ?? null;
@@ -263,5 +272,82 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
       body: { email: `e2e_trial_invite_${Math.random().toString(36).slice(2)}@example.com`, role: "USER" },
     });
     expect(r.status, `trial-plan invite unexpectedly rejected: ${JSON.stringify(r.json)}`).toBe(201);
+  });
+
+  // M41-FIX — a SELF-SERVICE customer is a top-level account with role USER and
+  // parentId null (OAuth signup shape), NOT a ROOT_ADMIN. Team management was
+  // gated on adminMiddleware (ROOT_ADMIN/SUB_ADMIN/secondary root), so every real
+  // customer got 403 on their OWN workspace's team endpoints — the production QA
+  // finding. This proves the workspace owner can now fully manage their team,
+  // while a plain member (USER *with* a parentId) still cannot.
+  it("a top-level workspace owner (role USER, no parent) can fully manage their team; a plain member cannot", { timeout: 30000 }, async () => {
+    const ownerPassword = "owner-pw-" + Math.random().toString(36).slice(2);
+    const owner = await storage.createUser({
+      username: "e2e_owner_" + Math.random().toString(36).slice(2),
+      email: `e2e_owner_${Math.random().toString(36).slice(2)}@example.com`,
+      password: ownerPassword,
+      role: USER_ROLES.USER,   // self-service customers are USER, not ROOT_ADMIN
+      // parentId omitted → null → this account is the root of its own workspace
+      plan: "starter",         // MAX_TEAM_MEMBERS.starter = 25
+      mustResetPassword: false,
+    });
+    expect(owner.parentId ?? null).toBe(null); // confirms the top-level-owner precondition
+
+    const ownerCookie = await sessionCookieFor(owner.id);
+
+    // The owner can list their (empty) team — previously 403.
+    const listEmpty = await api("GET", "/api/users", { cookie: ownerCookie });
+    expect(listEmpty.status, `owner GET /api/users failed: ${JSON.stringify(listEmpty.json)}`).toBe(200);
+    expect(Array.isArray(listEmpty.json)).toBe(true);
+
+    // The owner can read pending invites — previously 403.
+    const invitesEmpty = await api("GET", "/api/invites", { cookie: ownerCookie });
+    expect(invitesEmpty.status).toBe(200);
+
+    // The owner (the "Admin") can invite a Manager AND a Member.
+    const subInvite = await api("POST", "/api/users/invite", {
+      cookie: ownerCookie,
+      body: { email: `e2e_owner_sub_${Math.random().toString(36).slice(2)}@example.com`, role: "SUB_ADMIN" },
+    });
+    expect(subInvite.status, `owner invite Manager failed: ${JSON.stringify(subInvite.json)}`).toBe(201);
+
+    const memberEmail = `e2e_owner_member_${Math.random().toString(36).slice(2)}@example.com`;
+    const memberInvite = await api("POST", "/api/users/invite", {
+      cookie: ownerCookie,
+      body: { email: memberEmail, role: "USER" },
+    });
+    expect(memberInvite.status, `owner invite Member failed: ${JSON.stringify(memberInvite.json)}`).toBe(201);
+
+    // The member accepts and lands under the owner's workspace.
+    const memberToken = extractInviteToken(sentEmails.find(e => e.to === memberEmail).text);
+    const memberUsername = "e2e_owner_member_" + Math.random().toString(36).slice(2);
+    const memberPassword = "member-pw-" + Math.random().toString(36).slice(2);
+    const acceptMember = await api("POST", "/api/invites/accept", {
+      body: { token: memberToken, username: memberUsername, password: memberPassword },
+    });
+    expect(acceptMember.status, `member accept failed: ${JSON.stringify(acceptMember.json)}`).toBe(201);
+    const member = acceptMember.json.user;
+    expect(member.parentId).toBe(owner.id); // member belongs to the owner's workspace
+
+    // The owner's team list now includes the accepted member (whole-workspace view).
+    const listWithMember = await api("GET", "/api/users", { cookie: ownerCookie });
+    expect(listWithMember.status).toBe(200);
+    expect(listWithMember.json.some(u => u.id === member.id)).toBe(true);
+
+    // The owner can remove and restore the member (per-target ownership check).
+    const remove = await api("DELETE", `/api/users/${member.id}`, { cookie: ownerCookie });
+    expect(remove.status, `owner remove member failed: ${JSON.stringify(remove.json)}`).toBe(200);
+    const restore = await api("POST", `/api/users/${member.id}/reactivate`, { cookie: ownerCookie });
+    expect(restore.status, `owner restore member failed: ${JSON.stringify(restore.json)}`).toBe(200);
+
+    // But a plain MEMBER (role USER, with a parentId) still cannot manage the team.
+    const memberCookie = await sessionCookieFor(member.id);
+    const memberList = await api("GET", "/api/users", { cookie: memberCookie });
+    expect(memberList.status, "a plain member must not list the workspace").toBe(403);
+    const memberInviteAttempt = await api("POST", "/api/users/invite", {
+      cookie: memberCookie,
+      body: { email: `nope_${Math.random().toString(36).slice(2)}@example.com`, role: "USER" },
+    });
+    expect(memberInviteAttempt.status, "a plain member must not invite").toBe(403);
   });
 });

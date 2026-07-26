@@ -603,8 +603,12 @@ function ProcessPayment({ paymentId }) {
 
 // ─── Main Payments Component ───────────────────────────────────────────────────
 export default function Payments() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "ROOT_ADMIN" || user?.role === "SUB_ADMIN";
+  const { user, canManageTeam } = useAuth();
+  // M41-FIX — the Teams tab's actionable seat card and live member query were
+  // gated on role (ROOT_ADMIN/SUB_ADMIN), so a self-service customer (role USER,
+  // the workspace owner) never saw the "Manage team" CTA on their own billing
+  // page. canManageTeam includes the owner, matching the server + /app/team.
+  const isAdmin = canManageTeam;
 
   // useParams() receives :id from the outer <Route path="/app/payments/process/:id">
   // when mounted on that route; empty object on the base /app/payments route.
@@ -1204,9 +1208,13 @@ export default function Payments() {
                         { n: "1", title: "Invite team members", desc: (
                           <>
                             Go to{" "}
+                            {/* M41-FIX — was /app/users, the operator-only admin page
+                                (role-gated to ROOT_ADMIN/SUB_ADMIN → a customer got
+                                bounced to the dashboard). The customer team page is
+                                /app/team. */}
                             <button
                               type="button"
-                              onClick={() => setLocation("/app/users")}
+                              onClick={() => setLocation("/app/team")}
                               className="underline underline-offset-2"
                               style={{ color: "#00E5C8" }}
                             >

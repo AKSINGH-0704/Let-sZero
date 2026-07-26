@@ -260,8 +260,28 @@ async function authMiddleware(req, res, next) {
   next();
 }
 
+// M41-FIX — a workspace OWNER is the root of their own workspace: a top-level
+// account with no parent. Self-service customers sign up via OAuth as role USER
+// with parentId === null (see the passport strategy), so a customer's own owner
+// is NOT a ROOT_ADMIN — ownership is defined by tree POSITION, not role. They are
+// the "Admin" in the product's Admin/Manager/Member model and must be able to
+// manage their own team. A plain member (role USER *with* a parentId) is not an
+// owner and stays read-only. This never widens reach beyond the caller's own
+// workspace: every team route below is workspace-scoped (getUsersWithStats
+// resolves the caller's own root; invite/create set parentId to the caller; seat
+// enforcement uses the caller's effectivePlan; per-target actions still go
+// through isSameWorkspaceAdmin, which is tree-scoped).
+function isWorkspaceOwner(user) {
+  return user != null && user.parentId == null;
+}
+
 function adminMiddleware(req, res, next) {
-  if (req.user.role !== "ROOT_ADMIN" && req.user.role !== "SUB_ADMIN" && !req.user.isSecondaryRoot) {
+  const canManageWorkspace =
+    req.user.role === "ROOT_ADMIN" ||
+    req.user.role === "SUB_ADMIN" ||
+    req.user.isSecondaryRoot === true ||
+    isWorkspaceOwner(req.user); // M41-FIX — top-level customer owner (role USER)
+  if (!canManageWorkspace) {
     return res.status(403).json({ message: "Forbidden" });
   }
   next();
@@ -335,7 +355,15 @@ function platformOperatorMiddleware(req, res, next) {
 // Callers who are not root-tier (plain SUB_ADMIN/USER) always get false here,
 // preserving their existing (unchanged, self-only) access exactly as before.
 async function isSameWorkspaceAdmin(callerUser, targetUserId) {
-  if (!(callerUser.role === USER_ROLES.ROOT_ADMIN || callerUser.isSecondaryRoot)) return false;
+  // M41-FIX — a top-level workspace owner (parentId === null) reaches their whole
+  // workspace tree exactly as a root-tier admin does. Ownership is by tree
+  // position, so a customer's USER owner qualifies here alongside ROOT_ADMIN /
+  // secondary root. Still tree-scoped below — never cross-workspace.
+  const isOwnerOrRootTier =
+    isWorkspaceOwner(callerUser) ||
+    callerUser.role === USER_ROLES.ROOT_ADMIN ||
+    callerUser.isSecondaryRoot;
+  if (!isOwnerOrRootTier) return false;
   const rootId = await storage.resolveWorkspaceRootId(callerUser.id);
   const memberIds = await storage.getWorkspaceMemberIds(rootId);
   return memberIds.has(targetUserId);
@@ -1292,7 +1320,13 @@ export async function registerRoutes(httpServer, app) {
 
   app.get("/api/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-      const usersList = await storage.getUsersWithStats(req.user.id, req.isRootAdmin);
+      // M41-FIX — a top-level owner sees their WHOLE workspace (root + all
+      // descendants), matching the product's "Admin sees everything" promise and
+      // the seat math the server enforces. req.isRootAdmin stays false for a USER
+      // owner, so pass the whole-workspace flag explicitly. Still tree-scoped
+      // inside getUsersWithStats — never platform-wide.
+      const seeWholeWorkspace = req.isRootAdmin || isWorkspaceOwner(req.user);
+      const usersList = await storage.getUsersWithStats(req.user.id, seeWholeWorkspace);
       res.json(usersList);
     } catch (error) {
       res.status(500).json({ message: error.message });
@@ -1325,6 +1359,10 @@ export async function registerRoutes(httpServer, app) {
         return res.status(409).json({ message: "A user with that email already exists" });
       }
 
+      // RBAC. A workspace OWNER (top-level USER, the "Admin") may create either a
+      // Manager (SUB_ADMIN) or a Member (USER) directly — neither guard below
+      // matches them, which is intentional. A SUB_ADMIN manager may create Members
+      // only; the operator hierarchy (ROOT_ADMIN / secondary root) makes Managers.
       if (req.user.role === "SUB_ADMIN" && !req.user.isSecondaryRoot && role !== "USER") {
         return res.status(403).json({ message: "Sub-admins can only create users" });
       }
@@ -2848,7 +2886,10 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "email and role are required" });
       }
 
-      const validRoles = (req.user.role === "ROOT_ADMIN" || req.user.isSecondaryRoot) ? ["SUB_ADMIN", "USER"] : ["USER"];
+      // M41-FIX — a workspace owner (the "Admin") may invite Managers (SUB_ADMIN)
+      // or Members (USER), same as a root admin; a SUB_ADMIN manager may invite
+      // Members only.
+      const validRoles = (req.user.role === "ROOT_ADMIN" || req.user.isSecondaryRoot || isWorkspaceOwner(req.user)) ? ["SUB_ADMIN", "USER"] : ["USER"];
       if (!validRoles.includes(role)) {
         return res.status(403).json({ message: `You can only invite: ${validRoles.join(", ")}` });
       }

@@ -119,6 +119,16 @@ export function AuthProvider({ children }) {
   // ROOT_ADMIN. Only ever gate genuinely platform-wide operational surfaces on
   // this; anything a customer should see belongs behind isAdmin/isRootAdmin.
   const isPlatformOperator = user?.isPlatformOperator === true;
+  // M41-FIX — a workspace OWNER is the root of their own workspace: a top-level
+  // account with no parent. Self-service customers sign up as role USER (not
+  // ROOT_ADMIN), so ownership is defined by tree POSITION, not role. The owner is
+  // the "Admin" of their workspace and gets the full team-management experience;
+  // a plain member (role USER *with* a parentId) does not. Guarded on
+  // isAuthenticated so a still-loading (undefined) user is never treated as owner.
+  const isWorkspaceOwner = isAuthenticated && user?.parentId == null;
+  // Everyone who may manage the workspace team: managers/root admins (isAdmin)
+  // and the workspace owner. Mirrors the server's adminMiddleware exactly.
+  const canManageTeam = isAdmin || isWorkspaceOwner;
 
   const value = {
     user,
@@ -128,6 +138,8 @@ export function AuthProvider({ children }) {
     isSubAdmin,
     isSecondaryRoot,
     isAdmin,
+    isWorkspaceOwner,
+    canManageTeam,
     isPlatformOperator,
     mustResetPassword,
     login,

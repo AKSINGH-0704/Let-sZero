@@ -2,13 +2,25 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-26 (v2.2.1)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.2.0 (2026-07-26)
+## Current Release — v2.2.1 (2026-07-26)
+
+A follow-up fix to the v2.2.0 team-management release. Team Members was reachable, but its entry points were only shown to internal admin accounts — so a normal workspace owner had no obvious way in. This release makes team management discoverable for **every** workspace owner.
+
+- **Manage → Team Members now appears for you.** If you own your workspace, the Team Members entry is in the Manage menu — no hidden routes, no guessing.
+- **The billing page points you there too.** On the **Teams** view, *Manage team* / *Add your first team member* now shows for workspace owners and the "Team Management" link goes to your team page (previously it led to an internal admin screen).
+- **Manage the people in your workspace.** Invite by email or create members directly, choose their role (Manager or Member), see live seat usage, and remove or restore members — all scoped strictly to your own workspace.
+
+No pricing, credits, seat allowances, or workspace boundaries changed.
+
+---
+
+## Previous Release — v2.2.0 (2026-07-26)
 
 Team management is now a first-class part of RepMail. Everything below already worked underneath — this release gives it an obvious, polished home.
 
