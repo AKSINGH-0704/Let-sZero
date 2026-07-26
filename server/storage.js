@@ -20,7 +20,7 @@ import { isMachineCategory } from "./trackingClassifier.js";
 import {
   USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
-  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS
+  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS, normalizeEmail
 } from "../shared/schema.js";
 
 // Static imports - tree-shaking will handle unused code in prod
@@ -55,9 +55,14 @@ const dbStorage = {
     // Optional `tx` lets a caller (claimWorkspaceSeat) perform this insert inside
     // the same locked transaction that verified seat capacity — defaults to the
     // module-level db for every other (unaffected) caller.
+    // SEC — store the canonical (normalized) email so the unique constraint on
+    // users.email enforces one-account-per-email case-insensitively. Postgres'
+    // native UNIQUE is case-sensitive, so without normalization `Victim@corp.com`
+    // and `victim@corp.com` would both be accepted and getUserByEmail could
+    // resolve a reset/login to the wrong account. See normalizeEmail().
     const [user] = await tx.insert(users).values({
       username: userData.username,
-      email: userData.email,
+      email: normalizeEmail(userData.email),
       passwordHash,
       role: userData.role || USER_ROLES.USER,
       parentId: userData.parentId || null,
@@ -88,7 +93,12 @@ const dbStorage = {
   },
 
   async getUserByEmail(email) {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    // SEC — case-insensitive lookup on the canonical form. Matches normalized
+    // rows written going forward AND any legacy mixed-case rows, so a reset/login
+    // lookup resolves deterministically regardless of caller casing.
+    const normalized = normalizeEmail(email);
+    if (!normalized) return null;
+    const [user] = await db.select().from(users).where(sql`lower(${users.email}) = ${normalized}`);
     return user || null;
   },
 
@@ -133,7 +143,9 @@ const dbStorage = {
 
   async updateUser(id, updates) {
     const allowedUpdates = {};
-    if (updates.email) allowedUpdates.email = updates.email;
+    // SEC — normalize on email change; the users.email UNIQUE constraint then
+    // enforces the one-account-per-email invariant for updates too.
+    if (updates.email) allowedUpdates.email = normalizeEmail(updates.email);
     if (updates.isActive !== undefined) allowedUpdates.isActive = updates.isActive;
     if (updates.mustResetPassword !== undefined) allowedUpdates.mustResetPassword = updates.mustResetPassword;
     if (updates.lastLoginAt) allowedUpdates.lastLoginAt = updates.lastLoginAt;
@@ -1786,7 +1798,8 @@ const dbStorage = {
         creditsReceived: 100000,
         mustResetPassword: true,
         isTrialUser: false,
-        plan: "enterprise"
+        plan: "enterprise",
+        emailVerified: true, // operator-provisioned bootstrap account — email is trusted
       });
       
       console.log("Root admin created - password reset required on first login");
@@ -3007,6 +3020,24 @@ const dbStorage = {
         gte(users.resetTokenExpiresAt, new Date()),
       ));
     return user || null;
+  },
+
+  // SEC — atomic single-use consumption. Finds a valid (unexpired) reset token
+  // and clears it in ONE locked UPDATE ... WHERE ... RETURNING, so two
+  // concurrent redemptions of the same token can never both win: the second
+  // sees no matching row and gets null. Replaces the previous
+  // getUserByResetToken()+clearPasswordResetToken() pair, which had a
+  // check-then-act race allowing a token to be redeemed twice concurrently.
+  async consumeResetToken(tokenHash) {
+    const now = new Date();
+    const [user] = await db.update(users)
+      .set({ resetToken: null, resetTokenExpiresAt: null, updatedAt: now })
+      .where(and(
+        eq(users.resetToken, tokenHash),
+        gte(users.resetTokenExpiresAt, now),
+      ))
+      .returning();
+    return user ? this.sanitizeUser(user) : null;
   },
 
   async clearPasswordResetToken(userId) {

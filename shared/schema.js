@@ -21,6 +21,22 @@ export const USER_ROLES = {
   USER: "USER"
 };
 
+// SEC — canonical email identity. Email is an account identifier used for login
+// (OAuth), password reset, and invites, so it MUST resolve deterministically to
+// a single account. Historically createUser deduped case-sensitively while
+// getUserByEmail matched case-insensitively (memoryStorage) or case-sensitively
+// (Postgres), so `Victim@corp.com` and `victim@corp.com` could coexist and a
+// reset/login lookup could non-deterministically resolve to the wrong account.
+// Every read and write of an account email now funnels through this normalizer:
+// lowercase + trim. Delivery to a normalized address is unaffected because SMTP
+// routing is case-insensitive. Returns null for empty/invalid input so callers
+// never accidentally store or match on `undefined`.
+export function normalizeEmail(email) {
+  if (typeof email !== "string") return null;
+  const trimmed = email.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export const CAMPAIGN_STATUS = {
   DRAFT: "DRAFT",
   PENDING: "PENDING",

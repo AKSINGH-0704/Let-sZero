@@ -1,7 +1,7 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { Readable } from "stream";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS, normalizeEmail } from "../shared/schema.js";
 import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
@@ -1148,7 +1148,11 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Email is required." });
       }
 
-      const user = await storage.getUserByEmail(email.trim().toLowerCase());
+      // SEC — resolve on the canonical form. getUserByEmail now normalizes
+      // internally too, but normalizing here keeps the request contract explicit
+      // and the audit `details.email` canonical. A reset token is therefore only
+      // ever minted for the single account that owns this normalized email.
+      const user = await storage.getUserByEmail(normalizeEmail(email));
 
       // Always 200 — prevents email enumeration
       if (!user || !user.isActive) {
@@ -1210,7 +1214,12 @@ export async function registerRoutes(httpServer, app) {
       }
 
       const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-      const user = await storage.getUserByResetToken(tokenHash);
+      // SEC — atomically consume the token (find + clear in one step). This both
+      // validates the token and guarantees single-use: a replay or a concurrent
+      // second redemption of the same token finds nothing and is rejected. The
+      // token is bound to exactly one account, so the reset can only ever affect
+      // the account that owns it — never a cross-account reset.
+      const user = await storage.consumeResetToken(tokenHash);
 
       if (!user) {
         return res.status(400).json({ message: "This reset link is invalid or has expired." });
@@ -1218,7 +1227,7 @@ export async function registerRoutes(httpServer, app) {
 
       await storage.updatePassword(user.id, newPassword);
       // updatePassword() sets mustResetPassword=false and logs PASSWORD_CHANGED internally.
-      await storage.clearPasswordResetToken(user.id);
+      // Token already cleared by consumeResetToken() above.
 
       // Invalidate all existing sessions — forces re-authentication everywhere
       await storage.deleteUserSessions(user.id);
@@ -1302,6 +1311,20 @@ export async function registerRoutes(httpServer, app) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
+      // SEC — enforce email uniqueness here too (parity with the invite-accept
+      // flow, which already did). Previously this admin-create path checked only
+      // the username, so a second account could be provisioned with a colliding
+      // email — the enabling condition for a non-deterministic reset lookup. The
+      // storage layer now also rejects the collision, but surface a clear 409.
+      const normalizedEmail = normalizeEmail(email);
+      if (!normalizedEmail) {
+        return res.status(400).json({ message: "A valid email is required" });
+      }
+      const emailTaken = await storage.getUserByEmail(normalizedEmail);
+      if (emailTaken) {
+        return res.status(409).json({ message: "A user with that email already exists" });
+      }
+
       if (req.user.role === "SUB_ADMIN" && !req.user.isSecondaryRoot && role !== "USER") {
         return res.status(403).json({ message: "Sub-admins can only create users" });
       }
@@ -1319,7 +1342,7 @@ export async function registerRoutes(httpServer, app) {
       const rootId = await storage.resolveWorkspaceRootId(req.user.id);
       const claim = await storage.claimWorkspaceSeat(rootId, memberLimit, (tx) => storage.createUser({
         username,
-        email,
+        email: normalizedEmail,
         password,
         role: role || "USER",
         parentId: req.user.id,
@@ -1356,7 +1379,7 @@ export async function registerRoutes(httpServer, app) {
       let emailFailed = false;
       try {
         await sendTransactionalEmail(
-          email,
+          normalizedEmail,
           "Your RepMail account is ready",
           `Hi ${username},\n\nAn account has been created for you on RepMail.\n\nUsername: ${username}\nLogin: ${loginUrl}\n\nYou will be prompted to set your own password when you first log in.\n\nIf you have any questions, contact your administrator.\n\n— The RepMail Team`
         );
@@ -2819,9 +2842,9 @@ export async function registerRoutes(httpServer, app) {
   // POST /api/users/invite — create and email an invite link
   app.post("/api/users/invite", authMiddleware, adminMiddleware, inviteLimiter, async (req, res) => {
     try {
-      const { email, role } = req.body;
+      const { email: rawEmail, role } = req.body;
 
-      if (!email || !role) {
+      if (!rawEmail || !role) {
         return res.status(400).json({ message: "email and role are required" });
       }
 
@@ -2831,9 +2854,13 @@ export async function registerRoutes(httpServer, app) {
       }
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!emailRegex.test(rawEmail)) {
         return res.status(400).json({ message: "Invalid email address" });
       }
+      // SEC — canonicalize the invite email so the stored invite, the
+      // duplicate-pending check, and the account created at accept time all key
+      // off the same normalized identity.
+      const email = normalizeEmail(rawEmail);
 
       // Organization-wide seat pre-check (TRUST-023) — sending an invite doesn't
       // itself consume a seat (accept does, via the atomic claim there), so a

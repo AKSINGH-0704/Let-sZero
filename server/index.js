@@ -461,6 +461,7 @@ async function runEmergencyRecovery() {
         role: USER_ROLES.ROOT_ADMIN,
         mustResetPassword: true,
         creditsReceived: 0,
+        emailVerified: true, // operator-triggered emergency recovery — email is trusted
       });
       recoveryUserId = newUser.id;
     }

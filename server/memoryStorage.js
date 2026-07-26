@@ -13,7 +13,7 @@ import bcrypt from "bcryptjs";
 import {
   USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
-  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS
+  INACTIVITY_THRESHOLDS, MONTHLY_CREDITS, normalizeEmail
 } from "../shared/schema.js";
 import { generateTrackingToken } from "./trackingUtils.js";
 import { isMachineCategory } from "./trackingClassifier.js";
@@ -111,20 +111,29 @@ export const memoryStorage = {
     const now = new Date();
     const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
 
-    // Check for unique username
+    // SEC — email is a login/reset identifier, so it must resolve to exactly one
+    // account. Normalize (lowercase+trim) before storing and dedupe
+    // case-INSENSITIVELY. Previously the dedupe used a case-sensitive `===`
+    // while getUserByEmail matched case-insensitively, so `Victim@corp.com` and
+    // `victim@corp.com` could both exist and a reset lookup would resolve to
+    // whichever was inserted first — an account-takeover / cross-account-reset
+    // vector. See normalizeEmail() in shared/schema.js.
+    const normalizedEmail = normalizeEmail(userData.email);
+
+    // Check for unique username and unique (normalized) email
     for (const user of store.users.values()) {
       if (user.username === userData.username) {
         throw new Error("Username already exists");
       }
-      if (user.email === userData.email) {
+      if (normalizedEmail && normalizeEmail(user.email) === normalizedEmail) {
         throw new Error("Email already exists");
       }
     }
-    
+
     const user = {
       id,
       username: userData.username,
-      email: userData.email,
+      email: normalizedEmail,
       passwordHash,
       role: userData.role || USER_ROLES.USER,
       parentId: userData.parentId || null,
@@ -196,8 +205,12 @@ export const memoryStorage = {
   },
 
   async getUserByEmail(email) {
+    // SEC — match on the canonical (normalized) form so a lookup resolves
+    // deterministically regardless of the casing/whitespace the caller passes.
+    const normalized = normalizeEmail(email);
+    if (!normalized) return null;
     for (const user of store.users.values()) {
-      if (user.email && user.email.toLowerCase() === email.toLowerCase()) {
+      if (normalizeEmail(user.email) === normalized) {
         return user;
       }
     }
@@ -251,8 +264,21 @@ export const memoryStorage = {
   async updateUser(id, updates) {
     const user = store.users.get(id);
     if (!user) return null;
-    
-    if (updates.email) user.email = updates.email;
+
+    if (updates.email) {
+      // SEC — normalize and enforce uniqueness on email change so the canonical
+      // invariant (one account per normalized email) also holds for updates,
+      // not just creation.
+      const normalizedEmail = normalizeEmail(updates.email);
+      if (normalizedEmail) {
+        for (const other of store.users.values()) {
+          if (other.id !== id && normalizeEmail(other.email) === normalizedEmail) {
+            throw new Error("Email already exists");
+          }
+        }
+      }
+      user.email = normalizedEmail;
+    }
     if (updates.isActive !== undefined) user.isActive = updates.isActive;
     if (updates.mustResetPassword !== undefined) user.mustResetPassword = updates.mustResetPassword;
     if (updates.lastLoginAt) user.lastLoginAt = updates.lastLoginAt;
@@ -1566,7 +1592,8 @@ export const memoryStorage = {
         creditsReceived: 100000,
         mustResetPassword: true,
         isTrialUser: false,
-        plan: "enterprise"
+        plan: "enterprise",
+        emailVerified: true, // operator-provisioned bootstrap account — email is trusted
       });
       
       console.log("[DEV MODE] Root admin created - password reset required on first login");
@@ -2592,6 +2619,25 @@ export const memoryStorage = {
     const now = new Date();
     for (const user of store.users.values()) {
       if (user.resetToken === tokenHash && user.resetTokenExpiresAt && new Date(user.resetTokenExpiresAt) >= now) {
+        return { ...user };
+      }
+    }
+    return null;
+  },
+
+  // SEC — atomic single-use consumption. The match and the clear happen with no
+  // `await` between them, so the single-threaded event loop cannot interleave a
+  // second concurrent redemption: whichever call reaches here first nulls the
+  // token, and the other finds nothing. Mirrors the Postgres
+  // UPDATE ... WHERE ... RETURNING in storage.js. Guarantees single-use even
+  // under concurrent requests.
+  async consumeResetToken(tokenHash) {
+    const now = new Date();
+    for (const user of store.users.values()) {
+      if (user.resetToken === tokenHash && user.resetTokenExpiresAt && new Date(user.resetTokenExpiresAt) >= now) {
+        user.resetToken = null;
+        user.resetTokenExpiresAt = null;
+        user.updatedAt = now;
         return { ...user };
       }
     }
