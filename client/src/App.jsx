@@ -84,6 +84,7 @@ const NewCampaign = lazy(() => import("@/pages/NewCampaign"));
 const History = lazy(() => import("@/pages/History"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const Users = lazy(() => import("@/pages/Users"));
+const TeamMembers = lazy(() => import("@/pages/TeamMembers"));
 const Audit = lazy(() => import("@/pages/Audit"));
 const Profile = lazy(() => import("@/pages/Profile"));
 const Payments = lazy(() => import("@/pages/Payments"));
@@ -403,6 +404,17 @@ function AppRoutes() {
       <Route path="/app/templates">
         <ProtectedRoute>
           <Templates />
+        </ProtectedRoute>
+      </Route>
+
+      {/* Customer-facing workspace team management (M41). Distinct from the
+          operator /app/users admin view. Guarded as a normal authenticated route;
+          the page itself gates management on workspace-admin role (and its data
+          endpoints are adminMiddleware-gated), so a plain member sees a read-only
+          note rather than a redirect. */}
+      <Route path="/app/team">
+        <ProtectedRoute>
+          <TeamMembers />
         </ProtectedRoute>
       </Route>
 

@@ -2,13 +2,34 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-25
+**Last updated:** 2026-07-26
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.1.2 (2026-07-25)
+## Current Release — v2.2.0 (2026-07-26)
+
+Team management is now a first-class part of RepMail. Everything below already worked underneath — this release gives it an obvious, polished home.
+
+### A dedicated Team Members page
+
+- **Find it under Manage → Team Members.** Manage is now a proper workspace hub (Team Members, Billing & Plans, Domains, Resource Center).
+- **See your team at a glance.** The page shows your current plan and a live seat meter — for example *"3 / 25 seats used · 22 seats remaining"* — with each member's role, status, last activity and remaining credits.
+- **Add a teammate in one step.** An **Add Team Member** button lets you invite by email or create an account directly, with the role choices your plan allows. Available seats are shown before you invite, so you always know where you stand — no surprises, no silent failures.
+- **Remove and restore.** Freeing a seat is one click, and a removed member can be restored later with their data intact.
+
+### Seats explained everywhere they matter
+
+- The **Teams** view on the billing page now shows your live seat usage and links straight to **Manage team** (or **Add your first team member** if your workspace is empty).
+- After buying a Team plan, the confirmation now guides you straight into inviting your team — or on to the dashboard if you'd rather do it later.
+- Wherever seats appear you'll see plain-language availability — *"22 seats remaining"*, *"Only 1 seat left"*, *"All seats are in use"* — so you never have to do the maths yourself.
+
+Everything respects your workspace boundaries: you only ever see and manage members of your own workspace. No pricing, credits or seat allowances changed.
+
+---
+
+## Previous Release — v2.1.2 (2026-07-25)
 
 A focused quality release from real hands-on testing of the live app on desktop and phone.
 

@@ -286,7 +286,7 @@ export default function PostPurchaseActivation({ payment, onClose }) {
                     redundant second click on the action they just chose. This is the
                     existing production Team Management screen, not a parallel flow. */}
                 <button
-                  onClick={() => leaveWith("/app/users?invite=1")}
+                  onClick={() => leaveWith("/app/team?invite=1")}
                   className="flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0C0C14]"
                   style={{ background: "#00E5C8", color: "#06060B" }}
                   data-testid="button-activation-team"
@@ -319,7 +319,7 @@ export default function PostPurchaseActivation({ payment, onClose }) {
                   being re-taught what Teams is. */}
               {teamIntroEligible && hasTeamMembers && (
                 <button
-                  onClick={() => leaveWith("/app/users")}
+                  onClick={() => leaveWith("/app/team")}
                   className="rounded-lg px-4 py-2 text-xs font-medium transition-colors hover:text-[#F0F0F5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
                   style={{ color: "#7878A0" }}
                   data-testid="button-activation-team"

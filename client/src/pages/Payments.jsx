@@ -38,6 +38,11 @@ import { PLAN_CATALOG } from "@/lib/commerce/planCatalog";
 // M39 Phase 4 — one canonical enterprise entry point.
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "@shared/enterprise";
 import { fmtNum } from "@/lib/commerce/format";
+// M41 — make the Teams tab actionable: reuse the seat-intelligence component and
+// the same seat source (MAX_TEAM_MEMBERS) the Team page uses.
+import SeatSummary from "@/components/teams/SeatSummary";
+import { MAX_TEAM_MEMBERS, PLAN_LIMITS as TEAM_PLAN_LIMITS } from "@shared/schema";
+import { Link as WLink } from "wouter";
 
 // The in-app payments page renders the shared card in "app" mode (its CTA transacts).
 // Exported so tests/unit/plan-purchase-card-render.test.js can SSR-render the exact
@@ -687,6 +692,19 @@ export default function Payments() {
     queryKey: ["/api/pricing/plans"],
   });
 
+  // M41 — seat state for the (actionable) Teams tab. Admins only; reuses the
+  // workspace-scoped /api/users and the same active-member seat rule as /app/team.
+  const { data: teamMembers } = useQuery({ queryKey: ["/api/users"], enabled: isAdmin });
+  const teamSeat = (() => {
+    const plan = user?.effectivePlan || "free";
+    return {
+      included: MAX_TEAM_MEMBERS[plan] ?? 0,
+      used: (teamMembers || []).filter(m => m.isActive).length,
+      hasMembers: (teamMembers || []).length > 0,
+      planLabel: TEAM_PLAN_LIMITS[plan]?.label || plan,
+    };
+  })();
+
   const initiateMutation = useMutation({
     // Accepts either { planId } or { credits } — the single canonical checkout entry
     // (M39 Phase 1B). Named plans and custom amounts share one initiation path.
@@ -1044,6 +1062,32 @@ export default function Payments() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
+                {/* M41 — actionable workspace card: for a signed-in admin the Teams
+                    tab is no longer just an explainer — it shows live seat usage and
+                    routes straight into Team Management. */}
+                {isAdmin && (
+                  <div className="mb-8 rounded-2xl p-5" style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}>
+                    <SeatSummary
+                      planLabel={teamSeat.planLabel}
+                      used={teamSeat.used}
+                      included={teamSeat.included}
+                      className="border-0 bg-transparent p-0"
+                      actions={
+                        <WLink href="/app/team">
+                          <button
+                            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold"
+                            style={{ background: "#00E5C8", color: "#06060B" }}
+                            data-testid="button-manage-team"
+                          >
+                            <Users className="h-4 w-4" aria-hidden="true" />
+                            {teamSeat.hasMembers ? "Manage team" : "Add your first team member"}
+                          </button>
+                        </WLink>
+                      }
+                    />
+                  </div>
+                )}
+
                 {/* 3-step hierarchy */}
                 <motion.div
                   className="grid md:grid-cols-3 gap-4 mb-8"

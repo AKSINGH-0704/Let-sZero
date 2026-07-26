@@ -44,7 +44,7 @@ import { getInitials } from "@/lib/utils";
 // mobile sheet. Config/admin areas live in the grouped "Manage" menu — the seed of the
 // future settings/operations hub — so the top bar stays uncluttered and future-scalable.
 export default function Navbar() {
-  const { user, logout, isAdmin, isRootAdmin } = useAuth();
+  const { user, logout, isAdmin, isRootAdmin, isPlatformOperator } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [location, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -68,13 +68,17 @@ export default function Navbar() {
     { href: "/app/templates", label: "Templates", icon: FileText },
   ];
 
+  // M41 — Manage is a proper workspace hub. Team Members (the customer team page)
+  // sits at the top for workspace admins; Payments is relabelled "Billing & Plans".
+  const workspaceItems = [];
+  if (isAdmin) workspaceItems.push({ href: "/app/team", label: "Team Members", icon: Users });
+  workspaceItems.push({ href: "/app/payments", label: "Billing & Plans", icon: CreditCard });
+
   const manageGroups = [
+    { label: "Workspace", items: workspaceItems },
     { label: "Sending", items: [
       { href: "/app/domains", label: "Domains", icon: Globe },
       { href: "/app/suppressions", label: "Suppressions", icon: ShieldOff },
-    ] },
-    { label: "Account", items: [
-      { href: "/app/payments", label: "Payments", icon: CreditCard },
     ] },
     // M23-A — even signed-in customers had no in-app path to the Resource
     // Center; the guides are directly useful to them (domain setup,
@@ -83,9 +87,11 @@ export default function Navbar() {
       { href: "/repmail/learn", label: "Resource Center", icon: GraduationCap },
     ] },
   ];
-  if (isAdmin || isRootAdmin) {
+  // Platform-operator tools only — customers manage their workspace via Team
+  // Members above and never see the operator user-administration surface (M41).
+  if (isPlatformOperator || isRootAdmin) {
     const adminItems = [];
-    if (isAdmin) adminItems.push({ href: "/app/users", label: "Users", icon: Users });
+    if (isPlatformOperator) adminItems.push({ href: "/app/users", label: "Users", icon: Users });
     if (isRootAdmin) adminItems.push({ href: "/app/audit", label: "Audit Logs", icon: Settings });
     if (adminItems.length) manageGroups.push({ label: "Admin", items: adminItems });
   }
