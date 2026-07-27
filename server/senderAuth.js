@@ -147,6 +147,18 @@ export function warmupWindowResetAt(user) {
 }
 
 /**
+ * The warm-up daily limit currently in force for a user — for telemetry and display.
+ * Not an authorization decision: claimWarmupSlot is the enforcement path.
+ *
+ * @param {object} user
+ * @returns {Promise<number>}
+ */
+export async function effectiveWarmupLimitFor(user) {
+  const settings = await getWarmupPolicy();
+  return effectiveDailyLimit(user, settings.ladder);
+}
+
+/**
  * Record the timestamp of the first ever dispatched email for a user.
  * Idempotent — only sets firstSendAt if it is currently null.
  * Call in campaignLoop.js after the first successful email dispatch.

@@ -23,7 +23,7 @@ import {
   AUDIT_ACTIONS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, USER_ROLES,
 } from "../shared/schema.js";
 import { extractTemplateLinks } from "./trackingUtils.js";
-import { assertCanSend, recordFirstSend, claimWarmupSlot, SEND_MODES } from "./senderAuth.js";
+import { assertCanSend, recordFirstSend, claimWarmupSlot, warmupWindowResetAt, effectiveWarmupLimitFor, SEND_MODES } from "./senderAuth.js";
 
 // ── SES throttle detection ─────────────────────────────────────────────────────
 // Moved here from worker.js so the retry wrapper and the loop share one module.
@@ -578,9 +578,24 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
 
         // Claim a warm-up slot before each send — atomic WHERE guard prevents concurrent overshoot.
         if (!(await claimWarmupSlot(owner))) {
+          // Today's safe volume is spent. The campaign is not paused (PAUSED means
+          // "a human or an incident stopped this, and only a human restarts it") —
+          // it is parked for automatic continuation when the sender's 24h window
+          // reopens, by writing the state the scheduled-campaign path already
+          // understands: PENDING with a future scheduledAt. The existing 30s
+          // scheduler enqueues it at that time and the PENDING watchdog already
+          // skips future-scheduled rows, so continuation needs no new scheduler,
+          // status, or resume machinery. Re-entry is safe because claimCampaignEmail
+          // is terminal-aware: contacts already SENT are counted, never re-sent.
+          //
+          // The owner row loaded at campaign start is stale by now (this execution
+          // has been incrementing the counter), so the window anchor is re-read.
+          const freshOwner = await storage.getUserById(userId).catch(() => null);
+          const resumeAt   = warmupWindowResetAt(freshOwner ?? owner);
           // Guarded — see the comment on the PAUSED write above.
           await storage.updateCampaignProgress(campaignId, {
-            status: "PAUSED",
+            status: CAMPAIGN_STATUS.PENDING,
+            scheduledAt: resumeAt,
             sentEmails: sentCount, failedEmails: failedCount, skippedEmails: skippedCount, creditsUsed: sentCount,
             executionLeaseExpiresAt: null,
           });
@@ -589,9 +604,17 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
             action: AUDIT_ACTIONS.WARMUP_LIMIT_HIT,
             targetType: "campaign",
             targetId: campaignId,
-            details: { name: campaign.name, sentEmails: sentCount, stoppedAtContact: i },
+            details: {
+              name: campaign.name,
+              sentEmails: sentCount,
+              stoppedAtContact: i,
+              // Policy context for the operational signal — "is the ladder too
+              // tight?" is unanswerable after the fact without these (OPS-011).
+              dailyLimit: freshOwner ? await effectiveWarmupLimitFor(freshOwner) : null,
+              resumesAt: resumeAt.toISOString(),
+            },
           });
-          console.warn(`${logTag} Campaign ${campaignId} paused at contact ${i} — warm-up daily limit reached`);
+          console.warn(`${logTag} Campaign ${campaignId} parked at contact ${i} — warm-up limit reached, resumes ${resumeAt.toISOString()}`);
           outOfWarmupSlots = true;
           break;
         }
@@ -686,7 +709,10 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
   }
 
   if (outOfWarmupSlots) {
-    console.warn(`${logTag} Campaign ${campaignId} paused mid-loop — warm-up daily limit reached`);
+    // Status/scheduledAt were written at the break; the campaign is PENDING and the
+    // scheduler owns it from here. Returning without finalizing is correct — this
+    // campaign is unfinished, not failed.
+    console.warn(`${logTag} Campaign ${campaignId} parked mid-loop — continues when the warm-up window reopens`);
     return;
   }
   if (globalPausedMidLoop) {
