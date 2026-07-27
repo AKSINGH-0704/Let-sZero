@@ -17,7 +17,7 @@ New sending domains have no reputation yet. Sending at full volume on day one is
 - **A gradual daily limit.** Your first three days allow 50 emails a day, days four to seven allow 100, and from day eight you send up to 200 a day. The clock starts on your **first send**, not when you sign up or verify your domain — reputation is built by sending, so waiting has never earned you anything.
 - **Big campaigns continue by themselves.** Previously, a campaign larger than your daily limit stopped and could not be restarted — you had to cancel and rebuild it. Now it simply pauses for the day and **resumes automatically** as soon as your next day opens, picking up exactly where it left off. No duplicates, no re-uploading, nothing to click.
 - **You can see exactly where you are.** Your dashboard shows the day you are on, how many sends are left today, and when your limit next increases. A short explainer covers why limits grow at all.
-- **"Warm-up complete" actually says so.** Once you reach full volume, RepMail tells you warm-up is done and shows your daily amount, instead of leaving you wondering how long the restriction lasts.
+- **You always know where you stand.** Once you reach the top step, RepMail tells you your daily limit and exactly when it lifts — no guessing how long a restriction lasts.
 - **Your credits are untouched.** Warm-up controls how fast you send, never what you own. Unused credits stay in your account and never expire — a slower first week costs you time, not money.
 
 Team, billing, seat allowances, pricing and workspace boundaries are unchanged.

@@ -109,9 +109,9 @@ export function getStatusConfig(status, campaign) {
     return {
       ...base,
       label: "Continuing",
-      tooltip: `Today's sending limit was reached. The remaining emails send automatically from ${resumesAt.toLocaleString(undefined, {
+      tooltip: `You've reached today's sending limit. The rest of this campaign sends by itself from ${resumesAt.toLocaleString(undefined, {
         weekday: "short", hour: "numeric", minute: "2-digit",
-      })} — nothing to restart.`,
+      })} — there is nothing for you to do.`,
     };
   }
 

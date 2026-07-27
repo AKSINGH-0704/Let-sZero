@@ -61,29 +61,37 @@ export default function SenderHealthWidget() {
     href = "/app/onboarding";
   } else if (!verified) {
     variant = "warning";
-    text = "Your domain is verifying — DNS records are checked automatically.";
+    text = "We're checking your domain setup.";
+    detail = "This happens automatically — nothing for you to do.";
     cta = "View DNS records";
   } else if (warmupLimitHit) {
     variant = "warning";
-    text = "You've sent today's full amount.";
+    text = warmup?.dailyLimit
+      ? `You've sent all ${warmup.dailyLimit.toLocaleString()} emails for today.`
+      : "You've reached today's sending limit.";
     // The single most important reassurance in this widget: the customer does not
-    // have to do anything, and nothing was lost.
-    detail = "Any campaign still running continues automatically when tomorrow's sending opens.";
+    // have to do anything, and nothing was lost. Deliberately "when your limit
+    // resets" rather than "tomorrow" — the window is a rolling 24 hours from the
+    // day's first send, so it can reopen later the same day.
+    detail = "Your campaign carries on by itself as soon as your limit resets — nothing for you to do.";
     explainer = true;
     cta = "Details";
   } else if (warmup?.active && warmup?.isFinalStage) {
-    // The ladder has finished climbing. The warm-up window technically runs longer,
-    // but the customer is at full volume — saying "warm-up" here would imply an
-    // open-ended restriction that no longer exists.
+    // The ladder has finished climbing, but a daily cap still applies until the
+    // warm-up window ends. Saying "warm-up complete" here reads as "no more limits"
+    // and is contradicted by the number sitting next to it, so state the limit and
+    // when it lifts instead of claiming completion.
     variant = "success";
-    text = "Warm-up complete";
-    detail = `You can send up to ${(warmup.dailyLimit ?? 0).toLocaleString()} emails a day.`;
+    text = `Your daily limit is now ${(warmup.dailyLimit ?? 0).toLocaleString()} emails`;
+    detail = warmup.daysRemaining
+      ? `That's the highest step. In ${warmup.daysRemaining} ${warmup.daysRemaining === 1 ? "day" : "days"} the limit lifts, and only your credits set the pace.`
+      : "That's the highest step while your domain builds trust.";
     explainer = true;
   } else if (warmup?.active) {
     variant = "info";
-    text = `Warm-up day ${warmup.dayIndex ?? 1} · ${(warmup.remainingToday ?? 0).toLocaleString()} of ${(warmup.dailyLimit ?? 0).toLocaleString()} sends left today`;
+    text = `${(warmup.remainingToday ?? 0).toLocaleString()} of ${(warmup.dailyLimit ?? 0).toLocaleString()} emails left to send today`;
     detail = warmup.nextIncrease
-      ? `Goes up to ${warmup.nextIncrease.dailyLimit.toLocaleString()} a day in ${warmup.nextIncrease.inDays} ${warmup.nextIncrease.inDays === 1 ? "day" : "days"}.`
+      ? `Your daily limit rises to ${warmup.nextIncrease.dailyLimit.toLocaleString()} in ${warmup.nextIncrease.inDays} ${warmup.nextIncrease.inDays === 1 ? "day" : "days"}.`
       : null;
     explainer = true;
   } else {
@@ -106,7 +114,7 @@ export default function SenderHealthWidget() {
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="font-medium text-foreground">{text}</span>
-        {explainer && <WarmupExplainer ladder={warmup?.ladder} />}
+        {explainer && <WarmupExplainer ladder={warmup?.ladder} durationDays={warmup?.totalDays} />}
       </div>
       {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
     </Banner>

@@ -406,15 +406,17 @@ export default function DomainDetail() {
                       // "warm-up, N days remaining" would imply a restriction that is
                       // no longer in force.
                       <p className="text-xs text-muted-foreground">
-                        Warm-up complete — sending up to {(warmup.dailyLimit ?? 0).toLocaleString()} emails a day.
-                        Volume is governed by your credits.
+                        Your daily limit is now {(warmup.dailyLimit ?? 0).toLocaleString()} emails — the highest step.
+                        {warmup.daysRemaining
+                          ? ` In ${warmup.daysRemaining} ${warmup.daysRemaining === 1 ? "day" : "days"} the limit lifts, and only your credits set the pace.`
+                          : " After that, only your credits set the pace."}
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Sender warm-up: {(warmup.remainingToday ?? 0).toLocaleString()} of {(warmup.dailyLimit ?? 0).toLocaleString()} sends left today
+                        {(warmup.remainingToday ?? 0).toLocaleString()} of {(warmup.dailyLimit ?? 0).toLocaleString()} emails left to send today
                         {warmup.nextIncrease && (
                           <>
-                            {" "}· goes up to {warmup.nextIncrease.dailyLimit.toLocaleString()}/day in{" "}
+                            {" "}· your limit rises to {warmup.nextIncrease.dailyLimit.toLocaleString()} a day in{" "}
                             {warmup.nextIncrease.inDays} {warmup.nextIncrease.inDays === 1 ? "day" : "days"}
                             {/* UX-012: a day count alone doesn't answer "when will I be
                                 ready" — project it forward into a concrete date, computed
@@ -423,7 +425,7 @@ export default function DomainDetail() {
                             {" "}({new Date(Date.now() + warmup.nextIncrease.inDays * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" })})
                           </>
                         )}
-                        . Campaigns larger than a day&apos;s limit continue automatically the next day.
+                        . Campaigns bigger than a day&apos;s limit simply carry on the next day.
                       </p>
                     ))}
                   </CardContent>

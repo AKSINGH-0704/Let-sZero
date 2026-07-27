@@ -104,9 +104,10 @@ describe("MXX — warm-up dashboard banner", () => {
         nextIncrease: { dailyLimit: 100, inDays: 3 }, ladder: LADDER,
       },
     })));
-    expect(html).toContain("Warm-up day 1");
-    expect(html).toContain("34 of 50 sends left today");
-    expect(html).toContain("Goes up to 100 a day in 3 days");
+    expect(html).toContain("34 of 50 emails left to send today");
+    expect(html).toContain("Your daily limit rises to 100 in 3 days");
+    // "Warm-up day N" was product jargon that told a first-time user nothing.
+    expect(html).not.toContain("Warm-up day");
   });
 
   it("says 'day' not 'days' when the increase is tomorrow", () => {
@@ -123,16 +124,30 @@ describe("MXX — warm-up dashboard banner", () => {
   it("reports warm-up COMPLETE once the ladder tops out, with the daily volume", () => {
     const html = render(seeded(health({
       warmup: {
+        active: true, dayIndex: 12, totalDays: 30, daysRemaining: 18, dailyLimit: 200,
+        remainingToday: 200, isFinalStage: true, nextIncrease: null, ladder: LADDER,
+      },
+    })));
+    expect(html).toContain("Your daily limit is now 200 emails");
+    expect(html).toContain("the limit lifts");
+    // Never claim completion while a cap is still in force — "complete" next to a
+    // 200/day number reads as a contradiction to a first-time user.
+    expect(html).not.toMatch(/complete/i);
+    expect(html).not.toContain("emails left to send today");
+    // Sets the expectation that a further change is coming, and that it is good news.
+    expect(html).toContain("In 18 days");
+  });
+
+  it("still reads correctly at the top step when no remaining-days figure is available", () => {
+    const html = render(seeded(health({
+      warmup: {
         active: true, dayIndex: 12, totalDays: 30, dailyLimit: 200, remainingToday: 200,
         isFinalStage: true, nextIncrease: null, ladder: LADDER,
       },
     })));
-    expect(html).toContain("Warm-up complete");
-    expect(html).toContain("up to 200 emails a day");
-    // The customer is at full volume — a day count here would imply a restriction
-    // that is no longer in force.
-    expect(html).not.toContain("Warm-up day");
-    expect(html).not.toContain("sends left today");
+    expect(html).toContain("Your daily limit is now 200 emails");
+    expect(html).toContain("highest step");
+    expect(html).not.toMatch(/complete/i);
   });
 
   it("reassures that a limited campaign continues on its own", () => {
@@ -143,8 +158,12 @@ describe("MXX — warm-up dashboard banner", () => {
         isFinalStage: false, nextIncrease: { dailyLimit: 100, inDays: 2 }, ladder: LADDER,
       },
     })));
-    expect(html).toContain("today&#x27;s full amount");
-    expect(html).toContain("continues automatically");
+    expect(html).toContain("You&#x27;ve sent all 50 emails for today");
+    expect(html).toContain("carries on by itself");
+    expect(html).toContain("nothing for you to do");
+    // The window is a rolling 24h from the day's first send, so it can reopen the
+    // same day — promising "tomorrow" would sometimes be wrong.
+    expect(html).not.toMatch(/tomorrow/i);
   });
 
   it("falls back to the plain ready state outside warm-up", () => {
@@ -160,7 +179,7 @@ describe("MXX — warm-up dashboard banner", () => {
     expect(preview).toContain("Preview Mode");
 
     const verifying = render(seeded(health({ warmup: null, identityOk: false })));
-    expect(verifying).toContain("domain is verifying");
+    expect(verifying).toContain("checking your domain");
 
     const blocked = render(seeded({
       identity: { ok: true }, reputation: { ok: false, message: "Sending is paused." },
@@ -227,8 +246,8 @@ describe("MXX — warm-up explainer content", () => {
 
   it("explains automatic continuation rather than implying a restart is needed", () => {
     const html = renderExplainer(LADDER);
-    expect(html).toMatch(/keep going on their own|sends automatically/i);
-    expect(html).toContain("Nothing to restart.");
+    expect(html).toMatch(/carries on the next day/i);
+    expect(html).toMatch(/don&#x27;t need to restart/i);
   });
 
   it("uses an accessible labelled trigger", () => {
@@ -257,8 +276,8 @@ describe("MXX — a parked campaign describes itself accurately", () => {
   it("says 'Continuing', not 'Queued', for a part-sent campaign awaiting its next window", () => {
     const cfg = getStatusConfig("PENDING", { scheduledAt: soon(), sentEmails: 50 });
     expect(cfg.label).toBe("Continuing");
-    expect(cfg.tooltip).toMatch(/sending limit was reached/i);
-    expect(cfg.tooltip).toMatch(/nothing to restart/i);
+    expect(cfg.tooltip).toMatch(/reached today&#x27;s sending limit|reached today.s sending limit/i);
+    expect(cfg.tooltip).toMatch(/nothing for you to do/i);
     // The plain PENDING copy is wrong on every count for this campaign.
     expect(cfg.tooltip).not.toMatch(/waiting to start|begin shortly/i);
     // Still cancellable — parking must not take that away.

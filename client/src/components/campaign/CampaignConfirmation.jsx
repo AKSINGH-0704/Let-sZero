@@ -700,7 +700,7 @@ export default function CampaignConfirmation() {
                   <Calendar className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="text-sm flex-1">
                     <p className="font-medium text-amber-400 mb-2">
-                      Multi-day delivery — sender reputation protection
+                      This campaign will send over a few days
                     </p>
                     <div className="space-y-1">
                       {deliveryDays.map(({ label, count }) => (
@@ -711,8 +711,8 @@ export default function CampaignConfirmation() {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Each day sends automatically — nothing to restart. Your daily limit grows
-                      as your domain builds reputation.
+                      Each day sends by itself — there is nothing for you to restart. Your daily
+                      limit grows as your domain builds trust with email providers.
                     </p>
                   </div>
                 </div>

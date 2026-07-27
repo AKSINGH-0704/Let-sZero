@@ -1,6 +1,6 @@
 import { HelpCircle } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { DEFAULT_WARMUP_LADDER } from "@shared/warmupPolicy";
+import { DEFAULT_WARMUP_LADDER, DEFAULT_WARMUP_DURATION_DAYS } from "@shared/warmupPolicy";
 
 // The single explanation of why sending limits rise. Rendered from the live ladder
 // served by the backend, so the schedule shown can never drift from the schedule
@@ -22,9 +22,9 @@ function stageLabel(stage, previousThroughDay) {
 // Exported separately from the popover shell so the copy and the schedule can be
 // asserted directly — Radix keeps popover content unmounted while closed, so a test
 // that rendered the shell would only ever see the trigger.
-export function WarmupScheduleContent({ ladder }) {
+export function WarmupScheduleContent({ ladder, durationDays }) {
   const stages = ladder?.length ? ladder : DEFAULT_WARMUP_LADDER;
-  const fullLimit = stages[stages.length - 1].dailyLimit;
+  const totalDays = durationDays || DEFAULT_WARMUP_DURATION_DAYS;
   let previousThroughDay = 0;
 
   return (
@@ -32,10 +32,11 @@ export function WarmupScheduleContent({ ladder }) {
         <p className="font-medium text-foreground">Why your daily limit grows</p>
 
         <p className="text-muted-foreground">
-          Mailbox providers decide where your email lands partly by how a domain has behaved
-          over time. A brand-new domain sending at full volume on day one looks like a spammer
-          even when everything is set up correctly. Starting smaller and building up earns the
-          reputation that keeps you out of spam.
+          Gmail, Outlook and other email providers decide whether your emails reach the inbox
+          partly by watching how your domain behaves over time. A brand-new domain that
+          suddenly sends at full volume looks like spam, even when everything is set up
+          correctly. Starting smaller and building up is what earns your emails a place in
+          the inbox.
         </p>
 
         <div className="rounded-md border border-border">
@@ -61,23 +62,24 @@ export function WarmupScheduleContent({ ladder }) {
         </div>
 
         <p className="text-muted-foreground">
-          Campaigns larger than a day&apos;s limit keep going on their own — the rest sends
-          automatically as soon as your next day opens. Nothing to restart.
+          If a campaign is bigger than your daily limit, it simply carries on the next day.
+          You don&apos;t need to restart anything.
         </p>
 
         <p className="text-muted-foreground">
-          Your credits are never affected. Unused credits stay in your account until you use
-          them, and they never expire.
+          Your credits are never affected — unused credits stay in your account and never
+          expire.
         </p>
 
         <p className="text-xs text-muted-foreground">
-          After warm-up you send up to {fullLimit.toLocaleString()} a day, governed by your credit balance.
+          After your first {totalDays} days of sending, this limit lifts and only your credit
+          balance decides how much you send.
         </p>
     </>
   );
 }
 
-export default function WarmupExplainer({ ladder, className }) {
+export default function WarmupExplainer({ ladder, durationDays, className }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -90,7 +92,7 @@ export default function WarmupExplainer({ ladder, className }) {
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 text-sm">
-        <WarmupScheduleContent ladder={ladder} />
+        <WarmupScheduleContent ladder={ladder} durationDays={durationDays} />
       </PopoverContent>
     </Popover>
   );

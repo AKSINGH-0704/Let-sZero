@@ -210,15 +210,19 @@ export default function Onboarding() {
               </div>
             </div>
 
-            <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              New domains start at <span className="font-medium text-foreground">{firstLimit} emails/day</span> and
-              build up to <span className="font-medium text-foreground">{fullLimit} a day</span> over your first
-              week — this is what earns a new domain a place in the inbox rather than the spam
-              folder. Larger campaigns simply continue the next day on their own. Your credit
-              balance governs volume after that — 1 credit = 1 email sent, credits are only used
-              when a campaign actually sends, never for drafting, previewing, or building
-              templates, and they never expire.
-            </p>
+            <div className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              <p>
+                New domains start at <span className="font-medium text-foreground">{firstLimit} emails a day</span> and
+                build up to <span className="font-medium text-foreground">{fullLimit} a day</span> over your first
+                week. Starting gently is what gets your emails into the inbox instead of the spam
+                folder — and if a campaign is bigger than a day&apos;s limit, it carries on the next
+                day by itself.
+              </p>
+              <p>
+                Credits are separate: 1 credit = 1 email, used only when a campaign actually
+                sends — never for drafts, previews or templates — and they never expire.
+              </p>
+            </div>
 
             {error && (
               <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
