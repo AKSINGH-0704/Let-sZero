@@ -2,13 +2,29 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-26 (v2.2.1)
+**Last updated:** 2026-07-27 (v2.3.0)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.2.1 (2026-07-26)
+## Current Release — v2.3.0 (2026-07-27)
+
+**Your sending limit now grows with your domain, and large campaigns finish on their own.**
+
+New sending domains have no reputation yet. Sending at full volume on day one is the single fastest way to land in spam, even when SPF, DKIM and DMARC are all correct — mailbox providers cannot tell a new sender from a spammer by anything other than sending pattern. RepMail now ramps you up instead of starting you at full speed.
+
+- **A gradual daily limit.** Your first three days allow 50 emails a day, days four to seven allow 100, and from day eight you send up to 200 a day. The clock starts on your **first send**, not when you sign up or verify your domain — reputation is built by sending, so waiting has never earned you anything.
+- **Big campaigns continue by themselves.** Previously, a campaign larger than your daily limit stopped and could not be restarted — you had to cancel and rebuild it. Now it simply pauses for the day and **resumes automatically** as soon as your next day opens, picking up exactly where it left off. No duplicates, no re-uploading, nothing to click.
+- **You can see exactly where you are.** Your dashboard shows the day you are on, how many sends are left today, and when your limit next increases. A short explainer covers why limits grow at all.
+- **"Warm-up complete" actually says so.** Once you reach full volume, RepMail tells you warm-up is done and shows your daily amount, instead of leaving you wondering how long the restriction lasts.
+- **Your credits are untouched.** Warm-up controls how fast you send, never what you own. Unused credits stay in your account and never expire — a slower first week costs you time, not money.
+
+Team, billing, seat allowances, pricing and workspace boundaries are unchanged.
+
+---
+
+## Previous Release — v2.2.1 (2026-07-26)
 
 A follow-up fix to the v2.2.0 team-management release. Team Members was reachable, but its entry points were only shown to internal admin accounts — so a normal workspace owner had no obvious way in. This release makes team management discoverable for **every** workspace owner.
 

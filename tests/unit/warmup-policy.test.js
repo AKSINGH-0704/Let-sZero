@@ -376,3 +376,42 @@ describe("campaign continuation (PENDING + scheduledAt)", () => {
     expect(after.scheduledAt).toBeFalsy();
   });
 });
+
+describe("one source of truth for the ladder", () => {
+  // The defect this milestone set out to remove: the flat default was written into
+  // four files, two of them user-visible, with nothing keeping them in sync. This
+  // guard fails if a warm-up number is ever reintroduced outside the policy module.
+  it("no shipped source file hardcodes a warm-up daily limit", async () => {
+    const { readdir, readFile } = await import("fs/promises");
+    const path = await import("path");
+    const root = path.resolve(import.meta.dirname, "..", "..");
+    const roots = ["server", "client/src", "shared"];
+    const allowed = new Set([path.join("shared", "warmupPolicy.js")]);
+
+    async function walk(dir) {
+      const out = [];
+      for (const entry of await readdir(path.join(root, dir), { withFileTypes: true })) {
+        const rel = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...await walk(rel));
+        else if (/\.(js|jsx)$/.test(entry.name)) out.push(rel);
+      }
+      return out;
+    }
+
+    const offenders = [];
+    for (const dir of roots) {
+      for (const rel of await walk(dir)) {
+        if (allowed.has(rel)) continue;
+        const text = await readFile(path.join(root, rel), "utf-8");
+        if (!/warmup|warm-up/i.test(text)) continue;
+        // A warm-up limit reintroduced as a literal fallback, e.g. `?? 200` or
+        // `?? "200"` — the exact shape of the four defaults this milestone removed.
+        for (const line of text.split("\n")) {
+          if (!/warmup|warm-up|dailyLimit|ladder/i.test(line)) continue;
+          if (/\?\?\s*["']?\d{2,}["']?/.test(line)) offenders.push(`${rel}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
