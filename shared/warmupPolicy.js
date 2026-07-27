@@ -69,9 +69,16 @@ const MS_PER_DAY = 86_400_000;
  */
 export function parsePositiveInt(raw, fallback) {
   if (raw === null || raw === undefined) return fallback;
-  const n = typeof raw === "number" ? raw : parseInt(String(raw).trim(), 10);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) return fallback;
-  return n;
+  if (typeof raw === "number") {
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : fallback;
+  }
+  // Deliberately stricter than parseInt, which stops at the first non-digit and so
+  // reads "3o" as 3 and "1.5" as 1 — silently applying a policy nobody configured.
+  // A value that is not exactly a positive integer is a broken setting, not a hint.
+  const text = String(raw).trim();
+  if (!/^\d+$/.test(text)) return fallback;
+  const n = Number(text);
+  return Number.isSafeInteger(n) && n > 0 ? n : fallback;
 }
 
 /**

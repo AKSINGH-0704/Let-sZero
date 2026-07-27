@@ -590,6 +590,24 @@ export async function runCampaignLoop(campaignId, userId, { logTag = "[CAMPAIGN]
           //
           // The owner row loaded at campaign start is stale by now (this execution
           // has been incrementing the counter), so the window anchor is re-read.
+          // Release the claim on this contact before parking. The claim was taken at
+          // the top of the iteration, before we knew the day's volume was spent, and
+          // this contact was never attempted — no email, no credit. Left held, the row
+          // stays PENDING, which every other execution correctly reads as "someone is
+          // actively working on this" (claimCampaignEmail only reclaims terminal-but-
+          // retryable rows). The resumed run would skip this contact forever and
+          // hasOutstandingClaims would block finalization, stranding the campaign in
+          // RUNNING. Flipping to FAILED with a transient reason is the same mechanism
+          // finalizeCampaign uses for orphaned claims, and puts the row back in the
+          // pool for the next run to reclaim and send.
+          //
+          // Latent before this change too, but unreachable: nothing ever resumed a
+          // warm-up-stopped campaign, so the orphan was never observed.
+          await storage.updateCampaignEmail(campaignEmailRecord.id, {
+            status: CAMPAIGN_EMAIL_STATUS.FAILED,
+            failureReason: "warmup_deferred",
+          });
+
           const freshOwner = await storage.getUserById(userId).catch(() => null);
           const resumeAt   = warmupWindowResetAt(freshOwner ?? owner);
           // Guarded — see the comment on the PAUSED write above.
