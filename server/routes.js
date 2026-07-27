@@ -22,7 +22,7 @@ import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLo
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
 import { TOKEN_RE, TRACKING_PIXEL_GIF, hashIp } from "./trackingUtils.js";
-import { assertCanSend, getSenderHealthReport, SEND_MODES } from "./senderAuth.js";
+import { assertCanSend, getSenderHealthReport, SEND_MODES, getWarmupPolicy } from "./senderAuth.js";
 import { checkBrandImpersonation } from "./brandGuard.js";
 
 // SMTP health cache — checked at most once every 5 minutes to avoid exhausting AWS SES connections
@@ -1105,14 +1105,18 @@ export async function registerRoutes(httpServer, app) {
   // Platform configuration — read-only authenticated endpoint for client-side UI (M14)
   app.get("/api/platform-config", authMiddleware, async (req, res) => {
     try {
-      const [customLimit, duration] = await Promise.all([
-        storage.getPlatformSetting("warmup_custom_domain_daily_limit"),
-        storage.getPlatformSetting("warmup_duration_days"),
-      ]);
+      // Resolved through the same authority the send path enforces (WarmupPolicy via
+      // the SAS), so the ladder the client renders is by construction the ladder the
+      // backend applies — the previous shape restated a default the client also
+      // hardcoded, which is how the two could disagree.
+      const { ladder, durationDays } = await getWarmupPolicy();
       return res.json({
         warmup: {
-          customDomainDailyLimit: parseInt(customLimit?.value ?? "200", 10),
-          durationDays: parseInt(duration?.value ?? "30", 10),
+          ladder,
+          durationDays,
+          // Full-volume limit — the top of the ladder. Retains a single scalar for
+          // copy that describes the destination rather than the journey.
+          fullDailyLimit: ladder[ladder.length - 1].dailyLimit,
         },
       });
     } catch (error) {

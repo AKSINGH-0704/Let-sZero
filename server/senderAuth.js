@@ -12,6 +12,17 @@
 
 import { storage } from "./storage.js";
 import { AUDIT_ACTIONS, USER_ROLES } from "../shared/schema.js";
+import {
+  WARMUP_SETTING_KEYS,
+  resolveLadder,
+  resolveDurationDays,
+  warmupIsActive,
+  warmupDaysRemaining,
+  warmupDayIndex,
+  stageForDay,
+  nextStage,
+  effectiveDailyLimit,
+} from "../shared/warmupPolicy.js";
 
 // ── Execution modes ───────────────────────────────────────────────────────────
 export const SEND_MODES = {
@@ -108,11 +119,31 @@ export async function canDraft(user) {
  * @returns {Promise<boolean>}
  */
 export async function claimWarmupSlot(user) {
-  const settings = await _getWarmupSettings();
-  if (!_warmupIsActive(user, settings.duration_days)) return true; // warm-up over — unlimited
-  const dailyLimit = _getEffectiveDailyLimit(user, settings);
+  const settings = await getWarmupPolicy();
+  if (!warmupIsActive(user.firstSendAt, settings.durationDays)) return true; // warm-up over — governed by credits
+  const dailyLimit = effectiveDailyLimit(user, settings.ladder);
   const newCount = await storage.atomicIncrementWarmupCount(user.id, dailyLimit);
   return newCount !== null; // null = WHERE guard failed = daily limit already reached
+}
+
+/**
+ * When the sender's current 24-hour warm-up window closes and capacity returns.
+ * The counter window is anchored at the first send of the window (not midnight), so
+ * this is exact rather than an estimate. Used by the campaign loop to park a campaign
+ * for automatic continuation; falls forward a full window if the anchor is unreadable
+ * so a bad timestamp can never schedule a resume in the past.
+ *
+ * @param {object} user — a FRESHLY READ owner row (the row loaded at campaign start
+ *                        is stale by the time the limit is hit)
+ * @returns {Date}
+ */
+export function warmupWindowResetAt(user) {
+  const anchor = user?.warmupEmailsResetAt ? new Date(user.warmupEmailsResetAt).getTime() : NaN;
+  const base = Number.isFinite(anchor) ? anchor : Date.now();
+  const resetAt = new Date(base + 86_400_000);
+  // Guard against an anchor so old the window has already lapsed (the counter resets
+  // lazily on the next claim, so this is reachable): never schedule in the past.
+  return resetAt.getTime() <= Date.now() ? new Date(Date.now() + 60_000) : resetAt;
 }
 
 /**
@@ -144,22 +175,36 @@ export async function recordFirstSend(userId) {
 export async function getSenderHealthReport(user) {
   const [identityResult, settings] = await Promise.all([
     _checkAccountReadiness(user),
-    _getWarmupSettings(),
+    getWarmupPolicy(),
   ]);
   const reputationResult = _checkReputation({ user });
 
   let warmupInfo = null;
   let policyResult = { allowed: true };
 
-  if (_warmupIsActive(user, settings.duration_days)) {
-    const dailyLimit = _getEffectiveDailyLimit(user, settings);
+  if (warmupIsActive(user.firstSendAt, settings.durationDays)) {
+    const dayIndex   = warmupDayIndex(user.firstSendAt);
+    const stage      = stageForDay(settings.ladder, dayIndex);
+    const dailyLimit = effectiveDailyLimit(user, settings.ladder);
     const sentToday  = _getSentTodayAdjusted(user);
+    // An admin override replaces the ladder, so the ladder's own stage markers
+    // (isFinalStage / nextIncrease) would misdescribe that account — report it as a
+    // settled limit with no further increases rather than a stage it is not on.
+    const onLadder   = dailyLimit === stage.dailyLimit;
     warmupInfo = {
       active: true,
-      daysRemaining: _warmupDaysRemaining(user, settings.duration_days),
+      daysRemaining: warmupDaysRemaining(user.firstSendAt, settings.durationDays),
+      totalDays: settings.durationDays,
+      dayIndex,
       dailyLimit,
       sentToday,
       remainingToday: Math.max(0, dailyLimit - sentToday),
+      // The ladder has finished climbing. The warm-up WINDOW still runs to totalDays,
+      // but the customer has reached full sending volume — surfaced separately so the
+      // UI can say "warm-up complete" instead of implying an open-ended restriction.
+      isFinalStage: onLadder ? stage.isFinal : true,
+      nextIncrease: onLadder ? nextStage(settings.ladder, dayIndex) : null,
+      ladder: settings.ladder,
     };
     if (sentToday >= dailyLimit) {
       policyResult = _deny("POLICY", "WARMUP_DAILY_LIMIT_REACHED",
@@ -294,10 +339,10 @@ function _checkReputation({ user }) {
 }
 
 async function _checkPolicy({ user }) {
-  const settings = await _getWarmupSettings();
-  if (!_warmupIsActive(user, settings.duration_days)) return { allowed: true };
+  const settings = await getWarmupPolicy();
+  if (!warmupIsActive(user.firstSendAt, settings.durationDays)) return { allowed: true };
 
-  const dailyLimit = _getEffectiveDailyLimit(user, settings);
+  const dailyLimit = effectiveDailyLimit(user, settings.ladder);
   const sentToday  = _getSentTodayAdjusted(user);
 
   if (sentToday >= dailyLimit) {
@@ -312,29 +357,14 @@ async function _checkPolicy({ user }) {
 }
 
 // ── Warm-up helpers ───────────────────────────────────────────────────────────
-
-function _warmupIsActive(user, durationDays) {
-  if (!user.firstSendAt) return true; // Never sent — warm-up starts on first send
-  const warmupEnd = new Date(user.firstSendAt);
-  warmupEnd.setDate(warmupEnd.getDate() + durationDays);
-  return new Date() < warmupEnd;
-}
-
-function _warmupDaysRemaining(user, durationDays) {
-  if (!user.firstSendAt) return durationDays;
-  const warmupEnd = new Date(user.firstSendAt);
-  warmupEnd.setDate(warmupEnd.getDate() + durationDays);
-  return Math.max(0, Math.ceil((warmupEnd - new Date()) / 86_400_000));
-}
-
-function _getEffectiveDailyLimit(user, settings) {
-  if (user.warmupDailyLimit !== null && user.warmupDailyLimit !== undefined) {
-    return user.warmupDailyLimit; // Admin per-account override
-  }
-  return user.sendingIdentityType === "platform"
-    ? settings.platform_identity_daily_limit
-    : settings.custom_domain_daily_limit;
-}
+//
+// Stage/limit/duration maths lives in shared/warmupPolicy.js — the single authority
+// shared with the client. Only the counter-window read stays here, because it reads a
+// user row rather than the policy.
+//
+// The per-identity-type split (platform vs custom domain) that used to select the
+// limit here is gone: ADR-009 removed the platform identity path, so
+// sendingIdentityType is only ever "custom_domain" or null and the branch was dead.
 
 function _getSentTodayAdjusted(user) {
   if (!user.warmupEmailsResetAt) return 0;
@@ -350,23 +380,49 @@ let _settingsCache = null;
 let _settingsCachedAt = 0;
 const SETTINGS_TTL_MS = 60_000;
 
-async function _getWarmupSettings() {
+/**
+ * Read and validate the warm-up policy. Total: any malformed or missing value
+ * degrades to the shipped default, never to an unenforced policy. A DB read failure
+ * is also non-fatal for the same reason — losing the settings table must not become
+ * "everyone sends without limit", and it must not stop legitimate sending either.
+ */
+export async function getWarmupPolicy() {
   const now = Date.now();
   if (_settingsCache && now - _settingsCachedAt < SETTINGS_TTL_MS) {
     return _settingsCache;
   }
-  const [customLimit, platformLimit, durationDays] = await Promise.all([
-    storage.getPlatformSetting("warmup_custom_domain_daily_limit"),
-    storage.getPlatformSetting("warmup_platform_identity_daily_limit"),
-    storage.getPlatformSetting("warmup_duration_days"),
-  ]);
-  _settingsCache = {
-    custom_domain_daily_limit:     parseInt(customLimit?.value    ?? "200", 10),
-    platform_identity_daily_limit: parseInt(platformLimit?.value  ?? "100", 10),
-    duration_days:                 parseInt(durationDays?.value   ?? "30",  10),
-  };
+
+  let rawLadder, rawFlatLimit, rawDuration;
+  try {
+    const [ladderRow, flatRow, durationRow] = await Promise.all([
+      storage.getPlatformSetting(WARMUP_SETTING_KEYS.LADDER),
+      storage.getPlatformSetting(WARMUP_SETTING_KEYS.FLAT_LIMIT),
+      storage.getPlatformSetting(WARMUP_SETTING_KEYS.DURATION_DAYS),
+    ]);
+    rawLadder    = ladderRow?.value;
+    rawFlatLimit = flatRow?.value;
+    rawDuration  = durationRow?.value;
+  } catch (err) {
+    console.error("[WARMUP] platform_settings read failed — falling back to the default policy:", err.message);
+  }
+
+  const ladder = resolveLadder({ rawLadder, rawFlatLimit }, (reason) => {
+    // Only noise when a value was actually present and wrong; an unseeded key is
+    // the expected state on a fresh install.
+    if (rawLadder !== undefined && rawLadder !== null) {
+      console.error(`[WARMUP] ignoring invalid ${WARMUP_SETTING_KEYS.LADDER} (${reason}) — falling back`);
+    }
+  });
+
+  _settingsCache = { ladder, durationDays: resolveDurationDays(rawDuration) };
   _settingsCachedAt = now;
   return _settingsCache;
+}
+
+/** Test seam — drops the settings cache so a config change is observed immediately. */
+export function resetWarmupPolicyCache() {
+  _settingsCache = null;
+  _settingsCachedAt = 0;
 }
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
