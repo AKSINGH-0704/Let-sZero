@@ -19,23 +19,16 @@ function stageLabel(stage, previousThroughDay) {
   return `Days ${from}–${stage.throughDay}`;
 }
 
-export default function WarmupExplainer({ ladder, className }) {
+// Exported separately from the popover shell so the copy and the schedule can be
+// asserted directly — Radix keeps popover content unmounted while closed, so a test
+// that rendered the shell would only ever see the trigger.
+export function WarmupScheduleContent({ ladder }) {
   const stages = ladder?.length ? ladder : DEFAULT_WARMUP_LADDER;
   const fullLimit = stages[stages.length - 1].dailyLimit;
   let previousThroughDay = 0;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Why does my daily sending limit increase?"
-          className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${className || ""}`}
-        >
-          <HelpCircle className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 text-sm">
+    <>
         <p className="font-medium text-foreground">Why your daily limit grows</p>
 
         <p className="text-muted-foreground">
@@ -80,6 +73,24 @@ export default function WarmupExplainer({ ladder, className }) {
         <p className="text-xs text-muted-foreground">
           After warm-up you send up to {fullLimit.toLocaleString()} a day, governed by your credit balance.
         </p>
+    </>
+  );
+}
+
+export default function WarmupExplainer({ ladder, className }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Why does my daily sending limit increase?"
+          className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${className || ""}`}
+        >
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 text-sm">
+        <WarmupScheduleContent ladder={ladder} />
       </PopoverContent>
     </Popover>
   );
