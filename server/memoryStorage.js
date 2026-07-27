@@ -383,9 +383,15 @@ export const memoryStorage = {
     sanitized.creditsRemaining = (sanitized.creditsReceived || 0) -
                                   (sanitized.creditsAllocated || 0) -
                                   (sanitized.creditsUsed || 0);
-    const monthlyGrant = MONTHLY_CREDITS[sanitized.plan] ?? 0;
-    sanitized.freeCreditsRemaining = Math.max(0, monthlyGrant - (sanitized.freeCreditsUsed || 0));
-    sanitized.monthlyFreeCredits = monthlyGrant;
+    // M41-C — free-credit availability has a SINGLE source of truth:
+    // getTotalCreditsAvailable() (exposed at GET /api/credits/info), which reads
+    // the SHARED workspace free pool off the root row. The former per-user
+    // `freeCreditsRemaining`/`monthlyFreeCredits` fields here were computed from
+    // the individual's own row + own plan — a second, now-incorrect definition of
+    // the same business value (a member's own counter no longer reflects the
+    // shared pool). They had no consumers (server, client, or tests), so they are
+    // removed rather than left as a conflicting duplicate. `creditsRemaining`
+    // (purchased, genuinely per-user) stays.
     return sanitized;
   },
 
@@ -460,10 +466,17 @@ export const memoryStorage = {
     if (fromUser.role === USER_ROLES.SUB_ADMIN && toUser.role !== USER_ROLES.USER) {
       throw new Error("SUB_ADMIN can only allocate credits to USERs");
     }
-    if (fromUser.role === USER_ROLES.USER) {
+    // M41-C — a workspace OWNER is a top-level account (parentId === null) that the
+    // product models as role USER (ownership is tree POSITION, not role — see
+    // isWorkspaceOwner in routes.js). The owner is the workspace's billing
+    // authority and must be able to allocate purchased credits to any of their
+    // direct children (Managers or Members). A non-owner USER (a member, with a
+    // parentId) still cannot allocate. The parent-child check below keeps this
+    // scoped to the caller's own direct children either way.
+    if (fromUser.role === USER_ROLES.USER && fromUser.parentId != null) {
       throw new Error("USER cannot allocate credits");
     }
-    
+
     // Parent-child validation
     if (toUser.parentId !== fromUserId) {
       throw new Error("Can only allocate credits to direct children");
@@ -583,41 +596,60 @@ export const memoryStorage = {
     return this.sanitizeUser(user);
   },
 
+  // M41-C — the recurring monthly free allowance is a WORKSPACE resource, not a
+  // per-user one. It physically lives on the workspace root row (parentId ===
+  // null) and is SHARED by every member, so a member never mints their own free
+  // pool. This resolves that holder (mirrors storage.js). For a workspace owner
+  // the holder is the user themselves, so single-account behaviour is unchanged.
+  async _resolveFreePoolHolder(userId) {
+    const rootId = await this.resolveWorkspaceRootId(userId);
+    return store.users.get(rootId) || store.users.get(userId);
+  },
+
   async deductCreditAtomic(userId, campaignId, description = "Email sent") {
     const user = store.users.get(userId);
     if (!user) throw new Error("User not found");
+
+    // M41-C — free credits are drawn from the shared workspace pool on the root
+    // row; paid and trial credits remain per-user (`user`).
+    const poolHolder = await this._resolveFreePoolHolder(userId);
 
     const freePlanEnabled = process.env.FREE_PLAN_ENABLED === "true";
     // TRUST-025 (M20-B): effectivePlan, not the raw column — mirrors storage.js.
     const effectivePlan = await this.getEffectivePlan(userId);
     const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
+    // Eligibility is a property of the WORKSPACE (root), not the individual.
+    const freeEligible = freePlanEnabled && !poolHolder.isTrialUser && monthlyGrant > 0;
 
     // Compute balances at moment of write (single-threaded, no TOCTOU in memory)
     const paidRemaining = Math.max(0, (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0));
 
-    // Lazy refresh: reset free pool if the 1-month renewal window from signup has passed
-    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
-      const resetAt = user.freeCreditsResetAt;
-      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+    // Lazy refresh: reset the shared workspace pool if the 1-month renewal window
+    // from the workspace's signup (root createdAt / last reset) has passed
+    if (freeEligible) {
+      const resetAt = poolHolder.freeCreditsResetAt;
+      const refDate = resetAt ? new Date(resetAt) : new Date(poolHolder.createdAt);
       const nextReset = new Date(refDate);
       nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
       if (new Date() >= nextReset) {
-        user.freeCreditsUsed = 0;
-        user.freeCreditsResetAt = new Date();
+        poolHolder.freeCreditsUsed = 0;
+        poolHolder.freeCreditsResetAt = new Date();
       }
     }
 
-    const freeRemaining = (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0)
-      ? Math.max(0, monthlyGrant - (user.freeCreditsUsed || 0))
+    const freeRemaining = freeEligible
+      ? Math.max(0, monthlyGrant - (poolHolder.freeCreditsUsed || 0))
       : 0;
     const trialRemaining = (!freePlanEnabled && user.isTrialUser)
       ? Math.max(0, (user.trialCredits || 0) - (user.trialCreditsUsed || 0))
       : 0;
 
-    if (freePlanEnabled && !user.isTrialUser && freeRemaining >= 1) {
-      const balanceBefore = user.freeCreditsUsed || 0;
-      user.freeCreditsUsed = balanceBefore + 1;
-      user.updatedAt = new Date();
+    if (freeEligible && freeRemaining >= 1) {
+      // Deduct from the shared workspace pool (root row); the ledger row is still
+      // attributed to the actual sender (userId) so "who used it" is preserved.
+      const balanceBefore = poolHolder.freeCreditsUsed || 0;
+      poolHolder.freeCreditsUsed = balanceBefore + 1;
+      poolHolder.updatedAt = new Date();
       const txId = generateUUID();
       store.creditTransactions.set(txId, {
         id: txId, userId, type: "free_usage", amount: -1,
@@ -679,14 +711,18 @@ export const memoryStorage = {
     const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
     const paidRemaining = user.creditsRemaining || 0;
 
+    // M41-C — the free balance is the SHARED workspace pool (root row), so a
+    // member's availability reflects what the whole workspace has left.
+    const poolHolder = await this._resolveFreePoolHolder(userId);
+
     let freeRemaining = 0;
-    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+    if (freePlanEnabled && !poolHolder.isTrialUser && monthlyGrant > 0) {
       // Treat stale pool as reset for availability check (same as getTotalCreditsAvailable)
-      const resetAt = user.freeCreditsResetAt;
-      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const resetAt = poolHolder.freeCreditsResetAt;
+      const refDate = resetAt ? new Date(resetAt) : new Date(poolHolder.createdAt);
       const nextReset = new Date(refDate);
       nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
-      const effectiveUsed = new Date() >= nextReset ? 0 : (user.freeCreditsUsed || 0);
+      const effectiveUsed = new Date() >= nextReset ? 0 : (poolHolder.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
 
@@ -698,7 +734,7 @@ export const memoryStorage = {
 
     if (totalAvailable < emailCount) {
       let blockReason;
-      if (freePlanEnabled && !user.isTrialUser && freeRemaining === 0 && paidRemaining === 0) {
+      if (freePlanEnabled && !poolHolder.isTrialUser && freeRemaining === 0 && paidRemaining === 0) {
         blockReason = monthlyGrant > 0 ? "free_exhausted" : "paid_exhausted";
       } else if (paidRemaining === 0 && freeRemaining === 0) {
         blockReason = "both_exhausted";
@@ -1933,15 +1969,19 @@ export const memoryStorage = {
       (user.creditsReceived || 0) - (user.creditsAllocated || 0) - (user.creditsUsed || 0)
     );
 
+    // M41-C — the free meter reflects the SHARED workspace pool (root row), so
+    // every member sees the same remaining balance as the workspace owner.
+    const poolHolder = await this._resolveFreePoolHolder(userId);
+
     let freeRemaining = 0;
     let isFreePlan = false;
-    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+    if (freePlanEnabled && !poolHolder.isTrialUser && monthlyGrant > 0) {
       isFreePlan = true;
-      const resetAt = user.freeCreditsResetAt;
-      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const resetAt = poolHolder.freeCreditsResetAt;
+      const refDate = resetAt ? new Date(resetAt) : new Date(poolHolder.createdAt);
       const nextReset = new Date(refDate);
       nextReset.setUTCMonth(nextReset.getUTCMonth() + 1);
-      const effectiveUsed = new Date() >= nextReset ? 0 : (user.freeCreditsUsed || 0);
+      const effectiveUsed = new Date() >= nextReset ? 0 : (poolHolder.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
 
@@ -1949,9 +1989,9 @@ export const memoryStorage = {
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
-    // Next reset: 1 month rolling from signup date (or last reset)
-    const resetAt = user.freeCreditsResetAt;
-    const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+    // Next reset: 1 month rolling from the workspace's signup date (or last reset)
+    const resetAt = poolHolder.freeCreditsResetAt;
+    const refDate = resetAt ? new Date(resetAt) : new Date(poolHolder.createdAt);
     const nextResetDate = new Date(refDate);
     nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
 

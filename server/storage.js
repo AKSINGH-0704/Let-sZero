@@ -270,9 +270,15 @@ const dbStorage = {
     sanitized.creditsRemaining = (sanitized.creditsReceived || 0) -
                                   (sanitized.creditsAllocated || 0) -
                                   (sanitized.creditsUsed || 0);
-    const monthlyGrant = MONTHLY_CREDITS[sanitized.plan] ?? 0;
-    sanitized.freeCreditsRemaining = Math.max(0, monthlyGrant - (sanitized.freeCreditsUsed || 0));
-    sanitized.monthlyFreeCredits = monthlyGrant;
+    // M41-C — free-credit availability has a SINGLE source of truth:
+    // getTotalCreditsAvailable() (exposed at GET /api/credits/info), which reads
+    // the SHARED workspace free pool off the root row. The former per-user
+    // `freeCreditsRemaining`/`monthlyFreeCredits` fields here were computed from
+    // the individual's own row + own plan — a second, now-incorrect definition of
+    // the same business value (a member's own counter no longer reflects the
+    // shared pool). They had no consumers (server, client, or tests), so they are
+    // removed rather than left as a conflicting duplicate. `creditsRemaining`
+    // (purchased, genuinely per-user) stays.
     return sanitized;
   },
 
@@ -329,10 +335,17 @@ const dbStorage = {
     if (fromUser.role === USER_ROLES.SUB_ADMIN && toUser.role !== USER_ROLES.USER) {
       throw new Error("SUB_ADMIN can only allocate credits to USERs");
     }
-    if (fromUser.role === USER_ROLES.USER) {
+    // M41-C — a workspace OWNER is a top-level account (parentId === null) that the
+    // product models as role USER (ownership is tree POSITION, not role — see
+    // isWorkspaceOwner in routes.js). The owner is the workspace's billing
+    // authority and must be able to allocate purchased credits to any of their
+    // direct children (Managers or Members). A non-owner USER (a member, with a
+    // parentId) still cannot allocate. The parent-child check below keeps this
+    // scoped to the caller's own direct children either way.
+    if (fromUser.role === USER_ROLES.USER && fromUser.parentId != null) {
       throw new Error("USER cannot allocate credits");
     }
-    
+
     if (toUser.parentId !== fromUserId) {
       throw new Error("Can only allocate credits to direct children");
     }
@@ -481,49 +494,58 @@ const dbStorage = {
       // .plan (which defaults to "free" until a separate event touches it).
       // Computed once, outside the transaction (getEffectivePlan does its own reads).
       const effectivePlan = await this.getEffectivePlan(userId);
+      // M41-C — the recurring free allowance is a WORKSPACE resource: the shared
+      // pool lives on the workspace root row (parentId === null) and every member
+      // draws from it, so a member never mints their own pool. For a workspace
+      // owner rootId === userId, so single-account behaviour is unchanged.
+      const rootId = await this.resolveWorkspaceRootId(userId);
       await db.transaction(async (tx) => {
-        const user = await tx.select({
+        const holder = await tx.select({
           id: users.id, plan: users.plan,
           isTrialUser: users.isTrialUser,
           freeCreditsUsed: users.freeCreditsUsed,
           freeCreditsResetAt: users.freeCreditsResetAt,
           createdAt: users.createdAt,
-        }).from(users).where(eq(users.id, userId)).then(r => r[0]);
+        }).from(users).where(eq(users.id, rootId)).then(r => r[0]);
 
-        if (!user || user.isTrialUser) return; // fall through to legacy trial path
+        // Eligibility is a property of the WORKSPACE (root), not the individual.
+        if (!holder || holder.isTrialUser) return; // fall through to legacy trial path
 
         const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
         if (monthlyGrant === 0) return; // paid PAYG plan — no free credits
 
-        // Step A: refresh if stale — 1 month rolling from signup date (or last reset)
-        // COALESCE uses created_at so a brand-new user's first refresh fires on their
-        // signup anniversary, not on the first of the next calendar month.
+        // Step A: refresh the shared workspace pool if stale — 1 month rolling from
+        // the workspace's signup date (root created_at) or last reset. COALESCE uses
+        // created_at so a brand-new workspace's first refresh fires on its signup
+        // anniversary, not on the first of the next calendar month.
         const refreshed = await tx.update(users)
           .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
           .where(and(
-            eq(users.id, userId),
+            eq(users.id, rootId),
             sql`(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`
           ))
           .returning({ id: users.id });
 
         if (refreshed.length > 0) {
+          // The monthly grant belongs to the workspace — attribute it to the root.
           await tx.insert(creditTransactions).values({
-            userId, type: "free_monthly_grant", amount: monthlyGrant,
+            userId: rootId, type: "free_monthly_grant", amount: monthlyGrant,
             balanceBefore: 0, balanceAfter: monthlyGrant,
             description: `Free Plan monthly grant (${monthlyGrant} credits)`,
           });
           await tx.insert(auditLogs).values({
-            userId, action: AUDIT_ACTIONS.FREE_CREDITS_GRANTED,
-            details: { credits: monthlyGrant, plan: user.plan },
+            userId: rootId, action: AUDIT_ACTIONS.FREE_CREDITS_GRANTED,
+            details: { credits: monthlyGrant, plan: holder.plan },
           });
         }
 
-        // Step B: deduct one free credit (balance check in WHERE clause — atomic, no TOCTOU)
-        const usedAfterRefresh = refreshed.length > 0 ? 0 : (user.freeCreditsUsed || 0);
+        // Step B: deduct one free credit from the shared pool (balance check in the
+        // WHERE clause — atomic row lock on the root row, so concurrent members
+        // cannot over-spend). The usage row is attributed to the actual sender.
         const [deducted] = await tx.update(users)
           .set({ freeCreditsUsed: sql`free_credits_used + 1`, updatedAt: new Date() })
           .where(and(
-            eq(users.id, userId),
+            eq(users.id, rootId),
             sql`(${monthlyGrant} - free_credits_used) >= 1`
           ))
           .returning({ freeCreditsUsed: users.freeCreditsUsed });
@@ -644,21 +666,28 @@ const dbStorage = {
     const effectivePlan = await this.getEffectivePlan(userId);
 
     // Free plan: lazy refresh before computing free balance (standalone transaction).
-    // Race safety: the WHERE clause guard ensures at most one refresh per month per user.
+    // Race safety: the WHERE clause guard ensures at most one refresh per month.
+    // M41-C — the free balance is the SHARED workspace pool on the root row, so a
+    // member's availability reflects what the whole workspace has left (and the
+    // refresh targets the root). For a workspace owner rootId === userId.
     let freeRemaining = 0;
     if (freePlanEnabled && !user.isTrialUser) {
       const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
       if (monthlyGrant > 0) {
-        const [refreshed] = await db.update(users)
-          .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
-          .where(and(
-            eq(users.id, userId),
-            sql`(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`
-          ))
-          .returning({ id: users.id });
+        const rootId = await this.resolveWorkspaceRootId(userId);
+        const holder = rootId === userId ? user : await this.getUserById(rootId);
+        if (holder && !holder.isTrialUser) {
+          const [refreshed] = await db.update(users)
+            .set({ freeCreditsUsed: 0, freeCreditsResetAt: new Date(), updatedAt: new Date() })
+            .where(and(
+              eq(users.id, rootId),
+              sql`(NOW() AT TIME ZONE 'UTC') >= (COALESCE(free_credits_reset_at, created_at) + INTERVAL '1 month')`
+            ))
+            .returning({ id: users.id });
 
-        const usedAfterRefresh = refreshed ? 0 : (user.freeCreditsUsed || 0);
-        freeRemaining = Math.max(0, monthlyGrant - usedAfterRefresh);
+          const usedAfterRefresh = refreshed ? 0 : (holder.freeCreditsUsed || 0);
+          freeRemaining = Math.max(0, monthlyGrant - usedAfterRefresh);
+        }
       }
     } else if (!freePlanEnabled && user.isTrialUser) {
       // Legacy trial path
@@ -2163,17 +2192,22 @@ const dbStorage = {
     const effectivePlan = await this.getEffectivePlan(userId);
     const monthlyGrant = MONTHLY_CREDITS[effectivePlan] ?? 0;
 
-    if (freePlanEnabled && !user.isTrialUser && monthlyGrant > 0) {
+    // M41-C — the free meter reflects the SHARED workspace pool (root row), so
+    // every member sees the same remaining balance as the workspace owner.
+    const rootId = await this.resolveWorkspaceRootId(userId);
+    const holder = rootId === userId ? user : (await this.getUserById(rootId)) || user;
+
+    if (freePlanEnabled && !holder.isTrialUser && monthlyGrant > 0) {
       isFreePlan = true;
       // Lazy refresh: if the renewal period has expired, treat used as 0 for display.
       // The actual DB reset happens in deductCreditAtomic on the next send.
       // Use createdAt as the baseline when never reset — matches the DB WHERE clause.
-      const resetAt = user.freeCreditsResetAt;
-      const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+      const resetAt = holder.freeCreditsResetAt;
+      const refDate = resetAt ? new Date(resetAt) : new Date(holder.createdAt);
       const nextResetDate = new Date(refDate);
       nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
       const isStale = new Date() >= nextResetDate;
-      const effectiveUsed = isStale ? 0 : (user.freeCreditsUsed || 0);
+      const effectiveUsed = isStale ? 0 : (holder.freeCreditsUsed || 0);
       freeRemaining = Math.max(0, monthlyGrant - effectiveUsed);
     }
 
@@ -2182,9 +2216,9 @@ const dbStorage = {
       ? Math.max(0, (user.trialCredits || 5) - (user.trialCreditsUsed || 0))
       : 0;
 
-    // Next reset date: 1 month after last reset (or signup if never reset)
-    const resetAt = user.freeCreditsResetAt;
-    const refDate = resetAt ? new Date(resetAt) : new Date(user.createdAt);
+    // Next reset date: 1 month after the workspace's last reset (or signup if never reset)
+    const resetAt = holder.freeCreditsResetAt;
+    const refDate = resetAt ? new Date(resetAt) : new Date(holder.createdAt);
     const nextResetDate = new Date(refDate);
     nextResetDate.setUTCMonth(nextResetDate.getUTCMonth() + 1);
 

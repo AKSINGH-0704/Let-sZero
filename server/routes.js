@@ -3045,6 +3045,13 @@ export async function registerRoutes(httpServer, app) {
           role: invite.role,
           parentId: invite.invitedBy,
           mustResetPassword: false,
+          // M41-C — provision the member on the workspace's effective plan, exactly
+          // as the admin-create path already does (POST /api/users). Without this
+          // the invite path defaulted plan:"free", so the two ways of joining the
+          // same team produced members with different plan columns/meters. Free
+          // credits are workspace-shared regardless (see deductCreditAtomic), so
+          // this is a provisioning-consistency fix, not a credit-grant change.
+          plan: inviterEffectivePlan,
           emailVerified: true, // Invite token acceptance proves ownership of the invite email address
         }, tx));
         if (!claim.allowed) {

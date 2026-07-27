@@ -127,9 +127,13 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     expect(validate1.status).toBe(200);
     expect(validate1.json.role).toBe("SUB_ADMIN");
 
-    // ── Sub-Admin accepts — this is the exact TEAMS-001 code path. The
-    // Sub-Admin's own .plan will default to "free"; before the fix this
-    // would have failed unconditionally (MAX_TEAM_MEMBERS["free"] = 0). ──
+    // ── Sub-Admin accepts — this is the exact TEAMS-001 code path. Post-M41-C
+    // (join-path convergence) the invite-accept flow provisions the member on the
+    // inviter's EFFECTIVE plan, exactly as the admin-create path already did, so
+    // both ways of joining the same team yield identical provisioning. The Root
+    // Admin's plan is "growth", so the Sub-Admin inherits "growth". Seat caps
+    // already used the inherited effective plan (TRUST-023), so this is a
+    // provisioning-consistency change, not a seat-cap change. ──
     const subAdminUsername = "e2e_subadmin_" + Math.random().toString(36).slice(2);
     const subAdminPassword = "sub-pw-" + Math.random().toString(36).slice(2);
     const accept1 = await api("POST", "/api/invites/accept", {
@@ -137,7 +141,7 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     });
     expect(accept1.status, `Sub-Admin accept failed: ${JSON.stringify(accept1.json)}`).toBe(201);
     expect(accept1.json.user.role).toBe("SUB_ADMIN");
-    expect(accept1.json.user.plan).toBe("free"); // confirms the reproduction precondition genuinely held
+    expect(accept1.json.user.plan).toBe("growth"); // M41-C: member inherits the inviter's effective plan
     const subAdmin = accept1.json.user;
 
     const subAdminCookie = await login(subAdminUsername, subAdminPassword);
@@ -154,7 +158,8 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
     expect(userInviteEmail).toBeTruthy();
     const userToken = extractInviteToken(userInviteEmail.text);
 
-    // ── User accepts — Sub-Admin's raw plan is still "free" here too ────────
+    // ── User accepts — invited by the Sub-Admin, so it inherits the same
+    // workspace effective plan ("growth") via the M41-C join-path convergence ──
     const userUsername = "e2e_user_" + Math.random().toString(36).slice(2);
     const userPassword = "user-pw-" + Math.random().toString(36).slice(2);
     const accept2 = await api("POST", "/api/invites/accept", {

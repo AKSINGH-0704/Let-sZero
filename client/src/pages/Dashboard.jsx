@@ -368,7 +368,7 @@ export default function Dashboard() {
                 </p>
                 <p className="text-lg sm:text-xl font-medium text-white">
                   {statsLoading ? '...' : creditsInfo?.isFreePlan
-                    ? `${formatNumber(user?.freeCreditsUsed || 0)} / ${formatNumber(creditsInfo?.monthlyFreeCredits || 500)}`
+                    ? `${formatNumber(Math.max(0, (creditsInfo?.monthlyFreeCredits || 500) - (creditsInfo?.free ?? 0)))} / ${formatNumber(creditsInfo?.monthlyFreeCredits || 500)}`
                     : formatNumber(user?.creditsUsed || 0)}
                 </p>
               </div>
