@@ -99,7 +99,7 @@ export default function ProgressTracker() {
 
   const campaignEmailRecords = currentCampaign.campaignEmails || [];
 
-  const statusConfig = getStatusConfig(currentCampaign.status);
+  const statusConfig = getStatusConfig(currentCampaign.status, currentCampaign);
   const StatusIcon   = statusConfig.icon;
 
   const isComplete  = currentCampaign.status === "COMPLETED";

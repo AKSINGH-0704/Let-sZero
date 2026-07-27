@@ -218,7 +218,7 @@ export default function History() {
                   </TableHeader>
                   <TableBody>
                     {filteredCampaigns.map((campaign) => {
-                      const config = getStatusConfig(campaign.status);
+                      const config = getStatusConfig(campaign.status, campaign);
                       const StatusIcon = config.icon;
                       const reachRate = (campaign.totalEmails ?? 0) > 0
                         ? Math.min(100, ((campaign.sentEmails + (campaign.skippedEmails ?? 0)) / (campaign.totalEmails ?? 1)) * 100).toFixed(1)
@@ -394,7 +394,7 @@ export default function History() {
             <DialogTitle>{viewCampaign?.name}</DialogTitle>
             <DialogDescription>
               {formatDate(viewCampaign?.createdAt)} &middot;{" "}
-              {getStatusConfig(viewCampaign?.status).label}
+              {getStatusConfig(viewCampaign?.status, viewCampaign).label}
             </DialogDescription>
           </DialogHeader>
 
@@ -404,7 +404,7 @@ export default function History() {
               - (viewCampaign.failedEmails ?? 0)
               - (viewCampaign.skippedEmails ?? 0);
 
-            const statusConfig = getStatusConfig(viewCampaign.status);
+            const statusConfig = getStatusConfig(viewCampaign.status, viewCampaign);
             // Hide Duplicate for non-owned campaigns — admin view may show other users' campaigns.
             // Backend enforces ownership on POST /api/campaigns and GET /api/campaigns/:id,
             // but showing the button for unowned campaigns produces a confusing UX.

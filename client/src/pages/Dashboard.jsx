@@ -762,7 +762,7 @@ export default function Dashboard() {
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          {(() => { const Ic = getStatusConfig(campaign.status).icon; return <Ic className={`h-4 w-4 ${STATUS_ICON_COLOR[campaign.status] ?? "text-gray-500"}`} />; })()}
+                          {(() => { const Ic = getStatusConfig(campaign.status, campaign).icon; return <Ic className={`h-4 w-4 ${STATUS_ICON_COLOR[campaign.status] ?? "text-gray-500"}`} />; })()}
                           <div className="text-sm font-medium text-foreground group-hover:text-cyan-300 transition-colors">{campaign.name}</div>
                         </div>
                       </td>
@@ -787,10 +787,10 @@ export default function Dashboard() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <Badge
                           variant="secondary"
-                          className={`text-xs shadow-sm ${getStatusConfig(campaign.status).color}`}
-                          title={getStatusConfig(campaign.status).tooltip}
+                          className={`text-xs shadow-sm ${getStatusConfig(campaign.status, campaign).color}`}
+                          title={getStatusConfig(campaign.status, campaign).tooltip}
                         >
-                          {getStatusConfig(campaign.status).label}
+                          {getStatusConfig(campaign.status, campaign).label}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

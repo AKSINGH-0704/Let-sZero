@@ -85,6 +85,35 @@ export const CAMPAIGN_STATUS_CONFIG = {
   },
 };
 
-export function getStatusConfig(status) {
-  return CAMPAIGN_STATUS_CONFIG[status] ?? CAMPAIGN_STATUS_CONFIG.PENDING;
+/**
+ * @param {string} status
+ * @param {object} [campaign] — pass the campaign row when available so a campaign
+ *   parked by the daily sending limit can describe itself accurately.
+ */
+export function getStatusConfig(status, campaign) {
+  const base = CAMPAIGN_STATUS_CONFIG[status] ?? CAMPAIGN_STATUS_CONFIG.PENDING;
+
+  // A campaign that reached the day's warm-up volume is parked as PENDING with a
+  // future scheduledAt and work already done. The plain PENDING copy — "Queued",
+  // "waiting to start", "will begin shortly" — is wrong on every count: it has
+  // already sent, it is not waiting on the queue, and it resumes in hours, not
+  // shortly. Describe what is actually happening instead, because the whole point
+  // of parking rather than pausing is that the customer needs to do nothing.
+  if (
+    status === "PENDING" &&
+    campaign?.scheduledAt &&
+    (campaign.sentEmails ?? 0) > 0 &&
+    new Date(campaign.scheduledAt) > new Date()
+  ) {
+    const resumesAt = new Date(campaign.scheduledAt);
+    return {
+      ...base,
+      label: "Continuing",
+      tooltip: `Today's sending limit was reached. The remaining emails send automatically from ${resumesAt.toLocaleString(undefined, {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+      })} — nothing to restart.`,
+    };
+  }
+
+  return base;
 }

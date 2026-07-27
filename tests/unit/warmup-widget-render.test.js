@@ -245,3 +245,38 @@ describe("MXX — warm-up explainer content", () => {
     expect(html).toContain("200/day");
   });
 });
+
+describe("MXX — a parked campaign describes itself accurately", () => {
+  let getStatusConfig;
+  beforeAll(async () => {
+    ({ getStatusConfig } = await vite.ssrLoadModule("/src/lib/campaignStatus.js"));
+  });
+
+  const soon = () => new Date(Date.now() + 20 * 3600_000).toISOString();
+
+  it("says 'Continuing', not 'Queued', for a part-sent campaign awaiting its next window", () => {
+    const cfg = getStatusConfig("PENDING", { scheduledAt: soon(), sentEmails: 50 });
+    expect(cfg.label).toBe("Continuing");
+    expect(cfg.tooltip).toMatch(/sending limit was reached/i);
+    expect(cfg.tooltip).toMatch(/nothing to restart/i);
+    // The plain PENDING copy is wrong on every count for this campaign.
+    expect(cfg.tooltip).not.toMatch(/waiting to start|begin shortly/i);
+    // Still cancellable — parking must not take that away.
+    expect(cfg.canCancel).toBe(true);
+  });
+
+  it("leaves a genuinely queued campaign alone", () => {
+    expect(getStatusConfig("PENDING", { scheduledAt: null, sentEmails: 0 }).label).toBe("Queued");
+    // Scheduled but never started — that is a scheduled campaign, not a parked one.
+    expect(getStatusConfig("PENDING", { scheduledAt: soon(), sentEmails: 0 }).label).toBe("Queued");
+    // Past scheduledAt — due now, not parked.
+    expect(getStatusConfig("PENDING", {
+      scheduledAt: new Date(Date.now() - 3600_000).toISOString(), sentEmails: 20,
+    }).label).toBe("Queued");
+  });
+
+  it("is backward compatible when no campaign is passed", () => {
+    expect(getStatusConfig("PENDING").label).toBe("Queued");
+    expect(getStatusConfig("COMPLETED").label).toBeTruthy();
+  });
+});
