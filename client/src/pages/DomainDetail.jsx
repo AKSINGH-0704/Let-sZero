@@ -401,22 +401,31 @@ export default function DomainDetail() {
                         Verified{domain.verifiedAt ? ` on ${new Date(domain.verifiedAt).toLocaleDateString()}` : ""} · sending as {domain.fromEmail}
                       </p>
                     </div>
-                    {warmup?.active && (
+                    {warmup?.active && (warmup.isFinalStage ? (
+                      // Ladder complete — full volume reached. Describing this as
+                      // "warm-up, N days remaining" would imply a restriction that is
+                      // no longer in force.
                       <p className="text-xs text-muted-foreground">
-                        Sender warm-up: {warmup.remainingToday ?? 0} of {warmup.dailyLimit} sends left today
-                        {warmup.daysRemaining != null && (
+                        Warm-up complete — sending up to {(warmup.dailyLimit ?? 0).toLocaleString()} emails a day.
+                        Volume is governed by your credits.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Sender warm-up: {(warmup.remainingToday ?? 0).toLocaleString()} of {(warmup.dailyLimit ?? 0).toLocaleString()} sends left today
+                        {warmup.nextIncrease && (
                           <>
-                            {" "}· {warmup.daysRemaining}d remaining
+                            {" "}· goes up to {warmup.nextIncrease.dailyLimit.toLocaleString()}/day in{" "}
+                            {warmup.nextIncrease.inDays} {warmup.nextIncrease.inDays === 1 ? "day" : "days"}
                             {/* UX-012: a day count alone doesn't answer "when will I be
                                 ready" — project it forward into a concrete date, computed
-                                from daysRemaining (already returned by /api/sender-health)
-                                rather than needing a new activatedAt field. */}
-                            {" "}(ready ~{new Date(Date.now() + warmup.daysRemaining * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" })})
+                                from data already returned by /api/sender-health rather
+                                than needing a new activatedAt field. */}
+                            {" "}({new Date(Date.now() + warmup.nextIncrease.inDays * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" })})
                           </>
                         )}
-                        . After warm-up, volume is governed by your credits.
+                        . Campaigns larger than a day&apos;s limit continue automatically the next day.
                       </p>
-                    )}
+                    ))}
                   </CardContent>
                 </Card>
               )

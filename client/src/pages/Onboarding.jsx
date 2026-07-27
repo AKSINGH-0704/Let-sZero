@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invalidateAfter } from "@/lib/queryInvalidation";
 import { normalizeDomain, validateFromEmail } from "@shared/domainUtils";
+import { DEFAULT_WARMUP_LADDER } from "@shared/warmupPolicy";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,8 +36,12 @@ export default function Onboarding() {
     enabled: !!user,
     staleTime: 60_000,
   });
-  const customLimit = config?.warmup?.customDomainDailyLimit ?? 200;
-  const durationDays = config?.warmup?.durationDays ?? 30;
+  // Ladder comes from the backend (the same policy the send path enforces); the
+  // shared default is the only fallback, so this copy cannot state a schedule the
+  // product does not apply.
+  const ladder = config?.warmup?.ladder?.length ? config.warmup.ladder : DEFAULT_WARMUP_LADDER;
+  const firstLimit = ladder[0].dailyLimit;
+  const fullLimit = ladder[ladder.length - 1].dailyLimit;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -206,10 +211,13 @@ export default function Onboarding() {
             </div>
 
             <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              New domains send up to <span className="font-medium text-foreground">{customLimit} emails/day</span> for
-              the first {durationDays} days while your reputation builds. After that, your credit
-              balance governs volume — 1 credit = 1 email sent, and credits are only used when a
-              campaign actually sends, never for drafting, previewing, or building templates.
+              New domains start at <span className="font-medium text-foreground">{firstLimit} emails/day</span> and
+              build up to <span className="font-medium text-foreground">{fullLimit} a day</span> over your first
+              week — this is what earns a new domain a place in the inbox rather than the spam
+              folder. Larger campaigns simply continue the next day on their own. Your credit
+              balance governs volume after that — 1 credit = 1 email sent, credits are only used
+              when a campaign actually sends, never for drafting, previewing, or building
+              templates, and they never expire.
             </p>
 
             {error && (

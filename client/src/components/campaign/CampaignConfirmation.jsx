@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatNumber, calculateCreditsRemaining, replacePlaceholders, computePersonalizationStats } from "@/lib/utils";
+import { stageForDay } from "@shared/warmupPolicy";
 
 export default function CampaignConfirmation() {
   const [location, setLocation] = useLocation();
@@ -115,9 +116,19 @@ export default function CampaignConfirmation() {
     let rem = recipientCount;
     const todayCount = Math.min(rem, warmupRemainingToday);
     if (todayCount > 0) { days.push({ label: "Today", count: todayCount }); rem -= todayCount; }
+    // Each future day gets the limit its own warm-up stage allows — projecting today's
+    // limit forward would overstate how long delivery takes while the ladder is still
+    // climbing, and understate it if an operator ever reshapes the ladder. Once the
+    // warm-up window itself ends there is no daily cap, so the remainder lands at once.
+    const ladder    = warmupData?.ladder;
+    const todayIndex = warmupData?.dayIndex ?? 1;
+    const totalDays  = warmupData?.totalDays ?? null;
     let d = 2;
     while (rem > 0 && d <= 60) {
-      const n = Math.min(rem, warmupDailyLimit);
+      const warmupDay = todayIndex + (d - 1);
+      const pastWarmup = totalDays != null && warmupDay > totalDays;
+      const limit = pastWarmup ? rem : stageForDay(ladder, warmupDay).dailyLimit;
+      const n = Math.min(rem, limit);
       days.push({ label: `Day ${d}`, count: n });
       rem -= n;
       d++;
@@ -700,7 +711,8 @@ export default function CampaignConfirmation() {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Daily limit grows after your warm-up period ends.
+                      Each day sends automatically — nothing to restart. Your daily limit grows
+                      as your domain builds reputation.
                     </p>
                   </div>
                 </div>
