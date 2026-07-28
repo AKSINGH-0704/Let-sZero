@@ -377,7 +377,144 @@ describe("campaign continuation (PENDING + scheduledAt)", () => {
   });
 });
 
+// ── The policy a real database actually produces ──────────────────────────────
+//
+// Every other test in this file feeds resolveLadder() values by hand, and the
+// integration tests run on memoryStorage, which starts with NO platform_settings and
+// therefore falls through to DEFAULT_WARMUP_LADDER. Both are blind to the only
+// configuration that ships to customers: the rows the migrations actually INSERT.
+//
+// That blind spot was not hypothetical. Migration 0003 seeded the pre-ladder flat
+// limit `warmup_custom_domain_daily_limit = '200'`; MXX shipped the ladder module but
+// no migration ever wrote `warmup_ramp_schedule`; and resolveLadder ranks a configured
+// flat limit above the shipped default. Production therefore ran a single terminal
+// stage of 200/day and every brand-new sender was handed full volume on day 1, while
+// 191/191 tests stayed green.
+//
+// So this suite asserts against the migration FILES rather than fixtures: it replays
+// the platform_settings seeds in migration order the way Postgres would, then asks the
+// policy what a brand-new sender gets. It fails if a future migration reintroduces a
+// competing key, or if the ladder seed is removed, malformed, or ordered so that
+// something outranks it.
+describe("the policy produced by the migrations as applied", () => {
+  const KEYS = {
+    LADDER: "warmup_ramp_schedule",
+    FLAT: "warmup_custom_domain_daily_limit",
+    DURATION: "warmup_duration_days",
+  };
+
+  /** Replay every platform_settings INSERT/DELETE in the migrations, in order. */
+  async function settingsAfterMigrations() {
+    const { readdir, readFile } = await import("fs/promises");
+    const path = await import("path");
+    const dir = path.resolve(import.meta.dirname, "..", "..", "migrations");
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
+
+    const settings = new Map();
+    for (const file of files) {
+      const sql = await readFile(path.join(dir, file), "utf-8");
+      // INSERT ... VALUES ('key', 'value', ...) — ON CONFLICT DO NOTHING means the
+      // first writer wins, matching Postgres given migrations apply in order.
+      for (const block of sql.split(/INSERT\s+INTO\s+"?platform_settings"?/i).slice(1)) {
+        const upTo = block.split(/;/)[0];
+        for (const [, key, value] of upTo.matchAll(/\(\s*'([a-z0-9_]+)'\s*,\s*'((?:[^']|'')*)'/gi)) {
+          if (!settings.has(key)) settings.set(key, value.replace(/''/g, "'"));
+        }
+      }
+      for (const [, key] of sql.matchAll(
+        /DELETE\s+FROM\s+"?platform_settings"?\s+WHERE\s+"?key"?\s*=\s*'([a-z0-9_]+)'/gi
+      )) {
+        settings.delete(key);
+      }
+    }
+    return settings;
+  }
+
+  it("seeds a ladder that survives parseLadder — an invalid one silently falls back", async () => {
+    const settings = await settingsAfterMigrations();
+    const raw = settings.get(KEYS.LADDER);
+    expect(raw, `no migration seeds ${KEYS.LADDER}`).toBeTruthy();
+
+    const reasons = [];
+    const parsed = parseLadder(raw, (r) => reasons.push(r));
+    expect(reasons).toEqual([]);
+    expect(parsed).toEqual(DEFAULT_WARMUP_LADDER);
+  });
+
+  it("starts a brand-new sender at the FIRST rung, not the last", async () => {
+    const settings = await settingsAfterMigrations();
+    const ladder = resolveLadder({
+      rawLadder: settings.get(KEYS.LADDER),
+      rawFlatLimit: settings.get(KEYS.FLAT),
+    });
+
+    // The regression itself: with the flat limit seeded and no ladder, this resolved
+    // to [{ throughDay: null, dailyLimit: 200 }] and day 1 returned 200.
+    expect(ladder.length).toBeGreaterThan(1);
+    expect(effectiveDailyLimit({ firstSendAt: null }, ladder)).toBe(50);
+    expect(effectiveDailyLimit({ firstSendAt: daysAgo(0) }, ladder)).toBe(50);
+    expect(effectiveDailyLimit({ firstSendAt: daysAgo(4) }, ladder)).toBe(100);
+    expect(effectiveDailyLimit({ firstSendAt: daysAgo(10) }, ladder)).toBe(200);
+  });
+
+  it("leaves a brand-new sender visibly climbing rather than topped out", async () => {
+    const settings = await settingsAfterMigrations();
+    const ladder = resolveLadder({
+      rawLadder: settings.get(KEYS.LADDER),
+      rawFlatLimit: settings.get(KEYS.FLAT),
+    });
+    // isFinalStage drives the banner's wording. Under the regression a day-1 sender
+    // was on the terminal stage, so the dashboard told them their limit "is now 200
+    // emails — the highest step" before they had sent anything at all.
+    const day1 = stageForDay(ladder, warmupDayIndex(null));
+    expect(day1.isFinal).toBe(false);
+    expect(nextStage(ladder, 1)).toEqual({ dailyLimit: 100, inDays: 3 });
+  });
+
+  it("keeps the warm-up window at the documented duration", async () => {
+    const settings = await settingsAfterMigrations();
+    expect(resolveDurationDays(settings.get(KEYS.DURATION))).toBe(DEFAULT_WARMUP_DURATION_DAYS);
+  });
+
+  it("retires the dead platform-identity limit (ADR-009)", async () => {
+    const settings = await settingsAfterMigrations();
+    expect(settings.has("warmup_platform_identity_daily_limit")).toBe(false);
+  });
+});
+
 describe("one source of truth for the ladder", () => {
+  // The guard below scans source only, which is where the four original copies lived.
+  // It could never have caught the fifth copy, because that one was a row in the
+  // database: migration 0003's `warmup_custom_domain_daily_limit = '200'` outranked
+  // the shipped ladder and was the number actually in force in production. A limit
+  // seeded as a scalar is indistinguishable from an operator's deliberate choice, so
+  // the ladder is the only form a warm-up volume may be seeded in.
+  it("no migration seeds a warm-up daily limit outside the ladder", async () => {
+    const { readdir, readFile } = await import("fs/promises");
+    const path = await import("path");
+    const dir = path.resolve(import.meta.dirname, "..", "..", "migrations");
+
+    const offenders = [];
+    for (const file of (await readdir(dir)).filter((f) => f.endsWith(".sql"))) {
+      const sql = await readFile(path.join(dir, file), "utf-8");
+      for (const block of sql.split(/INSERT\s+INTO\s+"?platform_settings"?/i).slice(1)) {
+        for (const [, key] of block.split(/;/)[0].matchAll(/\(\s*'([a-z0-9_]+)'\s*,/gi)) {
+          // A scalar daily-limit key. `warmup_ramp_schedule` is the sanctioned shape;
+          // `warmup_duration_days` is a window length, not a volume.
+          if (/^warmup_.*(daily_limit|limit)$/.test(key)) offenders.push(`${file}: ${key}`);
+        }
+      }
+    }
+    // 0003 is applied history and must not be rewritten. Both of its scalar seeds are
+    // neutralised rather than edited: 0007 seeds the ladder, which outranks the custom
+    // -domain limit, and DELETEs the platform-identity key (dead since ADR-009). This
+    // list is a frozen baseline — any NEW entry is the regression coming back.
+    expect(offenders).toEqual([
+      "0003_m13b_trust_fields.sql: warmup_custom_domain_daily_limit",
+      "0003_m13b_trust_fields.sql: warmup_platform_identity_daily_limit",
+    ]);
+  });
+
   // The defect this milestone set out to remove: the flat default was written into
   // four files, two of them user-visible, with nothing keeping them in sync. This
   // guard fails if a warm-up number is ever reintroduced outside the policy module.

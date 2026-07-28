@@ -50,6 +50,13 @@
       "when": 1783274607419,
       "tag": "0006_credit_transactions_campaign_id_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0007_warmup_ladder_seed",
+      "breakpoints": true
     }
   ]
 }
