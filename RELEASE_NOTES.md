@@ -2,13 +2,28 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-27 (v2.3.0)
+**Last updated:** 2026-07-28 (v2.3.1)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.3.0 (2026-07-27)
+## Current Release — v2.3.1 (2026-07-28)
+
+**The gradual sending ramp announced in v2.3.0 is now actually applied.**
+
+v2.3.0 described a daily limit that starts at 50 emails and grows to 200 over your first week. The ramp was built and tested, but it was never switched on: an older, single sending limit left over from an earlier version of RepMail took precedence over it. The practical effect was that **every domain, including a brand-new one, was allowed 200 emails a day from its first send** — the full-volume limit, with no ramp at all.
+
+- **New domains now genuinely start at 50 a day**, rise to 100 on day four, and reach 200 on day eight, exactly as v2.3.0 described.
+- **Nothing you own changed.** This affects only how fast emails leave, never your credits, your balance or your campaigns. No credits were consumed by the fault and none were refunded, because none were lost.
+- **If you have been sending for more than a week, you will notice no difference** — you were already past the point where the ramp tops out.
+- **Your dashboard now shows which step you are on.** The schedule marks your current position, so "why is my limit this number" is answerable at a glance.
+
+If you started a domain recently and sent at high volume in your first days, that volume was permitted by us, not by you — but it is worth watching your delivery rates over the next couple of weeks, since early high-volume sending is exactly what mailbox providers penalise.
+
+---
+
+## Previous Release — v2.3.0 (2026-07-27)
 
 **Your sending limit now grows with your domain, and large campaigns finish on their own.**
 

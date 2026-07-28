@@ -114,7 +114,13 @@ export default function SenderHealthWidget() {
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="font-medium text-foreground">{text}</span>
-        {explainer && <WarmupExplainer ladder={warmup?.ladder} durationDays={warmup?.totalDays} />}
+        {explainer && (
+          <WarmupExplainer
+            ladder={warmup?.ladder}
+            durationDays={warmup?.totalDays}
+            dayIndex={warmup?.dayIndex}
+          />
+        )}
       </div>
       {detail && <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>}
     </Banner>

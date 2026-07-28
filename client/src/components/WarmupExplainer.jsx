@@ -1,6 +1,6 @@
 import { HelpCircle } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { DEFAULT_WARMUP_LADDER, DEFAULT_WARMUP_DURATION_DAYS } from "@shared/warmupPolicy";
+import { DEFAULT_WARMUP_LADDER, DEFAULT_WARMUP_DURATION_DAYS, stageForDay } from "@shared/warmupPolicy";
 
 // The single explanation of why sending limits rise. Rendered from the live ladder
 // served by the backend, so the schedule shown can never drift from the schedule
@@ -22,9 +22,14 @@ function stageLabel(stage, previousThroughDay) {
 // Exported separately from the popover shell so the copy and the schedule can be
 // asserted directly — Radix keeps popover content unmounted while closed, so a test
 // that rendered the shell would only ever see the trigger.
-export function WarmupScheduleContent({ ladder, durationDays }) {
+export function WarmupScheduleContent({ ladder, durationDays, dayIndex }) {
   const stages = ladder?.length ? ladder : DEFAULT_WARMUP_LADDER;
   const totalDays = durationDays || DEFAULT_WARMUP_DURATION_DAYS;
+  // Which rung the reader is standing on. Resolved through the same policy the server
+  // enforces rather than re-deriving it from throughDay here — this table must never
+  // become a second opinion about the ladder. Absent dayIndex (onboarding, where the
+  // customer has no sending history yet) simply renders the schedule unmarked.
+  const currentIndex = Number.isFinite(dayIndex) ? stageForDay(stages, dayIndex).index : -1;
   let previousThroughDay = 0;
 
   return (
@@ -32,11 +37,9 @@ export function WarmupScheduleContent({ ladder, durationDays }) {
         <p className="font-medium text-foreground">Why your daily limit grows</p>
 
         <p className="text-muted-foreground">
-          Gmail, Outlook and other email providers decide whether your emails reach the inbox
-          partly by watching how your domain behaves over time. A brand-new domain that
-          suddenly sends at full volume looks like spam, even when everything is set up
-          correctly. Starting smaller and building up is what earns your emails a place in
-          the inbox.
+          Gmail and Outlook watch how a new domain behaves before trusting it. Sending a
+          lot straight away looks like spam — building up gradually is what keeps your
+          emails out of the spam folder.
         </p>
 
         <div className="rounded-md border border-border">
@@ -46,10 +49,25 @@ export function WarmupScheduleContent({ ladder, durationDays }) {
               {stages.map((stage, i) => {
                 const label = stageLabel(stage, previousThroughDay);
                 previousThroughDay = stage.throughDay ?? previousThroughDay;
+                const isCurrent = i === currentIndex;
                 return (
-                  <tr key={i} className={i > 0 ? "border-t border-border" : undefined}>
-                    <th scope="row" className="px-3 py-2 text-left font-normal text-muted-foreground">
+                  <tr
+                    key={i}
+                    // aria-current carries the "you are here" meaning for screen
+                    // readers; the background alone would be colour-only signalling.
+                    aria-current={isCurrent ? "step" : undefined}
+                    className={`${i > 0 ? "border-t border-border" : ""}${isCurrent ? " bg-muted" : ""}`}
+                  >
+                    <th
+                      scope="row"
+                      className={`px-3 py-2 text-left font-normal ${isCurrent ? "text-foreground" : "text-muted-foreground"}`}
+                    >
                       {label}
+                      {isCurrent && (
+                        <span className="ml-2 rounded-sm bg-primary/10 px-1.5 py-0.5 text-[0.625rem] font-medium text-primary">
+                          You're here
+                        </span>
+                      )}
                     </th>
                     <td className="px-3 py-2 text-right font-medium text-foreground">
                       {stage.dailyLimit.toLocaleString()}/day
@@ -79,7 +97,7 @@ export function WarmupScheduleContent({ ladder, durationDays }) {
   );
 }
 
-export default function WarmupExplainer({ ladder, durationDays, className }) {
+export default function WarmupExplainer({ ladder, durationDays, dayIndex, className }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -92,7 +110,7 @@ export default function WarmupExplainer({ ladder, durationDays, className }) {
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 text-sm">
-        <WarmupScheduleContent ladder={ladder} durationDays={durationDays} />
+        <WarmupScheduleContent ladder={ladder} durationDays={durationDays} dayIndex={dayIndex} />
       </PopoverContent>
     </Popover>
   );

@@ -42,6 +42,14 @@ export default function Onboarding() {
   const ladder = config?.warmup?.ladder?.length ? config.warmup.ladder : DEFAULT_WARMUP_LADDER;
   const firstLimit = ladder[0].dailyLimit;
   const fullLimit = ladder[ladder.length - 1].dailyLimit;
+  // A ladder can legitimately be a single flat stage (an operator who configures one
+  // limit rather than a ramp). Describing that as "start at 200 and build up to 200
+  // over your first N days" is the sentence production actually served while the
+  // ladder was unseeded — so the climb is only described when there is one.
+  const climbs = fullLimit > firstLimit;
+  // How long the climb lasts, from the ladder itself: the last rung before the
+  // terminal stage. Hardcoding "your first week" would misdescribe a reshaped ladder.
+  const climbDays = [...ladder].reverse().find((s) => s.throughDay !== null)?.throughDay ?? null;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -211,13 +219,21 @@ export default function Onboarding() {
             </div>
 
             <div className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <p>
-                New domains start at <span className="font-medium text-foreground">{firstLimit} emails a day</span> and
-                build up to <span className="font-medium text-foreground">{fullLimit} a day</span> over your first
-                week. Starting gently is what gets your emails into the inbox instead of the spam
-                folder — and if a campaign is bigger than a day&apos;s limit, it carries on the next
-                day by itself.
-              </p>
+              {climbs ? (
+                <p>
+                  New domains start at <span className="font-medium text-foreground">{firstLimit} emails a day</span> and
+                  build up to <span className="font-medium text-foreground">{fullLimit} a day</span>
+                  {climbDays ? <> over your first {climbDays} days</> : null}. Starting gently is
+                  what gets your emails into the inbox instead of the spam folder — and if a
+                  campaign is bigger than a day&apos;s limit, it carries on the next day by itself.
+                </p>
+              ) : (
+                <p>
+                  New domains can send <span className="font-medium text-foreground">{fullLimit} emails a day</span>.
+                  If a campaign is bigger than a day&apos;s limit, it carries on the next day by
+                  itself.
+                </p>
+              )}
               <p>
                 Credits are separate: 1 credit = 1 email, used only when a campaign actually
                 sends — never for drafts, previews or templates — and they never expire.

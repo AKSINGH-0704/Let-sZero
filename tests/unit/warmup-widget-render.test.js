@@ -58,9 +58,9 @@ beforeAll(async () => {
 
   render = (qc) => clean(renderToString(makeTree(qc)));
 
-  renderExplainer = (ladder) =>
+  renderExplainer = (ladder, dayIndex) =>
     clean(renderToString(React.createElement(TooltipProvider, null,
-      React.createElement(WarmupExplainer, { ladder }))));
+      React.createElement(WarmupExplainer, { ladder, dayIndex }))));
   renderShell = (ladder) =>
     clean(renderToString(React.createElement(TooltipProvider, null,
       React.createElement(WarmupShell, { ladder }))));
@@ -262,6 +262,36 @@ describe("MXX — warm-up explainer content", () => {
     expect(html).toContain("50/day");
     expect(html).toContain("Day 8 onwards");
     expect(html).toContain("200/day");
+  });
+
+  // The schedule answers "why is my limit what it is"; without a position marker the
+  // reader still has to work out which row is theirs. The marker is resolved through
+  // stageForDay, so it can never point at a different rung than the one enforced.
+  describe("marking where the customer currently stands", () => {
+    // The row is <th>label</th><td>N/day</td>, so this reads the marked row's limit.
+    const markedLimit = (html) =>
+      html.match(/aria-current="step"[\s\S]*?<td[^>]*>([\d,]+)\/day/)?.[1] ?? null;
+
+    it("marks the rung the day index falls on", () => {
+      expect(markedLimit(renderExplainer(LADDER, 1))).toBe("50");
+      expect(markedLimit(renderExplainer(LADDER, 3))).toBe("50");
+      expect(markedLimit(renderExplainer(LADDER, 4))).toBe("100");
+      expect(markedLimit(renderExplainer(LADDER, 7))).toBe("100");
+      expect(markedLimit(renderExplainer(LADDER, 8))).toBe("200");
+      expect(markedLimit(renderExplainer(LADDER, 26))).toBe("200");
+    });
+
+    it("marks exactly one rung, and labels it in text rather than colour alone", () => {
+      const html = renderExplainer(LADDER, 4);
+      expect(html.match(/aria-current="step"/g)).toHaveLength(1);
+      expect(html).toContain("You&#x27;re here");
+    });
+
+    it("renders the schedule unmarked where there is no day index (onboarding)", () => {
+      const html = renderExplainer(LADDER);
+      expect(html).not.toContain('aria-current="step"');
+      expect(html).not.toContain("You&#x27;re here");
+    });
   });
 });
 
