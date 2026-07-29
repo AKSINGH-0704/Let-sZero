@@ -11,7 +11,7 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import {
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS, PAYMENT_KIND,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
   INACTIVITY_THRESHOLDS, MONTHLY_CREDITS, normalizeEmail
 } from "../shared/schema.js";
@@ -1661,6 +1661,11 @@ export const memoryStorage = {
     const payment = {
       id,
       userId: paymentData.userId,
+      // M42 — CREDITS unless a seat checkout says otherwise, matching the column
+      // default. Whitelisted explicitly here (unlike dbStorage, which spreads),
+      // so a new payment field must be added deliberately in both backends.
+      kind: paymentData.kind || PAYMENT_KIND.CREDITS,
+      subscriptionId: paymentData.subscriptionId || null,
       planName: paymentData.planName,
       credits: paymentData.credits,
       amountUsd: paymentData.amountUsd,
@@ -1697,6 +1702,28 @@ export const memoryStorage = {
     return payment;
   },
 
+  // M42 parity — see storage.js updatePayment.
+  async updatePayment(paymentId, { subscriptionId = undefined, metadata = undefined }) {
+    const payment = store.payments.get(paymentId);
+    if (!payment) return null;
+    if (subscriptionId !== undefined) payment.subscriptionId = subscriptionId;
+    if (metadata !== undefined) payment.metadata = metadata;
+    return payment;
+  },
+
+  // M42 parity — see storage.js transitionPaymentToRefunded.
+  async transitionPaymentToRefunded(paymentId, { providerRefundId = null, reason = "seat_refund" } = {}) {
+    const payment = store.payments.get(paymentId);
+    if (!payment) return { ok: false, error: "not_found" };
+    if (payment.status === PAYMENT_STATUS.REFUNDED) return { ok: true, payment, alreadyRefunded: true };
+    if (!canTransition(payment.status, PAYMENT_STATUS.REFUNDED)) {
+      return { ok: false, error: "not_refundable", fromStatus: payment.status };
+    }
+    payment.status = PAYMENT_STATUS.REFUNDED;
+    payment.metadata = { ...(payment.metadata || {}), refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId };
+    return { ok: true, payment };
+  },
+
   async completePayment(paymentId, transactionId) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
@@ -1706,6 +1733,20 @@ export const memoryStorage = {
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.transactionId = transactionId;
     payment.completedAt = new Date();
+
+    // M42 parity with storage.js — a SEATS payment buys a service period, not
+    // credits. No credit mutation, no credit_transactions row: seat money must
+    // never enter the credit ledger. Entitlement is applied by fulfillSeats.
+    if (payment.kind === PAYMENT_KIND.SEATS) {
+      await this.createAuditLog({
+        userId: payment.userId,
+        action: AUDIT_ACTIONS.PAYMENT_SUCCESS,
+        targetType: "payment",
+        targetId: paymentId,
+        details: { kind: payment.kind, transactionId, credits: 0 },
+      });
+      return { payment, credited: false };
+    }
 
     // Credit user account
     const user = store.users.get(payment.userId);
@@ -1793,6 +1834,11 @@ export const memoryStorage = {
   async refundPayment(paymentId, { reason = "operator_refund", actor = "system", providerRefundId = null } = {}) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
+
+    // M42 parity — a seat payment granted no credits; see storage.js.
+    if (payment.kind === PAYMENT_KIND.SEATS) {
+      return { payment, refunded: false, error: "seat_payment_wrong_path", kind: payment.kind };
+    }
 
     if (payment.status === PAYMENT_STATUS.REFUNDED) {
       return { payment, refunded: false, alreadyRefunded: true };

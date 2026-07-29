@@ -48,6 +48,15 @@ const PUBLIC = new Set([
   "/api/invites/accept",
   "/api/pricing/plans",
   "/api/pricing/quote",
+  // M42 — the seat catalog and seat quote are public for the same reason the
+  // credit pricing surface is: the marketing pricing page must quote through the
+  // SAME engine that checkout uses, so the advertised price and the charged price
+  // cannot diverge. Both are read-only and derive from configuration alone — they
+  // read no workspace, no subscription and no user. Every seat route that touches
+  // a workspace or moves money (/subscription, /preview, /checkout, /cancel,
+  // /resume) is authenticated and deliberately absent from this list.
+  "/api/seats/catalog",
+  "/api/seats/quote",
   "/api/contact",
   "/api/waitlist",
 ]);

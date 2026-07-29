@@ -2,6 +2,11 @@ import crypto from "crypto";
 import * as Sentry from "@sentry/node";
 import { storage } from "./storage.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
+// M42 — seats are a separate product with a separate reversal. Every branch below
+// that moves value forks on payment KIND; a seat payment must never reach the
+// credit clawback path (it granted no credits, so the clawback is a silent no-op
+// that would mark the payment REFUNDED while the seats stayed live).
+import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 import { sendPaymentReceiptEmail } from "./email.js";
 import { PAYMENT_STATUS } from "../shared/schema.js";
 
@@ -81,16 +86,32 @@ export async function razorpayWebhookHandler(req, res) {
 
       const transactionId = payment?.id || order.id;
       const { payment: completedPayment, credited } = await storage.completePayment(repPayment.id, transactionId);
-      await upgradePlanIfHigher(repPayment.userId, repPayment.planName, repPayment.id);
-      if (credited) {
+
+      if (isSeatPayment(completedPayment)) {
+        // Seats grant no credits and never move the plan ladder — plan is derived
+        // from credit volume, and a seat purchase says nothing about volume.
+        const applied = await fulfillSeatPayment(completedPayment);
+        console.log(
+          `[RZP-WEBHOOK] order.paid — ${repPayment.id} SEATS ${applied.applied ? "fulfilled" : `skipped (${applied.reason})`}`
+        );
         const user = await storage.getUserById(repPayment.userId);
-        if (user) {
+        if (user && applied.applied) {
           sendPaymentReceiptEmail(user.email, user.username, completedPayment, user.creditsRemaining).catch(err =>
-            console.error("[EMAIL] Webhook payment receipt failed:", err.message)
+            console.error("[EMAIL] Webhook seat receipt failed:", err.message)
           );
         }
+      } else {
+        await upgradePlanIfHigher(repPayment.userId, repPayment.planName, repPayment.id);
+        if (credited) {
+          const user = await storage.getUserById(repPayment.userId);
+          if (user) {
+            sendPaymentReceiptEmail(user.email, user.username, completedPayment, user.creditsRemaining).catch(err =>
+              console.error("[EMAIL] Webhook payment receipt failed:", err.message)
+            );
+          }
+        }
+        console.log(`[RZP-WEBHOOK] order.paid — ${repPayment.id} completed, plan upgraded for user ${repPayment.userId}`);
       }
-      console.log(`[RZP-WEBHOOK] order.paid — ${repPayment.id} completed, plan upgraded for user ${repPayment.userId}`);
 
     } else if (eventType === "payment.failed") {
       const payment = event.payload?.payment?.entity;
@@ -136,6 +157,29 @@ export async function razorpayWebhookHandler(req, res) {
         });
         return res.status(200).json({ received: true });
       }
+      if (isSeatPayment(repPayment)) {
+        // A seat refund reverses a SERVICE PERIOD: end the entitlement and bring
+        // headcount back inside it. Members are deactivated (restorable), never
+        // deleted, and no credit is touched.
+        const seatResult = await reverseSeatPayment(repPayment, {
+          reason: `provider_refund:${eventType}`, actor: "razorpay_webhook",
+        });
+        await storage.transitionPaymentToRefunded(repPayment.id, {
+          providerRefundId: refund?.id || null, reason: `provider_refund:${eventType}`,
+        });
+        console.log(
+          `[RZP-WEBHOOK] ${eventType} — SEATS payment ${repPayment.id} reversed=${seatResult.reversed} ` +
+          `deactivated=${seatResult.deactivated?.length ?? 0}`
+        );
+        if (seatResult.deactivated?.length) {
+          Sentry.captureMessage("SEAT_REFUND_MEMBERS_DEACTIVATED: members deactivated by a seat refund", {
+            level: "warning",
+            extra: { paymentId: repPayment.id, count: seatResult.deactivated.length, refundId: refund?.id },
+          });
+        }
+        return res.status(200).json({ received: true });
+      }
+
       const result = await storage.refundPayment(repPayment.id, {
         reason: `provider_refund:${eventType}`,
         actor: "razorpay_webhook",
@@ -173,7 +217,19 @@ export async function razorpayWebhookHandler(req, res) {
       console.warn(`[RZP-WEBHOOK] Dispute LOST — id=${dispute?.id} — reversing credits`);
       const rzpPaymentId = dispute?.payment_id;
       const repPayment = rzpPaymentId ? await storage.getPaymentByTransactionId(rzpPaymentId) : null;
-      if (repPayment) {
+      if (repPayment && isSeatPayment(repPayment)) {
+        const seatResult = await reverseSeatPayment(repPayment, {
+          reason: `dispute_lost:${dispute?.id}`, actor: "razorpay_webhook",
+        });
+        await storage.transitionPaymentToRefunded(repPayment.id, { reason: `dispute_lost:${dispute?.id}` });
+        Sentry.captureMessage("PAYMENT_DISPUTE_LOST: seat entitlement reversed", {
+          level: "warning",
+          extra: {
+            disputeId: dispute?.id, paymentId: repPayment.id,
+            reversed: seatResult.reversed, deactivated: seatResult.deactivated?.length ?? 0,
+          },
+        });
+      } else if (repPayment) {
         const result = await storage.refundPayment(repPayment.id, {
           reason: `dispute_lost:${dispute?.id}`,
           actor: "razorpay_webhook",

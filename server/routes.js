@@ -1,7 +1,7 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { Readable } from "stream";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, AI_DAILY_LIMITS, normalizeEmail } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, PAYMENT_KIND, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, AI_DAILY_LIMITS, normalizeEmail } from "../shared/schema.js";
 import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
@@ -18,6 +18,16 @@ import { rzp, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } from "./gateways.js";
 import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { provisionEnterprise } from "./enterprise.js";
 import { generateQuote, isCurrencySupported, MAX_SELF_SERVE_CREDITS, PRICING_VERSION } from "../shared/pricing.js";
+// M42 — seat commerce. Pricing, entitlement and lifecycle all resolve through the
+// shared authorities; routes.js only orchestrates.
+import {
+  quoteSeats, previewSeatChange, previewRenewal, buildInvoiceLines,
+  getSeatCatalog, SEAT_TERMS,
+} from "../shared/seatPricing.js";
+import { seatsAtRisk } from "../shared/seatEntitlement.js";
+import { SUBSCRIPTION_STATUS } from "../shared/subscriptionStateMachine.js";
+import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
+import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
 import { classifyUserAgent } from "./trackingClassifier.js";
@@ -3451,6 +3461,307 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // ─── SEAT COMMERCE (M42) ──────────────────────────────────────────────────
+  // Every seat price the customer ever sees comes from the server. The client
+  // sends only a SELECTION (seats + term); it never supplies or computes money.
+
+  // Public catalog — powers the marketing pricing page with no auth.
+  app.get("/api/seats/catalog", async (_req, res) => {
+    try {
+      const catalog = getSeatCatalog();
+      res.json({
+        bands: catalog.bands,
+        annualDiscount: catalog.annualDiscount,
+        terms: Object.values(SEAT_TERMS),
+        currency: catalog.currency,
+        includedSeats: catalog.includedSeats,
+        selfServeMaxSeats: catalog.selfServeMaxSeats,
+        softCapSeats: catalog.softCapSeats,
+        bestPriceGuarantee: catalog.bestPriceGuarantee,
+        pricingVersion: catalog.version,
+        enterpriseContactPath: ENTERPRISE_CONTACT_PATH,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Server-authoritative seat quote. Unauthenticated so the public pricing page
+  // uses the SAME engine as checkout — the number on the marketing page and the
+  // number charged cannot diverge.
+  app.post("/api/seats/quote", async (req, res) => {
+    try {
+      const { seats, term = SEAT_TERMS.MONTHLY.id, couponCode = null, region } = req.body || {};
+      const quote = quoteSeats({ seats, term, couponCode, region });
+      if (quote.error) return res.status(400).json({ message: quote.error, code: quote.code });
+      res.json({ quote, invoiceLines: buildInvoiceLines(quote) });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // The workspace's current seat position: entitlement, usage, subscription, and
+  // the renewal preview. One call so the Team page and the Seats page cannot
+  // disagree about how many seats exist or what renews when.
+  app.get("/api/seats/subscription", authMiddleware, async (req, res) => {
+    try {
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const e = await storage.resolveSeatEntitlement(rootId);
+      const [used, pendingInvites] = await Promise.all([
+        storage.getActiveWorkspaceMemberCount(rootId),
+        storage.getPendingWorkspaceInviteCount(rootId),
+      ]);
+      const sub = e.subscription;
+      const renewal = sub
+        ? previewRenewal({
+          seats: sub.scheduledSeats ?? sub.seats,
+          term: sub.scheduledTerm || sub.term,
+          region: sub.region,
+          unitPriceOverrideMinor: sub.unitPriceOverrideMinor,
+          at: sub.periodEnd,
+        })
+        : null;
+      res.json({
+        entitlement: {
+          seats: e.seats === Infinity ? null : e.seats,
+          unlimited: e.unlimited,
+          source: e.source,
+        },
+        usage: { activeMembers: used, pendingInvites },
+        billingEnabled: e.config.billingEnabled,
+        isOwner: isWorkspaceOwner(req.user),
+        subscription: sub ? {
+          id: sub.id, status: sub.status, seats: sub.seats, term: sub.term,
+          periodStart: sub.periodStart, periodEnd: sub.periodEnd,
+          scheduledSeats: sub.scheduledSeats, scheduledTerm: sub.scheduledTerm,
+          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+          renewalAmountMinor: sub.renewalAmountMinor,
+          currency: sub.currency, pricingVersion: sub.pricingVersion,
+          graceEndsAt: sub.graceEndsAt,
+        } : null,
+        renewal: renewal && !renewal.error
+          ? { seats: renewal.seats, term: renewal.term, totalMinor: renewal.totalMinor, at: renewal.at }
+          : null,
+        seatsAtRisk: sub ? seatsAtRisk({ subscription: sub, effectivePlan: e.effectivePlan, freeFloor: e.config.freeFloor }) : 0,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Deterministic preview of a seat/term change: the exact amount that will be
+  // charged, when it takes effect, and what renews. The UI renders this verbatim
+  // and checkout recomputes it — so the number shown IS the number billed.
+  app.post("/api/seats/preview", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const { seats, term = null, couponCode = null } = req.body || {};
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const sub = await storage.getWorkspaceSubscription(rootId);
+      const preview = previewSeatChange({
+        current: sub ? {
+          seats: sub.seats, term: sub.term, version: sub.pricingVersion,
+          periodStart: sub.periodStart, periodEnd: sub.periodEnd,
+          unitPriceOverrideMinor: sub.unitPriceOverrideMinor,
+        } : null,
+        nextSeats: seats,
+        nextTerm: term,
+        couponCode,
+      });
+      if (preview.error) return res.status(400).json({ message: preview.error, code: preview.code });
+      res.json({
+        preview,
+        invoiceLines: preview.quote ? buildInvoiceLines(preview.quote) : [],
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Begin a seat purchase. Only a workspace OWNER may spend the workspace's
+  // money — billing authority is tree position (ADR-017), never a role, and
+  // never a platform operator acting on a customer's behalf.
+  app.post("/api/seats/checkout", authMiddleware, adminMiddleware, paymentInitiateLimiter, async (req, res) => {
+    try {
+      const { seats, term = SEAT_TERMS.MONTHLY.id, couponCode = null } = req.body || {};
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({ message: "Only the workspace owner can buy seats.", code: "NOT_WORKSPACE_OWNER" });
+      }
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const config = await storage.getSeatCommerceConfig();
+      if (!config.billingEnabled) {
+        return res.status(409).json({ message: "Seat purchasing isn't available yet.", code: "SEAT_BILLING_DISABLED" });
+      }
+
+      const sub = await storage.getWorkspaceSubscription(rootId);
+      const preview = previewSeatChange({
+        current: sub ? {
+          seats: sub.seats, term: sub.term, version: sub.pricingVersion,
+          periodStart: sub.periodStart, periodEnd: sub.periodEnd,
+          unitPriceOverrideMinor: sub.unitPriceOverrideMinor,
+        } : null,
+        nextSeats: seats,
+        nextTerm: term,
+        couponCode,
+      });
+      if (preview.error) return res.status(400).json({ message: preview.error, code: preview.code });
+      if (preview.isEnterprise) {
+        return res.status(409).json({
+          message: "That team size is priced by our sales team.",
+          code: "ENTERPRISE_REQUIRED", isEnterprise: true,
+          contactPath: buildEnterpriseContactPath({ seats: Number(seats) }),
+        });
+      }
+
+      // A downgrade or term switch moves no money — record the schedule and
+      // return. This is the whole reason mid-term refunds don't exist here.
+      if (preview.chargeNowMinor === 0) {
+        const scheduled = preview.scheduled;
+        if (!scheduled) return res.json({ applied: false, preview, noop: true });
+        await storage.scheduleSeatChange(rootId, {
+          seats: scheduled.seats, term: scheduled.term,
+          renewalAmountMinor: preview.renewal?.totalMinor ?? null,
+        });
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.SUBSCRIPTION_CHANGE_SCHEDULED,
+          targetType: "subscription",
+          targetId: sub?.id ?? null,
+          details: { workspaceRootId: rootId, kind: preview.kind, scheduled, effectiveAt: scheduled.at },
+        });
+        return res.json({ applied: true, scheduled: true, preview });
+      }
+
+      // Seat intent travels on the payment row so fulfillment needs no session
+      // and survives a webhook arriving days later.
+      const seatMeta = {
+        seats: preview.quote.seatsGranted,
+        // What the buyer asked for, kept alongside the granted total so the free
+        // seats the best-price guarantee added remain provable after the fact.
+        requestedSeats: Number(seats),
+        term: preview.quote.term,
+        pricingVersion: preview.quote.version,
+        region: preview.quote.region,
+        couponCode: preview.quote.coupon?.rejected ? null : (preview.quote.coupon?.code ?? null),
+        unitPriceOverrideMinor: sub?.unitPriceOverrideMinor ?? null,
+        workspaceRootId: rootId,
+        isRenewal: false,
+        changeKind: preview.kind,
+      };
+      const amountInr = Math.round(preview.chargeNowMinor / 100);
+      const planLabel = `Team Seats — ${preview.quote.seatsGranted} × ${SEAT_TERMS[preview.quote.term].label}`;
+
+      if (process.env.NODE_ENV !== "production") {
+        const payment = await storage.createPayment({
+          userId: req.user.id, kind: PAYMENT_KIND.SEATS,
+          planName: planLabel, credits: 0,
+          amountUsd: Math.round(amountInr / DEFAULT_EXCHANGE_RATE), amountInr, amountLocal: amountInr,
+          currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
+          paymentMethod: "SIMULATED", status: PAYMENT_STATUS.SUCCESS,
+          metadata: seatMeta,
+        });
+        const applied = await fulfillSeatPayment(payment);
+        return res.json({ payment, applied, preview, redirectUrl: "/app/team/seats" });
+      }
+
+      if (!rzp) return res.status(503).json({ message: "INR payments not configured. Contact support." });
+      const rzpOrder = await rzp.orders.create({
+        amount: preview.chargeNowMinor, currency: "INR", receipt: crypto.randomUUID(),
+      });
+      const payment = await storage.createPayment({
+        userId: req.user.id, kind: PAYMENT_KIND.SEATS,
+        planName: planLabel, credits: 0,
+        amountUsd: Math.round(amountInr / DEFAULT_EXCHANGE_RATE), amountInr, amountLocal: amountInr,
+        currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
+        paymentMethod: "RAZORPAY", status: PAYMENT_STATUS.PENDING,
+        metadata: { ...seatMeta, razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
+      });
+      return res.json({
+        payment, preview, gateway: "razorpay",
+        razorpayOrderId: rzpOrder.id, razorpayKeyId: RAZORPAY_KEY_ID,
+        amount: preview.chargeNowMinor, currency: "INR",
+        redirectUrl: `/app/payments/process/${payment.id}`,
+      });
+    } catch (error) {
+      console.error("[SEATS] Checkout error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Stop auto-renewal. The team keeps every seat until periodEnd — cancelling is
+  // never retroactive and never refunds, which is what makes it safe to offer
+  // self-serve instead of through support.
+  app.post("/api/seats/cancel", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({ message: "Only the workspace owner can change billing.", code: "NOT_WORKSPACE_OWNER" });
+      }
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const sub = await storage.getWorkspaceSubscription(rootId);
+      if (!sub) return res.status(404).json({ message: "No active seat subscription." });
+
+      const result = await storage.transitionSubscription(sub.id, SUBSCRIPTION_STATUS.CANCEL_SCHEDULED, { cancelAtPeriodEnd: true });
+      if (!result.ok) return res.status(409).json({ message: "Subscription cannot be cancelled.", ...result });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.SUBSCRIPTION_CANCEL_SCHEDULED,
+        targetType: "subscription", targetId: sub.id,
+        details: { workspaceRootId: rootId, seatsUntil: sub.periodEnd, seats: sub.seats },
+      });
+      res.json({ subscription: result.subscription, seatsUntil: sub.periodEnd });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/seats/resume", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({ message: "Only the workspace owner can change billing.", code: "NOT_WORKSPACE_OWNER" });
+      }
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const sub = await storage.getWorkspaceSubscription(rootId);
+      if (!sub) return res.status(404).json({ message: "No seat subscription to resume." });
+      const result = await storage.transitionSubscription(sub.id, SUBSCRIPTION_STATUS.ACTIVE, { cancelAtPeriodEnd: false });
+      if (!result.ok) return res.status(409).json({ message: "Subscription cannot be resumed.", ...result });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.SUBSCRIPTION_RESUMED,
+        targetType: "subscription", targetId: sub.id, details: { workspaceRootId: rootId },
+      });
+      res.json({ subscription: result.subscription });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Workspace ownership transfer. Prerequisite for a subscription: the owner is
+  // the sole billing authority, so without this a departed owner leaves a
+  // workspace that cannot pay its renewal.
+  app.post("/api/workspace/transfer-ownership", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const { newOwnerId } = req.body || {};
+      if (!newOwnerId) return res.status(400).json({ message: "newOwnerId is required" });
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({ message: "Only the current workspace owner can transfer ownership.", code: "NOT_WORKSPACE_OWNER" });
+      }
+      if (newOwnerId === req.user.id) {
+        return res.status(400).json({ message: "You already own this workspace." });
+      }
+      const result = await storage.transferWorkspaceOwnership(req.user.id, newOwnerId);
+      if (!result.ok) {
+        const status = result.error === "not_found" ? 404 : 403;
+        return res.status(status).json({ message: "Ownership transfer refused.", code: result.error.toUpperCase() });
+      }
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.WORKSPACE_OWNERSHIP_TRANSFERRED,
+        targetType: "user", targetId: newOwnerId,
+        details: { previousOwnerId: req.user.id, newOwnerId, actor: req.user.username },
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("[WORKSPACE] Transfer error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/credits/info", authMiddleware, async (req, res) => {
     try {
       const info = await storage.getTotalCreditsAvailable(req.user.id);
@@ -3660,6 +3971,22 @@ export async function registerRoutes(httpServer, app) {
       }
 
       const { payment, credited } = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
+
+      // M42 — a seat payment grants seats, not credits, and never moves the plan
+      // ladder (plan is derived from credit volume). Fulfillment is idempotent, so
+      // this racing the webhook is safe: whichever arrives second is a no-op.
+      if (isSeatPayment(payment)) {
+        const applied = await fulfillSeatPayment(payment);
+        const seatUser = await storage.getUserById(payment.userId);
+        if (applied.applied && seatUser) {
+          sendPaymentReceiptEmail(seatUser.email, seatUser.username, payment, seatUser.creditsRemaining).catch(err =>
+            console.error("[EMAIL] Seat receipt failed:", err.message)
+          );
+        }
+        console.log(`[RAZORPAY] Seat payment ${repmail_payment_id} verified — ${applied.applied ? "fulfilled" : applied.reason}`);
+        return res.json({ payment, applied, user: storage.sanitizeUser(seatUser) });
+      }
+
       const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);
       if (credited) {
         const emailUser = await storage.getUserById(payment.userId);
@@ -3778,6 +4105,18 @@ export async function registerRoutes(httpServer, app) {
           console.error("[REFUND] Provider refund failed:", e.message);
           return res.status(502).json({ message: `Provider refund failed: ${e.message}` });
         }
+      }
+
+      // M42 — fork on product. A seat refund reverses a service period; routing it
+      // through the credit clawback would compute a 0-credit reversal and mark the
+      // payment REFUNDED while the workspace kept its seats.
+      if (isSeatPayment(payment)) {
+        const seatResult = await reverseSeatPayment(payment, { reason, actor: req.user.username });
+        const moved = await storage.transitionPaymentToRefunded(id, { providerRefundId, reason });
+        return res.json({
+          payment: moved.payment, refunded: moved.ok && !moved.alreadyRefunded,
+          kind: payment.kind, ...seatResult,
+        });
       }
 
       const result = await storage.refundPayment(id, { reason, actor: req.user.username, providerRefundId });

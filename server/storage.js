@@ -18,7 +18,7 @@ import { isMachineCategory } from "./trackingClassifier.js";
 
 // Import schema constants (always needed)
 import {
-  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS,
+  USER_ROLES, AUDIT_ACTIONS, CAMPAIGN_STATUS, PAYMENT_STATUS, PAYMENT_KIND,
   CAMPAIGN_EMAIL_STATUS, SUPPRESSION_SOURCE, AI_DAILY_LIMITS,
   INACTIVITY_THRESHOLDS, MONTHLY_CREDITS, normalizeEmail
 } from "../shared/schema.js";
@@ -1874,6 +1874,40 @@ const dbStorage = {
     return payment;
   },
 
+  // M42 — narrow payment mutation used by seat fulfillment to record the
+  // subscription it funded and the fulfilled-at marker that makes a replayed
+  // webhook a no-op. Deliberately not a general-purpose setter: it never touches
+  // status (the state machine owns that) or any amount.
+  async updatePayment(paymentId, { subscriptionId = undefined, metadata = undefined }) {
+    const patch = {};
+    if (subscriptionId !== undefined) patch.subscriptionId = subscriptionId;
+    if (metadata !== undefined) patch.metadata = metadata;
+    if (Object.keys(patch).length === 0) return await this.getPayment(paymentId);
+    const [row] = await db.update(payments).set(patch).where(eq(payments.id, paymentId)).returning();
+    return row || null;
+  },
+
+  // M42 — mark a SEATS payment refunded. The money reversal and the entitlement
+  // reversal are separate concerns (fulfillSeats.reverseSeatPayment owns the
+  // latter); this only moves the payment along its state machine, with no credit
+  // mutation. Idempotent, and refuses an illegal transition.
+  async transitionPaymentToRefunded(paymentId, { providerRefundId = null, reason = "seat_refund" } = {}) {
+    const payment = await this.getPayment(paymentId);
+    if (!payment) return { ok: false, error: "not_found" };
+    if (payment.status === PAYMENT_STATUS.REFUNDED) return { ok: true, payment, alreadyRefunded: true };
+    if (!canTransition(payment.status, PAYMENT_STATUS.REFUNDED)) {
+      return { ok: false, error: "not_refundable", fromStatus: payment.status };
+    }
+    const [row] = await db.update(payments)
+      .set({
+        status: PAYMENT_STATUS.REFUNDED,
+        metadata: { ...(payment.metadata || {}), refundedAt: new Date().toISOString(), refundReason: reason, providerRefundId },
+      })
+      .where(and(eq(payments.id, paymentId), eq(payments.status, PAYMENT_STATUS.SUCCESS)))
+      .returning();
+    return row ? { ok: true, payment: row } : { ok: true, payment, alreadyRefunded: true };
+  },
+
   async completePayment(paymentId, transactionId) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
@@ -1899,6 +1933,12 @@ const dbStorage = {
         .returning({ id: payments.id });
 
       if (transitioned.length === 0) return; // concurrent caller won; no credit mutation
+
+      // M42 — a SEATS payment buys a service period, not credits. Writing a
+      // 0-credit "purchase" row here would put seat money into the credit ledger,
+      // which owns credit meaning only. The status transition above is the whole
+      // job; seat entitlement is applied by fulfillSeats.fulfillSeatPayment.
+      if (payment.kind === PAYMENT_KIND.SEATS) return;
 
       await tx.update(users)
         .set({
@@ -1984,6 +2024,15 @@ const dbStorage = {
   async refundPayment(paymentId, { reason = "operator_refund", actor = "system", providerRefundId = null } = {}) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
+
+    // M42 — this method claws back CREDITS. A seat payment granted none, so
+    // running it here would compute a 0-credit clawback and flip the payment to
+    // REFUNDED while the customer kept the seats. Callers must route seat
+    // payments through fulfillSeats.reverseSeatPayment; refuse rather than
+    // silently do the wrong thing to money.
+    if (payment.kind === PAYMENT_KIND.SEATS) {
+      return { payment, refunded: false, error: "seat_payment_wrong_path", kind: payment.kind };
+    }
 
     // Idempotent: a payment already refunded is a success no-op (duplicate provider
     // refund webhook / double operator click must not clawback twice).
