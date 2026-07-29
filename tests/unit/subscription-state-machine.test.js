@@ -10,6 +10,7 @@ import {
   SUBSCRIPTION_STATUS as S,
   SUBSCRIPTION_TRANSITIONS,
   SUBSCRIPTION_ENTITLING_STATUSES,
+  SUBSCRIPTION_LIVE_STATUS_SQL,
   canSubscriptionTransition,
   assertSubscriptionTransition,
   isSubscriptionTerminal,
@@ -38,8 +39,14 @@ describe("transition table", () => {
     }
   });
 
+  it("has no pending state — the payments row owns 'not yet paid'", () => {
+    // A second pending lifecycle would be duplicate state to reconcile. A
+    // subscription row exists only once money has been received.
+    expect(S.PENDING).toBeUndefined();
+    expect(Object.keys(SUBSCRIPTION_TRANSITIONS)).not.toContain("PENDING");
+  });
+
   it.each([
-    [S.PENDING, S.ACTIVE], [S.PENDING, S.CANCELLED],
     [S.ACTIVE, S.PAST_DUE], [S.ACTIVE, S.CANCEL_SCHEDULED], [S.ACTIVE, S.EXPIRED],
     [S.PAST_DUE, S.ACTIVE], [S.PAST_DUE, S.EXPIRED], [S.PAST_DUE, S.CANCEL_SCHEDULED],
     [S.CANCEL_SCHEDULED, S.ACTIVE], [S.CANCEL_SCHEDULED, S.EXPIRED],
@@ -50,21 +57,19 @@ describe("transition table", () => {
 
   it.each([
     [S.EXPIRED, S.ACTIVE],       // resubscribing creates a NEW row, never revives
-    [S.CANCELLED, S.ACTIVE],
-    [S.PENDING, S.PAST_DUE],     // cannot fail a renewal before first activation
-    [S.PENDING, S.EXPIRED],
-    [S.ACTIVE, S.PENDING],       // no going backwards
     [S.EXPIRED, S.PAST_DUE],
+    [S.EXPIRED, S.CANCEL_SCHEDULED],
   ])("forbids %s → %s", (from, to) => {
     expect(canSubscriptionTransition(from, to)).toBe(false);
     expect(() => assertSubscriptionTransition(from, to)).toThrow(/Illegal subscription transition/);
   });
 
-  it("treats EXPIRED and CANCELLED as terminal", () => {
+  it("treats EXPIRED as the only terminal status", () => {
     expect(isSubscriptionTerminal(S.EXPIRED)).toBe(true);
-    expect(isSubscriptionTerminal(S.CANCELLED)).toBe(true);
     expect(SUBSCRIPTION_TRANSITIONS[S.EXPIRED]).toEqual([]);
-    expect(SUBSCRIPTION_TRANSITIONS[S.CANCELLED]).toEqual([]);
+    for (const s of Object.values(S)) {
+      if (s !== S.EXPIRED) expect(isSubscriptionTerminal(s)).toBe(false);
+    }
   });
 
   it("rejects unknown statuses instead of silently allowing them", () => {
@@ -81,10 +86,14 @@ describe("entitlement is retained through a payment hiccup", () => {
     expect(isEntitling(S.CANCEL_SCHEDULED)).toBe(true); // paid through period end
   });
 
-  it("withdraws seats only once the subscription is terminal or unstarted", () => {
-    expect(isEntitling(S.PENDING)).toBe(false);      // never grant before payment
+  it("withdraws seats only once the subscription has expired", () => {
     expect(isEntitling(S.EXPIRED)).toBe(false);
-    expect(isEntitling(S.CANCELLED)).toBe(false);
+    expect(isEntitling(undefined)).toBe(false);      // no subscription ⇒ free floor
+  });
+
+  it("exposes the live-status list the unique index is built from", () => {
+    // The DB partial unique index and the runtime must not be two hand-kept lists.
+    expect(SUBSCRIPTION_LIVE_STATUS_SQL).toBe("'ACTIVE','PAST_DUE','CANCEL_SCHEDULED'");
   });
 
   it("every entitling status is reachable and non-terminal", () => {

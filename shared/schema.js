@@ -2,6 +2,9 @@ import { pgTable, text, integer, boolean, timestamp, jsonb, serial, uuid, index,
 import { createInsertSchema } from "drizzle-zod";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+// Seat-subscription statuses live with the lifecycle they belong to, so the table
+// default and the transition table can never disagree.
+import { SUBSCRIPTION_STATUS } from "./subscriptionStateMachine.js";
 
 // Plans that can register and use custom sending domains.
 // Single authoritative source — imported by server and client.
@@ -180,6 +183,21 @@ export const AUDIT_ACTIONS = {
   PLATFORM_IDENTITY_ACKNOWLEDGED:  "PLATFORM_IDENTITY_ACKNOWLEDGED",
   WARMUP_LIMIT_HIT:                "WARMUP_LIMIT_HIT",
   FIRST_SEND_RECORDED:             "FIRST_SEND_RECORDED",
+  // Seat commerce (M42) — every entitlement change is auditable. Seat events are
+  // deliberately NOT written to credit_transactions: that ledger owns credit
+  // meaning, and a seat is a different product (ADR-018).
+  SUBSCRIPTION_CREATED:            "SUBSCRIPTION_CREATED",
+  SUBSCRIPTION_ACTIVATED:          "SUBSCRIPTION_ACTIVATED",
+  SUBSCRIPTION_SEATS_CHANGED:      "SUBSCRIPTION_SEATS_CHANGED",
+  SUBSCRIPTION_CHANGE_SCHEDULED:   "SUBSCRIPTION_CHANGE_SCHEDULED",
+  SUBSCRIPTION_RENEWED:            "SUBSCRIPTION_RENEWED",
+  SUBSCRIPTION_PAST_DUE:           "SUBSCRIPTION_PAST_DUE",
+  SUBSCRIPTION_CANCEL_SCHEDULED:   "SUBSCRIPTION_CANCEL_SCHEDULED",
+  SUBSCRIPTION_RESUMED:            "SUBSCRIPTION_RESUMED",
+  SUBSCRIPTION_EXPIRED:            "SUBSCRIPTION_EXPIRED",
+  SUBSCRIPTION_CANCELLED:          "SUBSCRIPTION_CANCELLED",
+  SEAT_OVERAGE_DEACTIVATED:        "SEAT_OVERAGE_DEACTIVATED",
+  WORKSPACE_OWNERSHIP_TRANSFERRED: "WORKSPACE_OWNERSHIP_TRANSFERRED",
 };
 
 export const PAYMENT_STATUS = {
@@ -558,9 +576,24 @@ export const aiUsageLogs = pgTable("ai_usage_logs", {
   userCreatedAtIdx: index("ai_usage_logs_user_created_at_idx").on(table.userId, table.createdAt),
 }));
 
+// What a payment BUYS. Before M42 every payment was a credit pack, so the whole
+// fulfillment/refund/dispute chain could assume "payment ⇒ credits". Seats break
+// that assumption, and a discriminator is the only safe way to add a second
+// product: `refundPayment` claws back credits, and without this a seat refund
+// would compute a 0-credit clawback and mark the payment REFUNDED while the
+// customer silently kept the seats. Every consumer branches on this explicitly.
+export const PAYMENT_KIND = {
+  CREDITS: "CREDITS",
+  SEATS: "SEATS",
+};
+
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // CREDITS (default — every pre-M42 row) | SEATS. See PAYMENT_KIND.
+  kind: text("kind").notNull().default(PAYMENT_KIND.CREDITS),
+  // Set only on SEATS payments; ties the charge to the subscription it funded.
+  subscriptionId: uuid("subscription_id"),
   planName: text("plan_name").notNull(),
   credits: integer("credits").notNull(),
   amountInr: integer("amount_inr").notNull(),
@@ -611,6 +644,78 @@ export const invites = pgTable("invites", {
   tokenHashIdx: uniqueIndex("invites_token_hash_idx").on(table.tokenHash),
   emailIdx: index("invites_email_idx").on(table.email),
   invitedByIdx: index("invites_invited_by_idx").on(table.invitedBy),
+}));
+
+// ── Seat commerce (M42) ──────────────────────────────────────────────────────
+// THE single seat-entitlement authority. A workspace's seat ceiling is read from
+// here and nowhere else — there is no denormalized copy on the users table and no
+// per-seat price ledger, so seat entitlement cannot drift from seat billing.
+//
+// Keyed on the workspace ROOT user id (`parentId == null`), which is the existing
+// ownership primitive (ADR-017) — not a new Workspace entity. Serialization for
+// every seat operation is the root user row's `FOR UPDATE` lock that
+// storage.claimWorkspaceSeat already takes, so reading the ceiling inside that
+// same transaction is consistent by construction and adds no new lock order.
+export const workspaceSubscriptions = pgTable("workspace_subscriptions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceRootId: uuid("workspace_root_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // SUBSCRIPTION_STATUS — see shared/subscriptionStateMachine.js for the legal
+  // edges. A row exists only once money has been received, so it is born ACTIVE.
+  status: text("status").notNull().default(SUBSCRIPTION_STATUS.ACTIVE),
+  // Entitled COLLABORATOR seats. The owner is excluded, matching claimWorkspaceSeat.
+  seats: integer("seats").notNull().default(0),
+  term: text("term").notNull(),                  // MONTHLY | ANNUAL
+  // The catalog version this subscription is priced under — the term price lock.
+  // A catalog edit never reprices an in-flight period.
+  pricingVersion: text("pricing_version").notNull(),
+  currency: text("currency").notNull().default("INR"),
+  region: text("region").notNull().default("IN"),
+  // Negotiated per-seat/month rate in minor units. Non-null = custom contract;
+  // this one nullable column is the whole enterprise-pricing path — no parallel
+  // enterprise billing system.
+  unitPriceOverrideMinor: integer("unit_price_override_minor"),
+  couponCode: text("coupon_code"),
+  // The amount that will be charged at the next renewal, recomputed on every
+  // change so a renewal never has to re-derive intent from history.
+  renewalAmountMinor: integer("renewal_amount_minor").notNull().default(0),
+
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+
+  // ── Deferred changes (downgrades and term switches never take effect mid-term)
+  scheduledSeats: integer("scheduled_seats"),
+  scheduledTerm: text("scheduled_term"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+
+  // ── Migration safety ──────────────────────────────────────────────────────
+  // Seats an existing workspace keeps for free through the transition window.
+  // The entitlement is always max(paid seats, grandfathered seats), so enabling
+  // seat billing can never reduce a live customer's team below what they had.
+  grandfatheredSeats: integer("grandfathered_seats").notNull().default(0),
+  grandfatheredUntil: timestamp("grandfathered_until"),
+
+  // ── Dunning ───────────────────────────────────────────────────────────────
+  dunningAttempts: integer("dunning_attempts").notNull().default(0),
+  firstFailureAt: timestamp("first_failure_at"),
+  graceEndsAt: timestamp("grace_ends_at"),
+
+  lastPaymentId: uuid("last_payment_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  activatedAt: timestamp("activated_at"),
+  endedAt: timestamp("ended_at"),
+}, (table) => ({
+  // Supports the entitlement read on every seat claim, invite and team render.
+  rootIdx: index("workspace_subscriptions_root_idx").on(table.workspaceRootId),
+  // Supports the renewal sweep (due subscriptions) and the dunning sweep.
+  dueIdx: index("workspace_subscriptions_due_idx").on(table.status, table.periodEnd),
+  // THE structural invariant: at most ONE live subscription per workspace. A
+  // partial unique index makes double-ownership of the same entitlement
+  // impossible at the database level, not merely unlikely — so a duplicated
+  // webhook or a racing second checkout cannot create a second entitlement.
+  oneLivePerWorkspace: uniqueIndex("workspace_subscriptions_one_live_uq")
+    .on(table.workspaceRootId)
+    .where(sql`${table.status} IN ('ACTIVE','PAST_DUE','CANCEL_SCHEDULED')`),
 }));
 
 // ── Email Analytics Tracking Tokens (M10) ────────────────────────────────────

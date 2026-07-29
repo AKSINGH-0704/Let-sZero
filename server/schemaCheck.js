@@ -39,6 +39,7 @@ const REQUIRED_TABLES = [
   "sns_events",
   "sender_domains",
   "tracking_tokens",
+  "workspace_subscriptions",
 ];
 
 const REQUIRED_COLUMNS = [
@@ -169,6 +170,27 @@ const REQUIRED_COLUMNS = [
   { table: "tracking_tokens", column: "used_count",              critical: false },
   { table: "tracking_tokens", column: "last_user_agent_category",critical: false },
   { table: "tracking_tokens", column: "ip_hash",                 critical: false },
+
+  // ── M42 seat commerce ────────────────────────────────────────────────────
+  // `kind` is CRITICAL: without it the refund and dispute paths cannot tell a
+  // seat payment from a credit pack, and would claw back credits that a seat
+  // payment never granted (marking it REFUNDED while the seats stay live).
+  { table: "payments", column: "kind",                           critical: true  },
+  { table: "payments", column: "subscription_id",                critical: false },
+  { table: "workspace_subscriptions", column: "workspace_root_id", critical: true },
+  { table: "workspace_subscriptions", column: "status",            critical: true },
+  { table: "workspace_subscriptions", column: "seats",             critical: true },
+  { table: "workspace_subscriptions", column: "term",              critical: true },
+  { table: "workspace_subscriptions", column: "pricing_version",   critical: true },
+  { table: "workspace_subscriptions", column: "period_start",      critical: true },
+  { table: "workspace_subscriptions", column: "period_end",        critical: true },
+  { table: "workspace_subscriptions", column: "grandfathered_seats", critical: true },
+  { table: "workspace_subscriptions", column: "scheduled_seats",   critical: false },
+  { table: "workspace_subscriptions", column: "scheduled_term",    critical: false },
+  { table: "workspace_subscriptions", column: "cancel_at_period_end", critical: false },
+  { table: "workspace_subscriptions", column: "dunning_attempts",  critical: false },
+  { table: "workspace_subscriptions", column: "renewal_amount_minor", critical: false },
+  { table: "workspace_subscriptions", column: "unit_price_override_minor", critical: false },
 ];
 
 const REQUIRED_INDEXES = [
@@ -193,6 +215,10 @@ const REQUIRED_INDEXES = [
   // structurally possible again.
   { index: "campaign_emails_contact_uq",            critical: true  },
   { index: "campaign_emails_recipient_uq",           critical: true  },
+  // M42: at most ONE live subscription per workspace. Critical — without it two
+  // concurrent checkouts (or a duplicated webhook) can create two entitlements
+  // for one workspace, which is billing drift by construction.
+  { index: "workspace_subscriptions_one_live_uq",   critical: true  },
   // Perf, not correctness: deriveCountsFromCampaignEmails sums credit_transactions
   // filtered by campaign_id on every finalizeCampaign/reconcileCampaignCounters
   // call. Missing this means a full seq scan of an unboundedly-growing table, not

@@ -9,10 +9,14 @@
 // Pure, dependency-free module so it is safe in both storage backends, in the
 // client, and in unit tests without a database.
 
+// A subscription row exists ONLY once money has actually been received. There is
+// deliberately no PENDING subscription state: the `payments` row (PAYMENT_STATUS
+// .PENDING) already owns "checkout started, not yet paid", and a second pending
+// lifecycle would be duplicate state to reconcile — the exact drift this milestone
+// is built to avoid. Fulfillment creates or updates the subscription in one
+// transaction, so a subscription is born ACTIVE.
 export const SUBSCRIPTION_STATUS = Object.freeze({
-  // Created, awaiting first successful payment. Grants NO entitlement.
-  PENDING: "PENDING",
-  // Paid and inside its period. The only status that grants seats.
+  // Paid and inside its period. The primary entitling status.
   ACTIVE: "ACTIVE",
   // A renewal charge failed; inside the grace window. Entitlement is RETAINED so
   // a payment hiccup never silently locks a customer's team out mid-sprint.
@@ -20,26 +24,22 @@ export const SUBSCRIPTION_STATUS = Object.freeze({
   // Will not renew; still ACTIVE-equivalent until periodEnd.
   CANCEL_SCHEDULED: "CANCEL_SCHEDULED",
   // Period ended without renewal (or grace exhausted). Entitlement falls back to
-  // the free floor. Terminal — resubscribing creates a NEW subscription.
+  // the free floor. Terminal — resubscribing creates a NEW subscription row.
   EXPIRED: "EXPIRED",
-  // Never activated (abandoned checkout, failed first payment). Terminal.
-  CANCELLED: "CANCELLED",
 });
 
 /**
  * Legal successor statuses.
- *  - PENDING          → ACTIVE (first payment succeeded), CANCELLED (abandoned/failed)
  *  - ACTIVE           → PAST_DUE (renewal failed), CANCEL_SCHEDULED (customer opted out),
  *                       EXPIRED (period ended with no renewal attempt)
  *  - PAST_DUE         → ACTIVE (dunning recovered), EXPIRED (grace exhausted),
  *                       CANCEL_SCHEDULED (customer opts out while past due)
  *  - CANCEL_SCHEDULED → ACTIVE (customer resumed before periodEnd), EXPIRED (period ended)
- *  - EXPIRED / CANCELLED are terminal.
+ *  - EXPIRED is terminal.
  * A no-op "transition" to the same status is not an edge; callers treat
  * "already in the target state" as an idempotent success separately.
  */
 export const SUBSCRIPTION_TRANSITIONS = Object.freeze({
-  [SUBSCRIPTION_STATUS.PENDING]: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.CANCELLED],
   [SUBSCRIPTION_STATUS.ACTIVE]: [
     SUBSCRIPTION_STATUS.PAST_DUE,
     SUBSCRIPTION_STATUS.CANCEL_SCHEDULED,
@@ -52,13 +52,9 @@ export const SUBSCRIPTION_TRANSITIONS = Object.freeze({
   ],
   [SUBSCRIPTION_STATUS.CANCEL_SCHEDULED]: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.EXPIRED],
   [SUBSCRIPTION_STATUS.EXPIRED]: [],
-  [SUBSCRIPTION_STATUS.CANCELLED]: [],
 });
 
-export const SUBSCRIPTION_TERMINAL_STATUSES = Object.freeze([
-  SUBSCRIPTION_STATUS.EXPIRED,
-  SUBSCRIPTION_STATUS.CANCELLED,
-]);
+export const SUBSCRIPTION_TERMINAL_STATUSES = Object.freeze([SUBSCRIPTION_STATUS.EXPIRED]);
 
 /**
  * Statuses that GRANT seat entitlement. PAST_DUE is deliberately included: a
@@ -71,6 +67,15 @@ export const SUBSCRIPTION_ENTITLING_STATUSES = Object.freeze([
   SUBSCRIPTION_STATUS.PAST_DUE,
   SUBSCRIPTION_STATUS.CANCEL_SCHEDULED,
 ]);
+
+/**
+ * The SQL literal list backing the "one live subscription per workspace" partial
+ * unique index. Exported so the schema/migration and the runtime agree by
+ * construction rather than by two hand-maintained lists.
+ */
+export const SUBSCRIPTION_LIVE_STATUS_SQL = SUBSCRIPTION_ENTITLING_STATUSES
+  .map(s => `'${s}'`)
+  .join(",");
 
 /** True if `status` admits no further transitions. */
 export function isSubscriptionTerminal(status) {
