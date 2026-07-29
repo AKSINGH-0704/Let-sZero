@@ -20,6 +20,13 @@
 ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "kind" text NOT NULL DEFAULT 'CREDITS';
 ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "subscription_id" uuid;
 
+-- Exact charge in MINOR units. `amount_inr` is an integer and a prorated seat
+-- charge is frequently not a whole rupee (half a month of a band rate lands on a half rupee), so
+-- rounding into amount_inr alone would record a figure that was never charged —
+-- a reconciliation defect the moment proration exists. Nullable: legacy credit
+-- rows are already exact in amount_inr and are deliberately not back-filled.
+ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "amount_minor" integer;
+
 -- Supports the renewal/dunning reconciliation query "payments for this subscription".
 CREATE INDEX IF NOT EXISTS "payments_subscription_idx"
   ON "payments" ("subscription_id") WHERE "subscription_id" IS NOT NULL;

@@ -39,6 +39,17 @@ import {
 // always be reconciled against the rules that produced it.
 export const SEAT_PRICING_VERSION = "2026-07-29.1";
 
+// The smallest amount a payment gateway will accept. Razorpay rejects orders
+// below ₹1.00 (100 paise), so a proration computed near the end of a period can
+// be arithmetically correct and still be UNCHARGEABLE — adding a seat with hours
+// left on a monthly term produces a few paise, and `orders.create` would fail the
+// whole checkout. Rather than break the purchase (or charge ₹1 for a 4-paise
+// entitlement change, which is worse), a sub-minimum proration is WAIVED: the
+// seats are granted immediately and the next renewal bills the full new amount.
+// The waived figure is surfaced in the preview and recorded in the audit trail,
+// so it is never silently absorbed.
+export const MIN_CHARGEABLE_MINOR = 100;
+
 // ── Terms ────────────────────────────────────────────────────────────────────
 // The annual rate is DERIVED from the monthly rate by a single discount constant.
 // The client proposal carried a second hand-written annual table whose discount
@@ -473,14 +484,28 @@ export function previewSeatChange({
     // best-price-guarantee jump — is priced correctly rather than at the old rate.
     const fraction = remainingFraction(current.periodStart, current.periodEnd, now);
     const deltaMinor = targetQuote.totalMinor - currentQuote.totalMinor;
-    const chargeNowMinor = Math.max(0, Math.round(deltaMinor * fraction));
+    const rawChargeMinor = Math.max(0, Math.round(deltaMinor * fraction));
+    // Below the gateway floor the charge is waived, not skipped: the upgrade is
+    // still applied immediately (`waived` tells the caller to grant rather than
+    // schedule), and the renewal bills the full new amount.
+    const waived = rawChargeMinor > 0 && rawChargeMinor < MIN_CHARGEABLE_MINOR;
     return {
       ...base,
       kind: SEAT_CHANGE.UPGRADE,
-      chargeNowMinor,
+      chargeNowMinor: waived ? 0 : rawChargeMinor,
+      waivedMinor: waived ? rawChargeMinor : 0,
+      // True for an upgrade that must be applied now even though no money moves.
+      // Distinguishes "grant it, we're not billing pennies" from a DOWNGRADE's
+      // "charge nothing because nothing changes until renewal".
+      applyWithoutCharge: waived || rawChargeMinor === 0,
       proration: { fraction, fullDeltaMinor: deltaMinor },
       effectiveImmediately: true,
       effectiveSeats: targetQuote.seatsGranted,
+      // An immediate upgrade SUPERSEDES a pending downgrade to a smaller number —
+      // otherwise a customer pays to grow and silently shrinks at renewal.
+      supersedesScheduledSeats: current.scheduledSeats != null && current.scheduledSeats < targetQuote.seatsGranted
+        ? current.scheduledSeats
+        : null,
       scheduled: termChanging ? { seats: renewalSeats, term: renewalTerm, at: current.periodEnd } : null,
     };
   }

@@ -22,7 +22,7 @@ import { generateQuote, isCurrencySupported, MAX_SELF_SERVE_CREDITS, PRICING_VER
 // shared authorities; routes.js only orchestrates.
 import {
   quoteSeats, previewSeatChange, previewRenewal, buildInvoiceLines,
-  getSeatCatalog, SEAT_TERMS,
+  getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk } from "../shared/seatEntitlement.js";
 import { SUBSCRIPTION_STATUS } from "../shared/subscriptionStateMachine.js";
@@ -283,6 +283,64 @@ async function authMiddleware(req, res, next) {
 // through isSameWorkspaceAdmin, which is tree-scoped).
 function isWorkspaceOwner(user) {
   return user != null && user.parentId == null;
+}
+
+// M42 — one description of a seat charge, so the renewal and the change paths
+// cannot disagree about what is stored versus what is charged.
+//
+// `amountMinor` is authoritative. `amountInr` exists only because the payments
+// table predates minor units and its column is an integer; a prorated charge is
+// frequently NOT a whole rupee (half a month of any band rate lands on a half
+// rupee), so rounding into amountInr alone would put a figure in the invoice
+// that was never charged.
+function buildSeatCharge(amountMinor, planLabel) {
+  return {
+    amountMinor,
+    amountInr: Math.round(amountMinor / 100),
+    amountUsd: Math.round(amountMinor / 100 / DEFAULT_EXCHANGE_RATE),
+    planLabel,
+  };
+}
+
+// The single seat-payment initiation path (change, upgrade, renewal). Keeping one
+// copy means the duplicate-payment guard, the gateway floor and the metadata
+// shape are enforced identically wherever seats are bought.
+async function startSeatPayment(req, res, { seatMeta, charge, redirectUrl }) {
+  const common = {
+    userId: req.user.id, kind: PAYMENT_KIND.SEATS,
+    planName: charge.planLabel, credits: 0,
+    amountUsd: charge.amountUsd, amountInr: charge.amountInr, amountLocal: charge.amountInr,
+    amountMinor: charge.amountMinor,
+    currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
+  };
+
+  if (process.env.NODE_ENV !== "production") {
+    const payment = await storage.createPayment({
+      ...common, paymentMethod: "SIMULATED", status: PAYMENT_STATUS.SUCCESS, metadata: seatMeta,
+    });
+    const applied = await fulfillSeatPayment(payment);
+    return res.json({ payment, applied, redirectUrl });
+  }
+
+  if (!rzp) return res.status(503).json({ message: "INR payments not configured. Contact support." });
+  // Below the gateway floor the caller must waive rather than reach this path;
+  // guard anyway so a future caller cannot create an order Razorpay will reject.
+  if (charge.amountMinor < MIN_CHARGEABLE_MINOR) {
+    return res.status(400).json({ message: "Amount is below the minimum chargeable value.", code: "BELOW_MIN_CHARGE" });
+  }
+  const rzpOrder = await rzp.orders.create({
+    amount: charge.amountMinor, currency: "INR", receipt: crypto.randomUUID(),
+  });
+  const payment = await storage.createPayment({
+    ...common, paymentMethod: "RAZORPAY", status: PAYMENT_STATUS.PENDING,
+    metadata: { ...seatMeta, razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
+  });
+  return res.json({
+    payment, gateway: "razorpay",
+    razorpayOrderId: rzpOrder.id, razorpayKeyId: RAZORPAY_KEY_ID,
+    amount: charge.amountMinor, currency: "INR",
+    redirectUrl: `/app/payments/process/${payment.id}`,
+  });
 }
 
 // M42 — the ONE seat-limit rejection body. Every path that can run out of seats
@@ -3614,7 +3672,11 @@ export async function registerRoutes(httpServer, app) {
 
       // A downgrade or term switch moves no money — record the schedule and
       // return. This is the whole reason mid-term refunds don't exist here.
-      if (preview.chargeNowMinor === 0) {
+      // An UPGRADE with no charge is different: it must still be GRANTED, either
+      // because the period has effectively no time left or because the prorated
+      // amount is below the gateway floor and has been waived.
+      const isFreeUpgrade = preview.kind === SEAT_CHANGE.UPGRADE && preview.applyWithoutCharge;
+      if (preview.chargeNowMinor === 0 && !isFreeUpgrade) {
         const scheduled = preview.scheduled;
         if (!scheduled) return res.json({ applied: false, preview, noop: true });
         await storage.scheduleSeatChange(rootId, {
@@ -3647,42 +3709,103 @@ export async function registerRoutes(httpServer, app) {
         isRenewal: false,
         changeKind: preview.kind,
       };
-      const amountInr = Math.round(preview.chargeNowMinor / 100);
-      const planLabel = `Team Seats — ${preview.quote.seatsGranted} × ${SEAT_TERMS[preview.quote.term].label}`;
 
-      if (process.env.NODE_ENV !== "production") {
-        const payment = await storage.createPayment({
-          userId: req.user.id, kind: PAYMENT_KIND.SEATS,
-          planName: planLabel, credits: 0,
-          amountUsd: Math.round(amountInr / DEFAULT_EXCHANGE_RATE), amountInr, amountLocal: amountInr,
-          currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
-          paymentMethod: "SIMULATED", status: PAYMENT_STATUS.SUCCESS,
-          metadata: seatMeta,
+      // Waived (or zero) upgrade — grant the seats now, bill the full amount at
+      // renewal, and record what was waived so it is never silently absorbed.
+      if (isFreeUpgrade) {
+        const result = await storage.applySeatPurchase(rootId, {
+          seats: preview.quote.seatsGranted, term: preview.quote.term,
+          pricingVersion: preview.quote.version, currency: preview.quote.currency,
+          region: preview.quote.region,
+          unitPriceOverrideMinor: sub?.unitPriceOverrideMinor ?? null,
+          renewalAmountMinor: preview.renewal?.totalMinor ?? preview.quote.totalMinor,
         });
-        const applied = await fulfillSeatPayment(payment);
-        return res.json({ payment, applied, preview, redirectUrl: "/app/team/seats" });
+        await storage.createAuditLog({
+          userId: req.user.id,
+          action: AUDIT_ACTIONS.SUBSCRIPTION_SEATS_CHANGED,
+          targetType: "subscription", targetId: result.subscription?.id ?? null,
+          details: {
+            workspaceRootId: rootId, seats: result.subscription?.seats,
+            previousSeats: result.previousSeats, waivedMinor: preview.waivedMinor || 0,
+            supersededScheduledSeats: result.supersededScheduledSeats ?? null,
+            reason: preview.waivedMinor > 0 ? "below_gateway_minimum" : "no_time_remaining_in_period",
+            actor: req.user.username,
+          },
+        });
+        return res.json({ applied: true, waived: true, preview, subscription: result.subscription });
       }
 
-      if (!rzp) return res.status(503).json({ message: "INR payments not configured. Contact support." });
-      const rzpOrder = await rzp.orders.create({
-        amount: preview.chargeNowMinor, currency: "INR", receipt: crypto.randomUUID(),
-      });
-      const payment = await storage.createPayment({
-        userId: req.user.id, kind: PAYMENT_KIND.SEATS,
-        planName: planLabel, credits: 0,
-        amountUsd: Math.round(amountInr / DEFAULT_EXCHANGE_RATE), amountInr, amountLocal: amountInr,
-        currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
-        paymentMethod: "RAZORPAY", status: PAYMENT_STATUS.PENDING,
-        metadata: { ...seatMeta, razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
-      });
-      return res.json({
-        payment, preview, gateway: "razorpay",
-        razorpayOrderId: rzpOrder.id, razorpayKeyId: RAZORPAY_KEY_ID,
-        amount: preview.chargeNowMinor, currency: "INR",
-        redirectUrl: `/app/payments/process/${payment.id}`,
-      });
+      // One outstanding seat payment per workspace. Without this, two tabs (or an
+      // impatient double-submit) create two orders; both can be paid, and because
+      // fulfillment is target-state the second grants nothing — a double charge
+      // with a single entitlement. Resuming the existing payment is the correct
+      // behaviour and is what the client already knows how to do.
+      const outstanding = await storage.getPendingSeatPayment(rootId);
+      if (outstanding) {
+        return res.status(409).json({
+          message: "A payment for this workspace is already in progress.",
+          code: "SEAT_PAYMENT_IN_PROGRESS", paymentId: outstanding.id,
+          redirectUrl: `/app/payments/process/${outstanding.id}`,
+        });
+      }
+
+      const charge = buildSeatCharge(
+        preview.chargeNowMinor,
+        `Team Seats — ${preview.quote.seatsGranted} × ${SEAT_TERMS[preview.quote.term].label}`,
+      );
+      return await startSeatPayment(req, res, { seatMeta, charge, redirectUrl: "/app/team/seats" });
     } catch (error) {
       console.error("[SEATS] Checkout error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Renew the current period. v1 is PREPAID — there is no stored mandate, so a
+  // renewal is a customer-initiated payment, and this is the endpoint the dunning
+  // email's "renew" link leads to. Without it a lapsed subscription has no way
+  // back: the change endpoints all resolve a same-seat request to a no-op, so
+  // every subscription would eventually expire regardless of intent.
+  app.post("/api/seats/renew", authMiddleware, adminMiddleware, paymentInitiateLimiter, async (req, res) => {
+    try {
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({ message: "Only the workspace owner can renew.", code: "NOT_WORKSPACE_OWNER" });
+      }
+      const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const config = await storage.getSeatCommerceConfig();
+      if (!config.billingEnabled) {
+        return res.status(409).json({ message: "Seat billing isn't available.", code: "SEAT_BILLING_DISABLED" });
+      }
+      const sub = await storage.getWorkspaceSubscription(rootId);
+      if (!sub) return res.status(404).json({ message: "No seat subscription to renew." });
+
+      // The renewal applies any scheduled change, so quote what the NEXT period
+      // will actually contain — not what the current one holds.
+      const seats = sub.scheduledSeats == null ? sub.seats : sub.scheduledSeats;
+      const term = sub.scheduledTerm || sub.term;
+      const quote = quoteSeats({ seats, term, region: sub.region, unitPriceOverrideMinor: sub.unitPriceOverrideMinor });
+      if (quote.error || quote.isEnterprise) {
+        return res.status(409).json({ message: "This subscription needs to be renewed by our team.", code: quote.code || "UNQUOTABLE" });
+      }
+
+      const seatMeta = {
+        seats: quote.seatsGranted, requestedSeats: seats, term,
+        pricingVersion: quote.version, region: quote.region,
+        couponCode: null, unitPriceOverrideMinor: sub.unitPriceOverrideMinor ?? null,
+        workspaceRootId: rootId, isRenewal: true, subscriptionId: sub.id,
+      };
+      const outstanding = await storage.getPendingSeatPayment(rootId);
+      if (outstanding) {
+        return res.status(409).json({
+          message: "A payment for this workspace is already in progress.",
+          code: "SEAT_PAYMENT_IN_PROGRESS", paymentId: outstanding.id,
+          redirectUrl: `/app/payments/process/${outstanding.id}`,
+        });
+      }
+
+      const charge = buildSeatCharge(quote.totalMinor, `Team Seats renewal — ${quote.seatsGranted} × ${SEAT_TERMS[term].label}`);
+      return await startSeatPayment(req, res, { seatMeta, charge, redirectUrl: "/app/team/seats" });
+    } catch (error) {
+      console.error("[SEATS] Renew error:", error.message);
       res.status(500).json({ message: error.message });
     }
   });

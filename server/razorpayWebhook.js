@@ -94,6 +94,15 @@ export async function razorpayWebhookHandler(req, res) {
         console.log(
           `[RZP-WEBHOOK] order.paid — ${repPayment.id} SEATS ${applied.applied ? "fulfilled" : `skipped (${applied.reason})`}`
         );
+        // `already_fulfilled` is the expected outcome of a webhook racing the
+        // verify endpoint. Any OTHER non-application means the customer paid and
+        // did not receive seats — silent, and invisible without this alert.
+        if (!applied.applied && applied.reason !== "already_fulfilled") {
+          Sentry.captureMessage("SEAT_FULFILLMENT_SKIPPED: paid seat order did not grant an entitlement", {
+            level: "error",
+            extra: { paymentId: repPayment.id, reason: applied.reason, orderId: order.id },
+          });
+        }
         const user = await storage.getUserById(repPayment.userId);
         if (user && applied.applied) {
           sendPaymentReceiptEmail(user.email, user.username, completedPayment, user.creditsRemaining).catch(err =>
@@ -158,9 +167,25 @@ export async function razorpayWebhookHandler(req, res) {
         return res.status(200).json({ received: true });
       }
       if (isSeatPayment(repPayment)) {
-        // A seat refund reverses a SERVICE PERIOD: end the entitlement and bring
-        // headcount back inside it. Members are deactivated (restorable), never
-        // deleted, and no credit is touched.
+        // A seat is a SERVICE PERIOD, not a divisible stock of credits, so a
+        // PARTIAL refund has no automatic entitlement meaning — there is no
+        // defensible way to return "40% of a subscription". Reversing the whole
+        // entitlement on a partial refund would destroy a subscription the
+        // customer largely still paid for, so partial refunds are escalated to an
+        // operator instead of guessed at.
+        const chargedMinor = repPayment.amountMinor ?? (repPayment.amountInr ?? 0) * 100;
+        const refundedMinor = Number(refund?.amount ?? 0);
+        if (refundedMinor > 0 && chargedMinor > 0 && refundedMinor < chargedMinor) {
+          console.warn(`[RZP-WEBHOOK] ${eventType} — PARTIAL seat refund ${refundedMinor}/${chargedMinor}, manual review`);
+          Sentry.captureMessage("SEAT_PARTIAL_REFUND_MANUAL_REVIEW: partial refund on a seat payment has no automatic entitlement action", {
+            level: "warning",
+            extra: { paymentId: repPayment.id, refundedMinor, chargedMinor, refundId: refund?.id },
+          });
+          return res.status(200).json({ received: true });
+        }
+
+        // Full refund: end the entitlement and bring headcount back inside it.
+        // Members are deactivated (restorable), never deleted, no credit touched.
         const seatResult = await reverseSeatPayment(repPayment, {
           reason: `provider_refund:${eventType}`, actor: "razorpay_webhook",
         });

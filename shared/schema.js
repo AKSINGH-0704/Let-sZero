@@ -596,6 +596,12 @@ export const payments = pgTable("payments", {
   subscriptionId: uuid("subscription_id"),
   planName: text("plan_name").notNull(),
   credits: integer("credits").notNull(),
+  // Exact charge in MINOR units (paise). `amountInr` is an integer column that
+  // predates seat commerce, and a prorated seat charge is frequently not a whole
+  // rupee (half a month of a band rate lands on a half rupee) — rounding into amountInr alone would
+  // record a figure that was never charged. Null on legacy credit rows, where
+  // amountInr is already exact.
+  amountMinor: integer("amount_minor"),
   amountInr: integer("amount_inr").notNull(),
   amountUsd: integer("amount_usd").notNull(),
   amountLocal: integer("amount_local").notNull(),

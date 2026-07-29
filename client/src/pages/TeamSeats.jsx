@@ -68,14 +68,35 @@ export default function TeamSeats() {
         window.location.assign(result.redirectUrl);
         return;
       }
+      if (result.noop) {
+        toast({ title: "Nothing to change", description: "That's already your current seat count." });
+        return;
+      }
       toast({
         title: result.scheduled ? "Change scheduled" : "Seats updated",
         description: result.scheduled
           ? "It takes effect at your next renewal. Nothing changes before then."
-          : "Your team can start using the new seats right away.",
+          : result.waived
+            ? "Your new seats are live. There was too little left in this period to bill, so we've added them at no charge — your next renewal covers the new total."
+            : "Your team can start using the new seats right away.",
       });
     },
     onError: (e) => toast({ title: "Purchase failed", description: e.message, variant: "destructive" }),
+  });
+
+  // Renewal is customer-initiated in v1 (no stored mandate), so this button IS
+  // the renewal path — the dunning email links straight here.
+  const renewMutation = useMutation({
+    mutationFn: async () => (await apiRequest("POST", "/api/seats/renew", {})).json(),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: SEATS_KEY });
+      if (result.redirectUrl && result.gateway === "razorpay") {
+        window.location.assign(result.redirectUrl);
+        return;
+      }
+      toast({ title: "Renewed", description: "Your seats are paid up for the next period." });
+    },
+    onError: (e) => toast({ title: "Couldn't renew", description: e.message, variant: "destructive" }),
   });
 
   const cancelMutation = useMutation({
@@ -182,6 +203,16 @@ export default function TeamSeats() {
                 {entitlement.seats - seatsAtRisk === 1 ? "" : "s"} and the {seatsAtRisk} most recently added member
                 {seatsAtRisk === 1 ? "" : "s"} are deactivated. Nobody is deleted, and your credits are never affected.
               </p>
+              {isWorkspaceOwner && (
+                <Button
+                  className="mt-4"
+                  onClick={() => renewMutation.mutate()}
+                  disabled={renewMutation.isPending}
+                  data-testid="seat-renew-pastdue"
+                >
+                  {renewMutation.isPending ? "Working…" : `Renew now — ${formatMinor(sub.renewalAmountMinor, sub.currency)}`}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -242,6 +273,11 @@ export default function TeamSeats() {
 
           {sub && (
             <div className="mt-4 flex flex-wrap gap-3">
+              {sub.status !== "PAST_DUE" && (
+                <Button variant="outline" onClick={() => renewMutation.mutate()} disabled={renewMutation.isPending} data-testid="seat-renew">
+                  {renewMutation.isPending ? "Working…" : "Renew early"}
+                </Button>
+              )}
               {sub.cancelAtPeriodEnd ? (
                 <Button variant="outline" onClick={() => resumeMutation.mutate()} disabled={resumeMutation.isPending} data-testid="seat-resume">
                   Turn auto-renewal back on

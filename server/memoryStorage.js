@@ -1668,6 +1668,7 @@ export const memoryStorage = {
       subscriptionId: paymentData.subscriptionId || null,
       planName: paymentData.planName,
       credits: paymentData.credits,
+      amountMinor: paymentData.amountMinor ?? null,
       amountUsd: paymentData.amountUsd,
       amountInr: paymentData.amountInr,
       amountLocal: paymentData.amountLocal,
@@ -1700,6 +1701,15 @@ export const memoryStorage = {
     });
     
     return payment;
+  },
+
+  // M42 parity — see storage.js getPendingSeatPayment.
+  async getPendingSeatPayment(rootId) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    const rows = Array.from(store.payments.values())
+      .filter(p => memberIds.has(p.userId) && p.kind === PAYMENT_KIND.SEATS && p.status === PAYMENT_STATUS.PENDING)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return rows[0] || null;
   },
 
   // M42 parity — see storage.js updatePayment.
@@ -2195,7 +2205,14 @@ export const memoryStorage = {
         return { subscription: existing, changed: false, created: false };
       }
       const previousSeats = existing.seats;
-      existing.seats = Math.max(seats, existing.seats);
+      const nextSeats = Math.max(seats, existing.seats);
+      // Parity with storage.js: an immediate upgrade supersedes a pending
+      // downgrade to a smaller number, or the customer pays to grow and shrinks
+      // at renewal.
+      const supersededScheduledSeats =
+        existing.scheduledSeats != null && existing.scheduledSeats < nextSeats ? existing.scheduledSeats : null;
+      if (supersededScheduledSeats != null) existing.scheduledSeats = null;
+      existing.seats = nextSeats;
       existing.renewalAmountMinor = renewalAmountMinor;
       existing.lastPaymentId = paymentId || existing.lastPaymentId;
       existing.status = SUBSCRIPTION_STATUS.ACTIVE;
@@ -2203,7 +2220,7 @@ export const memoryStorage = {
       existing.firstFailureAt = null;
       existing.graceEndsAt = null;
       existing.updatedAt = now;
-      return { subscription: existing, changed: true, created: false, previousSeats };
+      return { subscription: existing, changed: true, created: false, previousSeats, supersededScheduledSeats };
     }
     const period = periodFor(now, term);
     const sub = {
@@ -2237,7 +2254,13 @@ export const memoryStorage = {
   async transitionSubscription(subscriptionId, toStatus, patch = {}) {
     const current = store.workspaceSubscriptions.get(subscriptionId);
     if (!current) return { ok: false, error: "not_found" };
-    if (current.status === toStatus) return { ok: true, subscription: current, noop: true };
+    if (current.status === toStatus) {
+      // Parity with storage.js: a same-status call carrying a patch still writes
+      // it; `noop` means the STATUS did not change, not that nothing happened.
+      if (Object.keys(patch).length === 0) return { ok: true, subscription: current, noop: true };
+      Object.assign(current, patch, { updatedAt: new Date() });
+      return { ok: true, subscription: current, noop: true };
+    }
     if (!canSubscriptionTransition(current.status, toStatus)) {
       return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
     }

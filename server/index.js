@@ -38,6 +38,9 @@ import { createConnection } from "net";
 import { lookup as dnsLookup } from "dns/promises";
 import { registerRoutes, executeCampaign } from "./routes.js";
 import { storage } from "./storage.js";
+// M42 — seat renewal & dunning sweep. Registered below; self-disables while the
+// seat_billing_enabled flag is off.
+import { runSeatRenewalSweep } from "./seatRenewal.js";
 import { sendTransactionalEmail } from "./email.js";
 import { createServer } from "http";
 import { startWorker } from "./worker.js";
@@ -776,6 +779,47 @@ async function diagnoseSMTPPath() {
       }
     }, 24 * 60 * 60 * 1000);
   }
+
+  // ── Seat renewal & dunning (M42) — hourly, 3-minute startup offset ─────────
+  // Hourly rather than daily because the dunning ladder and the grace expiry are
+  // day-boundary events: a daily sweep would drift the moment a run is missed or
+  // a deploy lands mid-window, and the customer-visible consequence is a team
+  // being deactivated a day early or late. The sweep is idempotent and derives
+  // every action from the row's own state, so running it 24× more often than
+  // strictly needed costs nothing and removes the timing sensitivity.
+  //
+  // It self-disables while `seat_billing_enabled` is false, so registering it
+  // here is safe before the commercial rollout — which is deliberate: a lifecycle
+  // that exists but is never invoked is exactly the INCIDENT-001 failure shape
+  // (shipped, but never switched on).
+  setTimeout(() => {
+    let running = false;
+    async function runSeatSweep() {
+      if (running) { console.warn("[SEAT-RENEWAL] Sweep still in progress — skipping"); return; }
+      running = true;
+      try {
+        const summary = await runSeatRenewalSweep();
+        if (summary?.errors > 0) {
+          Sentry.captureMessage("SEAT_RENEWAL_SWEEP_ERRORS: some subscriptions failed to process", {
+            level: "error",
+            extra: summary,
+          });
+        }
+      } catch (err) {
+        console.error("[SEAT-RENEWAL] Sweep error:", err.message);
+        // A sweep that stops running silently expires nobody and dunning nobody —
+        // the failure is invisible from the outside, so it must alert.
+        Sentry.captureException(err, {
+          level: "error",
+          tags: { subsystem: "seat-commerce", alert: "SEAT_RENEWAL_SWEEP_FAILED" },
+        });
+      } finally {
+        running = false;
+      }
+    }
+    runSeatSweep();
+    setInterval(runSeatSweep, 60 * 60 * 1000);
+  }, 3 * 60 * 1000);
 
   // Expired sessions — daily, 5-minute startup offset.
   setTimeout(() => {

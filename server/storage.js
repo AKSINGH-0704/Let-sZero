@@ -1874,6 +1874,24 @@ const dbStorage = {
     return payment;
   },
 
+  // M42 — an outstanding (PENDING) seat payment for this workspace, if any.
+  // Used to refuse a second concurrent checkout: fulfillment is target-state, so
+  // two paid orders for the same upgrade grant one entitlement and charge twice.
+  // Scoped to the workspace, not the user, because any owner action is on behalf
+  // of the workspace.
+  async getPendingSeatPayment(rootId) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    const [row] = await db.select().from(payments)
+      .where(and(
+        inArray(payments.userId, [...memberIds]),
+        eq(payments.kind, PAYMENT_KIND.SEATS),
+        eq(payments.status, PAYMENT_STATUS.PENDING),
+      ))
+      .orderBy(desc(payments.createdAt))
+      .limit(1);
+    return row || null;
+  },
+
   // M42 — narrow payment mutation used by seat fulfillment to record the
   // subscription it funded and the fulfilled-at marker that makes a replayed
   // webhook a no-op. Deliberately not a general-purpose setter: it never touches
@@ -2498,8 +2516,16 @@ const dbStorage = {
         if (seats <= existing.seats && existing.status === SUBSCRIPTION_STATUS.ACTIVE) {
           return { subscription: existing, changed: false, created: false };
         }
+        const nextSeats = Math.max(seats, existing.seats);
+        // An immediate upgrade SUPERSEDES a pending downgrade to a smaller
+        // number. Without this a customer who scheduled 10→3 and then paid to
+        // upgrade to 12 would still collapse to 3 at renewal — they would have
+        // paid to grow and silently shrunk.
+        const supersededScheduledSeats =
+          existing.scheduledSeats != null && existing.scheduledSeats < nextSeats ? existing.scheduledSeats : null;
         const [updated] = await tx.update(workspaceSubscriptions).set({
-          seats: Math.max(seats, existing.seats),
+          seats: nextSeats,
+          ...(supersededScheduledSeats != null ? { scheduledSeats: null } : {}),
           renewalAmountMinor,
           lastPaymentId: paymentId || existing.lastPaymentId,
           // A successful charge always clears a dunning state.
@@ -2509,7 +2535,7 @@ const dbStorage = {
           graceEndsAt: null,
           updatedAt: now,
         }).where(eq(workspaceSubscriptions.id, existing.id)).returning();
-        return { subscription: updated, changed: true, created: false, previousSeats: existing.seats };
+        return { subscription: updated, changed: true, created: false, previousSeats: existing.seats, supersededScheduledSeats };
       }
 
       const period = periodFor(now, term);
@@ -2550,7 +2576,18 @@ const dbStorage = {
       const [current] = await tx.select().from(workspaceSubscriptions)
         .where(eq(workspaceSubscriptions.id, subscriptionId)).for("update");
       if (!current) return { ok: false, error: "not_found" };
-      if (current.status === toStatus) return { ok: true, subscription: current, noop: true };
+      if (current.status === toStatus) {
+        // Same status is not a transition — but a caller that also passed a PATCH
+        // meant it (e.g. recording another dunning attempt while staying
+        // PAST_DUE). Dropping the patch silently was a trap: the call returned
+        // ok:true having written nothing. Apply the patch, and let `noop` mean
+        // "the STATUS did not change".
+        if (Object.keys(patch).length === 0) return { ok: true, subscription: current, noop: true };
+        const [patched] = await tx.update(workspaceSubscriptions)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(workspaceSubscriptions.id, subscriptionId)).returning();
+        return { ok: true, subscription: patched, noop: true };
+      }
       if (!canSubscriptionTransition(current.status, toStatus)) {
         return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
       }
