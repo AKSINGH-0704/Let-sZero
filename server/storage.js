@@ -28,6 +28,16 @@ import * as drizzleOps from "drizzle-orm";
 import * as schemaImports from "../shared/schema.js";
 // M39 Phase 2 — the single source of truth for legal payment status transitions.
 import { canTransition } from "../shared/paymentStateMachine.js";
+// M42 — seat commerce. The entitlement decision and the lifecycle rules are pure
+// shared modules so both storage backends stay in exact parity by construction.
+import {
+  resolveSeatEntitlement, parseFreeFloor, SEAT_SETTING_KEYS,
+} from "../shared/seatEntitlement.js";
+import {
+  SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
+  SUBSCRIPTION_ENTITLING_STATUSES,
+} from "../shared/subscriptionStateMachine.js";
+import { quoteSeats, periodFor, previewSeatChange } from "../shared/seatPricing.js";
 
 // Use imports only when not in dev mode
 const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
@@ -36,6 +46,7 @@ const {
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
   suppressions, aiUsageLogs, invites, snsEvents, platformSettings,
   contactLists, contactListMembers, contactImports, senderDomains, trackingTokens,
+  workspaceSubscriptions,
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -2315,9 +2326,17 @@ const dbStorage = {
   // the actual claiming write in the SAME transaction. This is what makes the
   // lock meaningful: a lock around the read alone, with the write happening
   // afterward in a separate round trip, would not close the race at all.
+  // M42 — `limit` may be a NUMBER or a RESOLVER `(tx) => Promise<number>`.
+  // The resolver form reads the seat entitlement INSIDE this transaction, after
+  // the root row is locked, so a concurrent entitlement change (a renewal sweep
+  // lowering seats, an expiry) can never interleave between "what is my limit?"
+  // and "claim a seat". A number is still accepted — the enterprise/unlimited
+  // path and the tests pass Infinity directly — so this stays backward compatible.
   async claimWorkspaceSeat(rootId, limit, writeFn) {
     return await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT id FROM users WHERE id = ${rootId} FOR UPDATE`);
+
+      if (typeof limit === "function") limit = await limit(tx);
 
       if (limit !== Infinity) {
         const level1 = await tx.select({ id: users.id }).from(users).where(eq(users.parentId, rootId));
@@ -2344,6 +2363,269 @@ const dbStorage = {
 
   async reactivateUserInTx(tx, id) {
     await tx.update(users).set({ isActive: true, updatedAt: new Date() }).where(eq(users.id, id));
+  },
+
+  // ── M42 — seat commerce ───────────────────────────────────────────────────
+  // Everything below reads/writes the ONE entitlement authority
+  // (workspace_subscriptions). There is no denormalised seat count anywhere, so
+  // there is nothing to reconcile and no drift to detect.
+
+  /** The workspace's live subscription, or null. Optionally inside a transaction. */
+  async getWorkspaceSubscription(rootId, tx = null) {
+    const runner = tx || db;
+    const [row] = await runner.select().from(workspaceSubscriptions)
+      .where(and(
+        eq(workspaceSubscriptions.workspaceRootId, rootId),
+        inArray(workspaceSubscriptions.status, [...SUBSCRIPTION_ENTITLING_STATUSES]),
+      ))
+      .limit(1);
+    return row || null;
+  },
+
+  /** Commercial configuration. Read together so a caller makes one decision. */
+  async getSeatCommerceConfig() {
+    const [enabled, floor] = await Promise.all([
+      this.getPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED),
+      this.getPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR),
+    ]);
+    return {
+      billingEnabled: enabled?.value === "true",
+      freeFloor: parseFreeFloor(floor?.value),
+    };
+  },
+
+  /**
+   * The composed entitlement read used by every surface: config + plan +
+   * subscription → seats. This is the ONLY place those three inputs are combined
+   * on the server.
+   */
+  async resolveSeatEntitlement(rootId) {
+    const [config, effectivePlan, subscription] = await Promise.all([
+      this.getSeatCommerceConfig(),
+      this.getEffectivePlan(rootId),
+      this.getWorkspaceSubscription(rootId),
+    ]);
+    return {
+      ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
+      subscription,
+      effectivePlan,
+      config,
+    };
+  },
+
+  /**
+   * Transaction-scoped entitlement resolver for claimWorkspaceSeat. Reads the
+   * subscription under the already-held root-row lock so the ceiling cannot move
+   * between the check and the claim.
+   */
+  async resolveSeatLimitInTx(tx, rootId) {
+    const [config, effectivePlan] = await Promise.all([
+      this.getSeatCommerceConfig(),
+      this.getEffectivePlan(rootId),
+    ]);
+    const subscription = await this.getWorkspaceSubscription(rootId, tx);
+    return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
+  },
+
+  /**
+   * Fulfil a seat purchase. Expressed as TARGET STATE (`seats: 10`), never a
+   * delta, so a duplicated webhook or a retried verify is idempotent at the
+   * entitlement level and not merely at the payment level.
+   *
+   * Creates the subscription if the workspace has none, otherwise moves the
+   * existing one — there is never a second row, enforced by the partial unique
+   * index as well as by this code path.
+   */
+  async applySeatPurchase(rootId, { seats, term, pricingVersion, currency = "INR", region = "IN",
+    unitPriceOverrideMinor = null, couponCode = null, renewalAmountMinor = 0, paymentId = null, now = new Date() }) {
+    return await db.transaction(async (tx) => {
+      // Same lock every seat operation takes — one serialization point per workspace.
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${rootId} FOR UPDATE`);
+      const existing = await this.getWorkspaceSubscription(rootId, tx);
+
+      if (existing) {
+        // Idempotency: a replayed webhook that would not raise the entitlement is
+        // a no-op, not a second charge's worth of seats.
+        if (seats <= existing.seats && existing.status === SUBSCRIPTION_STATUS.ACTIVE) {
+          return { subscription: existing, changed: false, created: false };
+        }
+        const [updated] = await tx.update(workspaceSubscriptions).set({
+          seats: Math.max(seats, existing.seats),
+          renewalAmountMinor,
+          lastPaymentId: paymentId || existing.lastPaymentId,
+          // A successful charge always clears a dunning state.
+          status: SUBSCRIPTION_STATUS.ACTIVE,
+          dunningAttempts: 0,
+          firstFailureAt: null,
+          graceEndsAt: null,
+          updatedAt: now,
+        }).where(eq(workspaceSubscriptions.id, existing.id)).returning();
+        return { subscription: updated, changed: true, created: false, previousSeats: existing.seats };
+      }
+
+      const period = periodFor(now, term);
+      const [created] = await tx.insert(workspaceSubscriptions).values({
+        workspaceRootId: rootId,
+        status: SUBSCRIPTION_STATUS.ACTIVE,
+        seats, term, pricingVersion, currency, region,
+        unitPriceOverrideMinor, couponCode, renewalAmountMinor,
+        periodStart: period.start, periodEnd: period.end,
+        lastPaymentId: paymentId,
+        activatedAt: now, createdAt: now, updatedAt: now,
+      }).returning();
+      return { subscription: created, changed: true, created: true, previousSeats: 0 };
+    });
+  },
+
+  /**
+   * Record a DEFERRED change (downgrade or term switch). Never touches the live
+   * entitlement — the customer keeps what they paid for until periodEnd. This is
+   * what removes mid-term refunds, credit notes and add-then-drop arbitrage from
+   * the entire design.
+   */
+  async scheduleSeatChange(rootId, { seats = null, term = null, renewalAmountMinor = null, now = new Date() }) {
+    const existing = await this.getWorkspaceSubscription(rootId);
+    if (!existing) return null;
+    const [updated] = await db.update(workspaceSubscriptions).set({
+      scheduledSeats: seats == null ? existing.scheduledSeats : seats,
+      scheduledTerm: term == null ? existing.scheduledTerm : term,
+      ...(renewalAmountMinor == null ? {} : { renewalAmountMinor }),
+      updatedAt: now,
+    }).where(eq(workspaceSubscriptions.id, existing.id)).returning();
+    return updated;
+  },
+
+  /** Move a subscription along the lifecycle, refusing illegal edges. */
+  async transitionSubscription(subscriptionId, toStatus, patch = {}) {
+    return await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(workspaceSubscriptions)
+        .where(eq(workspaceSubscriptions.id, subscriptionId)).for("update");
+      if (!current) return { ok: false, error: "not_found" };
+      if (current.status === toStatus) return { ok: true, subscription: current, noop: true };
+      if (!canSubscriptionTransition(current.status, toStatus)) {
+        return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
+      }
+      const [updated] = await tx.update(workspaceSubscriptions)
+        .set({ ...patch, status: toStatus, updatedAt: new Date() })
+        .where(eq(workspaceSubscriptions.id, subscriptionId)).returning();
+      return { ok: true, subscription: updated };
+    });
+  },
+
+  /**
+   * Roll a subscription into its next period, applying any scheduled change.
+   * This is the ONE place a deferred downgrade or term switch takes effect.
+   */
+  async renewSubscription(subscriptionId, { paymentId = null, now = new Date() } = {}) {
+    return await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(workspaceSubscriptions)
+        .where(eq(workspaceSubscriptions.id, subscriptionId)).for("update");
+      if (!current) return { ok: false, error: "not_found" };
+      if (!isEntitling(current.status)) return { ok: false, error: "not_renewable", status: current.status };
+
+      const term = current.scheduledTerm || current.term;
+      const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
+      const period = periodFor(current.periodEnd, term);
+      const quote = quoteSeats({
+        seats, term, region: current.region,
+        unitPriceOverrideMinor: current.unitPriceOverrideMinor,
+      });
+
+      const [updated] = await tx.update(workspaceSubscriptions).set({
+        status: SUBSCRIPTION_STATUS.ACTIVE,
+        seats, term,
+        // Renewal re-prices at TODAY's catalog: the lock protects the term you
+        // paid for, it is not a perpetual price freeze.
+        pricingVersion: quote.error ? current.pricingVersion : quote.version,
+        renewalAmountMinor: quote.error ? current.renewalAmountMinor : quote.totalMinor,
+        periodStart: period.start,
+        periodEnd: period.end,
+        scheduledSeats: null,
+        scheduledTerm: null,
+        dunningAttempts: 0,
+        firstFailureAt: null,
+        graceEndsAt: null,
+        lastPaymentId: paymentId || current.lastPaymentId,
+        updatedAt: now,
+      }).where(eq(workspaceSubscriptions.id, subscriptionId)).returning();
+      return { ok: true, subscription: updated, appliedScheduledChange: current.scheduledSeats != null || current.scheduledTerm != null };
+    });
+  },
+
+  /** Subscriptions whose period has ended and which need renewal or expiry. */
+  async getSubscriptionsDue(before = new Date(), limit = 100) {
+    return await db.select().from(workspaceSubscriptions)
+      .where(and(
+        inArray(workspaceSubscriptions.status, [...SUBSCRIPTION_ENTITLING_STATUSES]),
+        lt(workspaceSubscriptions.periodEnd, before),
+      ))
+      .orderBy(asc(workspaceSubscriptions.periodEnd))
+      .limit(limit);
+  },
+
+  /**
+   * Deactivate members beyond the entitlement after a lapse, NEWEST FIRST so the
+   * earliest teammates keep working. Members are deactivated (recoverable via the
+   * existing reactivate path), never deleted, and no credit is ever touched.
+   */
+  async enforceSeatOverage(rootId, entitledSeats, { now = new Date() } = {}) {
+    if (entitledSeats === Infinity) return { deactivated: [] };
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${rootId} FOR UPDATE`);
+      const memberIds = await this.getWorkspaceMemberIds(rootId);
+      memberIds.delete(rootId);
+      if (memberIds.size === 0) return { deactivated: [] };
+      const members = await tx.select({ id: users.id, createdAt: users.createdAt })
+        .from(users)
+        .where(and(inArray(users.id, [...memberIds]), eq(users.isActive, true)))
+        .orderBy(asc(users.createdAt));
+      const excess = members.length - entitledSeats;
+      if (excess <= 0) return { deactivated: [] };
+      const toDeactivate = members.slice(members.length - excess).map(m => m.id);
+      await tx.update(users).set({ isActive: false, updatedAt: now })
+        .where(inArray(users.id, toDeactivate));
+      return { deactivated: toDeactivate };
+    });
+  },
+
+  /**
+   * Transfer workspace ownership. The owner is a TREE POSITION (parentId == null),
+   * so a transfer is a re-parenting — the new owner becomes the root and the old
+   * owner becomes their child. Billing history, the subscription and every
+   * workspace-owned resource stay with the WORKSPACE, which is exactly why they
+   * are keyed on the root id rather than on a person.
+   *
+   * Without this, a departed owner leaves a workspace that cannot pay its renewal
+   * and whose members lose their plan (getEffectivePlan walks to the root) — a
+   * latent gap under free seats, a P0 under a subscription.
+   */
+  async transferWorkspaceOwnership(currentOwnerId, newOwnerId) {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${currentOwnerId} FOR UPDATE`);
+      const [owner] = await tx.select().from(users).where(eq(users.id, currentOwnerId));
+      const [next] = await tx.select().from(users).where(eq(users.id, newOwnerId));
+      if (!owner || !next) return { ok: false, error: "not_found" };
+      if (owner.parentId != null) return { ok: false, error: "not_owner" };
+      if (!next.isActive) return { ok: false, error: "target_inactive" };
+
+      // The new owner must already belong to this workspace — ownership can never
+      // be handed to an account outside the tenant.
+      const memberIds = await this.getWorkspaceMemberIds(currentOwnerId);
+      if (!memberIds.has(newOwnerId)) return { ok: false, error: "not_a_member" };
+
+      // Re-parent: everyone who reported to the new owner now reports to the old
+      // owner's position, so the tree stays exactly two levels deep.
+      await tx.update(users).set({ parentId: currentOwnerId, updatedAt: new Date() })
+        .where(eq(users.parentId, newOwnerId));
+      await tx.update(users).set({ parentId: null, plan: owner.plan, updatedAt: new Date() })
+        .where(eq(users.id, newOwnerId));
+      await tx.update(users).set({ parentId: newOwnerId, updatedAt: new Date() })
+        .where(eq(users.id, currentOwnerId));
+      // The subscription follows the workspace to its new root.
+      await tx.update(workspaceSubscriptions).set({ workspaceRootId: newOwnerId, updatedAt: new Date() })
+        .where(eq(workspaceSubscriptions.workspaceRootId, currentOwnerId));
+      return { ok: true, previousOwnerId: currentOwnerId, newOwnerId };
+    });
   },
 
   async checkAndIncrementAiQuota(userId) {
@@ -2816,6 +3098,24 @@ const dbStorage = {
     return await db.select().from(invites)
       .where(eq(invites.invitedBy, invitedBy))
       .orderBy(desc(invites.createdAt));
+  },
+
+  // M42 — outstanding invites across the WHOLE workspace, not just one admin's.
+  // A pending invite doesn't hold a seat (the seat is claimed atomically at
+  // accept), but once seats are paid for, over-inviting means N people build a
+  // password and hit a 403 at the last step. Counting live invites against the
+  // entitlement at SEND time makes that impossible without needing reservation
+  // state or an expiry-release job: expired and revoked invites drop out of this
+  // count by themselves.
+  async getPendingWorkspaceInviteCount(rootId, now = new Date()) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    const [result] = await db.select({ count: sql`COUNT(*)` }).from(invites)
+      .where(and(
+        inArray(invites.invitedBy, [...memberIds]),
+        isNull(invites.acceptedAt),
+        gte(invites.expiresAt, now),
+      ));
+    return parseInt(result.count, 10);
   },
 
   async markInviteAccepted(id) {

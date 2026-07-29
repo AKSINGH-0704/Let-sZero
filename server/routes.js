@@ -1,7 +1,7 @@
 import { storage } from "./storage.js";
 import { pool } from "./db.js";
 import { Readable } from "stream";
-import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, MAX_TEAM_MEMBERS, AI_DAILY_LIMITS, normalizeEmail } from "../shared/schema.js";
+import { AUDIT_ACTIONS, USER_ROLES, PRICING_PLANS, CREDIT_TIERS, FREE_TRIAL_CREDITS, MIN_CREDIT_PURCHASE, contactSubmissionSchema, waitlistSchema, PAYMENT_STATUS, getPlanWithPrices, DEFAULT_EXCHANGE_RATE, SUPPORTED_CURRENCIES, PLAN_LIMITS, CAMPAIGN_EMAIL_STATUS, CAMPAIGN_STATUS, AI_DAILY_LIMITS, normalizeEmail } from "../shared/schema.js";
 import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
@@ -273,6 +273,28 @@ async function authMiddleware(req, res, next) {
 // through isSameWorkspaceAdmin, which is tree-scoped).
 function isWorkspaceOwner(user) {
   return user != null && user.parentId == null;
+}
+
+// M42 — the ONE seat-limit rejection body. Every path that can run out of seats
+// (create, reactivate, invite send, invite accept) returns exactly this shape, so
+// the client has a single case to handle and the message can never claim
+// something the entitlement authority disagrees with. The `error: "PLAN_LIMIT"`
+// key is preserved from the pre-M42 contract so existing clients keep working.
+async function seatLimitError(rootId, current = null) {
+  const e = await storage.resolveSeatEntitlement(rootId);
+  const billing = e.config?.billingEnabled === true;
+  return {
+    error: "PLAN_LIMIT",
+    code: "SEAT_LIMIT_REACHED",
+    message: billing
+      ? `You're using all ${e.seats} of your seats. Add seats to invite more people.`
+      : `Your plan allows up to ${e.seats} team member${e.seats === 1 ? "" : "s"}. Contact us about Enterprise to add more.`,
+    limit: e.seats === Infinity ? null : e.seats,
+    current,
+    seatSource: e.source,
+    canBuySeats: billing,
+    currentPlan: e.effectivePlan,
+  };
 }
 
 function adminMiddleware(req, res, next) {
@@ -1380,9 +1402,13 @@ export async function registerRoutes(httpServer, app) {
       // not just this admin's direct children, and the check+insert happen in
       // one locked transaction so two concurrent creates for the same
       // workspace cannot both slip past the limit.
-      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
+      // M42 — the ceiling is resolved INSIDE the claim transaction from the single
+      // entitlement authority (subscription → grandfather → free floor → legacy
+      // plan), so a concurrent renewal or expiry cannot interleave between the
+      // check and the write.
       const rootId = await storage.resolveWorkspaceRootId(req.user.id);
-      const claim = await storage.claimWorkspaceSeat(rootId, memberLimit, (tx) => storage.createUser({
+      const seatLimit = (tx) => storage.resolveSeatLimitInTx(tx, rootId);
+      const claim = await storage.claimWorkspaceSeat(rootId, seatLimit, (tx) => storage.createUser({
         username,
         email: normalizedEmail,
         password,
@@ -1394,13 +1420,7 @@ export async function registerRoutes(httpServer, app) {
         emailVerified: true, // Admin-provisioned accounts are considered verified by the creating admin
       }, tx));
       if (!claim.allowed) {
-        return res.status(403).json({
-          error: "PLAN_LIMIT",
-          message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade to add more.`,
-          currentPlan: req.user.effectivePlan || "free",
-          limit: memberLimit,
-          current: claim.current,
-        });
+        return res.status(403).json(await seatLimitError(rootId, claim.current));
       }
       const newUser = claim.result;
 
@@ -1630,17 +1650,14 @@ export async function registerRoutes(httpServer, app) {
       // identical pattern to POST /api/users. Scoped to the whole workspace,
       // not just this caller's direct children, so a Sub-Admin reactivating
       // their own child is still checked against the true org-wide cap.
-      const memberLimit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
       const rootId = await storage.resolveWorkspaceRootId(req.user.id);
-      const claim = await storage.claimWorkspaceSeat(rootId, memberLimit, (tx) => storage.reactivateUserInTx(tx, id));
+      const claim = await storage.claimWorkspaceSeat(
+        rootId,
+        (tx) => storage.resolveSeatLimitInTx(tx, rootId),
+        (tx) => storage.reactivateUserInTx(tx, id),
+      );
       if (!claim.allowed) {
-        return res.status(403).json({
-          error: "PLAN_LIMIT",
-          message: `Your plan allows up to ${memberLimit} team member${memberLimit === 1 ? "" : "s"}. Upgrade or deactivate another member before reactivating this one.`,
-          currentPlan: req.user.effectivePlan || "free",
-          limit: memberLimit,
-          current: claim.current,
-        });
+        return res.status(403).json(await seatLimitError(rootId, claim.current));
       }
 
       await storage.createAuditLog({
@@ -2907,20 +2924,28 @@ export async function registerRoutes(httpServer, app) {
       // off the same normalized identity.
       const email = normalizeEmail(rawEmail);
 
-      // Organization-wide seat pre-check (TRUST-023) — sending an invite doesn't
-      // itself consume a seat (accept does, via the atomic claim there), so a
-      // plain workspace-wide count is sufficient here; this is a courtesy check
-      // to avoid sending an invite that would be rejected at accept time.
-      const limit = MAX_TEAM_MEMBERS[req.user.effectivePlan] ?? 0;
-      if (limit !== Infinity) {
-        const rootId = await storage.resolveWorkspaceRootId(req.user.id);
-        const activeCount = await storage.getActiveWorkspaceMemberCount(rootId);
-        if (activeCount >= limit) {
+      // Organization-wide seat pre-check (TRUST-023). Sending an invite still
+      // doesn't consume a seat — the seat is claimed atomically at accept — but
+      // M42 counts LIVE INVITES alongside active members here. Once seats are
+      // paid for, over-inviting means N people build a password and are rejected
+      // at the final step; counting outstanding invites at send time prevents
+      // that without any reservation state, because expired and revoked invites
+      // fall out of the count on their own.
+      const inviteRootId = await storage.resolveWorkspaceRootId(req.user.id);
+      const entitlement = await storage.resolveSeatEntitlement(inviteRootId);
+      if (entitlement.seats !== Infinity) {
+        const [activeCount, pendingCount] = await Promise.all([
+          storage.getActiveWorkspaceMemberCount(inviteRootId),
+          storage.getPendingWorkspaceInviteCount(inviteRootId),
+        ]);
+        if (activeCount + pendingCount >= entitlement.seats) {
+          const body = await seatLimitError(inviteRootId, activeCount);
           return res.status(403).json({
-            error: "PLAN_LIMIT",
-            message: `Your plan allows up to ${limit} team member${limit === 1 ? "" : "s"}. Upgrade to add more.`,
-            limit,
-            current: activeCount,
+            ...body,
+            pendingInvites: pendingCount,
+            message: pendingCount > 0
+              ? `All ${entitlement.seats} seats are taken or held by ${pendingCount} pending invite${pendingCount === 1 ? "" : "s"}. Revoke an invite or add seats.`
+              : body.message,
           });
         }
       }
@@ -3040,9 +3065,8 @@ export async function registerRoutes(httpServer, app) {
         // Organization-wide (TRUST-023), atomic (TRUST-026) — scoped to the
         // inviter's whole workspace, not just their direct children.
         const inviterEffectivePlan = await storage.getEffectivePlan(inviter.id);
-        const limit = MAX_TEAM_MEMBERS[inviterEffectivePlan] ?? 0;
         const rootId = await storage.resolveWorkspaceRootId(inviter.id);
-        const claim = await storage.claimWorkspaceSeat(rootId, limit, (tx) => storage.createUser({
+        const claim = await storage.claimWorkspaceSeat(rootId, (tx) => storage.resolveSeatLimitInTx(tx, rootId), (tx) => storage.createUser({
           username,
           email: invite.email,
           password,
@@ -3059,9 +3083,12 @@ export async function registerRoutes(httpServer, app) {
           emailVerified: true, // Invite token acceptance proves ownership of the invite email address
         }, tx));
         if (!claim.allowed) {
+          // The invitee is not the buyer, so the actionable instruction is to go
+          // back to their admin — never a seat-purchase CTA aimed at the wrong person.
           return res.status(403).json({
             error: "PLAN_LIMIT",
-            message: `The admin's plan limit has been reached. Ask your admin to upgrade before accepting this invite.`,
+            code: "SEAT_LIMIT_REACHED",
+            message: "This team has no seats available. Ask your admin to add a seat, then use this link again.",
           });
         }
         newUser = claim.result;

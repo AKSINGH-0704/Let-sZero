@@ -20,6 +20,15 @@ import { isMachineCategory } from "./trackingClassifier.js";
 import { PERMANENT_FAILURE_REASONS, EXECUTION_LEASE_DURATION_MS } from "./campaignConfig.js";
 // M39 Phase 2 — same payment state machine the production backend uses, kept in parity.
 import { canTransition } from "../shared/paymentStateMachine.js";
+// M42 — seat commerce. Identical shared modules to storage.js, so the two
+// backends cannot diverge on a commercial decision.
+import {
+  resolveSeatEntitlement, parseFreeFloor, SEAT_SETTING_KEYS,
+} from "../shared/seatEntitlement.js";
+import {
+  SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
+} from "../shared/subscriptionStateMachine.js";
+import { quoteSeats, periodFor } from "../shared/seatPricing.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -33,6 +42,9 @@ function generateUUID() {
 const _seatLocks = new Map();
 
 async function _claimWorkspaceSeatUnlocked(self, rootId, limit, writeFn) {
+  // M42 parity — `limit` may be a resolver evaluated under the same lock. See
+  // storage.js claimWorkspaceSeat for why the ceiling must be read in here.
+  if (typeof limit === "function") limit = await limit(null);
   if (limit !== Infinity) {
     const memberIds = await self.getWorkspaceMemberIds(rootId);
     memberIds.delete(rootId);
@@ -68,6 +80,7 @@ const store = {
   contactListMembers: new Map(),
   contactImports: new Map(),
   trackingTokens: new Map(),
+  workspaceSubscriptions: new Map(),
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -2091,6 +2104,171 @@ export const memoryStorage = {
     }
   },
 
+  // ── M42 — seat commerce (parity with storage.js) ──────────────────────────
+  // Same shared decision modules, same target-state idempotency, same lock
+  // discipline (the per-workspace promise-chain lock standing in for FOR UPDATE).
+
+  async getWorkspaceSubscription(rootId, _tx = null) {
+    for (const sub of store.workspaceSubscriptions.values()) {
+      if (sub.workspaceRootId === rootId && isEntitling(sub.status)) return sub;
+    }
+    return null;
+  },
+
+  async getSeatCommerceConfig() {
+    const enabled = await this.getPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED);
+    const floor = await this.getPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR);
+    return {
+      billingEnabled: enabled?.value === "true",
+      freeFloor: parseFreeFloor(floor?.value),
+    };
+  },
+
+  async resolveSeatEntitlement(rootId) {
+    const config = await this.getSeatCommerceConfig();
+    const effectivePlan = await this.getEffectivePlan(rootId);
+    const subscription = await this.getWorkspaceSubscription(rootId);
+    return {
+      ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
+      subscription, effectivePlan, config,
+    };
+  },
+
+  async resolveSeatLimitInTx(_tx, rootId) {
+    const config = await this.getSeatCommerceConfig();
+    const effectivePlan = await this.getEffectivePlan(rootId);
+    const subscription = await this.getWorkspaceSubscription(rootId);
+    return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
+  },
+
+  async applySeatPurchase(rootId, { seats, term, pricingVersion, currency = "INR", region = "IN",
+    unitPriceOverrideMinor = null, couponCode = null, renewalAmountMinor = 0, paymentId = null, now = new Date() }) {
+    const existing = await this.getWorkspaceSubscription(rootId);
+    if (existing) {
+      if (seats <= existing.seats && existing.status === SUBSCRIPTION_STATUS.ACTIVE) {
+        return { subscription: existing, changed: false, created: false };
+      }
+      const previousSeats = existing.seats;
+      existing.seats = Math.max(seats, existing.seats);
+      existing.renewalAmountMinor = renewalAmountMinor;
+      existing.lastPaymentId = paymentId || existing.lastPaymentId;
+      existing.status = SUBSCRIPTION_STATUS.ACTIVE;
+      existing.dunningAttempts = 0;
+      existing.firstFailureAt = null;
+      existing.graceEndsAt = null;
+      existing.updatedAt = now;
+      return { subscription: existing, changed: true, created: false, previousSeats };
+    }
+    const period = periodFor(now, term);
+    const sub = {
+      id: generateUUID(),
+      workspaceRootId: rootId,
+      status: SUBSCRIPTION_STATUS.ACTIVE,
+      seats, term, pricingVersion, currency, region,
+      unitPriceOverrideMinor, couponCode, renewalAmountMinor,
+      periodStart: period.start, periodEnd: period.end,
+      scheduledSeats: null, scheduledTerm: null,
+      cancelAtPeriodEnd: false,
+      grandfatheredSeats: 0, grandfatheredUntil: null,
+      dunningAttempts: 0, firstFailureAt: null, graceEndsAt: null,
+      lastPaymentId: paymentId,
+      activatedAt: now, createdAt: now, updatedAt: now, endedAt: null,
+    };
+    store.workspaceSubscriptions.set(sub.id, sub);
+    return { subscription: sub, changed: true, created: true, previousSeats: 0 };
+  },
+
+  async scheduleSeatChange(rootId, { seats = null, term = null, renewalAmountMinor = null, now = new Date() }) {
+    const existing = await this.getWorkspaceSubscription(rootId);
+    if (!existing) return null;
+    if (seats != null) existing.scheduledSeats = seats;
+    if (term != null) existing.scheduledTerm = term;
+    if (renewalAmountMinor != null) existing.renewalAmountMinor = renewalAmountMinor;
+    existing.updatedAt = now;
+    return existing;
+  },
+
+  async transitionSubscription(subscriptionId, toStatus, patch = {}) {
+    const current = store.workspaceSubscriptions.get(subscriptionId);
+    if (!current) return { ok: false, error: "not_found" };
+    if (current.status === toStatus) return { ok: true, subscription: current, noop: true };
+    if (!canSubscriptionTransition(current.status, toStatus)) {
+      return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
+    }
+    Object.assign(current, patch, { status: toStatus, updatedAt: new Date() });
+    return { ok: true, subscription: current };
+  },
+
+  async renewSubscription(subscriptionId, { paymentId = null, now = new Date() } = {}) {
+    const current = store.workspaceSubscriptions.get(subscriptionId);
+    if (!current) return { ok: false, error: "not_found" };
+    if (!isEntitling(current.status)) return { ok: false, error: "not_renewable", status: current.status };
+
+    const term = current.scheduledTerm || current.term;
+    const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
+    const period = periodFor(current.periodEnd, term);
+    const quote = quoteSeats({ seats, term, region: current.region, unitPriceOverrideMinor: current.unitPriceOverrideMinor });
+    const appliedScheduledChange = current.scheduledSeats != null || current.scheduledTerm != null;
+
+    Object.assign(current, {
+      status: SUBSCRIPTION_STATUS.ACTIVE,
+      seats, term,
+      pricingVersion: quote.error ? current.pricingVersion : quote.version,
+      renewalAmountMinor: quote.error ? current.renewalAmountMinor : quote.totalMinor,
+      periodStart: period.start, periodEnd: period.end,
+      scheduledSeats: null, scheduledTerm: null,
+      dunningAttempts: 0, firstFailureAt: null, graceEndsAt: null,
+      lastPaymentId: paymentId || current.lastPaymentId,
+      updatedAt: now,
+    });
+    return { ok: true, subscription: current, appliedScheduledChange };
+  },
+
+  async getSubscriptionsDue(before = new Date(), limit = 100) {
+    return Array.from(store.workspaceSubscriptions.values())
+      .filter(s => isEntitling(s.status) && new Date(s.periodEnd) < new Date(before))
+      .sort((a, b) => new Date(a.periodEnd) - new Date(b.periodEnd))
+      .slice(0, limit);
+  },
+
+  async enforceSeatOverage(rootId, entitledSeats, { now = new Date() } = {}) {
+    if (entitledSeats === Infinity) return { deactivated: [] };
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    memberIds.delete(rootId);
+    const members = [...memberIds]
+      .map(id => store.users.get(id))
+      .filter(u => u && u.isActive)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const excess = members.length - entitledSeats;
+    if (excess <= 0) return { deactivated: [] };
+    const toDeactivate = members.slice(members.length - excess);
+    for (const u of toDeactivate) { u.isActive = false; u.updatedAt = now; }
+    return { deactivated: toDeactivate.map(u => u.id) };
+  },
+
+  async transferWorkspaceOwnership(currentOwnerId, newOwnerId) {
+    const owner = store.users.get(currentOwnerId);
+    const next = store.users.get(newOwnerId);
+    if (!owner || !next) return { ok: false, error: "not_found" };
+    if (owner.parentId != null) return { ok: false, error: "not_owner" };
+    if (!next.isActive) return { ok: false, error: "target_inactive" };
+    const memberIds = await this.getWorkspaceMemberIds(currentOwnerId);
+    if (!memberIds.has(newOwnerId)) return { ok: false, error: "not_a_member" };
+
+    for (const u of store.users.values()) {
+      if (u.parentId === newOwnerId) { u.parentId = currentOwnerId; u.updatedAt = new Date(); }
+    }
+    next.parentId = null;
+    next.plan = owner.plan;
+    next.updatedAt = new Date();
+    owner.parentId = newOwnerId;
+    owner.updatedAt = new Date();
+    for (const sub of store.workspaceSubscriptions.values()) {
+      if (sub.workspaceRootId === currentOwnerId) { sub.workspaceRootId = newOwnerId; sub.updatedAt = new Date(); }
+    }
+    return { ok: true, previousOwnerId: currentOwnerId, newOwnerId };
+  },
+
   async checkAndIncrementAiQuota(userId) {
     const effectivePlan = await this.getEffectivePlan(userId);
     const limit = AI_DAILY_LIMITS[effectivePlan] ?? AI_DAILY_LIMITS.free;
@@ -2443,6 +2621,19 @@ export const memoryStorage = {
   async getPendingInvitesByAdmin(invitedBy) {
     return toSortedArray(store.invites)
       .filter(i => i.invitedBy === invitedBy);
+  },
+
+  // M42 parity — see storage.js for why live invites count against the entitlement.
+  async getPendingWorkspaceInviteCount(rootId, now = new Date()) {
+    const memberIds = await this.getWorkspaceMemberIds(rootId);
+    let count = 0;
+    for (const inv of store.invites.values()) {
+      if (!memberIds.has(inv.invitedBy)) continue;
+      if (inv.acceptedAt) continue;
+      if (new Date(inv.expiresAt) < new Date(now)) continue;
+      count++;
+    }
+    return count;
   },
 
   async markInviteAccepted(id) {
