@@ -48,11 +48,22 @@ beforeAll(async () => {
 
 afterAll(async () => { await vite?.close(); });
 
-function seededClient({ me, users, invites }) {
+// M42 — the seat ceiling is now SERVER state (GET /api/seats/subscription), not
+// derived on the client from MAX_TEAM_MEMBERS. Seeded with the shape the server
+// returns while seat billing is off, which is the pre-M42 behaviour: the flat
+// legacy allowance of 25.
+const LEGACY_SEATS = {
+  entitlement: { seats: 25, unlimited: false, source: "LEGACY_PLAN" },
+  usage: { activeMembers: 0, pendingInvites: 0 },
+  billingEnabled: false, isOwner: true, subscription: null, renewal: null, seatsAtRisk: 0,
+};
+
+function seededClient({ me, users, invites, seats = LEGACY_SEATS }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(["/api/auth/me"], me);
   if (users !== undefined) qc.setQueryData(["/api/users"], users);
   if (invites !== undefined) qc.setQueryData(["/api/invites"], invites);
+  if (seats !== undefined) qc.setQueryData(["/api/seats/subscription"], seats);
   return qc;
 }
 
@@ -128,5 +139,53 @@ describe("M41 — Team Members page renders the reused team experience", () => {
     expect(html).toContain("alice");
     expect(html).toContain("Pending invites");
     expect(html).not.toContain("Team is managed by your workspace owner");
+  });
+
+  // ── M42 — the seat ceiling is server state ────────────────────────────────
+  describe("seat entitlement comes from the server, not a client constant", () => {
+    // renderToString emits `<!-- -->` between adjacent JSX expressions, so
+    // "{used} / {included} seats used" is not a contiguous string in the raw
+    // markup. Strip the markers before asserting on rendered sentences.
+    const withSeats = (seats) => renderToString(makeTree(seededClient({
+      me: OWNER,
+      users: [{ id: "m1", username: "alice", email: "a@x.com", role: "USER", isActive: true, isActiveThisWeek: true, creditsRemaining: 0, lastActivityAt: null }],
+      invites: [],
+      seats,
+    }))).replace(/<!-- -->/g, "");
+
+    it("renders a purchased ceiling that differs from the legacy constant", () => {
+      // 4 would be impossible under MAX_TEAM_MEMBERS (always 25 below Enterprise),
+      // so seeing it proves the page is reading the subscription, not the constant.
+      const html = withSeats({
+        ...LEGACY_SEATS,
+        entitlement: { seats: 4, unlimited: false, source: "SUBSCRIPTION" },
+        billingEnabled: true,
+      });
+      // The card variant wraps the denominator in its own span
+      // (`1 <span>/ 4 seats used</span>`), so assert on that span's text — the
+      // part that carries the entitlement.
+      expect(html).toContain("/ 4 seats used");
+      expect(html).not.toContain("/ 25 seats used");
+    });
+
+    it("offers seat purchase instead of a credit pack once billing is live", () => {
+      const html = withSeats({ ...LEGACY_SEATS, billingEnabled: true });
+      expect(html).toContain("Manage seats");
+      expect(html).not.toContain("Buy credits");
+    });
+
+    it("offers credits, not seats, while seat billing is off", () => {
+      const html = withSeats(LEGACY_SEATS);
+      expect(html).toContain("Buy credits");
+      expect(html).not.toContain("Manage seats");
+    });
+
+    it("does not claim the team is full before the entitlement has loaded", () => {
+      // `undefined` seat data must render as unlimited, never as a false
+      // "all seats are in use" flash on first paint.
+      const html = withSeats(undefined);
+      expect(html).not.toContain("All seats are in use");
+      expect(html).not.toContain("banner-seats-full");
+    });
   });
 });

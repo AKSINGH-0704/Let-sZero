@@ -16,8 +16,9 @@
  *   • remove a member  → DELETE /api/users/:id
  *   • restore a member → POST /api/users/:id/reactivate
  *
- * Seat math mirrors the server's enforcement (MAX_TEAM_MEMBERS[effectivePlan];
- * only ACTIVE members occupy a seat; the owner does not). RBAC gating mirrors the
+ * The seat ceiling is READ from the server's entitlement authority
+ * (GET /api/seats/subscription), never re-derived here — only ACTIVE members
+ * occupy a seat and the owner does not. RBAC gating mirrors the
  * server's adminMiddleware exactly — a plain member cannot manage the workspace.
  * This page is distinct from the operator's /app/users admin view and exposes no
  * platform-wide administration.
@@ -51,7 +52,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Users as UsersIcon, UserPlus, Mail, Trash2, RotateCcw, ArrowUpRight, Info } from "lucide-react";
-import { MAX_TEAM_MEMBERS, PLAN_LIMITS } from "@shared/schema";
+import { PLAN_LIMITS } from "@shared/schema";
+import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 import { cn } from "@/lib/utils";
 import SeatSummary, { computeSeatState } from "@/components/teams/SeatSummary";
 
@@ -133,14 +135,19 @@ export default function TeamMembers() {
   const { data: members, isLoading } = useQuery({ queryKey: ["/api/users"], enabled: canManage });
   const { data: invites, isLoading: invitesLoading } = useQuery({ queryKey: ["/api/invites"], enabled: canManage });
 
-  // Seat math — identical source and rule as the server's claimWorkspaceSeat:
-  // included = MAX_TEAM_MEMBERS[effectivePlan]; used = ACTIVE members (owner excluded,
-  // and /api/users already excludes the owner). Deactivated members stay listed but
-  // free their seat.
+  // M42 — the seat ceiling comes from the SERVER's entitlement authority
+  // (subscription → grandfather → free floor → legacy plan). Deriving it here
+  // from MAX_TEAM_MEMBERS would be a second authority that silently disagrees
+  // with enforcement the moment seat billing is enabled for a workspace.
+  const { data: seatInfo } = useQuery({ queryKey: ["/api/seats/subscription"], enabled: canManage });
   const effectivePlan = user?.effectivePlan || "free";
-  const included = MAX_TEAM_MEMBERS[effectivePlan] ?? 0;
+  const included = seatInfo?.entitlement
+    ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
+    : null;
   const activeMembers = useMemo(() => (members || []).filter(m => m.isActive), [members]);
   const used = activeMembers.length;
+  // `included: null` while loading renders as unlimited, so the UI never briefly
+  // tells someone their team is full before the real number arrives.
   const seat = computeSeatState(used, included);
   const planLabel = PLAN_LIMITS[effectivePlan]?.label || (effectivePlan[0]?.toUpperCase() + effectivePlan.slice(1));
 
@@ -288,11 +295,22 @@ export default function TeamMembers() {
             included={included}
             actions={
               <>
-                <Button asChild variant="outline" size="sm" className="gap-1.5" data-testid="button-upgrade-plan">
-                  <Link href="/app/payments">
-                    Upgrade plan <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                  </Link>
-                </Button>
+                {/* M42 — when seat billing is live, the honest action for "I need
+                    more people" is buying a seat, not upgrading a credit pack.
+                    Credit packs no longer change the seat allowance at all. */}
+                {seatInfo?.billingEnabled ? (
+                  <Button asChild variant="outline" size="sm" className="gap-1.5" data-testid="button-manage-seats">
+                    <Link href="/app/team/seats">
+                      Manage seats <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button asChild variant="outline" size="sm" className="gap-1.5" data-testid="button-upgrade-plan">
+                    <Link href="/app/payments">
+                      Buy credits <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                )}
               </>
             }
           />
@@ -303,8 +321,12 @@ export default function TeamMembers() {
           <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30" data-testid="banner-seats-full">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
             <p className="text-amber-800 dark:text-amber-300">
-              All {included} seats are currently in use. Remove an inactive member to free a seat, or{" "}
-              <Link href="/app/payments" className="font-medium underline">upgrade your plan</Link> to add more.
+              All {included} seats are currently in use. Remove an inactive member to free a seat
+              {seatInfo?.billingEnabled ? (
+                <>, or <Link href="/app/team/seats" className="font-medium underline">add seats</Link>.</>
+              ) : (
+                <>, or <Link href={ENTERPRISE_CONTACT_PATH} className="font-medium underline">talk to us about Enterprise</Link>.</>
+              )}
             </p>
           </div>
         )}

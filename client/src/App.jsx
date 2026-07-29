@@ -85,6 +85,7 @@ const History = lazy(() => import("@/pages/History"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const Users = lazy(() => import("@/pages/Users"));
 const TeamMembers = lazy(() => import("@/pages/TeamMembers"));
+const TeamSeats = lazy(() => import("@/pages/TeamSeats"));
 const Audit = lazy(() => import("@/pages/Audit"));
 const Profile = lazy(() => import("@/pages/Profile"));
 const Payments = lazy(() => import("@/pages/Payments"));
@@ -412,6 +413,13 @@ function AppRoutes() {
           the page itself gates management on workspace-admin role (and its data
           endpoints are adminMiddleware-gated), so a plain member sees a read-only
           note rather than a redirect. */}
+      {/* More specific path first — wouter matches in order. */}
+      <Route path="/app/team/seats">
+        <ProtectedRoute>
+          <TeamSeats />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/app/team">
         <ProtectedRoute>
           <TeamMembers />
