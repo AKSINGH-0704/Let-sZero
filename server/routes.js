@@ -285,6 +285,11 @@ function isWorkspaceOwner(user) {
   return user != null && user.parentId == null;
 }
 
+// How far ahead of periodEnd a customer may renew. Wide enough to be a genuine
+// convenience (and to cover a dunning window), narrow enough that renewal cannot
+// be used to prepay the anchor indefinitely.
+const RENEW_EARLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 // M42 — one description of a seat charge, so the renewal and the change paths
 // cannot disagree about what is stored versus what is charged.
 //
@@ -3777,6 +3782,20 @@ export async function registerRoutes(httpServer, app) {
       }
       const sub = await storage.getWorkspaceSubscription(rootId);
       if (!sub) return res.status(404).json({ message: "No seat subscription to renew." });
+
+      // Renewal rolls the period forward, so an unbounded "renew early" lets a
+      // double-click (or an impatient customer) prepay period after period and
+      // push the anchor years out. Allow it only when a renewal is actually due
+      // or imminent — which also makes a duplicate submission a no-op, because
+      // the first one moves periodEnd a full term away.
+      const msUntilRenewal = new Date(sub.periodEnd).getTime() - Date.now();
+      if (sub.status !== SUBSCRIPTION_STATUS.PAST_DUE && msUntilRenewal > RENEW_EARLY_WINDOW_MS) {
+        return res.status(409).json({
+          message: "This subscription isn't due for renewal yet.",
+          code: "RENEWAL_NOT_DUE",
+          renewsAt: sub.periodEnd,
+        });
+      }
 
       // The renewal applies any scheduled change, so quote what the NEXT period
       // will actually contain — not what the current one holds.

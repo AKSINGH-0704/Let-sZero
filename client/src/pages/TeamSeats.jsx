@@ -198,10 +198,20 @@ export default function TeamSeats() {
             <div>
               <p className="font-medium">Your seat renewal hasn't gone through</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Everything still works — your whole team keeps access until {fmtDate(sub.graceEndsAt)}. After that this
-                workspace drops to {entitlement.seats - seatsAtRisk} seat
-                {entitlement.seats - seatsAtRisk === 1 ? "" : "s"} and the {seatsAtRisk} most recently added member
-                {seatsAtRisk === 1 ? "" : "s"} are deactivated. Nobody is deleted, and your credits are never affected.
+                Everything still works — your whole team keeps access until {fmtDate(sub.graceEndsAt)}.{" "}
+                {/* An unlimited (Enterprise) entitlement has no numeric floor to
+                    quote, and `entitlement.seats` is null there — computing a
+                    remainder would print "drops to 0 seats" and frighten the one
+                    customer for whom nothing is at risk. */}
+                {entitlement.unlimited || seatsAtRisk === 0 ? (
+                  <>No seats are at risk — renewing just keeps your billing current.</>
+                ) : (
+                  <>
+                    After that this workspace drops to {entitlement.seats - seatsAtRisk} seat
+                    {entitlement.seats - seatsAtRisk === 1 ? "" : "s"} and the {seatsAtRisk} most recently added member
+                    {seatsAtRisk === 1 ? "" : "s"} are deactivated. Nobody is deleted, and your credits are never affected.
+                  </>
+                )}
               </p>
               {isWorkspaceOwner && (
                 <Button

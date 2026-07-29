@@ -79,6 +79,12 @@ const enable = (floor = 0) => Promise.all([
   storage.setPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED, "true", null),
   storage.setPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR, String(floor), null),
 ]);
+/** Bring a subscription inside the renew-early window so renewal is permitted. */
+async function makeDue(rootId) {
+  const sub = await storage.getWorkspaceSubscription(rootId);
+  await storage.transitionSubscription(sub.id, S.ACTIVE, { periodEnd: new Date(Date.now() + 1000) });
+  return sub;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe("H-1 — a customer can actually renew", () => {
@@ -86,6 +92,7 @@ describe("H-1 — a customer can actually renew", () => {
     const { owner, cookie } = await makeWorkspace();
     await enable(0);
     await api("POST", "/api/seats/checkout", { cookie, body: { seats: 5 } });
+    await makeDue(owner.id);
 
     const { status, json } = await api("POST", "/api/seats/renew", { cookie });
     expect(status).toBe(200);
@@ -100,6 +107,7 @@ describe("H-1 — a customer can actually renew", () => {
     const { owner, cookie } = await makeWorkspace();
     await enable(0);
     await api("POST", "/api/seats/checkout", { cookie, body: { seats: 5 } });
+    await makeDue(owner.id);
     // SNAPSHOT the values, do not hold the row. memoryStorage returns the live
     // object while dbStorage returns a copy, so keeping the reference would let
     // the renewal mutate the "before" figures out from under the assertion —
@@ -136,6 +144,7 @@ describe("H-1 — a customer can actually renew", () => {
     await enable(0);
     await api("POST", "/api/seats/checkout", { cookie, body: { seats: 10 } });
     await api("POST", "/api/seats/checkout", { cookie, body: { seats: 3 } }); // schedules
+    await makeDue(owner.id);
     await api("POST", "/api/seats/renew", { cookie });
 
     const after = await storage.getWorkspaceSubscription(owner.id);
@@ -143,10 +152,35 @@ describe("H-1 — a customer can actually renew", () => {
     expect(after.scheduledSeats).toBeNull();
   });
 
-  it("refuses renewal from a non-owner and when there is nothing to renew", async () => {
+  it("refuses renewal when there is nothing to renew", async () => {
     const { cookie } = await makeWorkspace();
     await enable(0);
     expect((await api("POST", "/api/seats/renew", { cookie })).status).toBe(404);
+  });
+
+  it("refuses an early renewal that is not yet due, so a double-click cannot prepay twice", async () => {
+    const { owner, cookie } = await makeWorkspace();
+    await enable(0);
+    await api("POST", "/api/seats/checkout", { cookie, body: { seats: 5 } });
+    const first = await storage.getWorkspaceSubscription(owner.id);
+    // Force the period to be due, renew once, then try again immediately.
+    await storage.transitionSubscription(first.id, S.ACTIVE, { periodEnd: new Date(Date.now() + 1000) });
+    expect((await api("POST", "/api/seats/renew", { cookie })).status).toBe(200);
+
+    const second = await api("POST", "/api/seats/renew", { cookie });
+    expect(second.status).toBe(409);
+    expect(second.json.code).toBe("RENEWAL_NOT_DUE");
+  });
+
+  it("always allows a PAST_DUE subscription to renew regardless of the window", async () => {
+    const { owner, cookie } = await makeWorkspace();
+    await enable(0);
+    await api("POST", "/api/seats/checkout", { cookie, body: { seats: 5 } });
+    const sub = await storage.getWorkspaceSubscription(owner.id);
+    await storage.transitionSubscription(sub.id, S.PAST_DUE, {
+      firstFailureAt: new Date(), graceEndsAt: new Date(Date.now() + 864e5), dunningAttempts: 1,
+    });
+    expect((await api("POST", "/api/seats/renew", { cookie })).status).toBe(200);
   });
 });
 
@@ -165,6 +199,7 @@ describe("H-2 — an upgrade supersedes a pending downgrade", () => {
     expect(sub.seats).toBe(12);
     expect(sub.scheduledSeats).toBeNull();
 
+    await makeDue(owner.id);
     await api("POST", "/api/seats/renew", { cookie });
     expect((await storage.getWorkspaceSubscription(owner.id)).seats).toBe(12);
   });
