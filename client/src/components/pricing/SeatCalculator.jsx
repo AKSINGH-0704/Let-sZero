@@ -38,7 +38,9 @@ const BEST_RATE = catalog.bands[catalog.bands.length - 1].rate;
 
 /**
  * The next band boundary above `seats`, or null at the top. Powers the single
- * most effective expansion nudge: a concrete "2 more seats drops everyone to ₹79".
+ * most effective expansion nudge: telling the customer exactly how many more
+ * seats drop the rate for their whole team, with the rate read from the catalog
+ * (never restated here — a price in a comment is a price that goes stale).
  */
 function nextBandFor(seats) {
   const current = bandForSeats(seats, catalog);
