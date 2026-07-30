@@ -42,6 +42,23 @@ export function parseFreeFloor(raw) {
   return n;
 }
 
+/**
+ * M43 — the seat allowance a PLAN advertises, for catalog/marketing projection.
+ *
+ * Deliberately lives here rather than at the call site: this module owns what
+ * `MAX_TEAM_MEMBERS` means, and a convergence guard forbids other server modules
+ * from reading that constant so nobody can re-derive a seat CEILING from it. This
+ * is not a ceiling — it is the number a plan card may advertise, and only while
+ * `seat_billing_enabled` is false. Returns `null` for unlimited, because JSON
+ * cannot carry Infinity and a caller must handle "unlimited" explicitly rather
+ * than misreading a 0.
+ */
+export function planSeatAllowance(planId) {
+  const n = MAX_TEAM_MEMBERS[planId];
+  if (n === Infinity) return null;
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Whether a stored grandfather grant is still in force. */
 export function grandfatherActive(subscription, now = new Date()) {
   if (!subscription || !(subscription.grandfatheredSeats > 0)) return false;

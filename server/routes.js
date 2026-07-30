@@ -24,7 +24,7 @@ import {
   quoteSeats, previewSeatChange, previewRenewal, buildInvoiceLines,
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
-import { seatsAtRisk } from "../shared/seatEntitlement.js";
+import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
 import { SUBSCRIPTION_STATUS } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
@@ -3488,11 +3488,21 @@ export async function registerRoutes(httpServer, app) {
   app.get("/api/pricing/plans", async (req, res) => {
     try {
       const exchangeRate = DEFAULT_EXCHANGE_RATE;
+      // M43 — each plan now carries its own seat allowance, so no client has to
+      // restate MAX_TEAM_MEMBERS. `maxTeamMembers: null` means unlimited
+      // (Enterprise): JSON cannot represent Infinity, and sending `null` forces
+      // callers to handle "unlimited" explicitly rather than reading a 0.
       const plans = Object.values(PRICING_PLANS)
         .filter(plan => plan.id !== "trial")
-        .map(plan => getPlanWithPrices(plan, exchangeRate));
+        .map(plan => ({ ...getPlanWithPrices(plan, exchangeRate), maxTeamMembers: planSeatAllowance(plan.id) }));
+      const seatConfig = await storage.getSeatCommerceConfig();
       res.json({
         plans,
+        // Whether a plan's seat allowance is still what the customer gets. When
+        // true, seats are a separately-billed product and a plan's allowance is
+        // no longer a bundled feature — the surfaces must stop advertising it.
+        seatBillingEnabled: seatConfig.billingEnabled,
+        freeTrialMaxTeamMembers: planSeatAllowance("trial"),
         exchangeRate,
         currencies: SUPPORTED_CURRENCIES,
         creditTiers: CREDIT_TIERS,
@@ -3529,10 +3539,23 @@ export async function registerRoutes(httpServer, app) {
   // sends only a SELECTION (seats + term); it never supplies or computes money.
 
   // Public catalog — powers the marketing pricing page with no auth.
+  //
+  // M43: also projects the COMMERCIAL STATE (`billingEnabled`, `freeSeatFloor`).
+  // Every customer-visible surface has to say either "seats are included in your
+  // plan" or "seats are priced per seat", and that is not a copy decision — it is
+  // the value of `seat_billing_enabled`. Exposing it here means no surface has to
+  // guess, and none can contradict the entitlement authority. Projection only: no
+  // decision is made in this handler.
   app.get("/api/seats/catalog", async (_req, res) => {
     try {
       const catalog = getSeatCatalog();
+      const config = await storage.getSeatCommerceConfig();
       res.json({
+        billingEnabled: config.billingEnabled,
+        // Seats a workspace has with no subscription. While billing is off this
+        // is not what governs entitlement (the plan allowance is) — surfaces must
+        // read `billingEnabled` first.
+        freeSeatFloor: config.freeFloor,
         bands: catalog.bands,
         annualDiscount: catalog.annualDiscount,
         terms: Object.values(SEAT_TERMS),

@@ -110,12 +110,25 @@ describe("ONE seat pricing authority", () => {
 
 describe("ONE seat entitlement authority", () => {
   it("no server module decides a seat ceiling from MAX_TEAM_MEMBERS", async () => {
-    // resolveSeatEntitlement is the only place that constant may inform a
-    // ceiling; routes and storage must go through it.
+    // shared/seatEntitlement.js is the only module that may read that constant;
+    // routes and storage must go through it (resolveSeatEntitlement for a
+    // ceiling, planSeatAllowance for a catalog projection).
+    //
+    // Checks USAGE, not mentions: an import of the symbol, or a subscript read.
+    // A prose reference in a comment is allowed — twice now a substring match has
+    // failed on a comment that existed precisely to explain why the constant is
+    // NOT used here, and a guard that cries wolf gets deleted by someone in a
+    // hurry. Being exact makes it stronger, not weaker.
+    const IMPORTED = /import\s*\{[^}]*\bMAX_TEAM_MEMBERS\b[^}]*\}/;
+    const SUBSCRIPTED = /\bMAX_TEAM_MEMBERS\s*\[/;
     for (const f of ["server/routes.js", "server/storage.js", "server/memoryStorage.js", "server/fulfillSeats.js", "server/seatRenewal.js"]) {
       const text = await read(f);
-      expect(text.includes("MAX_TEAM_MEMBERS"), `${f} reads MAX_TEAM_MEMBERS directly`).toBe(false);
+      expect(IMPORTED.test(text), `${f} imports MAX_TEAM_MEMBERS`).toBe(false);
+      expect(SUBSCRIPTED.test(text), `${f} reads MAX_TEAM_MEMBERS[...] directly`).toBe(false);
     }
+    // And the authority itself must still be the one that owns it.
+    const authority = await read("shared/seatEntitlement.js");
+    expect(IMPORTED.test(authority)).toBe(true);
   });
 
   it("the client reads the ceiling from the API, not from the constant", async () => {
