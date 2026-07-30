@@ -1004,7 +1004,7 @@ export default function Payments() {
               Choose Your Starting Pack
             </h1>
             <p className="text-base mb-8" style={{ color: "#A8A8C0" }}>
-              One-time purchases. No subscriptions. Credits never expire.
+              Credits are one-time purchases and never expire.
             </p>
 
           </motion.div>

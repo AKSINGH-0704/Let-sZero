@@ -73,7 +73,6 @@ import { Link } from "wouter";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { formatNumber, cn } from "@/lib/utils";
-import { MAX_TEAM_MEMBERS } from "@shared/schema";
 
 
 const ROLE_CONFIG = {
@@ -163,10 +162,14 @@ export default function Users() {
   });
 
   // team summary stats derived from users array (avoids extra API call).
-  // seatLimit reads MAX_TEAM_MEMBERS[effectivePlan] — the same inheritance-aware
-  // source Payments.jsx's Current Plan detection now uses — so this number can
-  // never disagree with what the plan actually entitles the workspace to.
-  const seatLimit = MAX_TEAM_MEMBERS[currentUser?.effectivePlan] ?? 0;
+  // M43 — the seat ceiling comes from the entitlement authority, the same source
+  // /app/team and /app/payments read. Deriving it from the plan constant here was
+  // a third copy that would disagree with enforcement once seat billing is on.
+  // `null` while loading renders as unlimited rather than as a false "team full".
+  const { data: seatInfo } = useQuery({ queryKey: ["/api/seats/subscription"], enabled: isAdmin });
+  const seatLimit = seatInfo?.entitlement
+    ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
+    : null;
   const teamStats = useMemo(() => {
     if (!users || !isAdmin) return null;
     return {
@@ -623,7 +626,9 @@ export default function Users() {
                 </div>
                 <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
                   {teamStats.totalTeamMembers}
-                  {seatLimit !== Infinity && (
+                  {/* M43 — render the denominator only when it is a real number;
+                      `null` (still loading) must show nothing, not "of ". */}
+                  {typeof seatLimit === "number" && seatLimit !== Infinity && (
                     <span className="text-sm font-normal text-slate-500 dark:text-slate-400"> of {seatLimit}</span>
                   )}
                 </p>

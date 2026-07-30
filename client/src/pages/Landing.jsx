@@ -411,7 +411,7 @@ export default function Landing() {
             </div>
             <div className="flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-              <span>No subscription required</span>
+              <span>Credits never expire</span>
             </div>
           </motion.div>
         </motion.div>
@@ -692,7 +692,7 @@ export default function Landing() {
               past the card's rounded border and the copy wrapped to four lines.
               Padding now scales, and the button goes full-width on mobile. */}
           <h2 className="text-3xl sm:text-4xl font-bold text-white">Ready to run your first campaign?</h2>
-          <p className="text-lg sm:text-xl text-slate-300">Start with 500 free credits. No subscription required.</p>
+          <p className="text-lg sm:text-xl text-slate-300">Start with 500 free credits. No card, no commitment.</p>
           <motion.div className="flex justify-center" whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.98 }}>
             <Link href="/login" className="w-full sm:w-auto">
               <Button
@@ -704,7 +704,7 @@ export default function Landing() {
               </Button>
             </Link>
           </motion.div>
-          <p className="text-sm text-slate-500">No credit card required • 500 free credits • No subscription</p>
+          <p className="text-sm text-slate-500">No credit card required • 500 free credits • Credits never expire</p>
         </motion.div>
       </section>
 

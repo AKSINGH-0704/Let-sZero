@@ -39,14 +39,15 @@ const ANSWERS = [
 ];
 
 // Personalized intro shown above the "Why Teams?" section on the education
-// screen — tone, not gating, since every plan below Enterprise already
-// includes the same 25 seats.
+// screen — tone, not gating. M43: no seat count or price is stated here. How
+// seats are obtained is server state, and this modal is onboarding education,
+// not a commercial surface; the seat page owns that conversation.
 const ANSWER_INTRO = {
-  solo: "You're all set to get started on your own. Whenever you're ready, you can invite teammates anytime — free, up to 25 people, no plan change needed.",
+  solo: "You're all set to get started on your own. Whenever you're ready, you can invite teammates from Team Management.",
   small: "Once your sending domain is verified, invite your teammates — they'll share it immediately, with no separate setup on their end.",
   medium: "Every teammate you invite shares your verified sending domain and workspace automatically — no separate setup, and you control what each person can access.",
   large: "With a team this size, a shared workspace makes the biggest difference: everyone sends from the same verified domain, and centralized management keeps credits, permissions, and activity in one place.",
-  enterprise: "For teams larger than 25, Enterprise is designed for you — unlimited seats, the same shared workspace and centralized management, with dedicated support as you grow.",
+  enterprise: "For an organization this size, Enterprise is designed for you — unlimited seats, the same shared workspace and centralized management, with dedicated support as you grow.",
 };
 
 const WHY_TEAMS = [
@@ -58,11 +59,17 @@ const WHY_TEAMS = [
 ];
 
 // Completion-screen closing note + optional secondary link, per answer.
+// M43 — two fixes here. (1) Every link pointed at /app/users, the OPERATOR-only
+// admin page: a customer following it is role-gated and bounced to the dashboard,
+// so the onboarding journey dead-ended. The customer team page is /app/team (the
+// same correction M41-FIX already made on the Payments page). (2) The notes
+// promised a fixed number of free seats, which stops being true once seats are
+// separately billed — the seat page states the commercial terms, not onboarding.
 const COMPLETION = {
-  solo: { note: "Whenever you're ready, invite teammates from Team Management — up to 25 people, free.", linkLabel: "Go to Team Management", linkTo: "/app/users" },
-  small: { note: "Invite teammates anytime from Team Management — up to 25 people, free.", linkLabel: "Go to Team Management", linkTo: "/app/users?invite=1" },
-  medium: { note: "Invite teammates anytime from Team Management — up to 25 people, free.", linkLabel: "Go to Team Management", linkTo: "/app/users?invite=1" },
-  large: { note: "Invite teammates anytime from Team Management — up to 25 people, free.", linkLabel: "Go to Team Management", linkTo: "/app/users?invite=1" },
+  solo: { note: "Whenever you're ready, invite teammates from Team Management.", linkLabel: "Go to Team Management", linkTo: "/app/team" },
+  small: { note: "Invite teammates anytime from Team Management.", linkLabel: "Go to Team Management", linkTo: "/app/team?invite=1" },
+  medium: { note: "Invite teammates anytime from Team Management.", linkLabel: "Go to Team Management", linkTo: "/app/team?invite=1" },
+  large: { note: "Invite teammates anytime from Team Management.", linkLabel: "Go to Team Management", linkTo: "/app/team?invite=1" },
   enterprise: { note: "We're here whenever you're ready to talk about Enterprise.", linkLabel: "Contact us about Enterprise", linkTo: "/contact?reason=enterprise" },
 };
 

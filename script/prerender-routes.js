@@ -109,7 +109,7 @@ export const STATIC_ROUTES = [
   {
     path: "/pricing",
     componentPath: "/src/pages/PublicPricing.jsx",
-    title: "RepMail Pricing — Credit-based plans, no subscriptions",
+    title: "RepMail Pricing — Credit-based plans, credits never expire",
     description: "RepMail pricing: pay for credits you use, no monthly fees. Every plan — including the free trial — includes up to 25 team members.",
     jsonLd: (url) => ({
       "@context": "https://schema.org",

@@ -30,7 +30,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { CheckCircle, Users, Globe, Shield, Mail, ArrowRight, X } from "lucide-react";
-import { MAX_TEAM_MEMBERS } from "@shared/schema";
 import { useAuth } from "@/context/AuthContext";
 import { formatNumber } from "@/lib/utils";
 import { markTeamsEducationSeen } from "@/lib/teamsEducation";
@@ -137,7 +136,13 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     queryFn: () => fetch("/api/credits/info", { credentials: "include" }).then(r => r.ok ? r.json() : null),
   });
 
-  const seatLimit = paidTier ? MAX_TEAM_MEMBERS[paidTier] : 0;
+  // M43 — the seat allowance is server state. `null` means "not known yet or no
+  // longer a bundled plan feature", and every consumer below omits the seat
+  // claim in that case rather than inventing one.
+  const { data: seatInfo } = useQuery({ queryKey: ["/api/seats/subscription"] });
+  const seatLimit = seatInfo?.entitlement
+    ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
+    : null;
   const hasTeamMembers = (teamUsage?.totalMembers ?? 0) > 0;
 
   // Only introduce Teams to a paid workspace that hasn't built one. While the
@@ -161,9 +166,12 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     if (showTeamIntro && user?.id) markTeamsEducationSeen(user.id);
   }, [showTeamIntro, user?.id]);
 
+  // M43 — omit the seat figure entirely when it is unknown, rather than
+  // rendering "up to null teammates". A generic phrase is correct under every
+  // commercial state; the seat page owns the exact terms.
   const seatCopy = seatLimit === Infinity
     ? "unlimited teammates"
-    : `up to ${seatLimit} teammates`;
+    : (typeof seatLimit === "number" ? `up to ${seatLimit} teammates` : "your teammates");
 
   const collaboration = [
     { icon: Mail,   text: "Every campaign in one place, visible to the whole workspace" },

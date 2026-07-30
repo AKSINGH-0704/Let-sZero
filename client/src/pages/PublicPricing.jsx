@@ -54,7 +54,7 @@ import PricingCard from "@/components/pricing/PricingCard";
 import PricingCalculator from "@/components/pricing/PricingCalculator";
 import { MARKETING_PLANS } from "@/lib/commerce/planCatalog";
 // M43 — team capacity is server state, not a plan feature. See commercialModel.js.
-import { useCommercialModel, seatCapacityValue, seatCapacityLabel } from "@/lib/commerce/commercialModel";
+import { useCommercialModel, seatCapacityValue, seatCapacityLabel, seatModelSummary } from "@/lib/commerce/commercialModel";
 // M39 Phase 4 — one canonical enterprise entry point.
 import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 import { fmtNum, fmtINR, fmtUSD } from "@/lib/commerce/format";
@@ -129,26 +129,33 @@ const COMPARISON_CATEGORIES = [
 ];
 
 // ─── FAQ data ─────────────────────────────────────────────────────────────────
-const FAQ_ITEMS = [
+// M43 — the FAQ is now built from the server's commercial state, because three
+// of its answers made claims about team capacity that stop being true once seats
+// are separately billed. Claims about CREDITS are unconditional and stay as
+// prose: credits are one-time and never expire regardless of the seat product.
+// `seatSentence` is null while the state is unknown, and the clause is omitted
+// rather than guessed.
+function buildFaqItems({ seatSentence, seatsClause, trialSeatsClause }) {
+  return [
   {
     q: "How do credits work?",
     a: "Each credit equals one email sent. Purchase credits in bulk and use them anytime — there are no monthly fees, you only pay for what you use.",
   },
   {
     q: "Do credits expire?",
-    a: "No. Credits never expire — one-time purchases, no subscriptions, no use-it-or-lose-it deadline.",
+    a: "No. Credits never expire — they are one-time purchases with no use-it-or-lose-it deadline.",
   },
   {
     q: "What's the difference between plans?",
-    a: "All plans include AI Personalization, AI Spam Analysis, the full campaign system, analytics, contact upload, and up to 25 team members. Higher plans give you more templates, more active campaigns, and campaign scheduling. The plan you hold is determined by your highest purchase — you never downgrade.",
+    a: `All plans include AI Personalization, AI Spam Analysis, the full campaign system, analytics${seatsClause}, and contact upload. Higher plans give you more templates, more active campaigns, and campaign scheduling. The plan you hold is determined by your highest purchase — you never downgrade.`,
   },
   {
     q: "What's included in the free trial?",
-    a: "500 credits with full access to AI Personalization, Spam Analysis, the campaign system, and up to 25 team members. Limited to 1 active campaign and 3 saved templates. Campaign scheduling is not available on the free plan.",
+    a: `500 credits with full access to AI Personalization, Spam Analysis${trialSeatsClause}, and the campaign system. Limited to 1 active campaign and 3 saved templates. Campaign scheduling is not available on the free plan.`,
   },
   {
     q: "How do teams work?",
-    a: "Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work. Every plan — Free Trial, Starter, Growth, and Scale — includes up to 25 team members at no extra cost. Need more? Enterprise offers unlimited seats.",
+    a: `Add team members and distribute credits to them. Admins see everything. Managers see their own team. Members see only their own work.${seatSentence ? " " + seatSentence : ""} Enterprise offers unlimited seats.`,
   },
   {
     q: "Can I buy more credits anytime?",
@@ -162,7 +169,8 @@ const FAQ_ITEMS = [
     q: "What payment methods are accepted?",
     a: "UPI, credit/debit cards, and net banking via Razorpay. All transactions are processed in INR.",
   },
-];
+  ];
+}
 
 // ─── Volume discount table rows ───────────────────────────────────────────────
 const VOLUME_ROWS = [
@@ -237,6 +245,24 @@ export default function PublicPricing() {
     seatFeature: seatCapacityLabel(seatAllowanceFor(p.id), commercial.seatBillingEnabled),
   }));
   const planWithSeats = (p) => plansWithSeats.find((x) => x.id === p.id) ?? p;
+
+  // M43 — FAQ answers that touch team capacity are built from the same server
+  // state as the cards. A clause is OMITTED (not guessed) while state is unknown.
+  const paidAllowance = commercial.planSeatAllowance
+    ? Object.values(commercial.planSeatAllowance).find((v) => typeof v === "number") ?? null
+    : null;
+  const seatsClause =
+    commercial.seatBillingEnabled === undefined ? ""
+      : commercial.seatBillingEnabled ? ""
+      : (paidAllowance ? `, and up to ${paidAllowance} team members` : "");
+  const trialSeatsClause =
+    commercial.seatBillingEnabled === undefined || commercial.seatBillingEnabled ? ""
+      : (commercial.freeTrialSeatAllowance ? `, up to ${commercial.freeTrialSeatAllowance} team members` : "");
+  const faqItems = buildFaqItems({
+    seatSentence: seatModelSummary(commercial),
+    seatsClause,
+    trialSeatsClause,
+  });
 
 
   // M39 Phase 1B/1C — the estimator is genuinely purchasable. Any configured amount is a
@@ -678,7 +704,7 @@ export default function PublicPricing() {
               Choose Your Starting Pack
             </h2>
             <p className="text-base" style={{ color: "#A8A8C0" }}>
-              One-time purchases. No subscriptions. Scale at your own pace.
+              Credits are one-time purchases that never expire. Scale at your own pace.
             </p>
           </motion.div>
 
@@ -879,9 +905,16 @@ export default function PublicPricing() {
                     </div>
                     <div className="space-y-4 flex-1">
                       {[
-                        { n: "1", title: "Invite team members", desc: "Go to Team Management and invite up to 25 people — free, on any plan, no purchase required." },
+                        // M43 — the public mirror of the in-app activation steps.
+                        // Step 1 describes how seats are actually obtained, which
+                        // is server state; no seat count or price is written here.
+                        { n: "1",
+                          title: commercial.seatBillingEnabled ? "Add team seats" : "Invite team members",
+                          desc: commercial.seatBillingEnabled
+                            ? "Choose how many people you need on the Seats page, then invite them from Team Management. Seats are billed separately from credits."
+                            : "Go to Team Management and invite your teammates — included with your plan, no purchase required." },
                         { n: "2", title: "Assign roles", desc: "Give each person a role — Manager or Member — to control what they can see and do." },
-                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them." },
+                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them. Credits pay for sending; seats decide who can work in the workspace." },
                         { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
                       ].map(({ n, title, desc }) => (
                         <div key={n} className="flex gap-3">
@@ -1005,7 +1038,7 @@ export default function PublicPricing() {
               {
                 icon: <Zap className="w-6 h-6" />,
                 title: "No Monthly Fees",
-                desc: "Credits are one-time purchases. No recurring charges, subscriptions, or auto-renewals.",
+                desc: "Credits are one-time purchases with no recurring charge and no expiry — buy once, and they stay in your balance.",
                 color: "#8B5CF6",
               },
               {
@@ -1598,7 +1631,7 @@ export default function PublicPricing() {
             transition={{ duration: 0.6 }}
           >
             <Accordion type="single" collapsible className="w-full space-y-2">
-              {FAQ_ITEMS.map((item, i) => (
+              {faqItems.map((item, i) => (
                 <AccordionItem
                   key={i}
                   value={`faq-${i}`}
