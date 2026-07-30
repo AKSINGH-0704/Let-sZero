@@ -2467,11 +2467,17 @@ const dbStorage = {
    * on the server.
    */
   async resolveSeatEntitlement(rootId) {
-    const [config, effectivePlan, subscription] = await Promise.all([
+    const [config, effectivePlan] = await Promise.all([
       this.getSeatCommerceConfig(),
       this.getEffectivePlan(rootId),
-      this.getWorkspaceSubscription(rootId),
     ]);
+    // "Ships dark" must mean TOUCHES NOTHING. While the flag is off the
+    // entitlement is decided by plan alone, so reading workspace_subscriptions
+    // would be a pointless query — and, more importantly, it would make the code
+    // depend on a table that the deploy has not yet migrated in. The runbook
+    // applies migrations AFTER the deploy (§5), so an unconditional read here
+    // turns every pre-migration deploy into a crash loop.
+    const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
       ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
       subscription,
@@ -2490,7 +2496,8 @@ const dbStorage = {
       this.getSeatCommerceConfig(),
       this.getEffectivePlan(rootId),
     ]);
-    const subscription = await this.getWorkspaceSubscription(rootId, tx);
+    // Same deploy-order and inertness reasoning as resolveSeatEntitlement above.
+    const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId, tx) : null;
     return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
   },
 

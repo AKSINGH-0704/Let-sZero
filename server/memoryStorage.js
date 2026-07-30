@@ -2183,7 +2183,8 @@ export const memoryStorage = {
   async resolveSeatEntitlement(rootId) {
     const config = await this.getSeatCommerceConfig();
     const effectivePlan = await this.getEffectivePlan(rootId);
-    const subscription = await this.getWorkspaceSubscription(rootId);
+    // Parity with storage.js: no subscription read while the flag is off.
+    const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
       ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
       subscription, effectivePlan, config,
@@ -2193,7 +2194,8 @@ export const memoryStorage = {
   async resolveSeatLimitInTx(_tx, rootId) {
     const config = await this.getSeatCommerceConfig();
     const effectivePlan = await this.getEffectivePlan(rootId);
-    const subscription = await this.getWorkspaceSubscription(rootId);
+    // Parity with storage.js: no subscription read while the flag is off.
+    const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
   },
 

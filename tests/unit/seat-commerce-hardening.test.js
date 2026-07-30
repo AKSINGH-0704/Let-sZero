@@ -416,3 +416,56 @@ describe("H-10 — the sweep announces itself so registration is verifiable", ()
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("H-11 — DEPLOY ORDER: the code must not require the M42 schema while dark", () => {
+  it("does not read workspace_subscriptions when seat billing is disabled", async () => {
+    // Runbook §4 deploys, §5 migrates as a SEPARATE later step, so there is
+    // always a window where this code runs against the pre-M42 schema. An
+    // unconditional subscription read turns that window into a crash loop.
+    const { owner } = await makeWorkspace();
+    await storage.setPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED, "false", null);
+
+    const calls = [];
+    const real = storage.getWorkspaceSubscription;
+    storage.getWorkspaceSubscription = async (...a) => { calls.push(a[0]); return real.apply(storage, a); };
+    try {
+      const e = await storage.resolveSeatEntitlement(owner.id);
+      expect(e.source).toBe("LEGACY_PLAN");
+      await storage.resolveSeatLimitInTx(null, owner.id);
+      expect(calls, "subscription table must not be touched while dark").toEqual([]);
+    } finally {
+      storage.getWorkspaceSubscription = real;
+    }
+  });
+
+  it("does read it once billing is enabled", async () => {
+    const { owner } = await makeWorkspace();
+    await enable(0);
+    const calls = [];
+    const real = storage.getWorkspaceSubscription;
+    storage.getWorkspaceSubscription = async (...a) => { calls.push(a[0]); return real.apply(storage, a); };
+    try {
+      await storage.resolveSeatEntitlement(owner.id);
+      expect(calls.length).toBeGreaterThan(0);
+    } finally {
+      storage.getWorkspaceSubscription = real;
+      await storage.setPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED, "false", null);
+    }
+  });
+
+  it("keeps every M42 schema object non-fatal so a pre-migration deploy cannot crash-loop", async () => {
+    const { readFile } = await import("fs/promises");
+    const src = await readFile("server/schemaCheck.js", "utf8");
+    // The table is optional, not required.
+    expect(src).toMatch(/const OPTIONAL_TABLES = \[\s*\n\s*"workspace_subscriptions",/);
+    const required = src.slice(src.indexOf("const REQUIRED_TABLES"), src.indexOf("const OPTIONAL_TABLES"));
+    expect(required).not.toContain("workspace_subscriptions");
+    // Every M42 column/index entry must be critical:false.
+    const m42 = src.slice(src.indexOf("── M42 seat commerce"), src.indexOf("];", src.indexOf("── M42 seat commerce")));
+    for (const line of m42.split("\n").filter(l => l.includes("{ table:"))) {
+      expect(line, line.trim()).toContain("critical: false");
+    }
+    expect(src).toMatch(/workspace_subscriptions_one_live_uq",\s*critical: false/);
+  });
+});

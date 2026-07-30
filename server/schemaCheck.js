@@ -39,6 +39,12 @@ const REQUIRED_TABLES = [
   "sns_events",
   "sender_domains",
   "tracking_tokens",
+];
+
+// M42 — tables the code tolerates being absent during the deploy→migrate window
+// (runbook §4 then §5). Reported loudly, never fatal. See the M42 block in
+// REQUIRED_COLUMNS for why this is safe while seat_billing_enabled is false.
+const OPTIONAL_TABLES = [
   "workspace_subscriptions",
 ];
 
@@ -172,19 +178,30 @@ const REQUIRED_COLUMNS = [
   { table: "tracking_tokens", column: "ip_hash",                 critical: false },
 
   // ── M42 seat commerce ────────────────────────────────────────────────────
-  // `kind` is CRITICAL: without it the refund and dispute paths cannot tell a
-  // seat payment from a credit pack, and would claw back credits that a seat
-  // payment never granted (marking it REFUNDED while the seats stay live).
-  { table: "payments", column: "kind",                           critical: true  },
+  // DELIBERATELY NON-CRITICAL, and this is a deployment-safety decision, not
+  // laxity. Runbook §4 deploys and §5 applies migrations as a SEPARATE, later
+  // step, so there is always a window where this code runs against the
+  // pre-M42 schema. A critical check here would `process.exit(1)` in that
+  // window and turn every deploy of this milestone into a crash loop — an
+  // outage caused by the guard, not by the defect it guards against.
+  //
+  // Safe because the runtime does not depend on these objects while
+  // `seat_billing_enabled` is false: resolveSeatEntitlement skips the
+  // subscription read entirely, and a missing `payments.kind` reads as
+  // undefined, which is !== 'SEATS' and so preserves the exact pre-M42 credit
+  // behaviour. They become genuinely required only when the flag is enabled,
+  // which runbook §16.3 gates on verifying the migration has been applied.
+  { table: "payments", column: "kind",                           critical: false },
   { table: "payments", column: "subscription_id",                critical: false },
-  { table: "workspace_subscriptions", column: "workspace_root_id", critical: true },
-  { table: "workspace_subscriptions", column: "status",            critical: true },
-  { table: "workspace_subscriptions", column: "seats",             critical: true },
-  { table: "workspace_subscriptions", column: "term",              critical: true },
-  { table: "workspace_subscriptions", column: "pricing_version",   critical: true },
-  { table: "workspace_subscriptions", column: "period_start",      critical: true },
-  { table: "workspace_subscriptions", column: "period_end",        critical: true },
-  { table: "workspace_subscriptions", column: "grandfathered_seats", critical: true },
+  { table: "payments", column: "amount_minor",                   critical: false },
+  { table: "workspace_subscriptions", column: "workspace_root_id", critical: false },
+  { table: "workspace_subscriptions", column: "status",            critical: false },
+  { table: "workspace_subscriptions", column: "seats",             critical: false },
+  { table: "workspace_subscriptions", column: "term",              critical: false },
+  { table: "workspace_subscriptions", column: "pricing_version",   critical: false },
+  { table: "workspace_subscriptions", column: "period_start",      critical: false },
+  { table: "workspace_subscriptions", column: "period_end",        critical: false },
+  { table: "workspace_subscriptions", column: "grandfathered_seats", critical: false },
   { table: "workspace_subscriptions", column: "scheduled_seats",   critical: false },
   { table: "workspace_subscriptions", column: "scheduled_term",    critical: false },
   { table: "workspace_subscriptions", column: "cancel_at_period_end", critical: false },
@@ -215,10 +232,10 @@ const REQUIRED_INDEXES = [
   // structurally possible again.
   { index: "campaign_emails_contact_uq",            critical: true  },
   { index: "campaign_emails_recipient_uq",           critical: true  },
-  // M42: at most ONE live subscription per workspace. Critical — without it two
-  // concurrent checkouts (or a duplicated webhook) can create two entitlements
-  // for one workspace, which is billing drift by construction.
-  { index: "workspace_subscriptions_one_live_uq",   critical: true  },
+  // M42: at most ONE live subscription per workspace. Non-critical only because
+  // it cannot exist before the migration runs (see the M42 block above); it is a
+  // hard requirement before the flag is enabled, gated by runbook §16.3.
+  { index: "workspace_subscriptions_one_live_uq",   critical: false },
   // Perf, not correctness: deriveCountsFromCampaignEmails sums credit_transactions
   // filtered by campaign_id on every finalizeCampaign/reconcileCampaignCounters
   // call. Missing this means a full seq scan of an unboundedly-growing table, not
@@ -253,6 +270,12 @@ export async function runSchemaCheck() {
     for (const table of REQUIRED_TABLES) {
       if (!existingTables.has(table)) {
         errors.push(`MISSING TABLE: ${table}`);
+      }
+    }
+    // Optional tables are reported, never fatal — see OPTIONAL_TABLES.
+    for (const table of OPTIONAL_TABLES) {
+      if (!existingTables.has(table)) {
+        warnings.push(`MISSING TABLE (optional, migration pending): ${table}`);
       }
     }
 
