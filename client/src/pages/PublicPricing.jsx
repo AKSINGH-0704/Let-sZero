@@ -53,6 +53,8 @@ import { savePurchaseIntent, buildLoginWithResume } from "@/lib/commerce/purchas
 import PricingCard from "@/components/pricing/PricingCard";
 import PricingCalculator from "@/components/pricing/PricingCalculator";
 import { MARKETING_PLANS } from "@/lib/commerce/planCatalog";
+// M43 — team capacity is server state, not a plan feature. See commercialModel.js.
+import { useCommercialModel, seatCapacityValue, seatCapacityLabel } from "@/lib/commerce/commercialModel";
 // M39 Phase 4 — one canonical enterprise entry point.
 import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 import { fmtNum, fmtINR, fmtUSD } from "@/lib/commerce/format";
@@ -112,7 +114,8 @@ const COMPARISON_CATEGORIES = [
   {
     label: "Teams & Admin",
     rows: [
-      { label: "Team Members", key: "teamMembers", format: p => p.features.teamMembers },
+      // M43 — server-sourced; `format` receives the resolved capacity value.
+      { label: "Team Members", key: "teamMembers", format: p => p.seatCapacity ?? "—" },
       { label: "Audit Logs", key: "auditLogs", format: () => true },
       { label: "Audit Log Export", key: "auditExport", format: p => p.features.auditExport },
     ],
@@ -219,6 +222,21 @@ export default function PublicPricing() {
   const [hoveredCol, setHoveredCol] = useState(null);
   const [pricingTab, setPricingTab] = useState("individual");
   const [dedicatedIpNotified, setDedicatedIpNotified] = useState(false);
+
+  // M43 — one read of the server's commercial state for this whole page. Plans are
+  // enriched with the resolved capacity so the cards and the comparison table can
+  // never disagree, and so no seat figure is written literally on this page.
+  const commercial = useCommercialModel();
+  const seatAllowanceFor = (planId) =>
+    planId === "trial"
+      ? commercial.freeTrialSeatAllowance
+      : (commercial.planSeatAllowance ? commercial.planSeatAllowance[planId] ?? null : null);
+  const plansWithSeats = PLANS.map((p) => ({
+    ...p,
+    seatCapacity: seatCapacityValue(seatAllowanceFor(p.id), commercial.seatBillingEnabled),
+    seatFeature: seatCapacityLabel(seatAllowanceFor(p.id), commercial.seatBillingEnabled),
+  }));
+  const planWithSeats = (p) => plansWithSeats.find((x) => x.id === p.id) ?? p;
 
 
   // M39 Phase 1B/1C — the estimator is genuinely purchasable. Any configured amount is a
@@ -720,7 +738,7 @@ export default function PublicPricing() {
                   variants={staggerContainer}
                 >
                   {PLANS.map(plan => (
-                    <PricingCard key={plan.id} plan={plan} currency={currency} mode="marketing" user={user} />
+                    <PricingCard key={plan.id} plan={plan} seatFeature={planWithSeats(plan).seatFeature} currency={currency} mode="marketing" user={user} />
                   ))}
                 </motion.div>
                 {/* Mobile */}
@@ -732,7 +750,7 @@ export default function PublicPricing() {
                   variants={staggerContainer}
                 >
                   {mobilePlans.map(plan => (
-                    <PricingCard key={plan.id} plan={plan} currency={currency} mode="marketing" user={user} />
+                    <PricingCard key={plan.id} plan={plan} seatFeature={planWithSeats(plan).seatFeature} currency={currency} mode="marketing" user={user} />
                   ))}
                 </motion.div>
               </motion.div>
@@ -1422,7 +1440,9 @@ export default function PublicPricing() {
                           >
                             {row.label}
                           </td>
-                          {PLANS.map(plan => (
+                          {/* M43 — the seat-enriched list, so the Team Members row
+                              resolves from the server rather than a plan literal. */}
+                          {plansWithSeats.map(plan => (
                             <td
                               key={plan.id}
                               className="px-4 py-4 text-center transition-colors"

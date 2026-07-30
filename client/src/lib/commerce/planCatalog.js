@@ -19,31 +19,38 @@ import { USD_DISPLAY_RATE } from "./config";
 import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 
 // ── Feature matrix — the per-plan capability grid the cards render. ───────────
+//
+// M43 — `teamMembers` was REMOVED from this matrix. Team seats are a separately
+// billed product whose allowance is server state (/api/pricing/plans →
+// maxTeamMembers) and whose very presence as a bundled feature depends on
+// `seat_billing_enabled`. A static value here would have made every plan card
+// advertise free seats the moment billing was enabled. Cards receive the seat row
+// from the commercial model instead (see PricingCard `seatFeature`).
 // Identical shape for every purchasable/marketed plan; special plans (enterprise,
 // dev_test) override or omit as needed below.
 const FEATURES = {
   trial: {
-    campaigns: "1", templates: "3", scheduling: false, teamMembers: "25",
+    campaigns: "1", templates: "3", scheduling: false,
     auditExport: false, bonusCredits: false, aiPersonalization: true,
     spamAnalysis: true, analytics: true, contactUpload: true, templateBuilder: true,
   },
   starter: {
-    campaigns: "5", templates: "10", scheduling: true, teamMembers: "25",
+    campaigns: "5", templates: "10", scheduling: true,
     auditExport: false, bonusCredits: false, aiPersonalization: true,
     spamAnalysis: true, analytics: true, contactUpload: true, templateBuilder: true,
   },
   growth: {
-    campaigns: "10", templates: "25", scheduling: true, teamMembers: "25",
+    campaigns: "10", templates: "25", scheduling: true,
     auditExport: false, bonusCredits: "+1,250", aiPersonalization: true,
     spamAnalysis: true, analytics: true, contactUpload: true, templateBuilder: true,
   },
   scale: {
-    campaigns: "20", templates: "100", scheduling: true, teamMembers: "25",
+    campaigns: "20", templates: "100", scheduling: true,
     auditExport: true, bonusCredits: "+4,545", aiPersonalization: true,
     spamAnalysis: true, analytics: true, contactUpload: true, templateBuilder: true,
   },
   enterprise: {
-    campaigns: "Unlimited", templates: "Unlimited", scheduling: true, teamMembers: "Unlimited",
+    campaigns: "Unlimited", templates: "Unlimited", scheduling: true,
     auditExport: true, bonusCredits: "Custom", aiPersonalization: true,
     spamAnalysis: true, analytics: true, contactUpload: true, templateBuilder: true,
   },

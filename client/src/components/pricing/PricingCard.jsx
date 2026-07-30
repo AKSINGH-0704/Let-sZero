@@ -69,6 +69,9 @@ function FeatureIcon({ value, special }) {
 
 export default function PricingCard({
   plan,
+  // M43 — the team-capacity line, already resolved from the commercial model by
+  // the host page. `null`/omitted renders no seat row at all.
+  seatFeature = null,
   currency = "INR",
   mode = "marketing",
   // marketing mode:
@@ -138,11 +141,14 @@ export default function PricingCard({
       icon: <Calendar className="w-3.5 h-3.5" />,
       val: plan.features.scheduling,
     },
-    {
-      label: `${plan.features.teamMembers} team members`,
+    // M43 — the seat row is SERVER-DERIVED and may be absent entirely. It is
+    // omitted while the commercial state is unknown (never guess), and omitted
+    // once seats are separately billed (a credit pack no longer bundles them).
+    ...(seatFeature ? [{
+      label: seatFeature,
       icon: <Users className="w-3.5 h-3.5" />,
       val: true,
-    },
+    }] : []),
     {
       label: "Analytics dashboard",
       icon: <BarChart3 className="w-3.5 h-3.5" />,

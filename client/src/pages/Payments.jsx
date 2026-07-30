@@ -39,9 +39,11 @@ import { PLAN_CATALOG } from "@/lib/commerce/planCatalog";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "@shared/enterprise";
 import { fmtNum } from "@/lib/commerce/format";
 // M41 — make the Teams tab actionable: reuse the seat-intelligence component and
-// the same seat source (MAX_TEAM_MEMBERS) the Team page uses.
+// the same server-authoritative seat source the Team page uses.
 import SeatSummary from "@/components/teams/SeatSummary";
-import { MAX_TEAM_MEMBERS, PLAN_LIMITS as TEAM_PLAN_LIMITS } from "@shared/schema";
+import { PLAN_LIMITS as TEAM_PLAN_LIMITS } from "@shared/schema";
+// M43 — seat entitlement and how seats are sold are SERVER state, never derived here.
+import { useCommercialModel, seatCapacityLabel, shouldRouteToSeatPurchase } from "@/lib/commerce/commercialModel";
 import { Link as WLink } from "wouter";
 
 // The in-app payments page renders the shared card in "app" mode (its CTA transacts).
@@ -699,11 +701,37 @@ export default function Payments() {
   // M41 — seat state for the (actionable) Teams tab. Admins only; reuses the
   // workspace-scoped /api/users and the same active-member seat rule as /app/team.
   const { data: teamMembers } = useQuery({ queryKey: ["/api/users"], enabled: isAdmin });
+  // M43 — the seat ceiling comes from the entitlement authority
+  // (GET /api/seats/subscription), the same source /app/team reads. Deriving it
+  // from MAX_TEAM_MEMBERS here was a second authority that would disagree with
+  // enforcement the moment seat billing was enabled for a workspace.
+  const { data: seatInfo } = useQuery({ queryKey: ["/api/seats/subscription"], enabled: isAdmin });
+  const commercial = useCommercialModel();
+  const seatBillingLive = shouldRouteToSeatPurchase(
+    seatInfo?.billingEnabled ?? commercial.seatBillingEnabled
+  );
+  // M43 — the team-capacity row a credit-pack card may advertise. Returns null
+  // while the commercial state is unknown, and null once seats are separately
+  // billed — a credit pack no longer bundles them, so the row is omitted rather
+  // than reworded.
+  const seatFeatureFor = (planId) =>
+    seatCapacityLabel(
+      planId === "trial"
+        ? commercial.freeTrialSeatAllowance
+        : (commercial.planSeatAllowance ? commercial.planSeatAllowance[planId] ?? null : null),
+      commercial.seatBillingEnabled,
+    );
+
   const teamSeat = (() => {
     const plan = user?.effectivePlan || "free";
+    // `null` while loading renders as unlimited, so the page never briefly tells
+    // a customer their team is full before the real ceiling arrives.
+    const included = seatInfo?.entitlement
+      ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
+      : null;
     return {
-      included: MAX_TEAM_MEMBERS[plan] ?? 0,
-      used: (teamMembers || []).filter(m => m.isActive).length,
+      included,
+      used: seatInfo?.usage?.activeMembers ?? (teamMembers || []).filter(m => m.isActive).length,
       hasMembers: (teamMembers || []).length > 0,
       planLabel: TEAM_PLAN_LIMITS[plan]?.label || plan,
     };
@@ -1030,6 +1058,7 @@ export default function Payments() {
                     <PlanCard
                       key={plan.id}
                       plan={plan}
+                      seatFeature={seatFeatureFor(plan.id)}
                       currency={currency}
                       onPurchase={handlePurchase}
                       currentPlanId={currentPlanId}
@@ -1049,6 +1078,7 @@ export default function Payments() {
                     <PlanCard
                       key={plan.id}
                       plan={plan}
+                      seatFeature={seatFeatureFor(plan.id)}
                       currency={currency}
                       onPurchase={handlePurchase}
                       currentPlanId={currentPlanId}
@@ -1205,26 +1235,57 @@ export default function Payments() {
                     </div>
                     <div className="space-y-4 flex-1">
                       {[
-                        { n: "1", title: "Invite team members", desc: (
+                        // M43 — step 1 describes how seats are actually OBTAINED,
+                        // which depends on the server's commercial state. The old
+                        // copy promised seats were free on any plan with no
+                        // purchase required, which becomes false the moment seat
+                        // billing is enabled. No seat count is written literally.
+                        { n: "1", title: seatBillingLive ? "Add team seats" : "Invite team members", desc: (
                           <>
-                            Go to{" "}
-                            {/* M41-FIX — was /app/users, the operator-only admin page
-                                (role-gated to ROOT_ADMIN/SUB_ADMIN → a customer got
-                                bounced to the dashboard). The customer team page is
-                                /app/team. */}
-                            <button
-                              type="button"
-                              onClick={() => setLocation("/app/team")}
-                              className="underline underline-offset-2"
-                              style={{ color: "#00E5C8" }}
-                            >
-                              Team Management
-                            </button>
-                            {" "}and invite up to 25 people — free, on any plan, no purchase required.
+                            {seatBillingLive ? (
+                              <>
+                                Go to{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => setLocation("/app/team/seats")}
+                                  className="underline underline-offset-2"
+                                  style={{ color: "#00E5C8" }}
+                                >
+                                  Seats
+                                </button>
+                                {" "}to choose how many people you need, then invite them from{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => setLocation("/app/team")}
+                                  className="underline underline-offset-2"
+                                  style={{ color: "#00E5C8" }}
+                                >
+                                  Team Management
+                                </button>
+                                . Seats are billed separately from credits.
+                              </>
+                            ) : (
+                              <>
+                                Go to{" "}
+                                {/* M41-FIX — was /app/users, the operator-only admin
+                                    page (role-gated to ROOT_ADMIN/SUB_ADMIN → a
+                                    customer got bounced to the dashboard). The
+                                    customer team page is /app/team. */}
+                                <button
+                                  type="button"
+                                  onClick={() => setLocation("/app/team")}
+                                  className="underline underline-offset-2"
+                                  style={{ color: "#00E5C8" }}
+                                >
+                                  Team Management
+                                </button>
+                                {" "}and invite your teammates — included with your plan, no purchase required.
+                              </>
+                            )}
                           </>
                         ) },
                         { n: "2", title: "Assign roles", desc: "Give each person a role — Manager or Member — to control what they can see and do." },
-                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them." },
+                        { n: "3", title: "Allocate credits", desc: "Purchase credits and distribute them to each member. They spend only what you allocate to them. Credits pay for sending; seats decide who can work in the workspace." },
                         { n: "4", title: "Launch campaigns", desc: "Each member creates and sends campaigns independently from their own workspace." },
                       ].map(({ n, title, desc }) => (
                         <div key={n} className="flex gap-3">
@@ -1241,14 +1302,18 @@ export default function Payments() {
                         </div>
                       ))}
                     </div>
+                    {/* M43 — the primary CTA must lead to the journey the customer
+                        actually needs. With seats billed separately, "add people"
+                        is a seat purchase, not a credit pack. */}
                     <button
-                      onClick={() => setPricingTab("individual")}
+                      onClick={() => (seatBillingLive ? setLocation("/app/team/seats") : setPricingTab("individual"))}
                       className="mt-5 w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
                       style={{ background: "linear-gradient(135deg, #00E5C8 0%, #00B8A3 100%)", color: "#06060B", fontWeight: 700 }}
                       onMouseEnter={e => { e.currentTarget.style.opacity = "0.9"; e.currentTarget.style.transform = "translateY(-1px)"; }}
                       onMouseLeave={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "translateY(0)"; }}
+                      data-testid="teams-primary-cta"
                     >
-                      View Credit Plans
+                      {seatBillingLive ? "Manage Team Seats" : "View Credit Plans"}
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
