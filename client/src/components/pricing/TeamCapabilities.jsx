@@ -1,4 +1,5 @@
 import { Check, X } from "lucide-react";
+import { useCommercialModel, seatCapacityValue, seatModelSummary } from "@/lib/commerce/commercialModel";
 
 // M38 — shared Team Capacity + Role Capabilities block.
 //
@@ -24,12 +25,17 @@ import { Check, X } from "lucide-react";
 const TEXT_MUTED = "#7878A0";
 const TEXT_LABEL = "#B8B8D0";
 
+// M43 — display identity only (label + brand colour). The seat allowance is NOT
+// listed here: it is server state (`/api/pricing/plans` → maxTeamMembers) and,
+// once seat billing is enabled, a plan no longer bundles seats at all. `planId`
+// keys the row to the server's plan; Free Trial reads the trial allowance, which
+// the plans list omits because it is not purchasable.
 const CAPACITY_ROWS = [
-  { plan: "Free Trial", seats: "25", color: "#9CA3AF" },
-  { plan: "Starter", seats: "25", color: "#60A5FA" },
-  { plan: "Growth", seats: "25", color: "#00E5C8" },
-  { plan: "Scale", seats: "25", color: "#A78BFA" },
-  { plan: "Enterprise", seats: "Custom", color: "#F59E0B" },
+  { plan: "Free Trial", planId: "trial", color: "#9CA3AF" },
+  { plan: "Starter", planId: "starter", color: "#60A5FA" },
+  { plan: "Growth", planId: "growth", color: "#00E5C8" },
+  { plan: "Scale", planId: "scale", color: "#A78BFA" },
+  { plan: "Enterprise", planId: "enterprise", color: "#F59E0B" },
 ];
 
 const ROLE_MATRIX = [
@@ -50,6 +56,17 @@ const fmtNum = (n) => (n == null ? "—" : n.toLocaleString("en-IN"));
  * @param {string} rolesNote         caption rendered beneath the role table
  */
 export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) {
+  // M43 — seat capacity and how seats are sold are SERVER state. Nothing about
+  // team capacity is asserted by this component; it renders what the authorities
+  // report, and stays silent until they answer.
+  const model = useCommercialModel();
+  const { seatBillingEnabled, planSeatAllowance, freeTrialSeatAllowance } = model;
+
+  const allowanceFor = (planId) => {
+    if (planId === "trial") return freeTrialSeatAllowance;
+    return planSeatAllowance ? planSeatAllowance[planId] ?? null : null;
+  };
+
   return (
     <div className="grid md:grid-cols-2 gap-10">
       {/* Left: plan capacity */}
@@ -58,7 +75,8 @@ export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) 
           Team Capacity by Plan
         </div>
         <div className="space-y-2">
-          {CAPACITY_ROWS.map(({ plan, seats, color }) => {
+          {CAPACITY_ROWS.map(({ plan, planId, color }) => {
+            const capacity = seatCapacityValue(allowanceFor(planId), seatBillingEnabled);
             // Price/credits come from the same PLANS array the plan cards render
             // from — the Teams tab shouldn't require switching tabs just to see
             // what a plan actually costs.
@@ -80,7 +98,17 @@ export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) 
                   {plan}
                 </span>
                 <span className="text-xs text-left lg:text-right" style={{ color: TEXT_LABEL }}>
-                  {seats === "Custom" ? "Custom team size" : `Up to ${seats} team members`}
+                  {/* M43 — server-sourced. `null` while the commercial state is
+                      still loading, so the row says nothing rather than
+                      guessing; "Unlimited" for Enterprise; "Sold separately"
+                      once seats are their own product. */}
+                  {capacity == null
+                    ? "—"
+                    : capacity === "Unlimited"
+                      ? "Unlimited team members"
+                      : capacity === "Sold separately"
+                        ? "Team seats sold separately"
+                        : `Up to ${capacity} team members`}
                   {planData && (
                     <span style={{ color: TEXT_MUTED }}>
                       {" · "}
@@ -92,9 +120,16 @@ export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) 
             );
           })}
         </div>
-        <p className="text-xs mt-4" style={{ color: TEXT_MUTED }}>
-          Every plan — including the free trial — includes up to 25 team seats at no additional cost.
-        </p>
+        {/* M43 — the one sentence describing how team capacity is SOLD, derived
+            from the server's commercial state. It was previously a hardcoded
+            claim that every plan bundled a fixed number of seats for free, which
+            becomes false the moment seat billing is enabled. No seat figure or
+            pricing claim may be written literally in this file. */}
+        {seatModelSummary(model) && (
+          <p className="text-xs mt-4" style={{ color: TEXT_MUTED }} data-testid="seat-model-summary">
+            {seatModelSummary(model)}
+          </p>
+        )}
       </div>
 
       {/* Right: role comparison table */}
