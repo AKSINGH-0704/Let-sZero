@@ -389,3 +389,30 @@ describe("H-6 — the stored amount is the amount charged", () => {
     expect(payment.amountMinor).toBe(quoteSeats({ seats: 5, term: SEAT_TERMS.MONTHLY.id }).totalMinor);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("H-10 — the sweep announces itself so registration is verifiable", () => {
+  it("logs on its first run even when seat billing is disabled", async () => {
+    // A registered-but-inert sweep must be distinguishable from one that was
+    // never wired up. Without this line the runbook's "verify the scheduler"
+    // step is impossible — the INCIDENT-001 failure shape.
+    await storage.setPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED, "false", null);
+    const mod = await import("../../server/seatRenewal.js?announce=" + rand());
+    const lines = [];
+    const orig = console.log;
+    console.log = (...a) => lines.push(a.join(" "));
+    try {
+      const r1 = await mod.runSeatRenewalSweep();
+      const r2 = await mod.runSeatRenewalSweep();
+      expect(r1.skipped).toBe(true);
+      expect(r1.registered).toBe(true);
+      // Announced exactly once — verifiable, but not hourly log spam.
+      const announcements = lines.filter(l => /Sweep registered and running/.test(l));
+      expect(announcements).toHaveLength(1);
+      expect(announcements[0]).toMatch(/DISABLED/);
+      expect(r2.skipped).toBe(true);
+    } finally {
+      console.log = orig;
+    }
+  });
+});

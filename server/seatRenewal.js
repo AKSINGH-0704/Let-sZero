@@ -137,11 +137,29 @@ async function notify(sub, { attempt, graceEnd }) {
  * Run one sweep. Returns a summary for the operator log. Bounded per run so a
  * large backlog degrades into several passes rather than one long transaction.
  */
+// Whether this process has already announced the sweep. The FIRST run always
+// logs, even when it does nothing, because otherwise a registered-but-inert
+// sweep is indistinguishable from one that was never wired up at all — the exact
+// INCIDENT-001 failure shape (shipped, never switched on, invisible in the logs).
+// Subsequent quiet runs stay silent so an hourly job does not spam the log.
+let announced = false;
+
 export async function runSeatRenewalSweep({ now = new Date(), limit = 100 } = {}) {
   const config = await storage.getSeatCommerceConfig();
+  const first = !announced;
+  announced = true;
+
   // While seat billing is off, entitlement ignores subscriptions entirely — so
   // expiring them would be noise with no customer-visible meaning.
-  if (!config.billingEnabled) return { skipped: true, reason: "seat_billing_disabled" };
+  if (!config.billingEnabled) {
+    if (first) {
+      console.log("[SEAT-RENEWAL] Sweep registered and running — seat billing is DISABLED, so it is a no-op until seat_billing_enabled=true");
+    }
+    return { skipped: true, reason: "seat_billing_disabled", registered: true };
+  }
+  if (first) {
+    console.log(`[SEAT-RENEWAL] Sweep registered and running — seat billing is ENABLED (free floor ${config.freeFloor})`);
+  }
 
   const due = await storage.getSubscriptionsDue(now, limit);
   const summary = { processed: 0, pastDue: 0, expired: 0, reminders: 0, errors: 0 };
