@@ -57,6 +57,13 @@
       "when": 1785283200000,
       "tag": "0007_warmup_ladder_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785369600000,
+      "tag": "0008_m42_seat_subscriptions",
+      "breakpoints": true
     }
   ]
 }

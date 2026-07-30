@@ -179,3 +179,45 @@ describe("storage backends stay in parity", () => {
     }
   });
 });
+
+describe("MIGRATION REGISTRATION — a .sql file that is not journaled is dead code", () => {
+  it("every migrations/*.sql has a drizzle journal entry", async () => {
+    // drizzle-kit migrate applies the JOURNAL, not the folder. An unjournaled
+    // .sql file is silently skipped and the run still reports
+    // "migrations applied successfully" — which is exactly what happened to
+    // 0008 during M42 launch validation: the file existed, the deploy succeeded,
+    // the migrate command reported success, and the table did not exist.
+    // Same failure class as INCIDENT-001: shipped, but never in force.
+    const { readdir, readFile } = await import("fs/promises");
+    const files = (await readdir(join(root, "migrations")))
+      .filter(f => f.endsWith(".sql"))
+      .map(f => f.replace(/\.sql$/, ""))
+      .sort();
+    const journal = JSON.parse(await readFile(join(root, "migrations/meta/_journal.json"), "utf8"));
+    const tags = journal.entries.map(e => e.tag).sort();
+
+    const unjournaled = files.filter(f => !tags.includes(f));
+    expect(unjournaled, `unjournaled migration(s) — these will NEVER run: ${unjournaled.join(", ")}`).toEqual([]);
+
+    const orphanTags = tags.filter(t => !files.includes(t));
+    expect(orphanTags, `journal references missing file(s): ${orphanTags.join(", ")}`).toEqual([]);
+  });
+
+  it("journal entries are ordered and uniquely indexed", async () => {
+    const { readFile } = await import("fs/promises");
+    const journal = JSON.parse(await readFile(join(root, "migrations/meta/_journal.json"), "utf8"));
+    const idxs = journal.entries.map(e => e.idx);
+    expect(new Set(idxs).size).toBe(idxs.length);
+    for (let i = 1; i < journal.entries.length; i++) {
+      expect(journal.entries[i].idx).toBeGreaterThan(journal.entries[i - 1].idx);
+      // `when` drives apply order; a non-monotonic value reorders migrations.
+      expect(journal.entries[i].when).toBeGreaterThan(journal.entries[i - 1].when);
+    }
+  });
+
+  it("registers the M42 migration specifically", async () => {
+    const { readFile } = await import("fs/promises");
+    const journal = JSON.parse(await readFile(join(root, "migrations/meta/_journal.json"), "utf8"));
+    expect(journal.entries.map(e => e.tag)).toContain("0008_m42_seat_subscriptions");
+  });
+});
