@@ -148,6 +148,12 @@ export default function TeamSeats() {
 
   const { entitlement, usage, subscription, renewal, billingEnabled, seatsAtRisk } = data;
   const sub = subscription;
+  // Ownership is the SERVER's answer (`isOwner`), not a second derivation from the
+  // auth payload. Both resolve `parentId == null` today, so they agree — but two
+  // sources for one fact is exactly the drift this milestone exists to remove, and
+  // it left the API's own field dead. The auth-derived value is only a fallback for
+  // the window before this payload arrives.
+  const isOwner = data.isOwner ?? isWorkspaceOwner;
 
   return (
     <AppLayout>
@@ -213,7 +219,7 @@ export default function TeamSeats() {
                   </>
                 )}
               </p>
-              {isWorkspaceOwner && (
+              {isOwner && (
                 <Button
                   className="mt-4"
                   onClick={() => renewMutation.mutate()}
@@ -264,7 +270,7 @@ export default function TeamSeats() {
           Seat purchasing isn't available on your workspace yet. Your current allowance of{" "}
           {entitlement.unlimited ? "unlimited" : entitlement.seats} seats continues to apply.
         </div>
-      ) : !isWorkspaceOwner ? (
+      ) : !isOwner ? (
         <div className="mt-6 rounded-xl border border-border p-6 text-sm text-muted-foreground" data-testid="seat-not-owner">
           Only the workspace owner can change seats or billing. Ask them to add a seat if your team needs one.
         </div>
