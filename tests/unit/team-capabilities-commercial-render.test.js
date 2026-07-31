@@ -60,7 +60,6 @@ function render({ billingEnabled, freeSeatFloor = 25, seed = true } = {}) {
   return renderToString(makeTree(qc, {
     plans: PLANS,
     formatPlanPrice: (p) => `₹${p.priceInr}`,
-    rolesNote: "Roles note",
   })).replace(/<!-- -->/g, "");
 }
 
@@ -85,8 +84,20 @@ describe("seat billing OFF — the bundled story, from the server", () => {
   it("still renders the role matrix and the price detail", () => {
     const h = html();
     expect(h).toContain("Purchase credits");
-    expect(h).toContain("Roles note");
     expect(h).toContain("₹390");
+  });
+
+  it("the roles caption describes roles and makes no commercial claim", () => {
+    // M43-FIX — this caption used to arrive as a `rolesNote` prop that both host
+    // pages filled with "seats are included in every plan … up to 25 members
+    // each", rendering a hardcoded seat promise immediately below the
+    // server-derived capacity rows. It is now stated once, here, and says nothing
+    // about how seats are sold.
+    const h = html();
+    expect(h).toContain('data-testid="roles-note"');
+    const note = /data-testid="roles-note">([^<]*)</.exec(h)?.[1] ?? "";
+    expect(note).toMatch(/roles/i);
+    expect(note).not.toMatch(/\d+ (?:seats?|members)|included in every plan|free/i);
   });
 });
 

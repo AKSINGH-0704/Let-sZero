@@ -54,6 +54,17 @@ describe("no surface claims team seats are free or bundled at a fixed number", (
       /no purchase required[^.]*\b\d+\b/i,
       /\b\d+ team seats at no (?:additional|extra) cost/i,
       /includes up to \d+ team members at no extra cost/i,
+      // M43-FIX — the shapes that survived the first M43 pass. "up to 25 members
+      // each" slipped through because the original alternation required the word
+      // "team" before "members"; a guard is only as good as the phrasing someone
+      // actually wrote, so match the bare noun too.
+      /up to \d+ (?:members|users)\b/i,
+      /\b\d+-seat limit/i,
+      /\bincludes? \d+ seats?\b/i,
+      // The bundled-model assertion itself, with or without a number. This is the
+      // claim that becomes false when seat_billing_enabled flips, so no surface
+      // may state it as a literal — it must come from the commercial model.
+      /\b(?:team )?seats? (?:are|is) included in every plan/i,
     ];
     const offenders = [];
     for (const f of await customerSurfaces()) {
@@ -83,6 +94,30 @@ describe("no surface claims team seats are free or bundled at a fixed number", (
   it("the plan feature matrix carries no seat entry", async () => {
     // Team capacity is not a property of a credit pack.
     expect(await read("client/src/lib/commerce/planCatalog.js")).not.toMatch(/teamMembers:\s*["'{]/);
+  });
+
+  it("prerendered meta states no seat count and no bundled-seat claim", async () => {
+    // M43-FIX — prerendered <title>/<meta> is baked at build time and CANNOT read
+    // the commercial state, so it can never be made flag-aware; the only correct
+    // move is to say nothing about seats. The first M43 pass narrowed the /pricing
+    // title and left the description promising "up to 25 team members" — the
+    // string Google and every social card render.
+    const src = stripComments(await read("script/prerender-routes.js"));
+    const BANNED = [/\b\d+ team members?\b/i, /\b\d+ (?:team )?seats?\b/i, /seats? (?:are|is) included/i];
+    const offenders = BANNED.map(re => re.exec(src)?.[0]).filter(Boolean);
+    expect(offenders, `static meta cannot be flag-aware: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  it("no host page passes a commercial caption into the shared capacity block", async () => {
+    // M43-FIX — `rolesNote` was a prop, and BOTH callers filled it with a
+    // hardcoded seat promise that rendered verbatim directly beneath the
+    // server-derived capacity rows. The caption is about roles, is identical on
+    // both surfaces, and is now stated once inside the component.
+    const offenders = [];
+    for (const f of await customerSurfaces()) {
+      if (/rolesNote\s*=/.test(stripComments(await read(f)))) offenders.push(f);
+    }
+    expect(offenders, `passes a caption into TeamCapabilities: ${offenders.join(", ")}`).toEqual([]);
   });
 });
 
@@ -149,6 +184,33 @@ describe("surfaces that show commercial state read it from the server", () => {
     ["client/src/components/pricing/TeamCapabilities.jsx", "useCommercialModel"],
   ])("%s reads %s", async (file, marker) => {
     expect(await read(file)).toContain(marker);
+  });
+
+  it("no 'seats cost nothing' claim is made outside a flag-aware surface", async () => {
+    // M43-FIX — PostPurchaseActivation had its seat COUNT migrated to the server
+    // while the sentence beneath it still read "Included in your plan, at no extra
+    // cost", shown immediately after a payment. The claim itself is fine — it is
+    // true today — but only a surface that can see `seat_billing_enabled` is
+    // allowed to make it, because only that surface stops making it on rollout.
+    const CLAIM = /at no (?:extra|additional) cost|no purchase required|included with your plan/i;
+    const FLAG_AWARE = /billingEnabled|useCommercialModel|seatBillingEnabled|seatBillingLive/;
+    const offenders = [];
+    for (const f of await customerSurfaces()) {
+      const src = await read(f);
+      const stripped = stripComments(src);
+      if (CLAIM.test(stripped) && !FLAG_AWARE.test(src)) offenders.push(`${f}: ${CLAIM.exec(stripped)[0]}`);
+    }
+    expect(offenders, `states seats are free but cannot see the flag:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("the seat-limit rejection is rendered as the server wrote it", async () => {
+    // M43-FIX — server/routes.js seatLimitError() builds ONE flag-aware message
+    // from the entitlement authority. Users.jsx appended a hardcoded "Every plan
+    // includes 25 seats" to it, contradicting the sentence it was concatenated to.
+    // A client may show `err.message`; it may not extend it with a seat claim.
+    const src = stripComments(await read("client/src/pages/Users.jsx"));
+    const appended = /err\.message\s*\+\s*["'`][^"'`]*seats?/i.exec(src);
+    expect(appended?.[0], "client appends its own seat claim to the server's message").toBeUndefined();
   });
 
   it("the commercial model exposes no price of its own", async () => {
