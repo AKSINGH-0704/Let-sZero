@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { buildEnterpriseContactPath } from "@shared/enterprise";
 import {
   quoteSeats, getSeatCatalog, buildInvoiceLines, formatMinor,
-  SEAT_TERMS, bandForSeats,
+  SEAT_TERMS, bandForSeats, bandAnnualTerms,
 } from "@shared/seatPricing";
 
 const catalog = getSeatCatalog();
@@ -88,6 +88,21 @@ export default function SeatCalculator({
     return Math.max(0, monthlyEquivalent.totalMinor * 12 - quote.totalMinor);
   }, [term, quote, monthlyEquivalent, overCeiling]);
 
+  // M46 — the saving at THIS seat count, from the pricing authority for both
+  // terms rather than from a discount constant. The specification's discount
+  // varies by band (23% at 1–2 down to 18% at 10–25), and the best-price
+  // guarantee can resolve the two terms into different bands, so only comparing
+  // two real quotes is reliable. Shown on the toggle so the number moves with
+  // the selector and is always the one the customer would actually be charged.
+  const annualEquivalent = useMemo(() => quoteSeats({ seats, term: SEAT_TERMS.ANNUAL.id }), [seats]);
+  const annualSavingsPct = useMemo(() => {
+    if (monthlyEquivalent.error || annualEquivalent.error) return null;
+    if (monthlyEquivalent.isEnterprise || annualEquivalent.isEnterprise) return null;
+    const yearAtMonthly = (monthlyEquivalent.totalMinor || 0) * 12;
+    if (!(yearAtMonthly > 0)) return null;
+    return Math.round((1 - annualEquivalent.totalMinor / yearAtMonthly) * 100);
+  }, [monthlyEquivalent, annualEquivalent]);
+
   return (
     <div className={cn("rounded-2xl border border-border bg-card p-5 sm:p-6", className)} data-testid="seat-calculator">
       {/* ── Billing term ─────────────────────────────────────────────────── */}
@@ -112,9 +127,16 @@ export default function SeatCalculator({
               )}
             >
               {t.label}
-              {t.id === SEAT_TERMS.ANNUAL.id && (
+              {/* M46 — the specification's annual discount is not a constant: it
+                  is 23% at 1–2 seats and 18% at 10–25, deliberately, so the
+                  annual deal reads strongest where a small team is deciding
+                  whether to commit. A flat "−20%" badge was wrong on three of the
+                  four bands. This tracks the customer's CURRENT band, so the
+                  number moves with the selector and is always the one they would
+                  actually be charged. */}
+              {t.id === SEAT_TERMS.ANNUAL.id && annualSavingsPct != null && (
                 <span className="ml-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  −{Math.round(catalog.annualDiscount * 100)}%
+                  −{annualSavingsPct}%
                 </span>
               )}
             </button>
@@ -282,8 +304,12 @@ export default function SeatCalculator({
       <ul className="mt-6 grid gap-1.5 border-t border-border pt-4 text-sm" data-testid="seat-bands">
         {catalog.bands.map((b) => {
           const active = !overCeiling && quote.band && quote.band.min === b.min;
+          // M46 — ask the pricing authority for the annual rate. This line used to
+          // recompute it inline from a discount constant, which made the
+          // calculator a second pricing authority and produced the wrong number on
+          // three of the four specified bands.
           const rate = term === SEAT_TERMS.ANNUAL.id
-            ? Math.round(b.rate * (1 - catalog.annualDiscount))
+            ? bandAnnualTerms(b, catalog)?.annualRate
             : b.rate;
           return (
             <li

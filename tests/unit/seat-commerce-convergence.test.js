@@ -100,11 +100,38 @@ describe("ONE seat pricing authority", () => {
     expect((text.match(/export const SEAT_PRICING_VERSION\b/g) || []).length).toBe(1);
   });
 
-  it("derives the annual rate rather than restating a second table", async () => {
-    const text = await read("shared/seatPricing.js");
-    // One discount constant; no parallel annual band list.
-    expect((text.match(/annualDiscount:/g) || []).length).toBe(1);
-    expect(text).not.toMatch(/annualBands\s*[:=]/);
+  it("states the annual rate on the band, and nobody re-derives it", async () => {
+    // M46 — this guard used to assert the annual rate must be DERIVED from a
+    // single discount constant. That was an engineering decision overriding the
+    // client's commercial specification, and it produced three wrong prices. The
+    // specification states each band's annual rate, so the invariant inverts:
+    // every band in the ACTIVE catalog carries an explicit annualRate...
+    const { getSeatCatalog } = await import("../../shared/seatPricing.js");
+    const active = getSeatCatalog();
+    for (const b of active.bands) {
+      expect(b.annualRate, `band ${b.min}-${b.max} has no explicit annual rate`).toBeTypeOf("number");
+    }
+
+    // ...and no surface recomputes one from a discount constant. That inline
+    // derivation is what made the seat calculator a second pricing authority.
+    const DERIVATION = /\brate\s*\*\s*\(\s*1\s*-\s*[\w.?]*annualDiscount/;
+    for (const f of ["client/src/components/pricing/SeatCalculator.jsx",
+                     "client/src/lib/commerce/commercialModel.js",
+                     "client/src/pages/PublicPricing.jsx",
+                     "client/src/pages/TeamSeats.jsx"]) {
+      expect(DERIVATION.test(await read(f)), `${f} re-derives the annual rate`).toBe(false);
+    }
+  });
+
+  it("no route lets a client supply its own per-seat price", async () => {
+    // M46 — a negotiated override now bypasses the >25 Contact Sales gate, so
+    // that it stays possible to fulfil and RENEW a contract workspace. That is
+    // only safe because the override comes from the stored subscription row and
+    // never from a request body. If a route ever destructures it from req.body,
+    // a customer can name their own price and buy past the ceiling.
+    const text = await read("server/routes.js");
+    const bodyReads = text.match(/(?:const|let)\s*\{[^}]*unitPriceOverrideMinor[^}]*\}\s*=\s*req\.body/g) || [];
+    expect(bodyReads, `routes.js reads the price override from the request body`).toEqual([]);
   });
 });
 

@@ -122,29 +122,51 @@ describe("DEFECT 1 — the 9→10 price inversion is closed", () => {
   });
 });
 
-describe("DEFECT 2 — the annual discount is uniform and derived", () => {
-  it("applies one discount constant to every band", () => {
-    for (const band of catalog.bands) {
-      const monthly = quoteSeats({ seats: band.min, term: M });
-      const annual = quoteSeats({ seats: band.min, term: A });
-      // Annual is billed 12 months up front, so compare per-seat-per-month rates.
-      const expectedRate = Math.round(band.rate * (1 - catalog.annualDiscount)) * 100;
-      expect(annual.unitRateMinor).toBe(expectedRate);
-      expect(monthly.unitRateMinor).toBe(band.rate * 100);
+// M46 — this block previously asserted the OPPOSITE of the commercial
+// specification. It pinned a single derived discount constant and explicitly
+// forbade the discount shrinking as the team grows, on the engineering judgement
+// that the client's annual table was "backwards". That judgement produced three
+// wrong prices. The specification is the commercial contract, so the assertions
+// are now the client's table, rate by rate.
+describe("the annual table IS the specification, stated rate by rate", () => {
+  // The authoritative table, transcribed from the client specification. Written
+  // as literals on purpose: a test that derives its expectation from the catalog
+  // it is checking cannot detect the catalog being wrong.
+  const SPEC = [
+    { min: 1, max: 2, monthly: 129, annual: 99 },
+    { min: 3, max: 5, monthly: 115, annual: 89 },
+    { min: 6, max: 9, monthly: 99, annual: 79 },
+    { min: 10, max: 25, monthly: 79, annual: 65 },
+  ];
+
+  it("has exactly the specified bands and boundaries", () => {
+    expect(catalog.bands.map(b => [b.min, b.max])).toEqual(SPEC.map(s => [s.min, s.max]));
+  });
+
+  it.each(SPEC)("seats $min–$max charge ₹$monthly monthly and ₹$annual annually", (s) => {
+    expect(quoteSeats({ seats: s.min, term: M }).unitRateMinor).toBe(s.monthly * 100);
+    expect(quoteSeats({ seats: s.min, term: A }).unitRateMinor).toBe(s.annual * 100);
+  });
+
+  it("does NOT derive the annual rate from a discount constant", () => {
+    // The old rule was `round(monthly × 0.8)`, which gives 103/92/79/63. The
+    // specification says 99/89/79/65 — so two bands were overcharged and one
+    // undercharged. If anyone reinstates the derivation, these diverge again.
+    const derived = SPEC.map(s => Math.round(s.monthly * 0.8));
+    const specified = SPEC.map(s => s.annual);
+    expect(derived).not.toEqual(specified);
+    for (const s of SPEC) {
+      expect(quoteSeats({ seats: s.min, term: A }).unitRateMinor / 100).toBe(s.annual);
     }
   });
 
-  it("does not shrink the discount as the team grows (the proposal's flaw)", () => {
-    const discounts = catalog.bands.map(b => {
-      const m = quoteSeats({ seats: b.min, term: M }).unitRateMinor;
-      const a = quoteSeats({ seats: b.min, term: A }).unitRateMinor;
-      return 1 - a / m;
-    });
-    const spread = Math.max(...discounts) - Math.min(...discounts);
-    // The proposal spread was 23.3% → 17.7% (5.6 points). Derived rounding alone
-    // must keep every band within a point of the configured discount.
-    expect(spread).toBeLessThan(0.01);
-    for (const d of discounts) expect(Math.abs(d - catalog.annualDiscount)).toBeLessThan(0.01);
+  it("the discount DOES shrink as the team grows — that is the pricing model", () => {
+    const pct = SPEC.map(s => 1 - s.annual / s.monthly);
+    // 23% → 18%: the annual deal reads strongest where a small team is deciding
+    // whether to commit. Monotonically non-increasing, by design.
+    for (let i = 1; i < pct.length; i++) expect(pct[i]).toBeLessThanOrEqual(pct[i - 1]);
+    expect(Math.round(pct[0] * 100)).toBe(23);
+    expect(Math.round(pct[pct.length - 1] * 100)).toBe(18);
   });
 
   it("bills annual as twelve months up front", () => {
@@ -154,23 +176,39 @@ describe("DEFECT 2 — the annual discount is uniform and derived", () => {
   });
 });
 
-describe("enterprise boundary and the soft cap", () => {
-  it("keeps selling past 25 seats but flags the workspace for sales", () => {
-    const q = quoteSeats({ seats: 30, term: M });
+describe("SPEC: self-serve stops at 25 — above that is Contact Sales", () => {
+  // M46 — this previously asserted that 26–50 seats stayed PURCHASABLE with a
+  // sales flag alongside ("never wall a growing team at 18:00 on a Friday").
+  // The specification says: "Above 25 seats — Contact Sales (no self-serve
+  // purchase)." Selling a 30-seat workspace self-serve was a divergence from the
+  // commercial contract regardless of how reasonable the reasoning was.
+  it("sells the last self-serve seat count", () => {
+    const q = quoteSeats({ seats: 25, term: M });
     expect(q.isEnterprise).toBeFalsy();
-    expect(q.exceedsSelfServe).toBe(true);
-    expect(q.requiresSalesContact).toBe(true);
-    expect(q.totalMinor).toBeGreaterThan(0);
+    expect(q.totalMinor).toBe(25 * 79 * 100);
   });
 
-  it("routes past the hard ceiling to sales instead of quoting", () => {
-    const q = quoteSeats({ seats: catalog.softCapSeats + 1, term: M });
+  it.each([26, 30, 50, 51])("refuses to sell %i seats self-serve", (seats) => {
+    const q = quoteSeats({ seats, term: M });
     expect(q.isEnterprise).toBe(true);
     expect(q.code).toBe("ENTERPRISE_REQUIRED");
     expect(q.totalMinor).toBeUndefined();
   });
 
+  it("the ceiling and the self-serve maximum are the same number", () => {
+    // If these ever diverge again, a purchasable gap reopens between them.
+    expect(catalog.softCapSeats).toBe(catalog.selfServeMaxSeats);
+    expect(catalog.selfServeMaxSeats).toBe(25);
+  });
+
+  it("both terms stop at the same boundary", () => {
+    expect(quoteSeats({ seats: 26, term: A }).isEnterprise).toBe(true);
+    expect(quoteSeats({ seats: 25, term: A }).isEnterprise).toBeFalsy();
+  });
+
   it("honours a negotiated per-seat override ahead of the catalog", () => {
+    // Contract pricing is how a >25 team is served, so the override path must
+    // still work above the self-serve ceiling.
     const q = quoteSeats({ seats: 40, term: M, unitPriceOverrideMinor: 5000 });
     expect(q.isOverride).toBe(true);
     expect(q.unitRateMinor).toBe(5000);

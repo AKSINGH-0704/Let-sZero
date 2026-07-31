@@ -21,7 +21,7 @@ import { generateQuote, isCurrencySupported, MAX_SELF_SERVE_CREDITS, PRICING_VER
 // M42 — seat commerce. Pricing, entitlement and lifecycle all resolve through the
 // shared authorities; routes.js only orchestrates.
 import {
-  quoteSeats, previewSeatChange, previewRenewal, buildInvoiceLines,
+  quoteSeats, previewSeatChange, previewRenewal, buildInvoiceLines, bandAnnualTerms,
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
@@ -3556,7 +3556,11 @@ export async function registerRoutes(httpServer, app) {
         // is not what governs entitlement (the plan allowance is) — surfaces must
         // read `billingEnabled` first.
         freeSeatFloor: config.freeFloor,
-        bands: catalog.bands,
+        // M46 — each band carries its own annual rate and saving, computed by the
+        // pricing authority. The client previously re-derived the annual rate from
+        // a discount constant, which was a second pricing authority and is wrong
+        // under the specification's per-band table. Surfaces now render these.
+        bands: catalog.bands.map(b => ({ ...b, annual: bandAnnualTerms(b, catalog) })),
         annualDiscount: catalog.annualDiscount,
         terms: Object.values(SEAT_TERMS),
         currency: catalog.currency,

@@ -37,7 +37,7 @@ import {
 // Bumped whenever bands, term discounts, rounding, or included seats change.
 // Persisted on every subscription and every payment so a historical charge can
 // always be reconciled against the rules that produced it.
-export const SEAT_PRICING_VERSION = "2026-07-29.1";
+export const SEAT_PRICING_VERSION = "2026-07-31.1";
 
 // The smallest amount a payment gateway will accept. Razorpay rejects orders
 // below ₹1.00 (100 paise), so a proration computed near the end of a period can
@@ -78,6 +78,54 @@ export function isValidTerm(term) {
 // count that produced it — so a 9-seat workspace pays ₹790 and receives 10 seats.
 // The inversion becomes the strongest seat-adoption mechanic in the product.
 export const SEAT_CATALOG = Object.freeze({
+  // ── AUTHORITATIVE (M46) — the client's commercial specification ────────────
+  //
+  // The annual column is the CLIENT'S TABLE, stated rate by rate. The previous
+  // version derived it from a single 20% constant, on the reasoning that the
+  // proposal's annual discount shrinking as teams grow (23.3% → 17.7%) was
+  // backwards. That reasoning was an engineering opinion about a commercial
+  // decision, and it produced three wrong prices: 1–2 and 3–5 were overcharged
+  // (₹103 vs ₹99, ₹92 vs ₹89) and 10–25 was undercharged (₹63 vs ₹65).
+  //
+  // The shrinking discount is deliberate pricing psychology: the annual deal
+  // looks strongest exactly where a small team is deciding whether to commit.
+  // The specification is the commercial contract; the derivation was not.
+  //
+  // `bestPriceGuarantee` is RETAINED and is load-bearing for this table too —
+  // the annual ladder inverts at the same 9→10 boundary the monthly one does
+  // (9 × ₹79 = ₹711 vs 10 × ₹65 = ₹650), so without it a 9-seat annual
+  // workspace would pay more than a 10-seat one.
+  "2026-07-31.1": Object.freeze({
+    version: "2026-07-31.1",
+    currency: "INR",
+    // Per-seat rates in MAJOR units (₹). `rate` is billed monthly; `annualRate`
+    // is the per-seat-per-month price when billed annually (charged × 12).
+    // Both come from the specification — neither is derived from the other.
+    bands: Object.freeze([
+      Object.freeze({ min: 1,  max: 2,  rate: 129, annualRate: 99 }),
+      Object.freeze({ min: 3,  max: 5,  rate: 115, annualRate: 89 }),
+      Object.freeze({ min: 6,  max: 9,  rate: 99,  annualRate: 79 }),
+      Object.freeze({ min: 10, max: 25, rate: 79,  annualRate: 65 }),
+    ]),
+    // Retained only so an older stored subscription referencing a derived
+    // catalog still resolves. Unused when a band carries an explicit annualRate.
+    annualDiscount: null,
+    bestPriceGuarantee: true,
+    includedSeats: 0,
+    selfServeMaxSeats: SELF_SERVE_MAX_SEATS, // 25
+    // SPEC: "Above 25 seats — Contact Sales (no self-serve purchase)." The hard
+    // ceiling therefore EQUALS the self-serve maximum: there is no band between
+    // them in which a customer may still buy. The previous version set this to
+    // 50, which let a 26–50 seat workspace complete a self-serve purchase the
+    // specification says must go to sales.
+    softCapSeats: SELF_SERVE_MAX_SEATS, // 25
+  }),
+
+  // ── SUPERSEDED — retained so a stored subscription still resolves ──────────
+  // No subscription has ever referenced it (seat billing has never been enabled
+  // and there are zero subscription rows), but the version mechanism exists
+  // precisely so a price a customer agreed to cannot move under them. Removing
+  // an entry would be the one change that mechanism is meant to prevent.
   "2026-07-29.1": Object.freeze({
     version: "2026-07-29.1",
     currency: "INR",
@@ -171,16 +219,54 @@ export function bandForSeats(seats, catalog = getSeatCatalog()) {
 }
 
 /** Per-seat, per-month rate in MINOR units for a band under a term. */
+/**
+ * The per-seat, per-month rate a band charges for a term, in MINOR units.
+ *
+ * M46 — an explicit `annualRate` from the specification wins. The derived path
+ * survives only for the superseded catalog version; a stored subscription that
+ * references it must keep resolving to the price its customer agreed to.
+ */
 function bandRateMinor(band, term, catalog) {
-  const monthlyMinor = toMinorUnits(band.rate, catalog.currency);
   if (term === SEAT_TERMS.ANNUAL.id) {
-    // Round the discounted per-seat rate to whole currency units so the number a
-    // customer sees on the pricing card ("₹103/seat/month") is exactly the number
-    // that is charged — no sub-unit drift accumulating across 25 seats × 12 months.
-    const major = Math.round(band.rate * (1 - catalog.annualDiscount));
-    return toMinorUnits(major, catalog.currency);
+    if (band.annualRate != null) return toMinorUnits(band.annualRate, catalog.currency);
+    // Legacy derivation. Rounded to whole currency units so the number on the
+    // pricing card is exactly the number charged — no sub-unit drift across
+    // 25 seats × 12 months.
+    return toMinorUnits(Math.round(band.rate * (1 - (catalog.annualDiscount ?? 0))), catalog.currency);
   }
-  return monthlyMinor;
+  return toMinorUnits(band.rate, catalog.currency);
+}
+
+/**
+ * M46 — the ONE place an annual saving is computed, for any band.
+ *
+ * The specification's annual discount is NOT a constant: it is 23% at 1–2 seats
+ * and 18% at 10–25, deliberately, because the annual deal is meant to look
+ * strongest where a small team is deciding whether to commit. A surface that
+ * renders a flat "−20%" is therefore wrong on three of four bands, and one that
+ * recomputes the annual rate from a discount constant is a second pricing
+ * authority. Both existed before this milestone; both are now impossible,
+ * because there is one function and it lives here.
+ *
+ * @returns {{ monthlyRate: number, annualRate: number, savingsPct: number,
+ *             annualTotalPerSeat: number, savedPerSeatPerYear: number }|null}
+ */
+export function bandAnnualTerms(band, catalog = getSeatCatalog()) {
+  if (!band || !catalog) return null;
+  const monthly = band.rate;
+  const annual = band.annualRate != null
+    ? band.annualRate
+    : Math.round(band.rate * (1 - (catalog.annualDiscount ?? 0)));
+  if (!(monthly > 0)) return null;
+  return {
+    monthlyRate: monthly,
+    annualRate: annual,
+    // Rounded for display; the CHARGE always comes from quoteSeats, never from
+    // this percentage, so a rounded label can never move money.
+    savingsPct: Math.round((1 - annual / monthly) * 100),
+    annualTotalPerSeat: annual * 12,
+    savedPerSeatPerYear: (monthly - annual) * 12,
+  };
 }
 
 /**
@@ -277,12 +363,19 @@ export function quoteSeats({
     };
   }
 
-  if (billableSeats > catalog.softCapSeats) {
+  // SPEC: above 25 seats there is no self-serve purchase — the customer is routed
+  // to sales. The one exception is a NEGOTIATED rate, which is what sales hands
+  // back: a contract workspace must still be quotable, or fulfilment and every
+  // subsequent renewal would fail with ENTERPRISE_REQUIRED for precisely the
+  // customers this boundary exists to create. The override is server-supplied
+  // (from the stored subscription), never client-supplied, so this cannot be used
+  // to buy past the ceiling.
+  if (billableSeats > catalog.softCapSeats && unitPriceOverrideMinor == null) {
     return {
       kind: "enterprise", isEnterprise: true, requiresSalesContact: true,
       seats: n, billableSeats, term, currency, version: catalog.version, region: reg.id,
       code: "ENTERPRISE_REQUIRED",
-      message: "Teams above our self-serve ceiling are priced by our sales team.",
+      message: "Teams above 25 seats are priced by our sales team.",
     };
   }
 
