@@ -23,7 +23,7 @@ import { canTransition } from "../shared/paymentStateMachine.js";
 // M42 — seat commerce. Identical shared modules to storage.js, so the two
 // backends cannot diverge on a commercial decision.
 import {
-  resolveSeatEntitlement, parseFreeFloor, SEAT_SETTING_KEYS,
+  resolveSeatEntitlement, parseFreeFloor, parseTimestampSetting, SEAT_SETTING_KEYS,
 } from "../shared/seatEntitlement.js";
 import {
   SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
@@ -2174,19 +2174,28 @@ export const memoryStorage = {
   async getSeatCommerceConfig() {
     const enabled = await this.getPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED);
     const floor = await this.getPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR);
+    const activatedAt = await this.getPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT);
+    const grandfatherUntil = await this.getPlatformSetting(SEAT_SETTING_KEYS.GRANDFATHER_UNTIL);
     return {
       billingEnabled: enabled?.value === "true",
       freeFloor: parseFreeFloor(floor?.value),
+      // M45 migration window. Unset = mechanism off; the free floor governs alone.
+      activatedAt: parseTimestampSetting(activatedAt?.value),
+      grandfatherUntil: parseTimestampSetting(grandfatherUntil?.value),
     };
   },
 
   async resolveSeatEntitlement(rootId) {
     const config = await this.getSeatCommerceConfig();
     const effectivePlan = await this.getEffectivePlan(rootId);
+    // M45 — parity with storage.js: legacy protection reads the root's createdAt.
+    const root = await this.getUserById(rootId);
     // Parity with storage.js: no subscription read while the flag is off.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
-      ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
+      ...resolveSeatEntitlement({
+        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+      }),
       subscription, effectivePlan, config,
     };
   },
@@ -2194,9 +2203,12 @@ export const memoryStorage = {
   async resolveSeatLimitInTx(_tx, rootId) {
     const config = await this.getSeatCommerceConfig();
     const effectivePlan = await this.getEffectivePlan(rootId);
+    const root = await this.getUserById(rootId);
     // Parity with storage.js: no subscription read while the flag is off.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
-    return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
+    return resolveSeatEntitlement({
+      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+    }).seats;
   },
 
   async applySeatPurchase(rootId, { seats, term, pricingVersion, currency = "INR", region = "IN",

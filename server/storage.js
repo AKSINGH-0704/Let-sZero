@@ -31,7 +31,7 @@ import { canTransition } from "../shared/paymentStateMachine.js";
 // M42 — seat commerce. The entitlement decision and the lifecycle rules are pure
 // shared modules so both storage backends stay in exact parity by construction.
 import {
-  resolveSeatEntitlement, parseFreeFloor, SEAT_SETTING_KEYS,
+  resolveSeatEntitlement, parseFreeFloor, parseTimestampSetting, SEAT_SETTING_KEYS,
 } from "../shared/seatEntitlement.js";
 import {
   SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
@@ -2451,13 +2451,18 @@ const dbStorage = {
 
   /** Commercial configuration. Read together so a caller makes one decision. */
   async getSeatCommerceConfig() {
-    const [enabled, floor] = await Promise.all([
+    const [enabled, floor, activatedAt, grandfatherUntil] = await Promise.all([
       this.getPlatformSetting(SEAT_SETTING_KEYS.BILLING_ENABLED),
       this.getPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR),
+      this.getPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT),
+      this.getPlatformSetting(SEAT_SETTING_KEYS.GRANDFATHER_UNTIL),
     ]);
     return {
       billingEnabled: enabled?.value === "true",
       freeFloor: parseFreeFloor(floor?.value),
+      // M45 migration window. Unset = mechanism off; the free floor governs alone.
+      activatedAt: parseTimestampSetting(activatedAt?.value),
+      grandfatherUntil: parseTimestampSetting(grandfatherUntil?.value),
     };
   },
 
@@ -2467,9 +2472,12 @@ const dbStorage = {
    * on the server.
    */
   async resolveSeatEntitlement(rootId) {
-    const [config, effectivePlan] = await Promise.all([
+    const [config, effectivePlan, root] = await Promise.all([
       this.getSeatCommerceConfig(),
       this.getEffectivePlan(rootId),
+      // M45 — legacy protection asks "did this workspace predate seat billing?",
+      // which is the root row's own createdAt. No backfill, no stored grant.
+      this.getUserById(rootId),
     ]);
     // "Ships dark" must mean TOUCHES NOTHING. While the flag is off the
     // entitlement is decided by plan alone, so reading workspace_subscriptions
@@ -2479,7 +2487,9 @@ const dbStorage = {
     // turns every pre-migration deploy into a crash loop.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
-      ...resolveSeatEntitlement({ subscription, effectivePlan, ...config }),
+      ...resolveSeatEntitlement({
+        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+      }),
       subscription,
       effectivePlan,
       config,
@@ -2492,13 +2502,16 @@ const dbStorage = {
    * between the check and the claim.
    */
   async resolveSeatLimitInTx(tx, rootId) {
-    const [config, effectivePlan] = await Promise.all([
+    const [config, effectivePlan, root] = await Promise.all([
       this.getSeatCommerceConfig(),
       this.getEffectivePlan(rootId),
+      this.getUserById(rootId),
     ]);
     // Same deploy-order and inertness reasoning as resolveSeatEntitlement above.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId, tx) : null;
-    return resolveSeatEntitlement({ subscription, effectivePlan, ...config }).seats;
+    return resolveSeatEntitlement({
+      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+    }).seats;
   },
 
   /**
