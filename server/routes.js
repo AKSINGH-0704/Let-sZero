@@ -25,7 +25,7 @@ import {
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
-import { SUBSCRIPTION_STATUS } from "../shared/subscriptionStateMachine.js";
+import { SUBSCRIPTION_STATUS, CURRENT_RENEWAL_MODE } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
@@ -3615,6 +3615,11 @@ export async function registerRoutes(httpServer, app) {
         },
         usage: { activeMembers: used, pendingInvites },
         billingEnabled: e.config.billingEnabled,
+        // Whether a period renews by itself. v1 is prepaid with no stored mandate,
+        // so this is MANUAL and the UI must not promise a charge the platform
+        // cannot make. Projected from the lifecycle authority rather than assumed
+        // client-side, so a future autopay integration flips one constant.
+        renewalMode: CURRENT_RENEWAL_MODE,
         isOwner: isWorkspaceOwner(req.user),
         subscription: sub ? {
           id: sub.id, status: sub.status, seats: sub.seats, term: sub.term,

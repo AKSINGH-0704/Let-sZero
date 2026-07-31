@@ -103,7 +103,7 @@ export default function TeamSeats() {
     mutationFn: async () => (await apiRequest("POST", "/api/seats/cancel", {})).json(),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: SEATS_KEY });
-      toast({ title: "Auto-renewal turned off", description: `Your seats stay active until ${fmtDate(r.seatsUntil)}.` });
+      toast({ title: "Your seats will end", description: `They stay fully active until ${fmtDate(r.seatsUntil)}, then this workspace returns to its included allowance.` });
     },
     onError: (e) => toast({ title: "Couldn't cancel", description: e.message, variant: "destructive" }),
   });
@@ -112,7 +112,7 @@ export default function TeamSeats() {
     mutationFn: async () => (await apiRequest("POST", "/api/seats/resume", {})).json(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: SEATS_KEY });
-      toast({ title: "Auto-renewal is back on" });
+      toast({ title: "We'll remind you to renew", description: "Your seats no longer end at the period date — we'll email you when it's time to renew." });
     },
     onError: (e) => toast({ title: "Couldn't resume", description: e.message, variant: "destructive" }),
   });
@@ -154,6 +154,11 @@ export default function TeamSeats() {
   // it left the API's own field dead. The auth-derived value is only a fallback for
   // the window before this payload arrives.
   const isOwner = data.isOwner ?? isWorkspaceOwner;
+  // M44 — whether a period renews by itself is a property of the billing system,
+  // read from the server (`renewalMode`), never assumed here. Defaults to false
+  // while unknown: promising an automatic charge that never happens costs the
+  // customer their team, whereas an unnecessary reminder costs them nothing.
+  const autoRenews = data.renewalMode === "AUTOMATIC";
 
   return (
     <AppLayout>
@@ -188,8 +193,16 @@ export default function TeamSeats() {
           {sub && (
             <div className="text-right">
               <Badge variant={sub.status === "ACTIVE" ? "default" : "secondary"}>{sub.status.replace(/_/g, " ")}</Badge>
+              {/* M44 — "Renews" was a promise the platform cannot keep: v1 is
+                  prepaid with no stored mandate, so nothing renews by itself.
+                  `autoRenews` comes from the server's renewalMode, so this flips
+                  automatically if autopay is ever integrated. */}
               <p className="mt-2 text-sm text-muted-foreground">
-                {sub.cancelAtPeriodEnd ? "Ends" : "Renews"} {fmtDate(sub.periodEnd)}
+                {sub.cancelAtPeriodEnd
+                  ? `Ends ${fmtDate(sub.periodEnd)}`
+                  : autoRenews
+                    ? `Renews ${fmtDate(sub.periodEnd)}`
+                    : `Renew by ${fmtDate(sub.periodEnd)}`}
               </p>
             </div>
           )}
@@ -257,9 +270,23 @@ export default function TeamSeats() {
       {sub && renewal && !sub.cancelAtPeriodEnd && (
         <div className="mt-4 flex items-start gap-3 rounded-xl border border-border p-5 text-sm" data-testid="seat-renewal">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {/* M44 — this said "Next charge ₹X on <date>". Nothing charges: v1 is
+              prepaid with no mandate, so a customer who read that and did nothing
+              would silently enter a grace window and lose seats. State who has to
+              act, and say what happens if nobody does. */}
           <p className="text-muted-foreground">
-            Next charge <span className="font-medium text-foreground">{formatMinor(renewal.totalMinor, sub.currency)}</span>{" "}
-            on {fmtDate(renewal.at)} for {renewal.seats} seat{renewal.seats === 1 ? "" : "s"}.
+            {autoRenews ? (
+              <>
+                Next charge <span className="font-medium text-foreground">{formatMinor(renewal.totalMinor, sub.currency)}</span>{" "}
+                on {fmtDate(renewal.at)} for {renewal.seats} seat{renewal.seats === 1 ? "" : "s"}.
+              </>
+            ) : (
+              <>
+                Renew by {fmtDate(renewal.at)} to keep {renewal.seats} seat{renewal.seats === 1 ? "" : "s"} —{" "}
+                <span className="font-medium text-foreground">{formatMinor(renewal.totalMinor, sub.currency)}</span>.
+                {" "}We'll email you a reminder; seats are not charged automatically.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -294,13 +321,18 @@ export default function TeamSeats() {
                   {renewMutation.isPending ? "Working…" : "Renew early"}
                 </Button>
               )}
+              {/* M44 — these were labelled "Turn off / Turn auto-renewal back on"
+                  for a system with no auto-renewal. What the customer is actually
+                  choosing is whether the seats END at the period date or whether we
+                  chase them to renew. Label the outcome, not a mechanism that does
+                  not exist. */}
               {sub.cancelAtPeriodEnd ? (
                 <Button variant="outline" onClick={() => resumeMutation.mutate()} disabled={resumeMutation.isPending} data-testid="seat-resume">
-                  Turn auto-renewal back on
+                  {autoRenews ? "Turn auto-renewal back on" : "Keep these seats"}
                 </Button>
               ) : (
                 <Button variant="ghost" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="seat-cancel">
-                  Turn off auto-renewal
+                  {autoRenews ? "Turn off auto-renewal" : `Let seats end ${fmtDate(sub.periodEnd)}`}
                 </Button>
               )}
             </div>
@@ -326,10 +358,14 @@ export default function TeamSeats() {
                       </span>{" "}
                       now for the rest of this billing period, and your new seats are available immediately.
                     </p>
+                    {/* M44 — "you'll pay ... per period" read as a standing
+                        arrangement at the highest-stakes moment in the flow.
+                        Renewal is manual, so state the cost of renewing. */}
                     {confirm.preview.renewal?.totalMinor != null && (
                       <p>
-                        From {fmtDate(confirm.preview.renewal.at)} you'll pay{" "}
-                        {formatMinor(confirm.preview.renewal.totalMinor, confirm.preview.currency)} per period for{" "}
+                        {autoRenews ? "From" : "Renewing on"} {fmtDate(confirm.preview.renewal.at)}{" "}
+                        {autoRenews ? "you'll pay" : "costs"}{" "}
+                        {formatMinor(confirm.preview.renewal.totalMinor, confirm.preview.currency)} for{" "}
                         {confirm.preview.renewal.seats} seats.
                       </p>
                     )}

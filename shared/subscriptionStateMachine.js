@@ -101,6 +101,32 @@ export function assertSubscriptionTransition(from, to) {
   return true;
 }
 
+// ── Renewal mode (the ONE fact about how a period ends) ──────────────────────
+//
+// v1 is PREPAID. There is no stored mandate — no Razorpay Subscription, no UPI
+// Autopay, no card token — so RepMail CANNOT debit a customer on its own. The
+// renewal sweep never charges; it moves a lapsed period into a grace window and
+// emails a link the owner must act on (see server/seatRenewal.js).
+//
+// This constant exists because the UI was describing the opposite. It offered
+// "Turn off auto-renewal" and promised "Next charge ₹X on <date>" — a charge the
+// system has no mechanism to make. A customer who read that and did nothing
+// would lose seats at the end of a grace window they were never told about.
+// Renewal mode is a property of the BILLING SYSTEM, not a copy decision, so it
+// is stated once here, projected by the API, and rendered by the client.
+//
+// When a mandate integration lands, this becomes AUTOMATIC and every surface
+// follows without a copy hunt.
+export const RENEWAL_MODE = Object.freeze({ MANUAL: "MANUAL", AUTOMATIC: "AUTOMATIC" });
+
+/** How a period actually ends today. See the note above before changing this. */
+export const CURRENT_RENEWAL_MODE = RENEWAL_MODE.MANUAL;
+
+/** True when the platform can charge a renewal without the customer acting. */
+export function autoChargesRenewals() {
+  return CURRENT_RENEWAL_MODE === RENEWAL_MODE.AUTOMATIC;
+}
+
 // ── Dunning policy (configuration, not code) ─────────────────────────────────
 // A failed renewal retries on this schedule (days after the first failure). When
 // the ladder is exhausted the subscription EXPIRES and entitlement falls back to

@@ -213,6 +213,35 @@ describe("surfaces that show commercial state read it from the server", () => {
     expect(appended?.[0], "client appends its own seat claim to the server's message").toBeUndefined();
   });
 
+  it("no surface promises an automatic renewal charge the platform cannot make", async () => {
+    // M44 — v1 is prepaid: there is NO stored mandate, so the renewal sweep never
+    // charges anyone (server/seatRenewal.js). The seat page nonetheless offered
+    // "Turn off auto-renewal" and promised "Next charge ₹X on <date>". A customer
+    // who believed it and did nothing would enter a 14-day grace window unaware
+    // and lose seats. Any such phrasing must now sit behind the server's
+    // `renewalMode`, so it appears only if autopay is genuinely integrated.
+    const BANNED = [/auto-?renewal/i, /Next charge/i, /renews automatically/i, /charged automatically/i];
+    const GATED = /autoRenews|renewalMode/;
+    const offenders = [];
+    for (const f of await customerSurfaces()) {
+      const src = await read(f);
+      const stripped = stripComments(src);
+      for (const re of BANNED) {
+        const m = re.exec(stripped);
+        if (m && !GATED.test(src)) offenders.push(`${f}: "${m[0]}" is not gated on renewalMode`);
+      }
+    }
+    expect(offenders, offenders.join("\n")).toEqual([]);
+  });
+
+  it("renewal mode is server state, not a client constant", async () => {
+    // The client may READ renewalMode; it may not decide it. If a surface ever
+    // hardcodes the mode, the fix above has been undone.
+    const src = stripComments(await read("client/src/pages/TeamSeats.jsx"));
+    expect(src).toMatch(/data\.renewalMode/);
+    expect(src, "client hardcodes the renewal mode").not.toMatch(/renewalMode\s*=\s*["']/);
+  });
+
   it("the commercial model exposes no price of its own", async () => {
     // Prices come from the quote endpoints / SeatCalculator. If this module ever
     // computes one, the single pricing authority has been forked.
