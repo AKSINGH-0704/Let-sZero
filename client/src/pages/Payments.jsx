@@ -605,12 +605,21 @@ function ProcessPayment({ paymentId }) {
 
 // ─── Main Payments Component ───────────────────────────────────────────────────
 export default function Payments() {
-  const { user, canManageTeam } = useAuth();
+  const { user, canManageTeam, isWorkspaceOwner } = useAuth();
   // M41-FIX — the Teams tab's actionable seat card and live member query were
   // gated on role (ROOT_ADMIN/SUB_ADMIN), so a self-service customer (role USER,
   // the workspace owner) never saw the "Manage team" CTA on their own billing
   // page. canManageTeam includes the owner, matching the server + /app/team.
   const isAdmin = canManageTeam;
+  // UX-AUTHZ (Audit 203) — who may actually spend money on this workspace. The
+  // server settled this in Audit 202: purchase is workspace-owner only, NOT
+  // adminMiddleware, because that admits a Manager whom the role matrix excludes.
+  // Reused here so the UI hides exactly what the server would refuse.
+  // Positively-known non-owners only. While `user` is still loading, isWorkspaceOwner
+  // is false, and restricting on that would flash "owner only" at the actual owner
+  // on every page load — the same say-nothing-until-known rule the commercial model
+  // follows. The server is the enforcement; this is only about what we offer.
+  const canPurchase = !user || isWorkspaceOwner;
 
   // useParams() receives :id from the outer <Route path="/app/payments/process/:id">
   // when mounted on that route; empty object on the base /app/payments route.
@@ -981,9 +990,30 @@ export default function Payments() {
               confirmed through the existing modal. Just the calculator: none of
               the marketing sections around it. max-w-5xl mirrors the public page's
               estimator container so the two experiences match. */}
-          <div className="max-w-5xl mx-auto w-full">
-            <PricingCalculator currency={currency} onBuy={handleEstimatorBuy} />
-          </div>
+          {/* UX-AUTHZ — the server permits only the workspace owner to purchase
+              (Audit 202). Offering the flow to a Manager or Member would end in a
+              403 they can do nothing about. Ownership is read from the same
+              AuthContext value the server's isWorkspaceOwner mirrors — this adds
+              no second rule, it just stops presenting a journey with no exit. */}
+          {canPurchase ? (
+            <div className="max-w-5xl mx-auto w-full">
+              <PricingCalculator currency={currency} onBuy={handleEstimatorBuy} />
+            </div>
+          ) : (
+            <div
+              className="max-w-5xl mx-auto w-full rounded-2xl p-6 text-sm"
+              style={{ background: "#0C0C14", border: "1px solid #1A1A2E", color: "#9898B8" }}
+              data-testid="purchase-owner-only"
+            >
+              <p className="font-medium" style={{ color: "#F0F0F5" }}>
+                Credits are purchased by the workspace owner
+              </p>
+              <p className="mt-1">
+                Your credits are allocated to you from the workspace balance. Ask your
+                workspace owner if you need more — your usage and history are below.
+              </p>
+            </div>
+          )}
 
           {/* ── Page heading + currency toggle ──────────────────────────── */}
           <motion.div
@@ -1037,8 +1067,13 @@ export default function Payments() {
             </div>
           </div>
 
+          {/* UX-AUTHZ — the plan grid's only purpose here is to transact, and the
+              server permits that for the workspace owner alone (Audit 202). A
+              Manager or Member sees the owner-only notice above instead of a row of
+              buy buttons that would 403. The Teams tab stays available to anyone
+              who can manage the team — it is informational, not a purchase. */}
           <AnimatePresence mode="wait">
-            {pricingTab === "individual" ? (
+            {pricingTab === "individual" && !canPurchase ? null : pricingTab === "individual" ? (
               <motion.div
                 key="individual"
                 initial={{ opacity: 0, y: 10 }}

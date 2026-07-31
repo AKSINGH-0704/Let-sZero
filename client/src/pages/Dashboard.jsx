@@ -385,15 +385,21 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="flex-1"></div>
-              <Link href="/app/payments">
-                <motion.button
-                  className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-cyan-900 rounded-lg hover:bg-white/90 transition-all font-medium shadow-lg hover:shadow-xl text-sm sm:text-base"
-                  whileHover={{ scale: 1.05, y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Purchase Credits
-                </motion.button>
-              </Link>
+              {/* UX-AUTHZ — purchasing is workspace-owner only on the server
+                  (Audit 202). A member's credits are allocated to them, so this
+                  CTA would have sent them to a flow ending in 403. */}
+              {(!user || isWorkspaceOwner) && (
+                <Link href="/app/payments">
+                  <motion.button
+                    className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white text-cyan-900 rounded-lg hover:bg-white/90 transition-all font-medium shadow-lg hover:shadow-xl text-sm sm:text-base"
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    data-testid="dashboard-purchase-credits"
+                  >
+                    Purchase Credits
+                  </motion.button>
+                </Link>
+              )}
             </div>
           </div>
         </motion.div>

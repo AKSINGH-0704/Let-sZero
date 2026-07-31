@@ -304,13 +304,18 @@ export default function TeamMembers() {
                       Manage seats <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
                     </Link>
                   </Button>
-                ) : (
+                ) : (!user || isWorkspaceOwner) ? (
+                  /* UX-AUTHZ — this page is reachable by a Manager (canManageTeam),
+                     but purchasing is workspace-owner only on the server (Audit
+                     202). Offering "Buy credits" to a Manager was a journey that
+                     ended in 403; the seat CTA above is safe either way, because
+                     /app/team/seats explains ownership rather than failing. */
                   <Button asChild variant="outline" size="sm" className="gap-1.5" data-testid="button-upgrade-plan">
                     <Link href="/app/payments">
                       Buy credits <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
                     </Link>
                   </Button>
-                )}
+                ) : null}
               </>
             }
           />

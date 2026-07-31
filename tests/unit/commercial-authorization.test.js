@@ -18,6 +18,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import express from "express";
 import { createServer } from "http";
 import { USER_ROLES } from "../../shared/schema.js";
+import { readFile } from "fs/promises";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 vi.mock("../../server/email.js", () => ({
   sendCampaignEmail: vi.fn(async () => ({ messageId: `mock-${Math.random().toString(36).slice(2)}` })),
@@ -198,5 +203,52 @@ describe("payment records stay inside the caller's own account", () => {
       const r = await api("POST", `/api/admin/payments/${payment.id}/refund`, { cookie, body: {} });
       expect(r.status).toBe(403);
     }
+  });
+});
+
+describe("UX-AUTHZ — the UI never offers what the server would refuse", () => {
+  // Audit 203. The server was already correct after Audit 202; the problem was
+  // that Payments, the Dashboard and the Team page all still presented purchase
+  // journeys to a Manager or Member that could only end in 403.
+  //
+  // Source guards rather than renders: each surface needs a different provider
+  // tree and a seeded role, and what actually matters is that no purchase
+  // affordance exists outside an ownership check.
+  const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("Payments gates its purchase surfaces on workspace ownership", async () => {
+    const src = strip(await readFile(join(ROOT, "client/src/pages/Payments.jsx"), "utf8"));
+    // The gate exists, is derived from the same ownership signal the server uses...
+    expect(src).toMatch(/const canPurchase\s*=\s*!user \|\| isWorkspaceOwner/);
+    // ...the estimator is behind it, and a non-owner is told who can buy instead.
+    expect(src).toMatch(/canPurchase \?[\s\S]{0,400}PricingCalculator/);
+    expect(src).toContain("purchase-owner-only");
+  });
+
+  it("the Dashboard hides Purchase Credits from a known non-owner", async () => {
+    const src = strip(await readFile(join(ROOT, "client/src/pages/Dashboard.jsx"), "utf8"));
+    expect(src).toMatch(/\(!user \|\| isWorkspaceOwner\)[\s\S]{0,600}Purchase Credits/);
+  });
+
+  it("the Team page hides Buy credits from a Manager", async () => {
+    // This page is reachable by canManageTeam, which includes SUB_ADMIN — so the
+    // gate here must be ownership, not "can manage the team".
+    const src = strip(await readFile(join(ROOT, "client/src/pages/TeamMembers.jsx"), "utf8"));
+    expect(src).toMatch(/\(!user \|\| isWorkspaceOwner\)[\s\S]{0,400}Buy credits/);
+  });
+
+  it("no purchase affordance restricts on a role check instead of ownership", async () => {
+    // adminMiddleware admits a Manager; ownership does not. If a purchase surface
+    // is ever gated on isAdmin/canManageTeam, Managers get a 403 journey back.
+    for (const f of ["client/src/pages/Payments.jsx", "client/src/pages/Dashboard.jsx"]) {
+      const src = strip(await readFile(join(ROOT, f), "utf8"));
+      expect(src).not.toMatch(/(isAdmin|canManageTeam)[\s\S]{0,80}Purchase Credits/);
+    }
+  });
+
+  it("the seat page already explains ownership rather than dead-ending", async () => {
+    const src = strip(await readFile(join(ROOT, "client/src/pages/TeamSeats.jsx"), "utf8"));
+    expect(src).toContain("seat-not-owner");
+    expect(src).toMatch(/Only the workspace owner can change seats or billing/);
   });
 });
