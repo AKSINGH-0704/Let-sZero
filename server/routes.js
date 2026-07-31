@@ -3947,6 +3947,22 @@ export async function registerRoutes(httpServer, app) {
 
   app.post("/api/payments/initiate", authMiddleware, paymentInitiateLimiter, async (req, res) => {
     try {
+      // AUTHZ — buying credits is a WORKSPACE action, and the product's own role
+      // matrix says so: "Purchase credits — Admin ✓, Manager ✗, Member ✗". This
+      // endpoint carried authMiddleware alone, so any invited member could open a
+      // Razorpay order against the workspace, and a Manager could too. Credits are
+      // ALLOCATED to members by the owner; they are not bought by them.
+      //
+      // Deliberately `isWorkspaceOwner` and not `adminMiddleware`: adminMiddleware
+      // admits SUB_ADMIN (Manager), whom the matrix excludes. This is the same
+      // gate and the same error shape /api/seats/checkout already uses, so the two
+      // ways of spending money on a workspace agree on who may do it.
+      if (!isWorkspaceOwner(req.user)) {
+        return res.status(403).json({
+          message: "Only the workspace owner can purchase credits.",
+          code: "NOT_WORKSPACE_OWNER",
+        });
+      }
       const { planId, credits: customCredits, paymentMethod, currency = "INR" } = req.body;
 
       if (!isCurrencySupported(currency)) {
