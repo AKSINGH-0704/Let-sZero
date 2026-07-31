@@ -43,7 +43,41 @@ export const WARMUP_SETTING_KEYS = Object.freeze({
   /** Pre-ladder flat limit. Still honoured as a fallback so an operator who has not
    *  yet seeded the ladder keeps a defined policy rather than inheriting the default. */
   FLAT_LIMIT:    "warmup_custom_domain_daily_limit",
+  /** TRUST-029 — which entity the ladder governs. See WARMUP_SCOPE. */
+  SCOPE:         "warmup_scope",
 });
+
+/**
+ * TRUST-029 — the entity warm-up accounting is keyed on.
+ *
+ * `USER` (the shipped behaviour) counts sends per user row. But the sending
+ * DOMAIN is per workspace: members send through the root's verified domain
+ * (TRUST-014), so an N-member workspace holds N independent daily budgets
+ * against ONE domain's reputation, and each new member starts a fresh ladder on
+ * an already-warm domain. Warm-up is supposed to protect a domain's reputation,
+ * and mailbox providers evaluate the domain — not the user row that happens to
+ * own the campaign. Under USER scope the control does not measure the thing it
+ * exists to protect, and inviting a teammate bypasses it.
+ *
+ * `DOMAIN` keys the ladder to the workspace: one anchor (the workspace's first
+ * send by anyone), one daily budget shared by every member.
+ *
+ * Config, not code, so the switch is an operator decision with a ≤60s rollback
+ * and no deploy — the same mechanism the seat rollout uses.
+ *
+ * ⚠️ Flipping to DOMAIN REDUCES total throughput for multi-member workspaces
+ * (a 10-member team on day 1 goes from 10 × 50 to 50 aggregate). That is the
+ * point of the fix, and it is a customer-visible change — hence a flag, and
+ * hence defaulting to USER until product decides to switch.
+ */
+export const WARMUP_SCOPE = Object.freeze({ USER: "USER", DOMAIN: "DOMAIN" });
+export const DEFAULT_WARMUP_SCOPE = WARMUP_SCOPE.USER;
+
+/** Parse the scope setting. Anything unrecognised falls back to today's behaviour. */
+export function parseScope(raw) {
+  const v = String(raw ?? "").trim().toUpperCase();
+  return v === WARMUP_SCOPE.DOMAIN ? WARMUP_SCOPE.DOMAIN : DEFAULT_WARMUP_SCOPE;
+}
 
 /**
  * The shipped default ladder. `throughDay: null` marks the terminal stage — it applies

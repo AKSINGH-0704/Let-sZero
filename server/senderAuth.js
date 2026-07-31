@@ -22,6 +22,8 @@ import {
   stageForDay,
   nextStage,
   effectiveDailyLimit,
+  parseScope,
+  WARMUP_SCOPE,
 } from "../shared/warmupPolicy.js";
 
 // ── Execution modes ───────────────────────────────────────────────────────────
@@ -120,6 +122,24 @@ export async function canDraft(user) {
  */
 export async function claimWarmupSlot(user) {
   const settings = await getWarmupPolicy();
+
+  // TRUST-029 — under DOMAIN scope the ladder governs the WORKSPACE, because the
+  // verified sending domain belongs to the workspace and is the entity mailbox
+  // providers judge. The anchor and the daily total are the workspace's, and the
+  // claim serializes on the root row so two members' campaign loops cannot both
+  // pass the check. Under USER scope nothing below runs and behaviour is
+  // byte-identical to before — which is what makes the flag a real rollback.
+  if (settings.scope === WARMUP_SCOPE.DOMAIN) {
+    const rootId = await storage.resolveWorkspaceRootId(user.id);
+    const ws = await storage.getWorkspaceWarmupState(rootId);
+    if (!warmupIsActive(ws.firstSendAt, settings.durationDays)) return true;
+    const limit = effectiveDailyLimit(
+      { firstSendAt: ws.firstSendAt, warmupDailyLimit: ws.warmupDailyLimit }, settings.ladder,
+    );
+    const claimed = await storage.atomicIncrementWorkspaceWarmupCount(user.id, rootId, limit);
+    return claimed !== null;
+  }
+
   if (!warmupIsActive(user.firstSendAt, settings.durationDays)) return true; // warm-up over — governed by credits
   const dailyLimit = effectiveDailyLimit(user, settings.ladder);
   const newCount = await storage.atomicIncrementWarmupCount(user.id, dailyLimit);
@@ -404,16 +424,18 @@ export async function getWarmupPolicy() {
     return _settingsCache;
   }
 
-  let rawLadder, rawFlatLimit, rawDuration;
+  let rawLadder, rawFlatLimit, rawDuration, rawScope;
   try {
-    const [ladderRow, flatRow, durationRow] = await Promise.all([
+    const [ladderRow, flatRow, durationRow, scopeRow] = await Promise.all([
       storage.getPlatformSetting(WARMUP_SETTING_KEYS.LADDER),
       storage.getPlatformSetting(WARMUP_SETTING_KEYS.FLAT_LIMIT),
       storage.getPlatformSetting(WARMUP_SETTING_KEYS.DURATION_DAYS),
+      storage.getPlatformSetting(WARMUP_SETTING_KEYS.SCOPE),
     ]);
     rawLadder    = ladderRow?.value;
     rawFlatLimit = flatRow?.value;
     rawDuration  = durationRow?.value;
+    rawScope     = scopeRow?.value;
   } catch (err) {
     console.error("[WARMUP] platform_settings read failed — falling back to the default policy:", err.message);
   }
@@ -426,7 +448,12 @@ export async function getWarmupPolicy() {
     }
   });
 
-  _settingsCache = { ladder, durationDays: resolveDurationDays(rawDuration) };
+  _settingsCache = {
+    ladder,
+    durationDays: resolveDurationDays(rawDuration),
+    // TRUST-029 — USER (shipped default) or DOMAIN. Config, not code.
+    scope: parseScope(rawScope),
+  };
   _settingsCachedAt = now;
   return _settingsCache;
 }

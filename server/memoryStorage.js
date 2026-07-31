@@ -345,6 +345,58 @@ export const memoryStorage = {
     return user.warmupEmailsSentToday;
   },
 
+  // ── TRUST-029 — domain-scoped warm-up accounting (parity with storage.js) ──
+  // Same derivation: anchor is the workspace's earliest first send, the daily
+  // total is the sum of members' LIVE 24h counters. No new state is stored.
+  async getWorkspaceWarmupState(rootId) {
+    const memberIds = [...await this.getWorkspaceMemberIds(rootId)];
+    const cutoff = new Date(Date.now() - 86_400_000);
+    let firstSendAt = null, sentToday = 0, warmupDailyLimit = null;
+    for (const id of memberIds) {
+      const u = store.users.get(id);
+      if (!u) continue;
+      if (u.firstSendAt && (!firstSendAt || new Date(u.firstSendAt) < new Date(firstSendAt))) {
+        firstSendAt = u.firstSendAt;
+      }
+      if (u.warmupEmailsResetAt && new Date(u.warmupEmailsResetAt) >= cutoff) {
+        sentToday += u.warmupEmailsSentToday || 0;
+      }
+      if (id === rootId) warmupDailyLimit = u.warmupDailyLimit ?? null;
+    }
+    return { firstSendAt, sentToday, warmupDailyLimit };
+  },
+
+  // "Single-threaded" is not the same as "atomic". An `await` between the check
+  // and the write is a yield point, and four members' campaign loops racing on
+  // the last slot all read the same total before any of them incremented — the
+  // exact overshoot the Postgres path's root-row lock prevents. Every await
+  // therefore happens BEFORE the decision; from the sum to the write there is
+  // not one, which is what makes this the memory analogue of that lock.
+  async atomicIncrementWorkspaceWarmupCount(userId, rootId, dailyLimit) {
+    const memberIds = [...await this.getWorkspaceMemberIds(rootId)];
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 86_400_000);
+
+    // ── no awaits past this line ──
+    let used = 0;
+    for (const id of memberIds) {
+      const u = store.users.get(id);
+      if (u?.warmupEmailsResetAt && new Date(u.warmupEmailsResetAt) >= cutoff) {
+        used += u.warmupEmailsSentToday || 0;
+      }
+    }
+    if (used >= dailyLimit) return null;
+    const user = store.users.get(userId);
+    if (!user) return null;
+    if (!user.warmupEmailsResetAt || new Date(user.warmupEmailsResetAt) < cutoff) {
+      user.warmupEmailsSentToday = 0;
+      user.warmupEmailsResetAt = now;
+    }
+    user.warmupEmailsSentToday += 1;
+    user.updatedAt = now;
+    return used + 1;
+  },
+
   async deleteUser(id) {
     // Delete related sessions
     for (const [sessionId, session] of store.sessions.entries()) {

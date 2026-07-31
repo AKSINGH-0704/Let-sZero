@@ -228,6 +228,82 @@ const dbStorage = {
     return result[0]?.warmupEmailsSentToday ?? null;
   },
 
+  // ── TRUST-029 — domain-scoped warm-up accounting ───────────────────────────
+  // The sending domain belongs to the WORKSPACE, so under DOMAIN scope the
+  // ladder governs the workspace as a whole. Both values are DERIVED from
+  // columns that already exist — no migration, no new counter to drift:
+  //   • anchor   = the earliest first_send_at in the workspace (its first send
+  //                by anyone, not just the root's own)
+  //   • sentToday = the sum of members' live 24h counters; a member whose window
+  //                has expired contributes 0, exactly as the per-user path treats it.
+  async getWorkspaceWarmupState(rootId) {
+    const memberIds = [...await this.getWorkspaceMemberIds(rootId)];
+    if (memberIds.length === 0) return { firstSendAt: null, sentToday: 0, warmupDailyLimit: null };
+    const cutoff = new Date(Date.now() - 86_400_000);
+    const rows = await db.select({
+      id: users.id,
+      firstSendAt: users.firstSendAt,
+      sentToday: users.warmupEmailsSentToday,
+      resetAt: users.warmupEmailsResetAt,
+      override: users.warmupDailyLimit,
+    }).from(users).where(inArray(users.id, memberIds));
+
+    let firstSendAt = null, sentToday = 0, warmupDailyLimit = null;
+    for (const r of rows) {
+      if (r.firstSendAt && (!firstSendAt || new Date(r.firstSendAt) < new Date(firstSendAt))) {
+        firstSendAt = r.firstSendAt;
+      }
+      // An expired window has already lapsed; counting it would charge the
+      // workspace for sends that no longer constrain the domain.
+      if (r.resetAt && new Date(r.resetAt) >= cutoff) sentToday += r.sentToday || 0;
+      // The admin override is a property of the WORKSPACE under domain scope, so
+      // it is read from the root row only.
+      if (r.id === rootId) warmupDailyLimit = r.override ?? null;
+    }
+    return { firstSendAt, sentToday, warmupDailyLimit };
+  },
+
+  /**
+   * Claim one send slot against the WORKSPACE's shared daily budget.
+   *
+   * Serializes on the same root-row `FOR UPDATE` every seat operation uses, so
+   * concurrent campaign loops in one workspace cannot both pass the check — the
+   * per-user path gets that from a single-row WHERE guard, which cannot express
+   * "the sum across the workspace is under the limit".
+   *
+   * @returns {Promise<number|null>} the new workspace total, or null if full.
+   */
+  async atomicIncrementWorkspaceWarmupCount(userId, rootId, dailyLimit) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 86_400_000);
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM users WHERE id = ${rootId} FOR UPDATE`);
+      const memberIds = [...await this.getWorkspaceMemberIds(rootId)];
+      const rows = await tx.select({
+        sentToday: users.warmupEmailsSentToday, resetAt: users.warmupEmailsResetAt,
+      }).from(users).where(inArray(users.id, memberIds));
+      const used = rows.reduce((t, r) =>
+        t + (r.resetAt && new Date(r.resetAt) >= cutoff ? (r.sentToday || 0) : 0), 0);
+      if (used >= dailyLimit) return null;
+
+      // The slot is charged to the SENDER's own row — the workspace total is the
+      // sum, so per-member attribution is preserved for support and audit while
+      // the ceiling stays collective.
+      await tx.update(users)
+        .set({
+          warmupEmailsSentToday: sql`CASE
+            WHEN warmup_emails_reset_at IS NULL OR warmup_emails_reset_at < ${cutoff}
+            THEN 1 ELSE warmup_emails_sent_today + 1 END`,
+          warmupEmailsResetAt: sql`CASE
+            WHEN warmup_emails_reset_at IS NULL OR warmup_emails_reset_at < ${cutoff}
+            THEN ${now} ELSE warmup_emails_reset_at END`,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+      return used + 1;
+    });
+  },
+
   async deleteUser(id) {
     await db.delete(users).where(eq(users.id, id));
   },
