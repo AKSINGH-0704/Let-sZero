@@ -17,7 +17,7 @@ import { Globe, Loader2 } from "lucide-react";
 // /app/domains/:id. No separate summary screen, no second DNS rendering — the
 // detail page owns verification (M19 IA). "Explore first" = Preview Mode escape.
 export default function Onboarding() {
-  const { user, isRootAdmin, refetch } = useAuth();
+  const { user, isRootAdmin, isWorkspaceOwner, refetch } = useAuth();
   const [, navigate] = useLocation();
   const [senderName, setSenderName] = useState("");
   const [domain, setDomain] = useState("");
@@ -79,6 +79,15 @@ export default function Onboarding() {
 
   // Users who already activated (or admins, who have no sending identity of their own)
   // skip onboarding entirely.
+  //
+  // TRUST-014 — an invited MEMBER was not covered by any of these conditions, so
+  // they fell through to the domain-add form and could attempt to register a
+  // domain for a workspace they do not own. The sending identity belongs to the
+  // workspace: members inherit it and never verify one. This is the functional
+  // half of the defect — the banners merely pointed here.
+  if (!submitted && user && !isWorkspaceOwner && !isRootAdmin && !user.isSecondaryRoot) {
+    return <Redirect to="/app/dashboard" />;
+  }
   if (!submitted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
     return <Redirect to="/app/dashboard" />;
   }

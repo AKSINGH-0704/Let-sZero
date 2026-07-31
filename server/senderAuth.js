@@ -205,9 +205,16 @@ export async function recordFirstSend(userId) {
  * @returns {Promise<object>}
  */
 export async function getSenderHealthReport(user) {
-  const [identityResult, settings] = await Promise.all([
+  const [identityResult, settings, workspaceHasVerifiedDomain] = await Promise.all([
     _checkAccountReadiness(user),
     getWarmupPolicy(),
+    // TRUST-014 — the sending identity belongs to the WORKSPACE, not the user.
+    // This resolver already walks to the workspace root, and the send path already
+    // enforces against it; the client had no way to ask the same question, so four
+    // surfaces asked `user.sendingIdentityType` instead and every invited member
+    // was told to verify a domain they must never verify. Projected here rather
+    // than added as a new endpoint: this is the authority the sending path uses.
+    storage.hasVerifiedDomainForUser(user.id),
   ]);
   const reputationResult = _checkReputation({ user });
 
@@ -256,7 +263,12 @@ export async function getSenderHealthReport(user) {
       // The server owns remediation semantics; clients only render the corresponding action.
       remediationAction: identityResult.remediationAction ?? null,
       emailVerified: user.emailVerified ?? false,
+      // Per-USER registration state. Retained for the workspace owner's own setup
+      // flow; it is NOT the answer to "can this account send from a real domain?"
+      // for anyone but the owner. Clients must use workspaceHasVerifiedDomain.
       sendingIdentityType: user.sendingIdentityType ?? null,
+      // TRUST-014 — the workspace-authoritative answer, resolved through the root.
+      workspaceHasVerifiedDomain,
       senderName: user.senderName?.trim() || null,
     },
     reputation: {

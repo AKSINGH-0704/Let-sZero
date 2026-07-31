@@ -88,7 +88,7 @@ const PLAN_LABELS = {
 const ACTIVE_POLL_INTERVAL_MS = 8000;
 
 export default function Dashboard() {
-  const { user, isAdmin, isRootAdmin, isPlatformOperator } = useAuth();
+  const { user, isAdmin, isRootAdmin, isPlatformOperator, isWorkspaceOwner } = useAuth();
 
   // The poll/live-indicator trigger is deliberately "is anything RUNNING right
   // now," not stats.activeCampaigns — that aggregate also counts PAUSED and
@@ -805,7 +805,11 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="text-center py-12">
-              {!isAdmin && !user?.sendingIdentityType ? (
+              {/* TRUST-014 — was `!user?.sendingIdentityType`, so an invited member
+                  with no campaigns yet was shown "Set up your sending domain" and a
+                  link to onboarding they must never complete. The domain belongs to
+                  the workspace; only its owner is prompted to configure one. */}
+              {!isAdmin && isWorkspaceOwner && !user?.sendingIdentityType ? (
                 <>
                   <div className="relative mb-6">
                     <div className="absolute inset-0 flex items-center justify-center">

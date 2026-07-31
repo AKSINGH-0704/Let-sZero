@@ -37,7 +37,12 @@ export default function SenderHealthWidget() {
   if (isAdmin || !user) return null;
   if (!health) return null;
 
-  const domainRegistered = user.sendingIdentityType === "custom_domain";
+  // TRUST-014 — the sending identity belongs to the WORKSPACE. This read
+  // `user.sendingIdentityType`, which is only ever set on the member who
+  // registered the domain, so every invited teammate was told to "connect a
+  // sending domain" on a workspace that already had one. The server resolves this
+  // through the workspace root — the same authority the send path enforces.
+  const domainRegistered = health.identity?.workspaceHasVerifiedDomain === true;
   const verified = health.identity?.ok === true;
   const opBlocked = health.reputation?.ok === false; // paused / dormant
   const warmup = health.policy?.warmup;

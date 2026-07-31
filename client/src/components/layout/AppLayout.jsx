@@ -60,12 +60,22 @@ function PauseBanners() {
 }
 
 function PreviewModeBanner() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isWorkspaceOwner } = useAuth();
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem("repmail_preview_dismissed") === "1"
   );
 
-  if (!user || isAdmin || user.sendingIdentityType || dismissed) return null;
+  // TRUST-014 — this gated only on `user.sendingIdentityType`, which is set on the
+  // account that registered the domain and on no one else. Every invited member
+  // therefore saw "Preview Mode — add a verified sending domain" permanently,
+  // pointing them at a setup only the workspace owner can perform.
+  //
+  // The sending identity belongs to the WORKSPACE, so the banner belongs to the
+  // person who can act on it. A member never sees it; the owner's behaviour is
+  // unchanged — still driven by their own registration state.
+  if (!user || isAdmin || dismissed) return null;
+  if (!isWorkspaceOwner) return null;
+  if (user.sendingIdentityType) return null;
 
   const handleDismiss = () => {
     sessionStorage.setItem("repmail_preview_dismissed", "1");

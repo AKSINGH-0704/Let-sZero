@@ -86,9 +86,15 @@ const LADDER = [
   { throughDay: null, dailyLimit: 200 },
 ];
 
-function health({ warmup, policyOk = true, identityOk = true, reputationOk = true }) {
+// TRUST-014 — the widget now asks whether the WORKSPACE has a verified sending
+// domain, not whether this user personally registered one, so the fixture has to
+// express workspace state. `sendingIdentityType` is retained to prove the widget
+// no longer reads it: the Preview Mode case below sets it to "custom_domain" and
+// still expects Preview Mode, because the workspace has no verified domain.
+function health({ warmup, policyOk = true, identityOk = true, reputationOk = true,
+                  workspaceHasVerifiedDomain = true }) {
   return {
-    identity: { ok: identityOk, sendingIdentityType: "custom_domain" },
+    identity: { ok: identityOk, sendingIdentityType: "custom_domain", workspaceHasVerifiedDomain },
     reputation: { ok: reputationOk },
     policy: { ok: policyOk, warmup },
     readiness: policyOk && identityOk && reputationOk ? "ready" : "blocked",
@@ -173,8 +179,11 @@ describe("MXX — warm-up dashboard banner", () => {
   });
 
   it("keeps the pre-warm-up states intact", () => {
+    // The USER row deliberately still claims a custom domain; only the WORKSPACE
+    // answer is false. Before TRUST-014 this rendered "Ready to send" for a member
+    // of a workspace with no domain, and Preview Mode for a member of one that had.
     const preview = render(seeded(
-      health({ warmup: null }), { ...USER, sendingIdentityType: null }
+      health({ warmup: null, workspaceHasVerifiedDomain: false })
     ));
     expect(preview).toContain("Preview Mode");
 
@@ -182,7 +191,8 @@ describe("MXX — warm-up dashboard banner", () => {
     expect(verifying).toContain("checking your domain");
 
     const blocked = render(seeded({
-      identity: { ok: true }, reputation: { ok: false, message: "Sending is paused." },
+      identity: { ok: true, workspaceHasVerifiedDomain: true },
+      reputation: { ok: false, message: "Sending is paused." },
       policy: { ok: true, warmup: null },
     }));
     expect(blocked).toContain("Sending is paused.");
