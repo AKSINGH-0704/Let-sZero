@@ -67,8 +67,14 @@ export function legacyProtectionFloor({
   effectivePlan = "free", workspaceCreatedAt = null,
   activatedAt = null, grandfatherUntil = null, now = new Date(),
 } = {}) {
-  // Any missing part of the window means the mechanism is simply off. Failing
-  // closed here is safe: the free floor still applies underneath.
+  // Any missing part of the window means the mechanism is off. Protecting by
+  // default was tried and is wrong: it would hand the full plan allowance to
+  // every workspace whose creation date is unknown, which silently neuters seat
+  // billing — a paid 3-seat workspace would resolve to 25. The ordering hazard it
+  // was trying to solve (floor lowered, flag flipped, window forgotten) is closed
+  // where it belongs, in getSeatCommerceConfig: the activation timestamp is
+  // stamped by the SYSTEM the first time billing is observed enabled, so it can
+  // never be missing when it matters and no operator has to remember it.
   if (!activatedAt || !grandfatherUntil || !workspaceCreatedAt) return 0;
   if (new Date(now).getTime() >= new Date(grandfatherUntil).getTime()) return 0;
   // Only workspaces that predate activation are protected. A workspace created

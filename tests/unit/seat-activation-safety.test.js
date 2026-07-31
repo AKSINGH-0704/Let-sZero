@@ -12,8 +12,9 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveSeatEntitlement, legacyProtectionFloor, parseTimestampSetting,
-  DEFAULT_FREE_FLOOR, SEAT_SOURCE,
+  DEFAULT_FREE_FLOOR, SEAT_SOURCE, SEAT_SETTING_KEYS,
 } from "../../shared/seatEntitlement.js";
+import { storage } from "../../server/storage.js";
 import { MAX_TEAM_MEMBERS } from "../../shared/schema.js";
 import { SELF_SERVE_MAX_SEATS } from "../../shared/pricing.js";
 
@@ -101,17 +102,30 @@ describe("the migration window lets the floor drop without shrinking live teams"
   });
 });
 
-describe("the window fails closed", () => {
-  // Every part of the mechanism is a platform setting, so every part can be
-  // missing or corrupt. None of those states may silently shrink a team, and
-  // none may silently hand out free seats forever either.
+describe("the window fails closed, and the anchor is stamped by the system", () => {
+  // M47 — an unconfigured window disables protection rather than guessing. Making
+  // protection the default was tried and rejected: it hands the full plan
+  // allowance to any workspace whose creation date is unknown, so a paid 3-seat
+  // workspace resolves to 25 and seat billing is silently neutered.
+  //
+  // The ordering hazard that motivated it (floor lowered, flag flipped, window
+  // forgotten) is closed in getSeatCommerceConfig instead: the activation
+  // timestamp is written by the system the first time billing is observed
+  // enabled, so it cannot be missing at the moment it matters.
   it.each([
     ["no activation timestamp", { grandfatherUntil: new Date("2027-01-01") }],
     ["no window end", { activatedAt: new Date("2026-01-01") }],
-    ["no workspace creation date", { activatedAt: new Date("2026-01-01"), grandfatherUntil: new Date("2027-01-01"), workspaceCreatedAt: null }],
+    ["nothing configured at all", {}],
   ])("%s disables protection rather than guessing", (_label, opts) => {
     expect(legacyProtectionFloor({
       effectivePlan: "starter", workspaceCreatedAt: new Date("2025-01-01"), ...opts,
+    })).toBe(0);
+  });
+
+  it("an unknown workspace creation date disables protection", () => {
+    expect(legacyProtectionFloor({
+      effectivePlan: "starter", workspaceCreatedAt: null,
+      activatedAt: new Date("2026-01-01"), grandfatherUntil: new Date("2027-01-01"),
     })).toBe(0);
   });
 
@@ -144,5 +158,120 @@ describe("the mechanism is inert until it is configured", () => {
       expect(e.seats).toBe(DEFAULT_FREE_FLOOR);
       expect(e.source).toBe(SEAT_SOURCE.FREE_FLOOR);
     }
+  });
+});
+
+describe("DEC-1: seat_free_floor = 0 — the shipped commercial decision", () => {
+  const ACTIVATED = new Date("2026-08-01T00:00:00Z");
+  const UNTIL = new Date("2027-08-01T00:00:00Z");
+  const configured = { billingEnabled: true, freeFloor: 0, activatedAt: ACTIVATED, grandfatherUntil: UNTIL };
+
+  it("a BRAND-NEW workspace gets zero collaborator seats — charging starts at the first teammate", () => {
+    const e = resolveSeatEntitlement({
+      ...configured, effectivePlan: "starter",
+      workspaceCreatedAt: new Date("2026-09-01T00:00:00Z"),
+      now: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(e.seats).toBe(0);
+    expect(e.source).toBe(SEAT_SOURCE.FREE_FLOOR);
+  });
+
+  it("buying one seat grants exactly one — the defect Audit 196 found is gone", () => {
+    const bought = resolveSeatEntitlement({
+      ...configured, subscription: sub(1), effectivePlan: "starter",
+      workspaceCreatedAt: new Date("2026-09-01T00:00:00Z"),
+      now: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(bought.seats).toBe(1);
+    expect(bought.source).toBe(SEAT_SOURCE.SUBSCRIPTION);
+  });
+
+  it.each([1, 2, 5, 10, 25])("paying for %i seats grants %i, not the floor", (n) => {
+    const e = resolveSeatEntitlement({
+      ...configured, subscription: sub(n), effectivePlan: "starter",
+      workspaceCreatedAt: new Date("2026-09-01T00:00:00Z"),
+      now: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(e.seats).toBe(n);
+  });
+
+  it("an EXISTING workspace is untouched by the floor drop", () => {
+    const e = resolveSeatEntitlement({
+      ...configured, effectivePlan: "starter",
+      workspaceCreatedAt: new Date("2026-05-01T00:00:00Z"), // predates activation
+      now: new Date("2026-09-02T00:00:00Z"),
+    });
+    expect(e.seats).toBe(MAX_TEAM_MEMBERS.starter);
+    expect(e.source).toBe(SEAT_SOURCE.LEGACY_PROTECTED);
+  });
+
+  it("the floor of 0 is inert while billing is off — today's production state", () => {
+    for (const plan of PAID_PLANS) {
+      const e = resolveSeatEntitlement({ effectivePlan: plan, billingEnabled: false, freeFloor: 0 });
+      expect(e.seats).toBe(MAX_TEAM_MEMBERS[plan]);
+      expect(e.source).toBe(SEAT_SOURCE.LEGACY_PLAN);
+    }
+  });
+});
+
+describe("M47 — the activation anchor is stamped by the system, not an operator", () => {
+  // The hazard this removes: with the free floor at 0, enabling billing before
+  // anyone sets seat_billing_activated_at would drop every existing workspace to
+  // zero collaborator seats. Requiring three settings in the right order before a
+  // fourth is a runbook; this is a mechanism.
+  const KEYS = SEAT_SETTING_KEYS;
+
+  async function reset({ enabled, activatedAt }) {
+    await storage.setPlatformSetting(KEYS.BILLING_ENABLED, enabled);
+    await storage.setPlatformSetting(KEYS.ACTIVATED_AT, activatedAt ?? "");
+  }
+
+  it("does NOT stamp while billing is off — today's production state", async () => {
+    await reset({ enabled: "false", activatedAt: "" });
+    const cfg = await storage.getSeatCommerceConfig();
+    expect(cfg.billingEnabled).toBe(false);
+    expect(cfg.activatedAt).toBeNull();
+    expect((await storage.getPlatformSetting(KEYS.ACTIVATED_AT))?.value || "").toBe("");
+  });
+
+  it("stamps the moment billing is first observed enabled", async () => {
+    await reset({ enabled: "true", activatedAt: "" });
+    const before = Date.now();
+    const cfg = await storage.getSeatCommerceConfig();
+    expect(cfg.activatedAt).toBeInstanceOf(Date);
+    expect(cfg.activatedAt.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    // ...and persists it, so the next process sees the same instant.
+    expect((await storage.getPlatformSetting(KEYS.ACTIVATED_AT))?.value).toBeTruthy();
+  });
+
+  it("never re-stamps — the anchor is written once and only once", async () => {
+    await reset({ enabled: "true", activatedAt: "" });
+    const first = (await storage.getSeatCommerceConfig()).activatedAt;
+    await new Promise(r => setTimeout(r, 5));
+    const second = (await storage.getSeatCommerceConfig()).activatedAt;
+    expect(second.getTime()).toBe(first.getTime());
+  });
+
+  it("respects an anchor an operator set deliberately", async () => {
+    const chosen = "2026-06-01T00:00:00.000Z";
+    await reset({ enabled: "true", activatedAt: chosen });
+    const cfg = await storage.getSeatCommerceConfig();
+    expect(cfg.activatedAt.toISOString()).toBe(chosen);
+  });
+
+  it("so an existing workspace is protected even if nobody set the anchor", async () => {
+    await reset({ enabled: "true", activatedAt: "" });
+    await storage.setPlatformSetting(KEYS.FREE_FLOOR, "0");
+    await storage.setPlatformSetting(KEYS.GRANDFATHER_UNTIL, "2099-01-01T00:00:00.000Z");
+    const cfg = await storage.getSeatCommerceConfig();
+    const e = resolveSeatEntitlement({
+      effectivePlan: "starter", ...cfg,
+      workspaceCreatedAt: new Date("2025-01-01"), // predates the stamped anchor
+    });
+    expect(e.seats).toBe(MAX_TEAM_MEMBERS.starter);
+    expect(e.source).toBe(SEAT_SOURCE.LEGACY_PROTECTED);
+    // Restore the shipped state so no later test inherits an enabled flag.
+    await storage.setPlatformSetting(KEYS.BILLING_ENABLED, "false");
+    await storage.setPlatformSetting(KEYS.FREE_FLOOR, "25");
   });
 });

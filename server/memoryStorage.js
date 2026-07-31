@@ -2228,11 +2228,23 @@ export const memoryStorage = {
     const floor = await this.getPlatformSetting(SEAT_SETTING_KEYS.FREE_FLOOR);
     const activatedAt = await this.getPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT);
     const grandfatherUntil = await this.getPlatformSetting(SEAT_SETTING_KEYS.GRANDFATHER_UNTIL);
+    const billingEnabled = enabled?.value === "true";
+    let activated = parseTimestampSetting(activatedAt?.value);
+    // M47 — parity with storage.js: the system stamps the activation anchor the
+    // first time billing is observed enabled, so no operator ordering is required.
+    if (billingEnabled && !activated) {
+      activated = new Date();
+      try {
+        await this.setPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT, activated.toISOString());
+      } catch (err) {
+        console.error("[SEATS] could not stamp the activation timestamp:", err.message);
+      }
+    }
     return {
-      billingEnabled: enabled?.value === "true",
+      billingEnabled,
       freeFloor: parseFreeFloor(floor?.value),
       // M45 migration window. Unset = mechanism off; the free floor governs alone.
-      activatedAt: parseTimestampSetting(activatedAt?.value),
+      activatedAt: activated,
       grandfatherUntil: parseTimestampSetting(grandfatherUntil?.value),
     };
   },

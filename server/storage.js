@@ -2533,11 +2533,36 @@ const dbStorage = {
       this.getPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT),
       this.getPlatformSetting(SEAT_SETTING_KEYS.GRANDFATHER_UNTIL),
     ]);
+    const billingEnabled = enabled?.value === "true";
+    let activated = parseTimestampSetting(activatedAt?.value);
+
+    // M47 — the activation anchor is stamped by the SYSTEM, not by an operator.
+    //
+    // Legacy protection asks "did this workspace predate seat billing?", so it
+    // needs the moment billing began. Leaving that to a human created an ordering
+    // trap: with the free floor at 0, flipping the flag before setting the anchor
+    // would drop every existing workspace to zero collaborator seats. A runbook is
+    // a process; this is a mechanism, and the difference is what INCIDENT-001 cost.
+    //
+    // Self-extinguishing: the condition can only be true once, and the value it
+    // writes is the true activation instant rather than whenever someone
+    // remembered. It cannot fire while billing is off, so it is inert today.
+    if (billingEnabled && !activated) {
+      activated = new Date();
+      try {
+        await this.setPlatformSetting(SEAT_SETTING_KEYS.ACTIVATED_AT, activated.toISOString());
+      } catch (err) {
+        // Non-fatal, and safe: protection simply stays off until the write lands,
+        // which is the same state as the instant before activation.
+        console.error("[SEATS] could not stamp the activation timestamp:", err.message);
+      }
+    }
+
     return {
-      billingEnabled: enabled?.value === "true",
+      billingEnabled,
       freeFloor: parseFreeFloor(floor?.value),
       // M45 migration window. Unset = mechanism off; the free floor governs alone.
-      activatedAt: parseTimestampSetting(activatedAt?.value),
+      activatedAt: activated,
       grandfatherUntil: parseTimestampSetting(grandfatherUntil?.value),
     };
   },
