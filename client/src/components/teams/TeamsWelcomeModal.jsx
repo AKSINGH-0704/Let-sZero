@@ -2,9 +2,15 @@
  * First-login Teams welcome/education modal, shown once to each ROOT_ADMIN.
  *
  * Purely educational, not configuration: the "how many people" answer is
- * never sent to the server or used to gate anything — every plan already
- * includes the same 25 seats, so there is nothing to configure. The answer
- * only picks which explanation copy to show next (see ANSWER_COPY below).
+ * never sent to the server or used to gate anything — entitlement is decided by
+ * the seat authority, never by an onboarding answer. The answer only picks which
+ * explanation copy to show next (see ANSWER_COPY below).
+ *
+ * M43-FIX — this header used to justify that with "every plan already includes
+ * the same 25 seats". That reasoning stops holding the moment seats are billed
+ * per workspace, and it is exactly the assumption that led this modal to promise
+ * free seats in the first place. The conclusion still holds; the reason is that
+ * onboarding is not an entitlement surface, not that seats happen to be uniform.
  *
  * Three short screens (question -> education -> completion), ~20-30 seconds
  * end to end, always completed via a primary CTA rather than a "skip" link —

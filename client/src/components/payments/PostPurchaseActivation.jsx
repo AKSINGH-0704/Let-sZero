@@ -173,6 +173,19 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     ? "unlimited teammates"
     : (typeof seatLimit === "number" ? `up to ${seatLimit} teammates` : "your teammates");
 
+  // M43-FIX — the seat COUNT was made server-authoritative in the first M43 pass,
+  // but the sentence under it still asserted the seats were free. Whether seats
+  // cost anything is `seat_billing_enabled`, not a copy decision, and this panel
+  // is shown immediately after a payment — the worst possible place to tell a
+  // customer something about money that the billing system disagrees with. While
+  // the state is unknown the commercial clause is omitted rather than guessed,
+  // which is the same silence rule `commercialModel` follows.
+  const seatNote = seatInfo?.billingEnabled === undefined
+    ? "Invite them whenever you're ready."
+    : seatInfo.billingEnabled
+      ? "Seats are billed separately from credits. Invite them whenever you're ready."
+      : "Included in your plan, at no extra cost. Invite them whenever you're ready.";
+
   const collaboration = [
     { icon: Mail,   text: "Every campaign in one place, visible to the whole workspace" },
     { icon: Globe,  text: "Your verified sending domains, shared across the team" },
@@ -274,8 +287,8 @@ export default function PostPurchaseActivation({ payment, onClose }) {
                     Your workspace includes {seatCopy}
                   </p>
                 </div>
-                <p className="mt-1 text-xs" style={{ color: "#7878A0" }}>
-                  Included in your plan, at no extra cost. Invite them whenever you're ready.
+                <p className="mt-1 text-xs" style={{ color: "#7878A0" }} data-testid="activation-seat-note">
+                  {seatNote}
                 </p>
                 <ul className="mt-3.5 space-y-2">
                   {collaboration.map(({ icon: Icon, text }) => (

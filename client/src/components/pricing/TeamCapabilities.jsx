@@ -38,6 +38,16 @@ const CAPACITY_ROWS = [
   { plan: "Enterprise", planId: "enterprise", color: "#F59E0B" },
 ];
 
+// M43-FIX — the caption under the role table. It used to be a `rolesNote` prop,
+// and both callers filled it with a seat claim ("included in every plan … up to
+// 25 members each") rendered verbatim — a hardcoded seat count sitting directly
+// beneath the server-derived one, and the last place either surface still
+// asserted how seats are sold. The caption belongs to the ROLE table, so it now
+// says something about roles and is stated once. How seats are sold is the left
+// column's job (`seatModelSummary`), which reads it from the server.
+const ROLES_NOTE =
+  "Every person you invite holds one of these roles. Roles control visibility and permissions only — they never change what a workspace is charged.";
+
 const ROLE_MATRIX = [
   ["Purchase credits", true, false, false],
   ["Allocate credits", true, true, false],
@@ -53,9 +63,8 @@ const fmtNum = (n) => (n == null ? "—" : n.toLocaleString("en-IN"));
 /**
  * @param {object[]} plans           the page's PLANS array (matched by `name`)
  * @param {(plan) => string} formatPlanPrice  price token for a non-custom plan
- * @param {string} rolesNote         caption rendered beneath the role table
  */
-export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) {
+export default function TeamCapabilities({ plans, formatPlanPrice }) {
   // M43 — seat capacity and how seats are sold are SERVER state. Nothing about
   // team capacity is asserted by this component; it renders what the authorities
   // report, and stays silent until they answer.
@@ -185,8 +194,8 @@ export default function TeamCapabilities({ plans, formatPlanPrice, rolesNote }) 
             </tbody>
           </table>
         </div>
-        <p className="text-xs mt-4" style={{ color: TEXT_MUTED }}>
-          {rolesNote}
+        <p className="text-xs mt-4" style={{ color: TEXT_MUTED }} data-testid="roles-note">
+          {ROLES_NOTE}
         </p>
       </div>
     </div>

@@ -1216,10 +1216,12 @@ export default function Payments() {
                   className="rounded-2xl p-7 md:p-9 mb-8"
                   style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                 >
+                  {/* M43-FIX — the roles caption used to be passed in from here as
+                      a hardcoded seat promise. It is now stated once inside the
+                      component, and how seats are sold comes from the server. */}
                   <TeamCapabilities
                     plans={PLANS}
                     formatPlanPrice={(p) => formatPrice(p)}
-                    rolesNote="Team seats are included in every plan — free trial through Scale — up to 25 members each."
                   />
                 </div>
 

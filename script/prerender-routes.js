@@ -110,7 +110,13 @@ export const STATIC_ROUTES = [
     path: "/pricing",
     componentPath: "/src/pages/PublicPricing.jsx",
     title: "RepMail Pricing — Credit-based plans, credits never expire",
-    description: "RepMail pricing: pay for credits you use, no monthly fees. Every plan — including the free trial — includes up to 25 team members.",
+    // M43 — prerendered meta is STATIC: it is baked at build time and cannot read
+    // the commercial state, so it may not state a seat count or how seats are
+    // sold. The title was narrowed in the first M43 pass and this description was
+    // missed; it still promised "up to 25 team members" on every plan, which is
+    // the claim that becomes false the moment seat billing is enabled — and this
+    // is the string Google and every social card show.
+    description: "RepMail pricing: pay for credits you use, no monthly fees. Credits are one-time purchases that never expire.",
     jsonLd: (url) => ({
       "@context": "https://schema.org",
       "@type": "WebPage",

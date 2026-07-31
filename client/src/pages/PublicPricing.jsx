@@ -886,10 +886,11 @@ export default function PublicPricing() {
                   className="rounded-2xl p-8 md:p-10 mb-8"
                   style={{ background: "#0C0C14", border: "1px solid #1A1A2E" }}
                 >
+                  {/* M43-FIX — see TeamCapabilities: the roles caption is stated
+                      once in the component and carries no seat claim. */}
                   <TeamCapabilities
                     plans={PLANS}
                     formatPlanPrice={(p) => fmtINR(p.priceINR)}
-                    rolesNote="Team seats are included in every plan, free trial included."
                   />
                 </motion.div>
 

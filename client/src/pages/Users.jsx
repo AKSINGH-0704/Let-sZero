@@ -181,9 +181,12 @@ export default function Users() {
   }, [users, isAdmin]);
   // seatLimit > 0 guard: defends against a 0-seat plan ever satisfying `0 >= 0`
   // and showing "at limit" for a workspace that isn't eligible for seats at all.
-  // Every real plan is 25 now, but Infinity (enterprise) is excluded explicitly
-  // since "at limit" is meaningless for an uncapped workspace.
+  // Infinity (enterprise) is excluded explicitly since "at limit" is meaningless
+  // for an uncapped workspace.
   const atSeatLimit = seatLimit > 0 && seatLimit !== Infinity && (teamStats?.totalTeamMembers ?? 0) >= seatLimit;
+  // M43-FIX — when seats are separately billed, the remedy for a full team is to
+  // buy a seat, not to contact sales. Read from the server, never assumed.
+  const seatBillingLive = seatInfo?.billingEnabled === true;
 
   const secondaryRootCount = useMemo(() =>
     (users || []).filter(u => u.isSecondaryRoot).length,
@@ -203,8 +206,13 @@ export default function Users() {
       setIsCreatedModalOpen(true);
     },
     onError: (err) => {
+      // M43-FIX — the server's seatLimitError() already returns a message that is
+      // built from the entitlement authority and is flag-aware (routes.js). This
+      // handler used to append a hardcoded "Every plan includes 25 seats" to it,
+      // which contradicted the very sentence it was appended to. Render what the
+      // server said and nothing more.
       if (err.body?.error === "PLAN_LIMIT") {
-        toast({ title: "Plan limit reached", description: err.message + " Every plan includes 25 seats — need more? Contact us about Enterprise.", variant: "destructive" });
+        toast({ title: "Seat limit reached", description: err.message, variant: "destructive" });
         return;
       }
       toast({ title: "Failed to create user", description: err.message, variant: "destructive" });
@@ -632,12 +640,23 @@ export default function Users() {
                     <span className="text-sm font-normal text-slate-500 dark:text-slate-400"> of {seatLimit}</span>
                   )}
                 </p>
+                {/* M43-FIX — the count was hardcoded ("25-seat limit reached") next
+                    to a seatLimit this component already reads from the entitlement
+                    authority, and the remedy was always "contact Enterprise". Both
+                    are now server-derived: with seats billed separately the honest
+                    next step is buying one. */}
                 {atSeatLimit && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                    25-seat limit reached —{" "}
-                    <Link href="/contact?reason=enterprise" className="underline underline-offset-2">
-                      contact us about Enterprise
-                    </Link>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1" data-testid="users-seat-limit-note">
+                    All {seatLimit} seats are in use —{" "}
+                    {seatBillingLive ? (
+                      <Link href="/app/team/seats" className="underline underline-offset-2">
+                        add seats
+                      </Link>
+                    ) : (
+                      <Link href="/contact?reason=enterprise" className="underline underline-offset-2">
+                        contact us about Enterprise
+                      </Link>
+                    )}
                   </p>
                 )}
               </CardContent>
