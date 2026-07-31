@@ -109,7 +109,9 @@ export default function SeatCalculator({
       <div
         role="radiogroup"
         aria-label="Billing term"
-        className="inline-flex w-full rounded-lg bg-muted p-1 sm:w-auto"
+        // M50 — the track gains a border for the same reason the shared Tabs
+        // track did: without one this reads as a strip of text, not a control.
+        className="inline-flex w-full rounded-lg border border-border bg-muted p-1 sm:w-auto"
       >
         {Object.values(SEAT_TERMS).map((t) => {
           const selected = term === t.id;
@@ -123,7 +125,14 @@ export default function SeatCalculator({
               data-testid={`seat-term-${t.id.toLowerCase()}`}
               className={cn(
                 "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-none",
-                selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                // M50 — the selected pill gains an edge. In dark mode --background
+                // (11% L) is darker than the --muted track (13% L), so the selected
+                // segment was a darker patch on a lighter strip — the inverse of the
+                // raised-pill reading. A --border edge (17% L) is lighter than both
+                // and restores it in either theme, with no fill or palette change.
+                selected
+                  ? "border border-border bg-background text-foreground shadow-sm"
+                  : "border border-transparent text-muted-foreground hover:text-foreground hover:border-border"
               )}
             >
               {t.label}
