@@ -61,12 +61,19 @@ async function api(method, path, { cookie, body } = {}) {
   return { status: res.status, json };
 }
 
-async function makeWorkspace(planName = "growth") {
+// M48 — a CUSTOMER workspace owner is `role: USER` with `parent_id NULL`. That is
+// the production shape for every self-service account, and it is the shape the
+// commercial model governs. ROOT_ADMIN is now the platform's own administrative
+// role and is exempt from seat limits, so a seat-enforcement test built on a
+// ROOT_ADMIN owner would assert against an account the policy deliberately
+// exempts — it would pass or fail for the wrong reason. `role` stays overridable
+// for the one test below that specifically needs a ROOT_ADMIN customer.
+async function makeWorkspace(planName = "growth", role = USER_ROLES.USER) {
   const password = "pw-" + Math.random().toString(36).slice(2);
   const root = await storage.createUser({
     username: "m20_root_" + Math.random().toString(36).slice(2),
     email: `m20_root_${Math.random().toString(36).slice(2)}@example.com`,
-    password, role: USER_ROLES.ROOT_ADMIN, plan: planName,
+    password, role, plan: planName,
     isTrialUser: false, mustResetPassword: false,
   });
   const cookie = await sessionCookieFor(root.id);
@@ -193,7 +200,9 @@ describe("M20-B — platform operator identity (TRUST-027)", () => {
     const operatorCookie = await sessionCookieFor(operator.id);
     await api("POST", "/api/auth/reset-password", { cookie: operatorCookie, body: { newPassword: "operator-reset-pw" } }); // clear forced mustResetPassword
 
-    const customerWs = await makeWorkspace();
+    // This test is specifically about a customer who HOLDS role ROOT_ADMIN still
+    // not reaching platform-operator routes — so it keeps that shape explicitly.
+    const customerWs = await makeWorkspace("growth", USER_ROLES.ROOT_ADMIN);
 
     const asOperator = await api("GET", "/api/admin/domains", { cookie: operatorCookie });
     expect(asOperator.status).toBe(200);

@@ -275,3 +275,81 @@ describe("M47 — the activation anchor is stamped by the system, not an operato
     await storage.setPlatformSetting(KEYS.FREE_FLOOR, "25");
   });
 });
+
+describe("M48 — one commercial experience for every customer; ROOT_ADMIN exempt", () => {
+  // Product decision: grandfathering is retired. An existing workspace must
+  // resolve exactly like a new one. The ONLY exemption is the platform's own
+  // administrative role — never a user id, email or allow-list.
+  const ACTIVATED = new Date("2026-07-31T20:03:03.248Z");
+  const OLD = new Date("2026-06-01T00:00:00Z");  // predates activation
+  const NEW = new Date("2026-08-05T00:00:00Z");  // created after
+  // Grandfathering retired = the window has closed.
+  const retired = {
+    billingEnabled: true, freeFloor: 0,
+    activatedAt: ACTIVATED, grandfatherUntil: ACTIVATED,
+    now: new Date("2026-08-06T00:00:00Z"),
+  };
+
+  it("an EXISTING customer workspace now resolves like a new one", () => {
+    const existing = resolveSeatEntitlement({ ...retired, effectivePlan: "starter", workspaceCreatedAt: OLD });
+    const fresh = resolveSeatEntitlement({ ...retired, effectivePlan: "starter", workspaceCreatedAt: NEW });
+    expect(existing.seats).toBe(0);
+    expect(existing.seats).toBe(fresh.seats);
+    expect(existing.source).toBe(SEAT_SOURCE.FREE_FLOOR);
+    expect(existing.source).toBe(fresh.source);
+  });
+
+  it("no customer workspace resolves as LEGACY_PROTECTED once the window has closed", () => {
+    for (const plan of PAID_PLANS) {
+      for (const created of [OLD, NEW]) {
+        const e = resolveSeatEntitlement({ ...retired, effectivePlan: plan, workspaceCreatedAt: created });
+        expect(e.source).not.toBe(SEAT_SOURCE.LEGACY_PROTECTED);
+      }
+    }
+  });
+
+  it("a customer who PAYS still gets exactly what they bought", () => {
+    const e = resolveSeatEntitlement({ ...retired, subscription: sub(4), effectivePlan: "starter", workspaceCreatedAt: OLD });
+    expect(e.seats).toBe(4);
+    expect(e.source).toBe(SEAT_SOURCE.SUBSCRIPTION);
+  });
+
+  it("ROOT_ADMIN is exempt regardless of plan, age or billing state", () => {
+    for (const created of [OLD, NEW]) {
+      const e = resolveSeatEntitlement({
+        ...retired, effectivePlan: "free", role: "ROOT_ADMIN", workspaceCreatedAt: created,
+      });
+      expect(e.unlimited).toBe(true);
+      expect(e.source).toBe(SEAT_SOURCE.PLATFORM_ADMIN);
+    }
+  });
+
+  it("a ROOT_ADMIN on the FREE plan is exempt — the plan-based rule alone would miss it", () => {
+    // This is the production case: `support_recovery` is ROOT_ADMIN on free.
+    const byRole = resolveSeatEntitlement({ ...retired, effectivePlan: "free", role: "ROOT_ADMIN", workspaceCreatedAt: OLD });
+    const byPlanOnly = resolveSeatEntitlement({ ...retired, effectivePlan: "free", workspaceCreatedAt: OLD });
+    expect(byRole.unlimited).toBe(true);
+    expect(byPlanOnly.seats).toBe(0);
+  });
+
+  it.each(["USER", "SUB_ADMIN"])("role %s receives NO exemption", (role) => {
+    const e = resolveSeatEntitlement({ ...retired, effectivePlan: "starter", role, workspaceCreatedAt: OLD });
+    expect(e.unlimited).toBe(false);
+    expect(e.seats).toBe(0);
+  });
+
+  it("an omitted role defaults to a customer — an exemption is never granted by accident", () => {
+    const e = resolveSeatEntitlement({ ...retired, effectivePlan: "starter", workspaceCreatedAt: OLD });
+    expect(e.unlimited).toBe(false);
+    expect(e.source).toBe(SEAT_SOURCE.FREE_FLOOR);
+  });
+
+  it("the exemption is keyed on the ROLE alone — no id, email or allow-list", async () => {
+    const src = await import("fs/promises").then(fs =>
+      fs.readFile(new URL("../../shared/seatEntitlement.js", import.meta.url), "utf8"));
+    expect(src).toMatch(/role === USER_ROLES\.ROOT_ADMIN/);
+    // No identity-based carve-out may creep in beside it.
+    expect(src).not.toMatch(/@[a-z0-9.-]+\.(com|in|org)/i);
+    expect(src).not.toMatch(/ADMIN_USERNAME|allowList|allowlist|exemptIds/i);
+  });
+});

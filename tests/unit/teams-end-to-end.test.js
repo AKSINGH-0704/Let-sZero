@@ -99,7 +99,11 @@ describe("Teams end-to-end behavioral verification (real HTTP routes, real middl
       username: "e2e_root_" + Math.random().toString(36).slice(2),
       email: `e2e_root_${Math.random().toString(36).slice(2)}@example.com`,
       password: rootPassword,
-      role: USER_ROLES.ROOT_ADMIN,
+      // M48 — a CUSTOMER workspace owner is role USER with parent_id NULL, the
+      // production shape. ROOT_ADMIN is now the platform's administrative role and
+      // is exempt from seat limits, so this seat-enforcement walkthrough must run
+      // on a customer or it would be asserting against an exempt account.
+      role: USER_ROLES.USER,
       plan: "growth", // MAX_TEAM_MEMBERS.growth = 25 (uniform across free/starter/growth/scale)
       isTrialUser: false,
       mustResetPassword: false,

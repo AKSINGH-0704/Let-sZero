@@ -2589,7 +2589,7 @@ const dbStorage = {
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
       ...resolveSeatEntitlement({
-        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null, role: root?.role,
       }),
       subscription,
       effectivePlan,
@@ -2611,7 +2611,7 @@ const dbStorage = {
     // Same deploy-order and inertness reasoning as resolveSeatEntitlement above.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId, tx) : null;
     return resolveSeatEntitlement({
-      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null, role: root?.role,
     }).seats;
   },
 

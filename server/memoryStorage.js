@@ -2258,7 +2258,7 @@ export const memoryStorage = {
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return {
       ...resolveSeatEntitlement({
-        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+        subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null, role: root?.role,
       }),
       subscription, effectivePlan, config,
     };
@@ -2271,7 +2271,7 @@ export const memoryStorage = {
     // Parity with storage.js: no subscription read while the flag is off.
     const subscription = config.billingEnabled ? await this.getWorkspaceSubscription(rootId) : null;
     return resolveSeatEntitlement({
-      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null,
+      subscription, effectivePlan, ...config, workspaceCreatedAt: root?.createdAt ?? null, role: root?.role,
     }).seats;
   },
 

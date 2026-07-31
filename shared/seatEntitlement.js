@@ -9,7 +9,7 @@
 // Pure and dependency-light (constants + the lifecycle predicate) so it runs
 // identically in dbStorage, memoryStorage, the client, and unit tests.
 
-import { MAX_TEAM_MEMBERS } from "./schema.js";
+import { MAX_TEAM_MEMBERS, USER_ROLES } from "./schema.js";
 import { isEntitling } from "./subscriptionStateMachine.js";
 
 /** Where an entitlement came from — surfaced in the UI and in audit details. */
@@ -19,6 +19,7 @@ export const SEAT_SOURCE = Object.freeze({
   SUBSCRIPTION: "SUBSCRIPTION",     // paid seats
   GRANDFATHERED: "GRANDFATHERED",   // bespoke per-workspace grant on the subscription
   LEGACY_PROTECTED: "LEGACY_PROTECTED", // pre-activation workspace inside the migration window
+  PLATFORM_ADMIN: "PLATFORM_ADMIN", // ROOT_ADMIN — platform operations, not a customer
   FREE_FLOOR: "FREE_FLOOR",         // no subscription
 });
 
@@ -137,6 +138,10 @@ export function grandfatherActive(subscription, now = new Date()) {
 export function resolveSeatEntitlement({
   subscription = null,
   effectivePlan = "free",
+  // M48 — the workspace ROOT's role. ROOT_ADMIN is exempt from the commercial
+  // model; every other role follows it. Defaults to a customer role so an
+  // omitted value can never accidentally grant an exemption.
+  role = USER_ROLES.USER,
   billingEnabled = false,
   freeFloor = DEFAULT_FREE_FLOOR,
   // M45 migration window — all three must be present for legacy protection to
@@ -146,6 +151,18 @@ export function resolveSeatEntitlement({
   grandfatherUntil = null,
   now = new Date(),
 } = {}) {
+  // M48 — ROOT_ADMIN is the platform's OWN administrative role: operations,
+  // support, engineering and testing. It is not a customer, so the commercial
+  // model does not apply to it. Keyed on the workspace ROOT's role, because
+  // entitlement is a property of the workspace, not of whoever is asking.
+  //
+  // Deliberately the role and nothing else — no user id, email or allow-list.
+  // The plan-based exemption below does not cover this: a ROOT_ADMIN on the free
+  // plan (support/recovery accounts) would otherwise fall to the customer floor.
+  if (role === USER_ROLES.ROOT_ADMIN) {
+    return { seats: Infinity, unlimited: true, source: SEAT_SOURCE.PLATFORM_ADMIN, subscriptionId: null };
+  }
+
   // Enterprise is contractual and unlimited regardless of the commercial rollout.
   if (MAX_TEAM_MEMBERS[effectivePlan] === Infinity) {
     return { seats: Infinity, unlimited: true, source: SEAT_SOURCE.ENTERPRISE, subscriptionId: subscription?.id ?? null };
