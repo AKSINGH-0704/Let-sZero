@@ -1458,16 +1458,29 @@ export async function registerRoutes(httpServer, app) {
         return res.status(409).json({ message: "A user with that email already exists" });
       }
 
-      // RBAC. A workspace OWNER (top-level USER, the "Admin") may create either a
-      // Manager (SUB_ADMIN) or a Member (USER) directly — neither guard below
-      // matches them, which is intentional. A SUB_ADMIN manager may create Members
-      // only; the operator hierarchy (ROOT_ADMIN / secondary root) makes Managers.
-      if (req.user.role === "SUB_ADMIN" && !req.user.isSecondaryRoot && role !== "USER") {
-        return res.status(403).json({ message: "Sub-admins can only create users" });
-      }
-
-      if ((req.user.role === "ROOT_ADMIN" || req.user.isSecondaryRoot) && role === "USER") {
-        return res.status(403).json({ message: "Root admin can only create sub-admins" });
+      // M49 — RBAC as a POSITIVE whitelist. This was two NEGATIVE guards, and the
+      // gap was the caller neither of them named: a workspace OWNER is role USER
+      // with parent_id NULL, so it matched neither branch and `role` went to the
+      // database unvalidated. A customer could submit `role: "ROOT_ADMIN"` — or
+      // any string at all — and have it persisted. Platform roles must never
+      // originate from customer-controlled input.
+      //
+      // The permitted sets are unchanged; only the shape is. Same construction and
+      // the same error convention as POST /api/users/invite, which already did
+      // this correctly, so the two paths that can mint an account cannot drift.
+      //
+      // A workspace OWNER (the "Admin") may create a Manager or a Member; a
+      // SUB_ADMIN manager may create Members only; the operator hierarchy
+      // (ROOT_ADMIN / secondary root) makes Managers.
+      const requestedRole = role ?? USER_ROLES.USER; // absent role kept as "USER", as before
+      const allowedRoles =
+        (req.user.role === USER_ROLES.SUB_ADMIN && !req.user.isSecondaryRoot)
+          ? [USER_ROLES.USER]
+          : (req.user.role === USER_ROLES.ROOT_ADMIN || req.user.isSecondaryRoot)
+            ? [USER_ROLES.SUB_ADMIN]
+            : [USER_ROLES.SUB_ADMIN, USER_ROLES.USER];
+      if (!allowedRoles.includes(requestedRole)) {
+        return res.status(403).json({ message: `You can only create: ${allowedRoles.join(", ")}` });
       }
 
       // Organization-wide seat enforcement (TRUST-023) with an atomic claim
@@ -1485,7 +1498,7 @@ export async function registerRoutes(httpServer, app) {
         username,
         email: normalizedEmail,
         password,
-        role: role || "USER",
+        role: requestedRole,
         parentId: req.user.id,
         creditsReceived: 0,
         mustResetPassword: true,

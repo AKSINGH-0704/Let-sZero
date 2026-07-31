@@ -56,6 +56,16 @@ function generateToken() {
 // PostgreSQL-based storage implementation
 const dbStorage = {
   async createUser(userData, tx = db) {
+    // M49 — VALIDATION, not authorization. Storage has no caller, so it cannot
+    // know whether ROOT_ADMIN is legitimate (it is, for initializeRootAdmin at
+    // boot) or an escalation — that decision belongs to the route, which knows
+    // who is asking. What storage CAN do for free is refuse a value that is not a
+    // role at all, which no legitimate internal caller ever passes and which
+    // costs the bootstrap path nothing.
+    const resolvedRole = userData.role || USER_ROLES.USER;
+    if (!Object.values(USER_ROLES).includes(resolvedRole)) {
+      throw new Error(`Invalid role: ${resolvedRole}`);
+    }
     const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
     // When FREE_PLAN_ENABLED, new users are free plan users, not legacy trial users.
     // Callers that pass isTrialUser=false explicitly (e.g. initializeRootAdmin) are respected.
@@ -75,7 +85,7 @@ const dbStorage = {
       username: userData.username,
       email: normalizeEmail(userData.email),
       passwordHash,
-      role: userData.role || USER_ROLES.USER,
+      role: resolvedRole,
       parentId: userData.parentId || null,
       creditsReceived: userData.creditsReceived || 0,
       creditsAllocated: 0,

@@ -120,6 +120,16 @@ export function buildMonthlyChart(campaignsList) {
 export const memoryStorage = {
   // ==================== USER OPERATIONS ====================
   async createUser(userData) {
+    // M49 — VALIDATION, not authorization. Storage has no caller, so it cannot
+    // know whether ROOT_ADMIN is legitimate (it is, for initializeRootAdmin at
+    // boot) or an escalation — that decision belongs to the route, which knows
+    // who is asking. What storage CAN do for free is refuse a value that is not a
+    // role at all, which no legitimate internal caller ever passes and which
+    // costs the bootstrap path nothing.
+    const resolvedRole = userData.role || USER_ROLES.USER;
+    if (!Object.values(USER_ROLES).includes(resolvedRole)) {
+      throw new Error(`Invalid role: ${resolvedRole}`);
+    }
     const id = generateUUID();
     const now = new Date();
     const passwordHash = await bcrypt.hash(userData.password || crypto.randomBytes(32).toString("hex"), 12);
@@ -148,7 +158,7 @@ export const memoryStorage = {
       username: userData.username,
       email: normalizedEmail,
       passwordHash,
-      role: userData.role || USER_ROLES.USER,
+      role: resolvedRole,
       parentId: userData.parentId || null,
       creditsReceived: userData.creditsReceived || 0,
       creditsAllocated: 0,
