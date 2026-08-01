@@ -130,9 +130,16 @@ export default function SeatCalculator({
                 // segment was a darker patch on a lighter strip — the inverse of the
                 // raised-pill reading. A --border edge (17% L) is lighter than both
                 // and restores it in either theme, with no fill or palette change.
+                // M50-C — measured, not reasoned. The M50 border alone left the
+                // active pill at 1.04:1 against its track and still DARKER than
+                // it, because --background (11% L) sits below --muted (13% L).
+                // No combination of existing surface tokens spans more than two
+                // points, so the fill has to lift rather than swap: a neutral
+                // white overlay in dark only. Light mode keeps its white-pill-on-
+                // grey-track idiom, which already reads correctly.
                 selected
-                  ? "border border-border bg-background text-foreground shadow-sm"
-                  : "border border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                  ? "border border-border bg-background dark:bg-white/10 text-foreground shadow-sm"
+                  : "border border-transparent text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
               )}
             >
               {t.label}
