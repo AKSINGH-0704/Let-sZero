@@ -198,6 +198,24 @@ export const AUDIT_ACTIONS = {
   SUBSCRIPTION_CANCELLED:          "SUBSCRIPTION_CANCELLED",
   SEAT_OVERAGE_DEACTIVATED:        "SEAT_OVERAGE_DEACTIVATED",
   WORKSPACE_OWNERSHIP_TRANSFERRED: "WORKSPACE_OWNERSHIP_TRANSFERRED",
+  // AutoPay (M51) — the mandate lifecycle and the automatic charge path.
+  // SUBSCRIPTION_AUTO_RENEWED is deliberately DISTINCT from SUBSCRIPTION_RENEWED
+  // and stays that way permanently: "did the customer initiate this, or did we?"
+  // is the first question asked of any disputed recurring charge, and an audit
+  // log that cannot answer it is not an audit log.
+  MANDATE_CREATED:                 "MANDATE_CREATED",
+  MANDATE_CONFIRMED:               "MANDATE_CONFIRMED",
+  MANDATE_REPLACED:                "MANDATE_REPLACED",
+  MANDATE_PAUSED:                  "MANDATE_PAUSED",
+  MANDATE_RESUMED:                 "MANDATE_RESUMED",
+  MANDATE_REVOKED:                 "MANDATE_REVOKED",
+  MANDATE_EXPIRED:                 "MANDATE_EXPIRED",
+  MANDATE_FAILED:                  "MANDATE_FAILED",
+  AUTOPAY_ENABLED:                 "AUTOPAY_ENABLED",
+  AUTOPAY_DISABLED:                "AUTOPAY_DISABLED",
+  SUBSCRIPTION_AUTO_RENEWED:       "SUBSCRIPTION_AUTO_RENEWED",
+  SUBSCRIPTION_CHARGE_FAILED:      "SUBSCRIPTION_CHARGE_FAILED",
+  SUBSCRIPTION_CHARGE_AUTH_REQUIRED: "SUBSCRIPTION_CHARGE_AUTH_REQUIRED",
 };
 
 export const PAYMENT_STATUS = {
@@ -705,6 +723,34 @@ export const workspaceSubscriptions = pgTable("workspace_subscriptions", {
   firstFailureAt: timestamp("first_failure_at"),
   graceEndsAt: timestamp("grace_ends_at"),
 
+  // ── AutoPay (M51) ─────────────────────────────────────────────────────────
+  // THE decision to charge automatically lives HERE, on the subscription — not on
+  // the user and not on the workspace. See shared/autopay.js for why: a per-user
+  // flag would make every future commercial product share one on/off switch, and
+  // revoking a card for one product would silently disable another.
+  //
+  // `autopayEnabled` is the customer's INTENT; `mandateId` is the instrument it
+  // draws on. Liveness is the conjunction of both plus the mandate's own state,
+  // and is decided in exactly one place (`isAutopayLive`).
+  autopayEnabled: boolean("autopay_enabled").notNull().default(false),
+  mandateId: uuid("mandate_id").references(() => paymentMandates.id, { onDelete: "set null" }),
+
+  // Set when a charge returns AUTH_REQUIRED (an AFA-gated debit, typically an
+  // annual renewal above the ₹15,000 RBI ceiling). NOT a failure: entitlement is
+  // retained and the dunning ladder does not advance on that tick. Cleared when
+  // the charge settles or the period rolls.
+  autopayAuthRequiredAt: timestamp("autopay_auth_required_at"),
+
+  // The mandatory pre-debit notice, keyed to the PERIOD it was sent for. Keying
+  // it to the period is what stops a rescheduled renewal from silently reusing a
+  // stale notice to satisfy a regulatory obligation it never met.
+  predebitNoticeSentAt: timestamp("predebit_notice_sent_at"),
+  predebitNoticePeriodEnd: timestamp("predebit_notice_period_end"),
+
+  // Last gateway failure reason, surfaced verbatim to the owner so "your payment
+  // failed" is never the whole story the customer gets.
+  lastChargeError: text("last_charge_error"),
+
   lastPaymentId: uuid("last_payment_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -722,6 +768,101 @@ export const workspaceSubscriptions = pgTable("workspace_subscriptions", {
   oneLivePerWorkspace: uniqueIndex("workspace_subscriptions_one_live_uq")
     .on(table.workspaceRootId)
     .where(sql`${table.status} IN ('ACTIVE','PAST_DUE','CANCEL_SCHEDULED')`),
+}));
+
+// ── AutoPay mandates (M51) ───────────────────────────────────────────────────
+// The INSTRUMENT, modelled separately from the DECISION to use it (which lives on
+// workspace_subscriptions). A mandate is owned by the PERSON who authorised it at
+// their bank — which is why it does not transfer with a workspace: silently
+// debiting a departed owner's card for a workspace they no longer own is
+// indefensible, so ownership transfer revokes autopay rather than reassigning it.
+//
+// Deliberately NOT constrained to one row per workspace: replacing a payment
+// method requires the new mandate to be CONFIRMED before the old one is revoked,
+// so two rows must be able to coexist. A customer who abandons a replacement is
+// left exactly where they started, still charging the old instrument.
+export const paymentMandates = pgTable("payment_mandates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // The workspace ROOT user — the existing ownership primitive (ADR-017).
+  workspaceRootId: uuid("workspace_root_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+
+  // WHICH gateway holds this instrument. The model is provider-NEUTRAL so a
+  // second gateway can coexist without a schema redesign — the handles below are
+  // deliberately not named after Razorpay.
+  provider: text("provider").notNull().default("RAZORPAY"), // PAYMENT_PROVIDER
+  // Gateway handles. Null until the authorisation transaction returns.
+  providerCustomerId: text("provider_customer_id"),
+  providerTokenId: text("provider_token_id"),
+
+  method: text("method").notNull(),                 // MANDATE_METHOD
+  status: text("status").notNull().default("PENDING"), // MANDATE_STATUS
+
+  // The ceiling registered with the bank at authorisation. A seat upgrade can
+  // push a renewal above it, which is detected AT UPGRADE TIME rather than
+  // surfacing 30 days later as a mystery decline.
+  maxAmountMinor: integer("max_amount_minor"),
+  // Card expiry / mandate end date. The only leading indicator in the system.
+  expiresAt: timestamp("expires_at"),
+  // Masked display only — never a PAN, never a full VPA. "•••• 4242", "u**@upi".
+  instrumentLabel: text("instrument_label"),
+
+  // Customer-set, time-bounded suspension. Distinct from REVOKED (permanent) and
+  // from autopayEnabled=false (indefinite, per-subscription).
+  pausedUntil: timestamp("paused_until"),
+
+  lastError: text("last_error"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  confirmedAt: timestamp("confirmed_at"),
+  revokedAt: timestamp("revoked_at"),
+}, (table) => ({
+  rootIdx: index("payment_mandates_root_idx").on(table.workspaceRootId),
+  // Supports the expiring-mandate sweep — the T-30/T-7 notices that are the only
+  // warning a customer gets before an involuntary lapse.
+  expiryIdx: index("payment_mandates_expiry_idx").on(table.status, table.expiresAt),
+  // ONE local row per gateway token, PER PROVIDER. This is the idempotency
+  // guarantee for token.* webhooks, which (unlike order.paid) have no
+  // pre-existing local row to dedup against: a redelivered token.confirmed
+  // cannot create a second mandate. Scoping it by provider means two gateways
+  // can hold colliding token ids without conflict.
+  providerTokenUq: uniqueIndex("payment_mandates_provider_token_uq")
+    .on(table.provider, table.providerTokenId)
+    .where(sql`${table.providerTokenId} IS NOT NULL`),
+}));
+
+// ── Webhook event ledger (M51 Phase 5.3) ─────────────────────────────────────
+// EVENT-level idempotency, which the pre-M51 handler could not provide.
+//
+// Today's dedup is STATE-based: "if this payment is already SUCCESS, skip". That
+// works only because every order.paid maps to a payment row we created during
+// checkout. Recurring billing breaks the assumption — a token.* event has no
+// payment row at all, and Razorpay redelivers for ~24h on any non-2xx. Without a
+// ledger, a redelivered token.cancelled would re-run its fan-out and a
+// redelivered token.confirmed would race the row it is confirming.
+//
+// Insert-first, keyed on the gateway's own event id: a unique violation IS the
+// duplicate detection, so it is decided by the database rather than by a
+// read-then-write that two concurrent deliveries could both pass.
+export const webhookEvents = pgTable("webhook_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Which gateway sent it — the same provider discriminator the mandate uses, so
+  // two gateways cannot collide on an event id.
+  provider: text("provider").notNull().default("RAZORPAY"),
+  // The gateway's event id (Razorpay: the `x-razorpay-event-id` header).
+  eventId: text("event_id").notNull(),
+  eventType: text("event_type"),
+  // PROCESSED | FAILED | null (in flight). Retained so a redelivery of an event
+  // that previously FAILED can be distinguished from one that already succeeded.
+  outcome: text("outcome"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+}, (table) => ({
+  // THE structural idempotency guarantee. One row per (provider, event id).
+  providerEventUq: uniqueIndex("webhook_events_provider_event_uq")
+    .on(table.provider, table.eventId),
+  // Supports operator queries and any future retention sweep.
+  receivedIdx: index("webhook_events_received_idx").on(table.receivedAt),
 }));
 
 // ── Email Analytics Tracking Tokens (M10) ────────────────────────────────────

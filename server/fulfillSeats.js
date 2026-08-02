@@ -14,6 +14,9 @@ import { storage } from "./storage.js";
 import { AUDIT_ACTIONS, PAYMENT_KIND, PAYMENT_STATUS } from "../shared/schema.js";
 import { SUBSCRIPTION_STATUS, isEntitling } from "../shared/subscriptionStateMachine.js";
 import { quoteSeats, previewRenewal } from "../shared/seatPricing.js";
+// M51 — the renewal trigger taxonomy lives with the autopay authority so the
+// audit trail and the execution layer cannot disagree about what caused a charge.
+import { RENEWAL_TRIGGER, isUnattendedTrigger } from "../shared/autopay.js";
 
 /** Read the seat intent a checkout stored on the payment row. */
 export function seatIntentOf(payment) {
@@ -35,6 +38,14 @@ export function seatIntentOf(payment) {
     unitPriceOverrideMinor: m.unitPriceOverrideMinor ?? null,
     workspaceRootId: m.workspaceRootId,
     isRenewal: m.isRenewal === true,
+    // M51 — the period-fence witness: which period boundary this payment was
+    // created to renew FROM. Travels on the payment row so a webhook arriving
+    // days later can still prove which period the money bought.
+    renewsFromPeriodEnd: m.renewsFromPeriodEnd || null,
+    // M51 — what caused this renewal (RENEWAL_TRIGGER). Null on pre-M51 rows and
+    // on the manual path, which is treated as MANUAL.
+    trigger: m.trigger || null,
+    autopay: m.autopay === true,
   };
 }
 
@@ -75,7 +86,12 @@ export async function fulfillSeatPayment(payment) {
   });
 
   const result = intent.isRenewal && existing
-    ? await storage.renewSubscription(existing.id, { paymentId: payment.id })
+    ? await storage.renewSubscription(existing.id, {
+      paymentId: payment.id,
+      // M51 period fence. Null on pre-M51 payments ⇒ no comparison ⇒ exactly the
+      // previous behaviour, so existing in-flight payments keep working.
+      expectedPeriodEnd: intent.renewsFromPeriodEnd,
+    })
     : await storage.applySeatPurchase(rootId, {
       seats: quote.seatsGranted,
       term: intent.term,
@@ -88,6 +104,23 @@ export async function fulfillSeatPayment(payment) {
       paymentId: payment.id,
     });
 
+  // ── The period fence rejected this payment (M51 Phase 5.2) ─────────────────
+  // Another actor already renewed this period. The money is REAL and must be
+  // refunded — but the entitlement belongs to the payment that won, so nothing
+  // here may touch it. The caller refunds and alerts; it must NEVER route this
+  // through reverseSeatPayment, which would expire a subscription the winning
+  // payment legitimately owns (the exact analogue of the rule that a SEATS
+  // payment must never reach the credit clawback).
+  if (result.ok === false && result.error === "stale_period") {
+    return {
+      applied: false, reason: "stale_period",
+      expectedPeriodEnd: result.expectedPeriodEnd, actualPeriodEnd: result.actualPeriodEnd,
+    };
+  }
+  if (result.ok === false) {
+    return { applied: false, reason: result.error || "renewal_rejected", status: result.status };
+  }
+
   const subscription = result.subscription || result?.subscription;
 
   // Mark the payment fulfilled so a replay short-circuits before touching state.
@@ -96,15 +129,28 @@ export async function fulfillSeatPayment(payment) {
     metadata: { ...(payment.metadata || {}), seatsFulfilledAt: new Date().toISOString() },
   });
 
+  // M51 — every renewal records WHAT CAUSED IT. The action already separates an
+  // unattended charge from a customer-initiated one (that distinction stays
+  // permanent: "did the customer initiate this?" is the first question asked of
+  // any disputed recurring charge); `details.trigger` adds the finer grain that
+  // tells a first automatic attempt from a dunning retry, an operator re-drive,
+  // or a migration. A payment with no trigger is a manual one, which is what
+  // every pre-M51 row is.
+  const trigger = intent.trigger || RENEWAL_TRIGGER.MANUAL;
+  const renewalAction = isUnattendedTrigger(trigger)
+    ? AUDIT_ACTIONS.SUBSCRIPTION_AUTO_RENEWED
+    : AUDIT_ACTIONS.SUBSCRIPTION_RENEWED;
+
   await storage.createAuditLog({
     userId: payment.userId,
-    action: intent.isRenewal ? AUDIT_ACTIONS.SUBSCRIPTION_RENEWED
+    action: intent.isRenewal ? renewalAction
       : (result.created ? AUDIT_ACTIONS.SUBSCRIPTION_ACTIVATED : AUDIT_ACTIONS.SUBSCRIPTION_SEATS_CHANGED),
     targetType: "subscription",
     targetId: subscription?.id ?? null,
     details: {
       workspaceRootId: rootId,
       paymentId: payment.id,
+      ...(intent.isRenewal ? { trigger, autopay: intent.autopay === true } : {}),
       seats: subscription?.seats ?? quote.seatsGranted,
       previousSeats: result.previousSeats ?? null,
       requestedSeats: intent.requestedSeats,

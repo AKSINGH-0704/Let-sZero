@@ -64,6 +64,20 @@
       "when": 1785369600000,
       "tag": "0008_m42_seat_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785542400000,
+      "tag": "0009_m51_autopay_mandates",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785628800000,
+      "tag": "0010_m51_webhook_event_ledger",
+      "breakpoints": true
     }
   ]
 }

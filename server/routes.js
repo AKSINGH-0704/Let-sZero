@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { generatePreviews, analyzeSpam, generateTemplate, validateTemplate, validateSenderProfile, getAiHealthStatus, peekSpamCache } from "./ai.js";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import * as Sentry from "@sentry/node";
 import { sendCampaignEmail, sendTransactionalEmail, sendPaymentReceiptEmail, verifySesConnection } from "./email.js";
 import { uploadFile } from "./s3.js";
 import express from "express";
@@ -25,8 +26,14 @@ import {
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
-import { SUBSCRIPTION_STATUS, CURRENT_RENEWAL_MODE } from "../shared/subscriptionStateMachine.js";
+import { SUBSCRIPTION_STATUS, CURRENT_RENEWAL_MODE, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
+// M51 — AutoPay. The authority for liveness, display state and the rollout gate;
+// routes orchestrate and never re-derive any of it.
+import {
+  MANDATE_STATUS, MANDATE_METHOD, renewalModeFor, autopayDisplayState, autopayAllowedFor,
+} from "../shared/autopay.js";
+import { revokeMandate } from "./autopayCharge.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
@@ -3603,6 +3610,28 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // M51 — the most recent SETTLED seat renewal, so the customer can see which
+  // charges they did not initiate. Derived from the payments table (the existing
+  // record of money), never from a new column.
+  async function lastSettledRenewal(rootId) {
+    try {
+      const rows = await storage.getUserPayments?.(rootId, 25);
+      const list = Array.isArray(rows) ? rows : (rows?.payments ?? []);
+      const hit = list.find(p =>
+        p.kind === PAYMENT_KIND.SEATS
+        && p.status === PAYMENT_STATUS.SUCCESS
+        && p.metadata?.isRenewal === true);
+      if (!hit) return null;
+      return {
+        at: hit.completedAt || hit.createdAt,
+        amountMinor: hit.amountMinor ?? (hit.amountInr ?? 0) * 100,
+        currency: hit.currency,
+        paymentId: hit.id,
+        mode: hit.metadata?.autopay === true ? "AUTO" : "MANUAL",
+      };
+    } catch { return null; }
+  }
+
   // The workspace's current seat position: entitlement, usage, subscription, and
   // the renewal preview. One call so the Team page and the Seats page cannot
   // disagree about how many seats exist or what renews when.
@@ -3615,6 +3644,14 @@ export async function registerRoutes(httpServer, app) {
         storage.getPendingWorkspaceInviteCount(rootId),
       ]);
       const sub = e.subscription;
+      // M51 — the instrument the subscription draws on, the rollout gate, and the
+      // last settled renewal. All read-only projections of state that already
+      // exists; nothing here computes a price or an entitlement.
+      const [mandate, autopayConfig, lastRenewal] = await Promise.all([
+        sub?.mandateId ? storage.getMandate(sub.mandateId) : Promise.resolve(null),
+        storage.getAutopayConfig(),
+        sub ? lastSettledRenewal(rootId) : Promise.resolve(null),
+      ]);
       const renewal = sub
         ? previewRenewal({
           seats: sub.scheduledSeats ?? sub.seats,
@@ -3636,8 +3673,41 @@ export async function registerRoutes(httpServer, app) {
         // so this is MANUAL and the UI must not promise a charge the platform
         // cannot make. Projected from the lifecycle authority rather than assumed
         // client-side, so a future autopay integration flips one constant.
-        renewalMode: CURRENT_RENEWAL_MODE,
+        // M51 — renewal mode is now DERIVED PER SUBSCRIPTION from its own
+        // instrument, not read from a platform constant. Same field, same
+        // consumers, same contract: M44 centralised this precisely so autopay
+        // could change what fills it in without a copy hunt. Falls back to the
+        // platform constant when there is no subscription at all.
+        renewalMode: sub ? renewalModeFor(sub, mandate) : CURRENT_RENEWAL_MODE,
         isOwner: isWorkspaceOwner(req.user),
+        // ── AutoPay projection (M51 Phase 5.5) ────────────────────────────
+        // Derived on the SERVER so the client cannot invent a seventh display
+        // state or disagree about whether money moves by itself. Members see the
+        // state (read-only); only the owner sees the instrument's details.
+        autopay: {
+          displayState: autopayDisplayState(sub, mandate),
+          enabled: sub?.autopayEnabled === true,
+          authRequiredAt: sub?.autopayAuthRequiredAt ?? null,
+          inRollout: autopayAllowedFor(rootId, autopayConfig),
+        },
+        mandate: (mandate && isWorkspaceOwner(req.user)) ? {
+          id: mandate.id,
+          status: mandate.status,
+          method: mandate.method,
+          instrumentLabel: mandate.instrumentLabel,
+          expiresAt: mandate.expiresAt,
+          pausedUntil: mandate.pausedUntil,
+        } : null,
+        // Retry status after a failed renewal — every field already existed on
+        // the subscription row; this simply surfaces it.
+        dunning: sub && sub.status === SUBSCRIPTION_STATUS.PAST_DUE ? {
+          attempt: sub.dunningAttempts ?? 0,
+          nextAttemptAt: nextDunningAttemptAt(sub.firstFailureAt || new Date(), sub.dunningAttempts ?? 0),
+          graceEndsAt: sub.graceEndsAt,
+          lastChargeError: sub.lastChargeError ?? null,
+          afaPending: !!sub.autopayAuthRequiredAt,
+        } : null,
+        lastRenewal,
         subscription: sub ? {
           id: sub.id, status: sub.status, seats: sub.seats, term: sub.term,
           periodStart: sub.periodStart, periodEnd: sub.periodEnd,
@@ -3919,6 +3989,372 @@ export async function registerRoutes(httpServer, app) {
     }
   });
 
+  // ── AutoPay management (M51 Phase 5.5) ────────────────────────────────────
+  //
+  // Every endpoint below is gated on `isWorkspaceOwner` — tree position (ADR-017),
+  // never a role, and deliberately NOT `adminMiddleware`, which admits SUB_ADMIN
+  // (Manager). This is the same gate `/api/seats/checkout` and
+  // `/api/payments/initiate` already use, so the three ways of spending or
+  // committing a workspace's money agree on who may do it (Audits 202/203).
+  //
+  // Operators cannot reach any of these: a mandate is a personal banking
+  // authorisation, so no platform admin may create, replace or revoke one on a
+  // customer's behalf.
+  //
+  // These endpoints only ORCHESTRATE. Legality lives in shared/autopay.js, the
+  // atomic swap lives in storage.bindMandateToSubscription, and gateway
+  // revocation lives in server/autopayCharge.js.
+
+  /** Shared preamble: owner + rollout gate + the workspace's live subscription. */
+  async function autopayContext(req, res) {
+    if (!isWorkspaceOwner(req.user)) {
+      res.status(403).json({ message: "Only the workspace owner can change billing.", code: "NOT_WORKSPACE_OWNER" });
+      return null;
+    }
+    const rootId = await storage.resolveWorkspaceRootId(req.user.id);
+    const config = await storage.getSeatCommerceConfig();
+    if (!config.billingEnabled) {
+      res.status(409).json({ message: "Seat billing isn't available.", code: "SEAT_BILLING_DISABLED" });
+      return null;
+    }
+    const autopayConfig = await storage.getAutopayConfig();
+    if (!autopayAllowedFor(rootId, autopayConfig)) {
+      res.status(409).json({ message: "Automatic payment isn't available on your workspace yet.", code: "AUTOPAY_NOT_AVAILABLE" });
+      return null;
+    }
+    const sub = await storage.getWorkspaceSubscription(rootId);
+    if (!sub) {
+      res.status(404).json({ message: "No seat subscription.", code: "NO_SUBSCRIPTION" });
+      return null;
+    }
+    return { rootId, sub };
+  }
+
+  // Begin authorising an instrument. Creates the LOCAL mandate row (PENDING) and
+  // the gateway customer; the client completes authorisation, after which either
+  // the confirm endpoint or the `token.confirmed` webhook (5.3) activates it.
+  // Both paths are idempotent, so whichever lands first wins and the other no-ops.
+  app.post("/api/seats/autopay/setup", authMiddleware, adminMiddleware, paymentInitiateLimiter, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId } = ctx;
+      const method = MANDATE_METHOD[req.body?.method] || MANDATE_METHOD.CARD;
+
+      // The renewal amount is the ceiling the customer is authorising us to debit,
+      // so it comes from the SUBSCRIPTION (which the pricing authority already
+      // computed) — never from the client, and never recomputed here.
+      const maxAmountMinor = Math.max(Number(ctx.sub.renewalAmountMinor || 0) * 2, MIN_CHARGEABLE_MINOR);
+
+      let providerCustomerId = null;
+      let authOrder = null;
+      if (process.env.NODE_ENV === "production") {
+        if (!rzp) return res.status(503).json({ message: "Payments are not configured.", code: "GATEWAY_UNAVAILABLE" });
+        const customer = await rzp.customers.create({
+          name: req.user.username, email: req.user.email, fail_existing: "0",
+        });
+        providerCustomerId = customer?.id ?? null;
+        // The authorisation transaction. Its amount is the gateway minimum, not
+        // the renewal amount: the customer is registering an instrument, not
+        // paying for a period. It is refunded once the token is confirmed.
+        authOrder = await rzp.orders.create({
+          amount: MIN_CHARGEABLE_MINOR, currency: "INR", receipt: crypto.randomUUID(),
+          customer_id: providerCustomerId,
+          method: method === MANDATE_METHOD.UPI ? "upi" : "card",
+          payment_capture: 1,
+          token: {
+            max_amount: maxAmountMinor,
+            expire_at: Math.floor(Date.now() / 1000) + 10 * 365 * 24 * 60 * 60,
+            frequency: "as_presented",
+          },
+          notes: { purpose: "autopay_mandate", workspace_root_id: rootId },
+        });
+      }
+
+      const mandate = await storage.createMandate({
+        workspaceRootId: rootId, method, providerCustomerId, maxAmountMinor,
+      });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.MANDATE_CREATED,
+        targetType: "mandate", targetId: mandate.id,
+        details: {
+          workspaceRootId: rootId, method, provider: mandate.provider,
+          maxAmountMinor, actor: req.user.username,
+        },
+      });
+
+      res.json({
+        mandate: { id: mandate.id, status: mandate.status, method: mandate.method },
+        gateway: mandate.provider,
+        customerId: providerCustomerId,
+        orderId: authOrder?.id ?? null,
+        amount: MIN_CHARGEABLE_MINOR,
+        razorpayKeyId: RAZORPAY_KEY_ID,
+        recurring: true,
+        // Dev/test has no gateway: the client completes without a modal.
+        simulated: process.env.NODE_ENV !== "production",
+      });
+    } catch (error) {
+      console.error("[AUTOPAY] setup error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Complete authorisation: activate the instrument and point the subscription at
+  // it. The bind is the ATOMIC SWAP — if this is a replacement, the outgoing
+  // instrument is revoked only AFTER the new one is confirmed and bound, so an
+  // abandoned replacement leaves the customer exactly where they started.
+  app.post("/api/seats/autopay/confirm", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      const {
+        mandateId, razorpay_payment_id, razorpay_order_id, razorpay_signature,
+      } = req.body || {};
+      if (!mandateId) return res.status(400).json({ message: "mandateId is required" });
+
+      const mandate = await storage.getMandate(mandateId);
+      // Tenant isolation: a mandate id from another workspace must not be usable.
+      if (!mandate || mandate.workspaceRootId !== rootId) {
+        return res.status(404).json({ message: "Payment method not found.", code: "MANDATE_NOT_FOUND" });
+      }
+
+      // ── The token is DERIVED, never accepted from the client ───────────────
+      // An earlier revision took `tokenId` from the request body. That would let
+      // any owner bind an arbitrary gateway token — including one belonging to
+      // somebody else — and then have this platform debit it. The token is now
+      // read from the authorisation payment after verifying the SAME
+      // order|payment HMAC the existing /api/payments/razorpay/verify endpoint
+      // uses, so an instrument can only be bound by the person who just
+      // authorised it at their bank.
+      let derived = { tokenId: null, instrumentLabel: null, expiresAt: null, maxAmountMinor: null };
+
+      if (process.env.NODE_ENV === "production") {
+        if (!rzp || !RAZORPAY_KEY_SECRET) return res.status(503).json({ message: "Payments are not configured.", code: "GATEWAY_UNAVAILABLE" });
+        if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+          return res.status(400).json({ message: "Authorisation details are missing.", code: "AUTH_INCOMPLETE" });
+        }
+        if (!/^[0-9a-f]{64}$/.test(razorpay_signature)) {
+          return res.status(400).json({ message: "Invalid signature format." });
+        }
+        const expected = crypto.createHmac("sha256", RAZORPAY_KEY_SECRET)
+          .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex");
+        const valid = crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(razorpay_signature, "hex"));
+        if (!valid) return res.status(400).json({ message: "Authorisation verification failed.", code: "SIGNATURE_INVALID" });
+
+        const gatewayPayment = await rzp.payments.fetch(razorpay_payment_id);
+        derived = {
+          tokenId: gatewayPayment?.token_id ?? null,
+          instrumentLabel: gatewayPayment?.card?.last4
+            ? `•••• ${gatewayPayment.card.last4}`
+            : (gatewayPayment?.vpa || "Saved payment method"),
+          expiresAt: gatewayPayment?.card?.expiry_year
+            ? new Date(Date.UTC(Number(gatewayPayment.card.expiry_year), Number(gatewayPayment.card.expiry_month || 12), 0))
+            : null,
+          maxAmountMinor: mandate.maxAmountMinor ?? null,
+        };
+        if (!derived.tokenId) {
+          return res.status(409).json({ message: "Your bank didn't return a reusable payment method. Please try again.", code: "NO_TOKEN" });
+        }
+      } else {
+        // Dev/test: no gateway. A deterministic local token keeps the rest of the
+        // flow — including the one-row-per-token guarantee — exercisable.
+        derived = {
+          tokenId: `sim_tok_${mandate.id}`, instrumentLabel: "•••• 4242",
+          expiresAt: null, maxAmountMinor: mandate.maxAmountMinor ?? null,
+        };
+      }
+
+      await storage.updateMandate(mandate.id, {
+        providerTokenId: derived.tokenId,
+        instrumentLabel: derived.instrumentLabel,
+        ...(derived.expiresAt ? { expiresAt: derived.expiresAt } : {}),
+      });
+      const instrumentLabel = derived.instrumentLabel;
+      // Idempotent with the token.confirmed webhook — same-status is a no-op.
+      const t = await storage.transitionMandate(mandate.id, MANDATE_STATUS.ACTIVE);
+      if (!t.ok && !t.noop) {
+        return res.status(409).json({ message: "This payment method can't be activated.", code: t.error });
+      }
+
+      const bind = await storage.bindMandateToSubscription(sub.id, mandate.id);
+      if (!bind.ok) return res.status(409).json({ message: "Couldn't enable automatic payment.", code: bind.error });
+
+      // ── Return the authorisation amount ────────────────────────────────────
+      // The auth transaction debits the gateway minimum purely to register the
+      // instrument — the customer is not buying anything with it. Keeping it
+      // would be an unexplained charge on their statement for a service period
+      // they have not yet entered, so it goes back as soon as the token is safely
+      // bound. Best-effort and deliberately non-fatal: autopay is already live at
+      // this point, and failing the request would leave the customer believing
+      // setup failed when it succeeded. An unrefunded auth is reconciled by the
+      // operator via the existing refund path.
+      if (process.env.NODE_ENV === "production" && razorpay_payment_id) {
+        rzp.payments.refund(razorpay_payment_id, { speed: "optimum" })
+          .then(() => console.log(`[AUTOPAY] auth amount refunded for mandate ${mandate.id}`))
+          .catch(err => {
+            console.error("[AUTOPAY] auth refund failed:", err.message);
+            Sentry.captureMessage("AUTOPAY_AUTH_REFUND_FAILED: authorisation amount not returned to the customer", {
+              level: "warning",
+              extra: { mandateId: mandate.id, razorpayPaymentId: razorpay_payment_id, workspaceRootId: rootId },
+            });
+          });
+      }
+
+      // Replacement: withdraw the OLD instrument only now that the new one is live.
+      if (bind.replaced && bind.previousMandateId) {
+        const old = await storage.getMandate(bind.previousMandateId);
+        if (old) await revokeMandate(old, { reason: "replaced_by_customer" }).catch(err =>
+          console.error("[AUTOPAY] old mandate revoke failed:", err.message));
+      }
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: bind.replaced ? AUDIT_ACTIONS.MANDATE_REPLACED : AUDIT_ACTIONS.AUTOPAY_ENABLED,
+        targetType: "mandate", targetId: mandate.id,
+        details: {
+          workspaceRootId: rootId, subscriptionId: sub.id,
+          previousMandateId: bind.previousMandateId ?? null, actor: req.user.username,
+        },
+      });
+
+      const owner = await storage.getUserById(rootId);
+      if (owner?.email) {
+        sendTransactionalEmail(
+          owner.email,
+          bind.replaced ? "Your payment method was replaced" : "Automatic payment is on",
+          bind.replaced
+            ? `Hi ${owner.username},\n\nThe payment method for your RepMail team seats is now ${instrumentLabel || "your new payment method"}.\n\n`
+              + `If you didn't do this, contact us immediately.\n\n— The RepMail Team`
+            : `Hi ${owner.username},\n\nYour RepMail team seats will now renew automatically using ${instrumentLabel || "your saved payment method"}.\n\n`
+              + `We'll always email you before we charge you. You can turn this off any time — turning it off does not cancel your subscription.\n\n— The RepMail Team`
+        ).catch(err => console.error("[EMAIL] autopay confirm:", err.message));
+      }
+
+      res.json({ ok: true, replaced: bind.replaced, subscription: bind.subscription });
+    } catch (error) {
+      console.error("[AUTOPAY] confirm error:", error.message);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Turn automatic payment OFF. Deliberately does NOT revoke the instrument, so
+  // re-enabling needs no re-authorisation — and deliberately does NOT cancel the
+  // subscription, which is the distinction the UI must also make.
+  app.post("/api/seats/autopay/disable", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      const r = await storage.setAutopayEnabled(sub.id, false);
+      if (!r.ok) return res.status(409).json({ message: "Couldn't turn off automatic payment.", code: r.error });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.AUTOPAY_DISABLED,
+        targetType: "subscription", targetId: sub.id,
+        details: { workspaceRootId: rootId, actor: req.user.username, subscriptionCancelled: false },
+      });
+      res.json({ ok: true, subscription: r.subscription, subscriptionStillActive: true });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Turn it back on. Only possible while the instrument is still usable — the UI
+  // is told to offer "replace" instead when it is not, so we never offer a resume
+  // that is guaranteed to fail.
+  app.post("/api/seats/autopay/enable", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      if (!sub.mandateId) return res.status(409).json({ message: "Add a payment method first.", code: "NO_MANDATE" });
+      const mandate = await storage.getMandate(sub.mandateId);
+      if (!mandate || mandate.status !== MANDATE_STATUS.ACTIVE) {
+        return res.status(409).json({ message: "Your saved payment method can't be used. Replace it to continue.", code: "MANDATE_NOT_ACTIVE" });
+      }
+      const r = await storage.setAutopayEnabled(sub.id, true);
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.AUTOPAY_ENABLED,
+        targetType: "subscription", targetId: sub.id,
+        details: { workspaceRootId: rootId, mandateId: mandate.id, actor: req.user.username },
+      });
+      res.json({ ok: true, subscription: r.subscription });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Pause: time-bounded and distinct from disable. The instrument stays valid and
+  // resumes by itself, so a customer taking a break does not have to remember to
+  // come back and re-authorise.
+  app.post("/api/seats/autopay/pause", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      if (!sub.mandateId) return res.status(409).json({ message: "Nothing to pause.", code: "NO_MANDATE" });
+      const days = Math.min(90, Math.max(1, Number.parseInt(req.body?.days ?? 30, 10) || 30));
+      const pausedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      const t = await storage.transitionMandate(sub.mandateId, MANDATE_STATUS.PAUSED, { pausedUntil });
+      if (!t.ok) return res.status(409).json({ message: "Couldn't pause automatic payment.", code: t.error });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.MANDATE_PAUSED,
+        targetType: "mandate", targetId: sub.mandateId,
+        details: { workspaceRootId: rootId, pausedUntil, days, actor: req.user.username },
+      });
+      res.json({ ok: true, pausedUntil, subscriptionStillActive: true });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/seats/autopay/resume", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      if (!sub.mandateId) return res.status(409).json({ message: "Nothing to resume.", code: "NO_MANDATE" });
+      const t = await storage.transitionMandate(sub.mandateId, MANDATE_STATUS.ACTIVE, { pausedUntil: null });
+      if (!t.ok) return res.status(409).json({ message: "Replace your payment method to continue.", code: t.error });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.MANDATE_RESUMED,
+        targetType: "mandate", targetId: sub.mandateId,
+        details: { workspaceRootId: rootId, actor: req.user.username },
+      });
+      res.json({ ok: true, subscription: sub });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Withdraw the instrument entirely. Fans out to every subscription drawing on
+  // it; cancels none of them.
+  app.post("/api/seats/autopay/revoke", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const ctx = await autopayContext(req, res);
+      if (!ctx) return;
+      const { rootId, sub } = ctx;
+      if (!sub.mandateId) return res.status(409).json({ message: "Nothing to remove.", code: "NO_MANDATE" });
+      const mandate = await storage.getMandate(sub.mandateId);
+      if (!mandate || mandate.workspaceRootId !== rootId) {
+        return res.status(404).json({ message: "Payment method not found.", code: "MANDATE_NOT_FOUND" });
+      }
+      const r = await revokeMandate(mandate, { reason: "customer_revoked" });
+      await storage.createAuditLog({
+        userId: req.user.id, action: AUDIT_ACTIONS.MANDATE_REVOKED,
+        targetType: "mandate", targetId: mandate.id,
+        details: {
+          workspaceRootId: rootId, actor: req.user.username,
+          affectedSubscriptions: r.affectedSubscriptions, subscriptionCancelled: false,
+        },
+      });
+      res.json({ ok: true, subscriptionStillActive: true });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Workspace ownership transfer. Prerequisite for a subscription: the owner is
   // the sole billing authority, so without this a departed owner leaves a
   // workspace that cannot pay its renewal.
@@ -3940,7 +4376,15 @@ export async function registerRoutes(httpServer, app) {
       await storage.createAuditLog({
         userId: req.user.id, action: AUDIT_ACTIONS.WORKSPACE_OWNERSHIP_TRANSFERRED,
         targetType: "user", targetId: newOwnerId,
-        details: { previousOwnerId: req.user.id, newOwnerId, actor: req.user.username },
+        details: {
+          previousOwnerId: req.user.id, newOwnerId, actor: req.user.username,
+          // M51 — a transfer withdraws the outgoing owner's payment instruments
+          // (a mandate is a personal banking authorisation and never follows a
+          // workspace to a different person). Recorded here rather than as a
+          // separate audit call so the revocation and its cause stay one event.
+          revokedMandateIds: result.revokedMandateIds || [],
+          autopayRevoked: (result.revokedMandateIds || []).length > 0,
+        },
       });
       res.json(result);
     } catch (error) {

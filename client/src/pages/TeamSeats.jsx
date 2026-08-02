@@ -15,7 +15,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { AlertTriangle, ArrowLeft, CalendarClock, Info, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarClock, CreditCard, Info, Receipt, ShieldCheck, Users } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import PageHeader from "@/components/common/PageHeader";
 import SeatCalculator from "@/components/pricing/SeatCalculator";
@@ -29,6 +29,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/context/AuthContext";
+// Reuse the app's single Razorpay script loader — a second one would inject the
+// checkout script twice.
+import { loadRazorpayScript } from "@/pages/Payments";
 import { formatMinor, SEAT_TERMS } from "@shared/seatPricing";
 
 const SEATS_KEY = ["/api/seats/subscription"];
@@ -39,7 +42,7 @@ function fmtDate(d) {
 }
 
 export default function TeamSeats() {
-  const { isWorkspaceOwner } = useAuth();
+  const { isWorkspaceOwner, user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(null); // { preview, seats, term }
@@ -99,6 +102,82 @@ export default function TeamSeats() {
     onError: (e) => toast({ title: "Couldn't renew", description: e.message, variant: "destructive" }),
   });
 
+  // M51 — AutoPay actions. All post to the EXISTING seats API surface and then
+  // invalidate the ONE query this page reads, so the server stays the single
+  // source of truth for every billing fact rendered here.
+  const autopayAction = (path, successMsg) => ({
+    mutationFn: (body) => apiRequest("POST", `/api/seats/autopay/${path}`, body ?? {}),
+    onSuccess: () => { toast({ title: successMsg }); qc.invalidateQueries({ queryKey: SEATS_KEY }); },
+    onError: (e) => toast({ title: e?.message || "Something went wrong", variant: "destructive" }),
+  });
+  // ── AutoPay onboarding ────────────────────────────────────────────────────
+  // setup → gateway authorisation → confirm. The SAME three-step shape the seat
+  // checkout already uses, and the same script loader, so there is one Razorpay
+  // integration in the app rather than two. `replace` is the identical flow: the
+  // server binds the new instrument and only then revokes the old one, so an
+  // abandoned replacement leaves the customer exactly where they started.
+  const [autopayBusy, setAutopayBusy] = useState(false);
+
+  async function startAutopay({ replace = false } = {}) {
+    setAutopayBusy(true);
+    try {
+      const setup = await (await apiRequest("POST", "/api/seats/autopay/setup", {})).json();
+
+      // Dev/test (and any build with no gateway configured) completes without a
+      // modal, so the whole journey stays exercisable end-to-end.
+      if (!setup.simulated) {
+        const loaded = await loadRazorpayScript();
+        if (!loaded) throw new Error("Couldn't reach the payment provider. Check your connection and try again.");
+
+        const authorised = await new Promise((resolve, reject) => {
+          const rzp = new window.Razorpay({
+            key: setup.razorpayKeyId,
+            order_id: setup.orderId,
+            customer_id: setup.customerId,
+            recurring: 1,
+            amount: setup.amount,
+            currency: "INR",
+            name: "RepMail",
+            description: "Authorise automatic payment for your team seats",
+            handler: (r) => resolve(r),
+            modal: { ondismiss: () => reject(new Error("Authorisation cancelled — nothing has changed.")) },
+            prefill: { email: user?.email, name: user?.username },
+            theme: { color: "#6366f1" },
+          });
+          rzp.on("payment.failed", (e) =>
+            reject(new Error(e?.error?.description || "Your bank declined the authorisation.")));
+          rzp.open();
+        });
+
+        await apiRequest("POST", "/api/seats/autopay/confirm", {
+          mandateId: setup.mandate.id,
+          razorpay_payment_id: authorised.razorpay_payment_id,
+          razorpay_order_id: authorised.razorpay_order_id,
+          razorpay_signature: authorised.razorpay_signature,
+        });
+      } else {
+        await apiRequest("POST", "/api/seats/autopay/confirm", { mandateId: setup.mandate.id });
+      }
+
+      qc.invalidateQueries({ queryKey: SEATS_KEY });
+      toast({
+        title: replace ? "Payment method replaced" : "Automatic payment is on",
+        description: replace
+          ? "Your next renewal will use the new payment method."
+          : "We'll always email you before we charge. You can turn this off any time — it won't cancel your subscription.",
+      });
+    } catch (e) {
+      toast({ title: replace ? "Couldn't replace it" : "Couldn't turn on automatic payment", description: e.message, variant: "destructive" });
+    } finally {
+      setAutopayBusy(false);
+    }
+  }
+
+  const autopayDisable = useMutation(autopayAction("disable", "Automatic payment is off. Your subscription is still active."));
+  const autopayEnable = useMutation(autopayAction("enable", "Automatic payment is back on."));
+  const autopayPause = useMutation(autopayAction("pause", "Automatic payment paused. Your subscription is still active."));
+  const autopayResume = useMutation(autopayAction("resume", "Automatic payment resumed."));
+
   const cancelMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", "/api/seats/cancel", {})).json(),
     onSuccess: (r) => {
@@ -148,6 +227,12 @@ export default function TeamSeats() {
 
   const { entitlement, usage, subscription, renewal, billingEnabled, seatsAtRisk } = data;
   const sub = subscription;
+  // M51 — all server-derived. The client renders these; it never computes
+  // autopay liveness, display state or renewal mode itself.
+  const autopay = data.autopay ?? null;
+  const mandate = data.mandate ?? null;
+  const dunning = data.dunning ?? null;
+  const lastRenewal = data.lastRenewal ?? null;
   // Ownership is the SERVER's answer (`isOwner`), not a second derivation from the
   // auth payload. Both resolve `parentId == null` today, so they agree — but two
   // sources for one fact is exactly the drift this milestone exists to remove, and
@@ -244,6 +329,133 @@ export default function TeamSeats() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Approval needed (AFA) ────────────────────────────────────────── */}
+      {/* Deliberately NOT styled or worded as a failure: the customer has done
+          nothing wrong, their bank simply requires them to approve this specific
+          debit. Outranks every other autopay state because it is the only one
+          where inaction eventually costs them seats. */}
+      {autopay?.displayState === "AFA_REQUIRED" && (
+        <div className="mt-4 rounded-xl border border-blue-500/40 bg-blue-500/5 p-5" data-testid="autopay-afa">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+            <div>
+              <p className="font-medium">Your bank needs you to approve this payment</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This is a security step for payments of this size — there's nothing wrong with your
+                account or your payment method. Everything stays active while you approve it
+                {dunning?.graceEndsAt ? `, and you have until ${fmtDate(dunning.graceEndsAt)}` : ""}.
+              </p>
+              {isOwner && (
+                <Button className="mt-4" onClick={() => renewMutation.mutate()} disabled={renewMutation.isPending} data-testid="autopay-afa-action">
+                  {renewMutation.isPending ? "Working…" : `Approve ${formatMinor(sub.renewalAmountMinor, sub.currency)}`}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment method ───────────────────────────────────────────────── */}
+      {/* Owner-only: `mandate` is null for everyone else server-side, so a member
+          cannot see the owner's masked instrument even if this rendered. */}
+      {billingEnabled && isOwner && sub && autopay?.inRollout && (
+        <div className="mt-4 rounded-xl border border-border bg-card p-5" data-testid="autopay-card">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CreditCard className="h-4 w-4" aria-hidden="true" />
+                <span>Payment method</span>
+              </div>
+              {mandate ? (
+                <>
+                  <p className="mt-1 font-medium">{mandate.instrumentLabel || "Saved payment method"}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {autopay.displayState === "ACTIVE" && <>Renews automatically on {fmtDate(sub.periodEnd)}.</>}
+                    {autopay.displayState === "PAUSED" && (
+                      <>Automatic payment is off. <span className="text-foreground">Your subscription is still active</span> — renewal is manual.</>
+                    )}
+                    {autopay.displayState === "PENDING_AUTH" && <>Finish authorising this payment method to turn on automatic payment.</>}
+                    {autopay.displayState === "NEEDS_ATTENTION" && (
+                      <>This payment method can no longer be used. Your subscription is <span className="text-foreground">not cancelled</span> — replace it to renew automatically again.</>
+                    )}
+                    {mandate.expiresAt && <> Expires {fmtDate(mandate.expiresAt)}.</>}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No payment method saved — renewal is manual. We'll email you a reminder before your period ends.
+                </p>
+              )}
+            </div>
+            <Badge variant={autopay.displayState === "ACTIVE" ? "default" : "secondary"} data-testid="autopay-state">
+              {autopay.displayState === "ACTIVE" ? "Automatic" : autopay.displayState === "NEEDS_ATTENTION" ? "Needs attention" : "Manual"}
+            </Badge>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            {/* THE ENTRY POINT. Without this the whole recurring-billing system
+                is unreachable: every charge path requires a bound mandate, and
+                nothing else can create one. */}
+            {(autopay.displayState === "NOT_SET_UP" || autopay.displayState === "PENDING_AUTH") && (
+              <Button onClick={() => startAutopay()} disabled={autopayBusy} data-testid="autopay-setup">
+                {autopayBusy ? "Working…" : "Turn on automatic payment"}
+              </Button>
+            )}
+            {/* Replacement is the primary recovery from a dead instrument, and
+                the same flow either way — bind the new one, then revoke the old. */}
+            {mandate && autopay.displayState !== "PENDING_AUTH" && (
+              <Button
+                variant={autopay.displayState === "NEEDS_ATTENTION" ? "default" : "outline"}
+                onClick={() => startAutopay({ replace: true })}
+                disabled={autopayBusy}
+                data-testid="autopay-replace"
+              >
+                {autopayBusy ? "Working…" : "Replace payment method"}
+              </Button>
+            )}
+            {/* Three distinct controls, never merged: replacing an instrument,
+                turning automatic payment off, and cancelling a subscription are
+                three different outcomes and the UI must not blur them. */}
+            {autopay.displayState === "ACTIVE" && (
+              <>
+                <Button variant="ghost" onClick={() => autopayDisable.mutate()} disabled={autopayDisable.isPending} data-testid="autopay-disable">
+                  Turn off automatic payment
+                </Button>
+                <Button variant="ghost" onClick={() => autopayPause.mutate({ days: 30 })} disabled={autopayPause.isPending} data-testid="autopay-pause">
+                  Pause for 30 days
+                </Button>
+              </>
+            )}
+            {autopay.displayState === "PAUSED" && mandate && (
+              <Button
+                variant="outline"
+                onClick={() => (mandate.status === "PAUSED" ? autopayResume : autopayEnable).mutate()}
+                disabled={autopayResume.isPending || autopayEnable.isPending}
+                data-testid="autopay-resume"
+              >
+                Turn automatic payment back on
+              </Button>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Turning off automatic payment does not cancel your subscription — you'll just renew manually.
+          </p>
+        </div>
+      )}
+
+      {/* ── Last renewal ─────────────────────────────────────────────────── */}
+      {lastRenewal && (
+        <div className="mt-4 flex items-start gap-3 rounded-xl border border-border p-5 text-sm" data-testid="autopay-last-renewal">
+          <Receipt className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <p className="text-muted-foreground">
+            Last renewal {fmtDate(lastRenewal.at)} —{" "}
+            <span className="font-medium text-foreground">{formatMinor(lastRenewal.amountMinor, lastRenewal.currency)}</span>
+            {lastRenewal.mode === "AUTO" ? " (charged automatically)" : " (paid manually)"}.{" "}
+            <Link href="/app/payments" className="underline">Billing history</Link>
+          </p>
         </div>
       )}
 

@@ -9,6 +9,22 @@ import { upgradePlanIfHigher } from "./fulfillPayment.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 import { sendPaymentReceiptEmail } from "./email.js";
 import { PAYMENT_STATUS } from "../shared/schema.js";
+// M51 Phase 5.3 — mandate lifecycle events. Routing stays here (one entry point);
+// the meaning of a token event lives with the mandate authority.
+import { handleTokenEvent, isTokenEvent } from "./autopayWebhook.js";
+
+/**
+ * Ledger outcomes. Only PROCESSED suppresses a redelivery.
+ *
+ * A null outcome means "claimed but never closed out" — an in-flight delivery or
+ * a process that died mid-handler. Treating that as a duplicate would drop the
+ * event permanently, because nothing would ever set it. Reprocessing is safe
+ * because every handler below is independently idempotent by STATE (payment
+ * status, the seatsFulfilledAt marker, mandate terminality). The ledger's job is
+ * to skip work already KNOWN complete — it is a layer above those guards, never
+ * a replacement for them.
+ */
+export const WEBHOOK_OUTCOME = Object.freeze({ PROCESSED: "PROCESSED", FAILED: "FAILED" });
 
 export async function razorpayWebhookHandler(req, res) {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -56,6 +72,23 @@ export async function razorpayWebhookHandler(req, res) {
 
   const eventType = event.event;
   console.log(`[RZP-WEBHOOK] Received: ${eventType}`);
+
+  // ── EVENT-LEVEL IDEMPOTENCY (M51 Phase 5.3) ────────────────────────────────
+  // The pre-M51 dedup was STATE-based ("already SUCCESS? skip"), which works only
+  // because every order.paid maps to a payment row created during checkout.
+  // token.* events have no payment row at all, and Razorpay redelivers for ~24h
+  // on any non-2xx. Claiming the gateway's own event id closes that gap.
+  //
+  // Fails open: if the ledger is unavailable — notably in the window between
+  // deploy and migration, since the runbook migrates AFTER deploying — recording
+  // degrades to a no-op and the handler proceeds on exactly the pre-M51 guards.
+  // A deploy-ordering detail must never turn into refused payments.
+  const eventId = req.headers["x-razorpay-event-id"] || null;
+  const claim = await storage.recordWebhookEvent({ eventId, eventType });
+  if (claim.duplicate && claim.previousOutcome === WEBHOOK_OUTCOME.PROCESSED) {
+    console.log(`[RZP-WEBHOOK] ${eventType} — event ${eventId} already processed, skipping`);
+    return res.status(200).json({ received: true, duplicate: true });
+  }
 
   try {
     if (eventType === "order.paid") {
@@ -277,6 +310,19 @@ export async function razorpayWebhookHandler(req, res) {
       const dispute = event.payload?.dispute?.entity;
       console.log(`[RZP-WEBHOOK] Dispute CLOSED — id=${dispute?.id} status=${dispute?.status}`);
 
+    } else if (isTokenEvent(eventType)) {
+      // M51 — the mandate lifecycle. Moves no money and grants no entitlement:
+      // a token event changes the state of an INSTRUMENT, and its consequence is
+      // expressed through the existing fan-out (autopay withdrawn, renewal falls
+      // back to manual). It never cancels a subscription, never touches seats
+      // and never touches credits.
+      const r = await handleTokenEvent(eventType, event.payload || {});
+      console.log(
+        `[RZP-WEBHOOK] ${eventType} — ${r.applied
+          ? `mandate ${r.mandateId} ${r.from}→${r.to}, ${r.affectedSubscriptions?.length ?? 0} subscription(s) reverted to manual`
+          : `not applied (${r.reason})`}`
+      );
+
     } else {
       // Unknown / unhandled events — log and return 200 so Razorpay stops retrying
       console.log(`[RZP-WEBHOOK] Unhandled event: ${eventType}`);
@@ -290,11 +336,16 @@ export async function razorpayWebhookHandler(req, res) {
     Sentry.captureException(err, {
       level: "fatal",
       tags: { subsystem: "payments", alert: "PAYMENT_WEBHOOK_FULFILLMENT_FAILED" },
-      extra: { eventType },
+      extra: { eventType, eventId },
     });
+    // Recorded as FAILED so the redelivery Razorpay is about to make is allowed
+    // through rather than suppressed as a duplicate. Marking it PROCESSED here
+    // would convert a transient failure into permanent non-fulfilment.
+    await storage.markWebhookEventProcessed(eventId, WEBHOOK_OUTCOME.FAILED);
     // Return 500 so Razorpay will retry — only for unexpected server errors
     return res.status(500).json({ message: "Internal error" });
   }
 
+  await storage.markWebhookEventProcessed(eventId, WEBHOOK_OUTCOME.PROCESSED);
   return res.status(200).json({ received: true });
 }

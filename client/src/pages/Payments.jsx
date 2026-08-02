@@ -251,7 +251,9 @@ function PaymentHistory() {
 }
 
 // ─── Razorpay script loader (singleton) ───────────────────────────────────────
-function loadRazorpayScript() {
+// Exported so the Team Seats AutoPay flow uses THIS loader rather than a second
+// copy: two loaders would inject the checkout script twice.
+export function loadRazorpayScript() {
   return new Promise((resolve) => {
     if (window.Razorpay) { resolve(true); return; }
     const script = document.createElement("script");

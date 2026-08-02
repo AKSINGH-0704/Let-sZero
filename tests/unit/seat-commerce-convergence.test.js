@@ -11,20 +11,39 @@ import { describe, it, expect } from "vitest";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { workspaceSubscriptions, PAYMENT_KIND, MAX_TEAM_MEMBERS } from "../../shared/schema.js";
+import { workspaceSubscriptions, paymentMandates, webhookEvents, PAYMENT_KIND, MAX_TEAM_MEMBERS } from "../../shared/schema.js";
 import { SUBSCRIPTION_ENTITLING_STATUSES, SUBSCRIPTION_LIVE_STATUS_SQL } from "../../shared/subscriptionStateMachine.js";
 import { getSeatCatalog } from "../../shared/seatPricing.js";
+import { MANDATE_STATUS, AUTOPAY_SETTING_KEYS, DEFAULT_AUTOPAY_SCOPE } from "../../shared/autopay.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => readFile(join(root, p), "utf8");
 const catalog = getSeatCatalog();
+
+/**
+ * Migrations that own columns on `workspace_subscriptions`. Append here when a
+ * milestone extends the table — the guard below checks the union, so a column
+ * added to the schema with no migration anywhere still fails.
+ */
+const SUBSCRIPTION_MIGRATIONS = [
+  "0008_m42_seat_subscriptions.sql",
+  "0009_m51_autopay_mandates.sql",
+];
 
 describe("migration 0008 matches the schema it implements", () => {
   let sql;
   it("loads", async () => { sql = await read("migrations/0008_m42_seat_subscriptions.sql"); expect(sql.length).toBeGreaterThan(0); });
 
   it("creates every column the Drizzle table declares", async () => {
-    sql = await read("migrations/0008_m42_seat_subscriptions.sql");
+    // The table now spans more than one migration (M51 added the autopay
+    // columns in 0009), so convergence is checked against the UNION of the
+    // migrations that own it. Registering a migration here is deliberate: a
+    // future milestone that adds a column WITHOUT a migration still fails,
+    // which is the drift this guard exists to catch.
+    const owning = await Promise.all(
+      SUBSCRIPTION_MIGRATIONS.map((f) => read(`migrations/${f}`))
+    );
+    const combined = owning.join("\n");
     // Drizzle table objects carry internal symbols/flags alongside columns, so
     // select only real column configs (those with a columnType).
     const declared = Object.values(workspaceSubscriptions)
@@ -32,7 +51,7 @@ describe("migration 0008 matches the schema it implements", () => {
       .map((c) => c.name);
     expect(declared.length).toBeGreaterThan(10);
     for (const col of declared) {
-      expect(sql, `migration is missing column "${col}"`).toContain(`"${col}"`);
+      expect(combined, `no migration creates column "${col}"`).toContain(`"${col}"`);
     }
   });
 
@@ -69,6 +88,137 @@ describe("migration 0008 matches the schema it implements", () => {
   it("back-fills historical payments as CREDITS", async () => {
     sql = await read("migrations/0008_m42_seat_subscriptions.sql");
     expect(sql).toContain(`ADD COLUMN IF NOT EXISTS "kind" text NOT NULL DEFAULT '${PAYMENT_KIND.CREDITS}'`);
+  });
+});
+
+// M51 — the same convergence discipline applied to the autopay migration.
+describe("migration 0009 matches the schema it implements", () => {
+  const FILE = "migrations/0009_m51_autopay_mandates.sql";
+
+  it("creates every column the mandate table declares", async () => {
+    const sql = await read(FILE);
+    const declared = Object.values(paymentMandates)
+      .filter((c) => c && typeof c === "object" && typeof c.name === "string" && c.columnType)
+      .map((c) => c.name);
+    expect(declared.length).toBeGreaterThan(10);
+    for (const col of declared) {
+      expect(sql, `migration is missing column "${col}"`).toContain(`"${col}"`);
+    }
+  });
+
+  it("ships the mandate default status the state machine expects", async () => {
+    const sql = await read(FILE);
+    // Whitespace-tolerant: the migration aligns its column definitions, and the
+    // fact under test is the DEFAULT, not the formatting.
+    expect(sql).toMatch(
+      new RegExp(`"status"\\s+text NOT NULL DEFAULT '${MANDATE_STATUS.PENDING}'`)
+    );
+  });
+
+  // The idempotency guarantee for token.* webhooks: unlike order.paid they have
+  // no pre-existing local row to dedup against, so uniqueness has to be structural.
+  it("enforces one local row per gateway token, scoped per provider", async () => {
+    const sql = await read(FILE);
+    expect(sql).toContain("payment_mandates_provider_token_uq");
+    expect(sql).toMatch(/UNIQUE INDEX IF NOT EXISTS "payment_mandates_provider_token_uq"[\s\S]*WHERE "provider_token_id" IS NOT NULL/);
+  });
+
+  // The mandate model must stay provider-NEUTRAL so a second gateway can coexist
+  // without a schema redesign. A column named after a specific gateway is the
+  // start of exactly that redesign.
+  it("names no gateway in its columns", async () => {
+    const sql = await read(FILE);
+    const mandateTable = sql.slice(sql.indexOf("payment_mandates"), sql.indexOf("workspace_subscriptions"));
+    expect(mandateTable).not.toMatch(/"razorpay_/);
+    expect(sql).toMatch(/"provider"\s+text NOT NULL DEFAULT '[A-Z_]+'/);
+  });
+
+  // Deleting an instrument must never delete the subscription it funded — the
+  // subscription reverts to manual renewal instead.
+  it("detaches an instrument without destroying the subscription", async () => {
+    const sql = await read(FILE);
+    expect(sql).toMatch(/REFERENCES "payment_mandates"\("id"\) ON DELETE SET NULL/);
+  });
+
+  it("is billing-neutral: no mandates created, autopay defaults off, scope ships OFF", async () => {
+    const sql = await read(FILE);
+    expect(sql).not.toMatch(/INSERT\s+INTO\s+"payment_mandates"/i);
+    expect(sql).toContain(`"autopay_enabled" boolean NOT NULL DEFAULT false`);
+    expect(sql).toContain(`'${AUTOPAY_SETTING_KEYS.SCOPE}', '${DEFAULT_AUTOPAY_SCOPE}'`);
+    expect(sql).toContain(`'${AUTOPAY_SETTING_KEYS.LIMIT_PCT}', '0'`);
+  });
+
+  it("is safely re-runnable", async () => {
+    const sql = await read(FILE);
+    const creates = sql.match(/^CREATE (TABLE|INDEX|UNIQUE INDEX)/gim) || [];
+    const guarded = sql.match(/^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS/gim) || [];
+    expect(guarded.length).toBe(creates.length);
+    for (const stmt of sql.match(/^ALTER TABLE[^;]+ADD COLUMN[^;]+;/gim) || []) {
+      expect(stmt).toContain("IF NOT EXISTS");
+    }
+    expect((sql.match(/INSERT INTO "platform_settings"/g) || []).length)
+      .toBe((sql.match(/ON CONFLICT \("key"\) DO NOTHING/g) || []).length);
+  });
+
+  // MEMORY-013 / M42 lesson: drizzle-kit applies the JOURNAL, not the folder. An
+  // unjournaled .sql is silently skipped while the migrate command reports success.
+  it("is registered in the migration journal", async () => {
+    const journal = JSON.parse(await read("migrations/meta/_journal.json"));
+    expect(journal.entries.map(e => e.tag)).toContain("0009_m51_autopay_mandates");
+  });
+});
+
+// M51 Phase 5.3 — the webhook event ledger.
+describe("migration 0010 matches the schema it implements", () => {
+  const FILE = "migrations/0010_m51_webhook_event_ledger.sql";
+
+  it("creates every column the ledger table declares", async () => {
+    const sql = await read(FILE);
+    const declared = Object.values(webhookEvents)
+      .filter((c) => c && typeof c === "object" && typeof c.name === "string" && c.columnType)
+      .map((c) => c.name);
+    expect(declared.length).toBeGreaterThan(5);
+    for (const col of declared) {
+      expect(sql, `migration is missing column "${col}"`).toContain(`"${col}"`);
+    }
+  });
+
+  // THE structural idempotency guarantee. Insert-first against this index is what
+  // makes duplicate detection a database decision rather than a racy read-then-write.
+  it("enforces one row per (provider, event id)", async () => {
+    const sql = await read(FILE);
+    expect(sql).toMatch(/UNIQUE INDEX IF NOT EXISTS "webhook_events_provider_event_uq"[\s\S]*\("provider", "event_id"\)/);
+  });
+
+  // The ledger is additive: it must not touch any table that already carries
+  // money or entitlement.
+  it("touches no existing table", async () => {
+    const sql = await read(FILE);
+    expect(sql).not.toMatch(/ALTER TABLE/i);
+    for (const t of ["payments", "workspace_subscriptions", "payment_mandates", "users", "platform_settings"]) {
+      expect(sql).not.toMatch(new RegExp(`(CREATE|ALTER|INSERT INTO|DROP)[^;]*"${t}"`, "i"));
+    }
+  });
+
+  it("is safely re-runnable and creates no rows", async () => {
+    const sql = await read(FILE);
+    const creates = sql.match(/^CREATE (TABLE|INDEX|UNIQUE INDEX)/gim) || [];
+    const guarded = sql.match(/^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS/gim) || [];
+    expect(guarded.length).toBe(creates.length);
+    expect(sql).not.toMatch(/^INSERT INTO/im);
+  });
+
+  it("is registered in the migration journal", async () => {
+    const journal = JSON.parse(await read("migrations/meta/_journal.json"));
+    expect(journal.entries.map(e => e.tag)).toContain("0010_m51_webhook_event_ledger");
+  });
+
+  // The runbook migrates AFTER deploying, so the code runs for a window with no
+  // ledger table. Registering it as schemaCheck-critical would hard-fail startup
+  // in exactly that window — the M42 lesson, restated as a guard.
+  it("is not registered as schemaCheck-critical in the milestone that adds it", async () => {
+    const guard = await read("server/schemaCheck.js");
+    expect(guard).not.toContain("webhook_events");
   });
 });
 

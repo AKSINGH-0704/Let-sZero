@@ -29,6 +29,12 @@ import {
   SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
 } from "../shared/subscriptionStateMachine.js";
 import { quoteSeats, periodFor } from "../shared/seatPricing.js";
+// M51 — AutoPay. Identical shared authority to storage.js, so the two backends
+// cannot diverge on mandate legality or rollout scope.
+import {
+  MANDATE_STATUS, canMandateTransition, DEFAULT_PAYMENT_PROVIDER,
+  AUTOPAY_SETTING_KEYS, parseAutopayScope, parseAutopayAllowlist, parseAutopayLimitPct,
+} from "../shared/autopay.js";
 
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -81,6 +87,8 @@ const store = {
   contactImports: new Map(),
   trackingTokens: new Map(),
   workspaceSubscriptions: new Map(),
+  paymentMandates: new Map(),
+  webhookEvents: new Map(),
 };
 
 // Helper to convert Map to array sorted by createdAt desc
@@ -2322,6 +2330,11 @@ export const memoryStorage = {
       cancelAtPeriodEnd: false,
       grandfatheredSeats: 0, grandfatheredUntil: null,
       dunningAttempts: 0, firstFailureAt: null, graceEndsAt: null,
+      // M51 — a new subscription is born MANUAL. AutoPay is opted into
+      // afterwards (or during checkout), never inherited: a customer who bought
+      // seats has not thereby authorised us to debit them again.
+      autopayEnabled: false, mandateId: null, autopayAuthRequiredAt: null,
+      predebitNoticeSentAt: null, predebitNoticePeriodEnd: null, lastChargeError: null,
       lastPaymentId: paymentId,
       activatedAt: now, createdAt: now, updatedAt: now, endedAt: null,
     };
@@ -2356,10 +2369,21 @@ export const memoryStorage = {
     return { ok: true, subscription: current };
   },
 
-  async renewSubscription(subscriptionId, { paymentId = null, now = new Date() } = {}) {
+  // Parity with storage.js, including the M51 period fence. See the comment there
+  // for why `expectedPeriodEnd` is what makes exactly one of five possible
+  // renewal actors win a period.
+  async renewSubscription(subscriptionId, { paymentId = null, now = new Date(), expectedPeriodEnd = null } = {}) {
     const current = store.workspaceSubscriptions.get(subscriptionId);
     if (!current) return { ok: false, error: "not_found" };
     if (!isEntitling(current.status)) return { ok: false, error: "not_renewable", status: current.status };
+
+    if (expectedPeriodEnd != null
+      && new Date(current.periodEnd).getTime() !== new Date(expectedPeriodEnd).getTime()) {
+      return {
+        ok: false, error: "stale_period",
+        expectedPeriodEnd: new Date(expectedPeriodEnd), actualPeriodEnd: current.periodEnd,
+      };
+    }
 
     const term = current.scheduledTerm || current.term;
     const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
@@ -2386,6 +2410,218 @@ export const memoryStorage = {
       .filter(s => isEntitling(s.status) && new Date(s.periodEnd) < new Date(before))
       .sort((a, b) => new Date(a.periodEnd) - new Date(b.periodEnd))
       .slice(0, limit);
+  },
+
+  // Parity with storage.js — the look-ahead the pre-debit notice needs.
+  async getSubscriptionsUpcoming(from, to, limit = 100) {
+    return Array.from(store.workspaceSubscriptions.values())
+      .filter(s => isEntitling(s.status)
+        && new Date(s.periodEnd) >= new Date(from)
+        && new Date(s.periodEnd) < new Date(to))
+      .sort((a, b) => new Date(a.periodEnd) - new Date(b.periodEnd))
+      .slice(0, limit);
+  },
+
+  // Parity with storage.js: an atomic claim, so two sweeps cannot both notify.
+  async claimPredebitNotice(subscriptionId, periodEnd, { now = new Date() } = {}) {
+    const sub = store.workspaceSubscriptions.get(subscriptionId);
+    if (!sub) return { claimed: false, subscription: null };
+    const already = sub.predebitNoticePeriodEnd
+      && new Date(sub.predebitNoticePeriodEnd).getTime() === new Date(periodEnd).getTime();
+    if (already) return { claimed: false, subscription: sub };
+    Object.assign(sub, {
+      predebitNoticeSentAt: now,
+      predebitNoticePeriodEnd: new Date(periodEnd),
+      updatedAt: now,
+    });
+    return { claimed: true, subscription: sub };
+  },
+
+  async getStalePendingSeatPayments(olderThan, limit = 100) {
+    return Array.from(store.payments.values())
+      .filter(p => p.kind === PAYMENT_KIND.SEATS
+        && p.status === PAYMENT_STATUS.PENDING
+        && new Date(p.createdAt) < new Date(olderThan))
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .slice(0, limit);
+  },
+
+  // ── M51 AutoPay mandates ───────────────────────────────────────────────────
+  // Mirrors storage.js method-for-method. Both backends call the SAME shared
+  // authority (shared/autopay.js) for every decision, so parity is structural
+  // rather than maintained by hand.
+
+  async createMandate({
+    workspaceRootId, method, provider = DEFAULT_PAYMENT_PROVIDER,
+    providerCustomerId = null, providerTokenId = null,
+    maxAmountMinor = null, expiresAt = null, instrumentLabel = null,
+    status = MANDATE_STATUS.PENDING,
+  }) {
+    // Mirrors the `payment_mandates_provider_token_uq` partial unique index: one
+    // local row per gateway token PER PROVIDER, so a redelivered token webhook
+    // cannot create a second mandate for the same bank authorisation.
+    if (providerTokenId) {
+      const existing = Array.from(store.paymentMandates.values())
+        .find(m => m.provider === provider && m.providerTokenId === providerTokenId);
+      if (existing) return existing;
+    }
+    const now = new Date();
+    const mandate = {
+      id: generateUUID(),
+      workspaceRootId, method, status, provider,
+      providerCustomerId, providerTokenId, maxAmountMinor,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      instrumentLabel, pausedUntil: null, lastError: null,
+      createdAt: now, updatedAt: now, confirmedAt: null, revokedAt: null,
+    };
+    store.paymentMandates.set(mandate.id, mandate);
+    return mandate;
+  },
+
+  async getMandate(id) {
+    if (!id) return null;
+    return store.paymentMandates.get(id) || null;
+  },
+
+  async getMandateByToken(providerTokenId, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!providerTokenId) return null;
+    return Array.from(store.paymentMandates.values())
+      .find(m => m.provider === provider && m.providerTokenId === providerTokenId) || null;
+  },
+
+  async getWorkspaceMandates(rootId) {
+    return Array.from(store.paymentMandates.values())
+      .filter(m => m.workspaceRootId === rootId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async updateMandate(id, patch = {}) {
+    const current = store.paymentMandates.get(id);
+    if (!current) return null;
+    const allowed = {};
+    for (const k of ["providerCustomerId", "providerTokenId", "maxAmountMinor",
+      "expiresAt", "instrumentLabel", "pausedUntil", "lastError"]) {
+      if (patch[k] !== undefined) allowed[k] = patch[k];
+    }
+    if (Object.keys(allowed).length === 0) return current;
+    Object.assign(current, allowed, { updatedAt: new Date() });
+    return current;
+  },
+
+  async transitionMandate(id, toStatus, patch = {}) {
+    const current = store.paymentMandates.get(id);
+    if (!current) return { ok: false, error: "not_found" };
+
+    if (current.status === toStatus) {
+      if (Object.keys(patch).length === 0) return { ok: true, mandate: current, noop: true };
+      Object.assign(current, patch, { updatedAt: new Date() });
+      return { ok: true, mandate: current, noop: true };
+    }
+
+    if (!canMandateTransition(current.status, toStatus)) {
+      return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
+    }
+
+    const stamps = {};
+    if (toStatus === MANDATE_STATUS.ACTIVE && !current.confirmedAt) stamps.confirmedAt = new Date();
+    if (toStatus === MANDATE_STATUS.REVOKED) stamps.revokedAt = new Date();
+    if (current.status === MANDATE_STATUS.PAUSED) stamps.pausedUntil = null;
+
+    Object.assign(current, patch, stamps, { status: toStatus, updatedAt: new Date() });
+    return { ok: true, mandate: current };
+  },
+
+  async getExpiringMandates(before, limit = 100) {
+    return Array.from(store.paymentMandates.values())
+      .filter(m => m.status === MANDATE_STATUS.ACTIVE
+        && m.expiresAt && new Date(m.expiresAt) < new Date(before))
+      .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt))
+      .slice(0, limit);
+  },
+
+  async bindMandateToSubscription(subscriptionId, mandateId) {
+    const sub = store.workspaceSubscriptions.get(subscriptionId);
+    if (!sub) return { ok: false, error: "subscription_not_found" };
+    const mandate = store.paymentMandates.get(mandateId);
+    if (!mandate) return { ok: false, error: "mandate_not_found" };
+    if (mandate.workspaceRootId !== sub.workspaceRootId) {
+      return { ok: false, error: "mandate_workspace_mismatch" };
+    }
+    if (mandate.status !== MANDATE_STATUS.ACTIVE) {
+      return { ok: false, error: "mandate_not_active", status: mandate.status };
+    }
+
+    const previousMandateId = sub.mandateId ?? null;
+    Object.assign(sub, {
+      mandateId, autopayEnabled: true,
+      autopayAuthRequiredAt: null, lastChargeError: null,
+      updatedAt: new Date(),
+    });
+    return { ok: true, subscription: sub, previousMandateId, replaced: previousMandateId !== null };
+  },
+
+  async setAutopayEnabled(subscriptionId, enabled) {
+    const sub = store.workspaceSubscriptions.get(subscriptionId);
+    if (!sub) return { ok: false, error: "not_found" };
+    Object.assign(sub, {
+      autopayEnabled: !!enabled,
+      ...(enabled ? {} : { autopayAuthRequiredAt: null }),
+      updatedAt: new Date(),
+    });
+    return { ok: true, subscription: sub };
+  },
+
+  async disableAutopayForMandate(mandateId) {
+    const affected = [];
+    for (const sub of store.workspaceSubscriptions.values()) {
+      if (sub.mandateId === mandateId && sub.autopayEnabled) {
+        Object.assign(sub, { autopayEnabled: false, autopayAuthRequiredAt: null, updatedAt: new Date() });
+        affected.push(sub.id);
+      }
+    }
+    return { affected, count: affected.length };
+  },
+
+  // ── M51 Phase 5.3 — webhook event ledger (parity with storage.js) ─────────
+  // Keyed on `${provider}:${eventId}`, which is the in-memory equivalent of the
+  // (provider, event_id) unique index.
+
+  async recordWebhookEvent({ eventId, eventType = null, provider = DEFAULT_PAYMENT_PROVIDER }) {
+    if (!eventId) return { duplicate: false, recorded: false, reason: "no_event_id" };
+    const key = `${provider}:${eventId}`;
+    const existing = store.webhookEvents.get(key);
+    if (existing) {
+      return { duplicate: true, recorded: true, previousOutcome: existing.outcome ?? null };
+    }
+    store.webhookEvents.set(key, {
+      id: generateUUID(), provider, eventId, eventType,
+      outcome: null, receivedAt: new Date(), processedAt: null,
+    });
+    return { duplicate: false, recorded: true };
+  },
+
+  async markWebhookEventProcessed(eventId, outcome, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!eventId) return false;
+    const row = store.webhookEvents.get(`${provider}:${eventId}`);
+    if (!row) return false;
+    Object.assign(row, { outcome, processedAt: new Date() });
+    return true;
+  },
+
+  async getWebhookEvent(eventId, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!eventId) return null;
+    return store.webhookEvents.get(`${provider}:${eventId}`) || null;
+  },
+
+  async getAutopayConfig() {
+    const scope = await this.getPlatformSetting(AUTOPAY_SETTING_KEYS.SCOPE);
+    const allowlist = await this.getPlatformSetting(AUTOPAY_SETTING_KEYS.ALLOWLIST);
+    const limitPct = await this.getPlatformSetting(AUTOPAY_SETTING_KEYS.LIMIT_PCT);
+    return {
+      scope: parseAutopayScope(scope?.value),
+      allowlist: parseAutopayAllowlist(allowlist?.value),
+      limitPct: parseAutopayLimitPct(limitPct?.value),
+    };
   },
 
   async enforceSeatOverage(rootId, entitledSeats, { now = new Date() } = {}) {
@@ -2420,10 +2656,30 @@ export const memoryStorage = {
     next.updatedAt = new Date();
     owner.parentId = newOwnerId;
     owner.updatedAt = new Date();
+    // Parity with storage.js: the subscription follows the workspace, but AUTOPAY
+    // DOES NOT (M51 D-M51-07, defect 7.1). A mandate is a personal banking
+    // authorisation; left alone the departed owner's card would be debited
+    // indefinitely for a workspace they no longer own. `mandateId` is cleared
+    // (not merely disabled) because the instrument label belongs to a different
+    // person and the incoming owner must not see it.
     for (const sub of store.workspaceSubscriptions.values()) {
-      if (sub.workspaceRootId === currentOwnerId) { sub.workspaceRootId = newOwnerId; sub.updatedAt = new Date(); }
+      if (sub.workspaceRootId === currentOwnerId) {
+        Object.assign(sub, {
+          workspaceRootId: newOwnerId,
+          autopayEnabled: false, mandateId: null, autopayAuthRequiredAt: null,
+          updatedAt: new Date(),
+        });
+      }
     }
-    return { ok: true, previousOwnerId: currentOwnerId, newOwnerId };
+    const revokedMandateIds = [];
+    for (const m of store.paymentMandates.values()) {
+      if (m.workspaceRootId === currentOwnerId
+        && [MANDATE_STATUS.PENDING, MANDATE_STATUS.ACTIVE, MANDATE_STATUS.PAUSED].includes(m.status)) {
+        Object.assign(m, { status: MANDATE_STATUS.REVOKED, revokedAt: new Date(), updatedAt: new Date() });
+        revokedMandateIds.push(m.id);
+      }
+    }
+    return { ok: true, previousOwnerId: currentOwnerId, newOwnerId, revokedMandateIds };
   },
 
   async checkAndIncrementAiQuota(userId) {

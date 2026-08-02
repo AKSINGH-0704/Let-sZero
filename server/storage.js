@@ -38,6 +38,12 @@ import {
   SUBSCRIPTION_ENTITLING_STATUSES,
 } from "../shared/subscriptionStateMachine.js";
 import { quoteSeats, periodFor, previewSeatChange } from "../shared/seatPricing.js";
+// M51 — AutoPay. Same shared authority the memory backend uses, so the two
+// backends cannot diverge on mandate legality or rollout scope.
+import {
+  MANDATE_STATUS, canMandateTransition, DEFAULT_PAYMENT_PROVIDER,
+  AUTOPAY_SETTING_KEYS, parseAutopayScope, parseAutopayAllowlist, parseAutopayLimitPct,
+} from "../shared/autopay.js";
 
 // Use imports only when not in dev mode
 const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
@@ -46,7 +52,7 @@ const {
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
   suppressions, aiUsageLogs, invites, snsEvents, platformSettings,
   contactLists, contactListMembers, contactImports, senderDomains, trackingTokens,
-  workspaceSubscriptions,
+  workspaceSubscriptions, paymentMandates, webhookEvents,
 } = (!isDevMode && db) ? schemaImports : {};
 
 function generateToken() {
@@ -2733,12 +2739,41 @@ const dbStorage = {
    * Roll a subscription into its next period, applying any scheduled change.
    * This is the ONE place a deferred downgrade or term switch takes effect.
    */
-  async renewSubscription(subscriptionId, { paymentId = null, now = new Date() } = {}) {
+  /**
+   * Roll a subscription into its next period.
+   *
+   * ── THE PERIOD FENCE (M51 Phase 5.2) ──────────────────────────────────────
+   * `expectedPeriodEnd` is a compare-and-swap witness: the period boundary the
+   * caller BELIEVED it was renewing from, captured when the payment was created.
+   * Five actors can attempt a renewal — the automatic sweep, a dunning retry, a
+   * replayed webhook, a manual customer payment and an operator re-drive — and
+   * all five arrive here.
+   *
+   * This SELECT ... FOR UPDATE already serialised them; the comparison is what
+   * makes exactly one of them win. The first to commit moves periodEnd from T to
+   * T'; every later attempt re-reads T' under its own lock, finds its witness no
+   * longer matches, and returns `stale_period` WITHOUT WRITING. A settled payment
+   * that loses this race is refunded WITHOUT touching entitlement — never via
+   * reverseSeatPayment, which would expire a subscription the winning payment
+   * legitimately owns.
+   *
+   * Optional by design: omitted ⇒ no comparison ⇒ exactly the pre-5.2 behaviour,
+   * so every existing caller is unaffected until it opts in.
+   */
+  async renewSubscription(subscriptionId, { paymentId = null, now = new Date(), expectedPeriodEnd = null } = {}) {
     return await db.transaction(async (tx) => {
       const [current] = await tx.select().from(workspaceSubscriptions)
         .where(eq(workspaceSubscriptions.id, subscriptionId)).for("update");
       if (!current) return { ok: false, error: "not_found" };
       if (!isEntitling(current.status)) return { ok: false, error: "not_renewable", status: current.status };
+
+      if (expectedPeriodEnd != null
+        && new Date(current.periodEnd).getTime() !== new Date(expectedPeriodEnd).getTime()) {
+        return {
+          ok: false, error: "stale_period",
+          expectedPeriodEnd: new Date(expectedPeriodEnd), actualPeriodEnd: current.periodEnd,
+        };
+      }
 
       const term = current.scheduledTerm || current.term;
       const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
@@ -2778,6 +2813,329 @@ const dbStorage = {
       ))
       .orderBy(asc(workspaceSubscriptions.periodEnd))
       .limit(limit);
+  },
+
+  /**
+   * Subscriptions whose period ends SOON — the look-ahead the pre-debit notice
+   * needs. `getSubscriptionsDue` looks backwards (period already ended), so it
+   * can never find a subscription that has not yet been charged.
+   */
+  async getSubscriptionsUpcoming(from, to, limit = 100) {
+    return await db.select().from(workspaceSubscriptions)
+      .where(and(
+        inArray(workspaceSubscriptions.status, [...SUBSCRIPTION_ENTITLING_STATUSES]),
+        gte(workspaceSubscriptions.periodEnd, from),
+        lt(workspaceSubscriptions.periodEnd, to),
+      ))
+      .orderBy(asc(workspaceSubscriptions.periodEnd))
+      .limit(limit);
+  },
+
+  /**
+   * Claim the right to send THIS period's pre-debit notice.
+   *
+   * A compare-and-swap on the notice, in the same spirit as the period fence: the
+   * WHERE clause makes the claim atomic, so two app instances sweeping the same
+   * hour cannot both send the customer a notice about the same charge. The period
+   * is part of the key, so a rescheduled renewal cannot satisfy its regulatory
+   * obligation by reusing a notice sent for a different period.
+   *
+   * @returns {{claimed: boolean}} — claimed=false means someone else already sent it.
+   */
+  async claimPredebitNotice(subscriptionId, periodEnd, { now = new Date() } = {}) {
+    const rows = await db.update(workspaceSubscriptions)
+      .set({ predebitNoticeSentAt: now, predebitNoticePeriodEnd: new Date(periodEnd), updatedAt: now })
+      .where(and(
+        eq(workspaceSubscriptions.id, subscriptionId),
+        or(
+          isNull(workspaceSubscriptions.predebitNoticePeriodEnd),
+          sql`${workspaceSubscriptions.predebitNoticePeriodEnd} <> ${new Date(periodEnd)}`,
+        ),
+      ))
+      .returning();
+    return { claimed: rows.length > 0, subscription: rows[0] || null };
+  },
+
+  /**
+   * PENDING seat payments older than `olderThan` — the reconciliation input.
+   *
+   * A charge whose gateway call failed with an unknown outcome leaves a PENDING
+   * row deliberately (Phase 4 §2.1: never retry an unknown-state charge). That row
+   * also blocks the next attempt via the L0 guard, so something must eventually
+   * resolve it or autopay stalls forever on that subscription.
+   */
+  async getStalePendingSeatPayments(olderThan, limit = 100) {
+    return await db.select().from(payments)
+      .where(and(
+        eq(payments.kind, PAYMENT_KIND.SEATS),
+        eq(payments.status, PAYMENT_STATUS.PENDING),
+        lt(payments.createdAt, olderThan),
+      ))
+      .orderBy(asc(payments.createdAt))
+      .limit(limit);
+  },
+
+  // ── M51 AutoPay mandates ───────────────────────────────────────────────────
+  // Persistence only. Every DECISION (is this mandate usable? may this workspace
+  // autopay? does this amount need AFA?) belongs to shared/autopay.js — storage
+  // enforces legality and never invents policy.
+
+  async createMandate({
+    workspaceRootId, method, provider = DEFAULT_PAYMENT_PROVIDER,
+    providerCustomerId = null, providerTokenId = null,
+    maxAmountMinor = null, expiresAt = null, instrumentLabel = null,
+    status = MANDATE_STATUS.PENDING,
+  }) {
+    const [row] = await db.insert(paymentMandates).values({
+      workspaceRootId, method, status, provider,
+      providerCustomerId, providerTokenId, maxAmountMinor, expiresAt, instrumentLabel,
+    }).returning();
+    return row || null;
+  },
+
+  async getMandate(id) {
+    if (!id) return null;
+    const [row] = await db.select().from(paymentMandates).where(eq(paymentMandates.id, id));
+    return row || null;
+  },
+
+  /**
+   * Look a mandate up by its GATEWAY token. The `payment_mandates_token_uq`
+   * partial unique index makes this the idempotency key for token.* webhooks,
+   * which — unlike order.paid — have no pre-existing local row to dedup against.
+   */
+  async getMandateByToken(providerTokenId, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!providerTokenId) return null;
+    const [row] = await db.select().from(paymentMandates)
+      .where(and(
+        eq(paymentMandates.provider, provider),
+        eq(paymentMandates.providerTokenId, providerTokenId),
+      ));
+    return row || null;
+  },
+
+  async getWorkspaceMandates(rootId) {
+    return await db.select().from(paymentMandates)
+      .where(eq(paymentMandates.workspaceRootId, rootId))
+      .orderBy(desc(paymentMandates.createdAt));
+  },
+
+  /**
+   * Narrow mutation for gateway-supplied facts (token id, masked label, expiry,
+   * ceiling). Deliberately cannot touch `status` — the transition table owns that,
+   * exactly as updatePayment cannot touch payment status.
+   */
+  async updateMandate(id, patch = {}) {
+    const allowed = {};
+    for (const k of ["providerCustomerId", "providerTokenId", "maxAmountMinor",
+      "expiresAt", "instrumentLabel", "pausedUntil", "lastError"]) {
+      if (patch[k] !== undefined) allowed[k] = patch[k];
+    }
+    if (Object.keys(allowed).length === 0) return await this.getMandate(id);
+    const [row] = await db.update(paymentMandates)
+      .set({ ...allowed, updatedAt: new Date() })
+      .where(eq(paymentMandates.id, id)).returning();
+    return row || null;
+  },
+
+  /**
+   * Move a mandate through its lifecycle. Illegal edges are refused, which is
+   * what makes webhook ordering safe: a `token.confirmed` redelivered AFTER the
+   * `token.cancelled` that superseded it cannot resurrect a revoked bank
+   * authorisation, because REVOKED admits no successor.
+   */
+  async transitionMandate(id, toStatus, patch = {}) {
+    return await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(paymentMandates)
+        .where(eq(paymentMandates.id, id)).for("update");
+      if (!current) return { ok: false, error: "not_found" };
+
+      if (current.status === toStatus) {
+        // Parity with transitionSubscription: a same-status call carrying a patch
+        // still writes it; `noop` means the STATUS did not change.
+        if (Object.keys(patch).length === 0) return { ok: true, mandate: current, noop: true };
+        const [same] = await tx.update(paymentMandates)
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(paymentMandates.id, id)).returning();
+        return { ok: true, mandate: same, noop: true };
+      }
+
+      if (!canMandateTransition(current.status, toStatus)) {
+        return { ok: false, error: "illegal_transition", from: current.status, to: toStatus };
+      }
+
+      const stamps = {};
+      if (toStatus === MANDATE_STATUS.ACTIVE && !current.confirmedAt) stamps.confirmedAt = new Date();
+      if (toStatus === MANDATE_STATUS.REVOKED) stamps.revokedAt = new Date();
+      // Leaving PAUSED for any reason clears the pause window, so a resumed or
+      // revoked mandate cannot be silently re-paused by a stale timestamp.
+      if (current.status === MANDATE_STATUS.PAUSED) stamps.pausedUntil = null;
+
+      const [updated] = await tx.update(paymentMandates)
+        .set({ ...patch, ...stamps, status: toStatus, updatedAt: new Date() })
+        .where(eq(paymentMandates.id, id)).returning();
+      return { ok: true, mandate: updated };
+    });
+  },
+
+  /** ACTIVE mandates expiring before `before` — drives the T-30/T-7 notices. */
+  async getExpiringMandates(before, limit = 100) {
+    return await db.select().from(paymentMandates)
+      .where(and(
+        eq(paymentMandates.status, MANDATE_STATUS.ACTIVE),
+        isNotNull(paymentMandates.expiresAt),
+        lt(paymentMandates.expiresAt, before),
+      ))
+      .orderBy(asc(paymentMandates.expiresAt))
+      .limit(limit);
+  },
+
+  /**
+   * Point a subscription at a mandate and turn autopay on — THE atomic swap
+   * behind "replace payment method without cancelling" (Phase 3 §3).
+   *
+   * Runs inside the subscription row's own FOR UPDATE lock, so a renewal sweep
+   * firing mid-swap sees either the old pointer or the new one, never a null.
+   * Deliberately does NOT revoke the outgoing mandate: revocation is a gateway
+   * call the caller makes AFTER this commits, so an abandoned or failed
+   * replacement leaves the customer exactly where they started.
+   */
+  async bindMandateToSubscription(subscriptionId, mandateId) {
+    return await db.transaction(async (tx) => {
+      const [sub] = await tx.select().from(workspaceSubscriptions)
+        .where(eq(workspaceSubscriptions.id, subscriptionId)).for("update");
+      if (!sub) return { ok: false, error: "subscription_not_found" };
+
+      const [mandate] = await tx.select().from(paymentMandates)
+        .where(eq(paymentMandates.id, mandateId));
+      if (!mandate) return { ok: false, error: "mandate_not_found" };
+      // Tenant isolation: an instrument may only fund the workspace that
+      // authorised it. Without this, a mandate id is a cross-workspace handle.
+      if (mandate.workspaceRootId !== sub.workspaceRootId) {
+        return { ok: false, error: "mandate_workspace_mismatch" };
+      }
+      if (mandate.status !== MANDATE_STATUS.ACTIVE) {
+        return { ok: false, error: "mandate_not_active", status: mandate.status };
+      }
+
+      const previousMandateId = sub.mandateId ?? null;
+      const [updated] = await tx.update(workspaceSubscriptions)
+        .set({
+          mandateId, autopayEnabled: true,
+          // A newly bound instrument clears any outstanding authentication
+          // demand and stale failure text — both describe the old instrument.
+          autopayAuthRequiredAt: null, lastChargeError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(workspaceSubscriptions.id, subscriptionId)).returning();
+      return { ok: true, subscription: updated, previousMandateId, replaced: previousMandateId !== null };
+    });
+  },
+
+  /** Turn the per-subscription autopay INTENT on or off. Never touches the mandate. */
+  async setAutopayEnabled(subscriptionId, enabled) {
+    const [row] = await db.update(workspaceSubscriptions)
+      .set({
+        autopayEnabled: !!enabled,
+        ...(enabled ? {} : { autopayAuthRequiredAt: null }),
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceSubscriptions.id, subscriptionId)).returning();
+    return row ? { ok: true, subscription: row } : { ok: false, error: "not_found" };
+  },
+
+  /**
+   * Fan-out when an instrument dies (revoked at the bank, expired, disputed).
+   *
+   * Disables autopay on every subscription drawing on it and returns the
+   * affected ids. It does NOT cancel any subscription and does NOT clear the
+   * pointer: the subscription reverts to manual renewal, and keeping the pointer
+   * is what lets the UI say "your card was revoked" instead of silently showing
+   * an unexplained "not set up". Degradation, not amputation.
+   */
+  async disableAutopayForMandate(mandateId) {
+    const rows = await db.update(workspaceSubscriptions)
+      .set({ autopayEnabled: false, autopayAuthRequiredAt: null, updatedAt: new Date() })
+      .where(and(
+        eq(workspaceSubscriptions.mandateId, mandateId),
+        eq(workspaceSubscriptions.autopayEnabled, true),
+      ))
+      .returning();
+    return { affected: rows.map(r => r.id), count: rows.length };
+  },
+
+  // ── M51 Phase 5.3 — webhook event ledger ──────────────────────────────────
+
+  /**
+   * Claim an event id for processing. Insert-FIRST, so the unique index decides
+   * duplication rather than a read-then-write that two concurrent redeliveries
+   * could both pass.
+   *
+   * FAILS OPEN. The runbook migrates AFTER deploy, so there is a window in which
+   * this code is live and `webhook_events` does not exist. A missing table (or
+   * any other ledger error) must not reject a legitimate webhook — that would
+   * turn a deploy-ordering detail into refused payments. Degrading to
+   * `{ duplicate: false, recorded: false }` puts the handler back on exactly the
+   * pre-M51 state-based guards, which is today's behaviour and is already safe.
+   *
+   * @returns {{duplicate: boolean, recorded: boolean, previousOutcome?: string}}
+   */
+  async recordWebhookEvent({ eventId, eventType = null, provider = DEFAULT_PAYMENT_PROVIDER }) {
+    if (!eventId) return { duplicate: false, recorded: false, reason: "no_event_id" };
+    try {
+      const inserted = await db.insert(webhookEvents)
+        .values({ provider, eventId, eventType })
+        .onConflictDoNothing({ target: [webhookEvents.provider, webhookEvents.eventId] })
+        .returning();
+      if (inserted.length > 0) return { duplicate: false, recorded: true };
+
+      const [existing] = await db.select().from(webhookEvents)
+        .where(and(eq(webhookEvents.provider, provider), eq(webhookEvents.eventId, eventId)));
+      return { duplicate: true, recorded: true, previousOutcome: existing?.outcome ?? null };
+    } catch (err) {
+      console.error("[WEBHOOK-LEDGER] record failed (failing open):", err.message);
+      return { duplicate: false, recorded: false, reason: err.message };
+    }
+  },
+
+  /** Close out a claimed event. Never throws — the work is already done. */
+  async markWebhookEventProcessed(eventId, outcome, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!eventId) return false;
+    try {
+      await db.update(webhookEvents)
+        .set({ outcome, processedAt: new Date() })
+        .where(and(eq(webhookEvents.provider, provider), eq(webhookEvents.eventId, eventId)));
+      return true;
+    } catch (err) {
+      console.error("[WEBHOOK-LEDGER] mark failed:", err.message);
+      return false;
+    }
+  },
+
+  async getWebhookEvent(eventId, provider = DEFAULT_PAYMENT_PROVIDER) {
+    if (!eventId) return null;
+    try {
+      const [row] = await db.select().from(webhookEvents)
+        .where(and(eq(webhookEvents.provider, provider), eq(webhookEvents.eventId, eventId)));
+      return row || null;
+    } catch { return null; }
+  },
+
+  /**
+   * The staged-rollout configuration. Parsed through the shared accessors, which
+   * fail toward OFF — an unset or malformed value can never open the rollout.
+   */
+  async getAutopayConfig() {
+    const [scope, allowlist, limitPct] = await Promise.all([
+      this.getPlatformSetting(AUTOPAY_SETTING_KEYS.SCOPE),
+      this.getPlatformSetting(AUTOPAY_SETTING_KEYS.ALLOWLIST),
+      this.getPlatformSetting(AUTOPAY_SETTING_KEYS.LIMIT_PCT),
+    ]);
+    return {
+      scope: parseAutopayScope(scope?.value),
+      allowlist: parseAutopayAllowlist(allowlist?.value),
+      limitPct: parseAutopayLimitPct(limitPct?.value),
+    };
   },
 
   /**
@@ -2839,9 +3197,40 @@ const dbStorage = {
       await tx.update(users).set({ parentId: newOwnerId, updatedAt: new Date() })
         .where(eq(users.id, currentOwnerId));
       // The subscription follows the workspace to its new root.
-      await tx.update(workspaceSubscriptions).set({ workspaceRootId: newOwnerId, updatedAt: new Date() })
-        .where(eq(workspaceSubscriptions.workspaceRootId, currentOwnerId));
-      return { ok: true, previousOwnerId: currentOwnerId, newOwnerId };
+      //
+      // ── AUTOPAY DOES NOT FOLLOW IT (M51 D-M51-07, defect 7.1) ──────────────
+      // A mandate is a PERSONAL banking authorisation. Left alone, the
+      // subscription would arrive at its new owner still pointing at the
+      // DEPARTED owner's instrument with autopay on — and their card would be
+      // debited indefinitely for a workspace they no longer own. So autopay is
+      // revoked in the SAME transaction as the transfer: there is no instant at
+      // which a committed transfer coexists with a live inherited mandate.
+      //
+      // `mandateId` is cleared here, unlike an ordinary revocation which keeps
+      // the pointer so the UI can explain itself. After a transfer the
+      // instrument belongs to a different person and `instrumentLabel` is their
+      // masked card — the incoming owner must not see it at all.
+      await tx.update(workspaceSubscriptions).set({
+        workspaceRootId: newOwnerId,
+        autopayEnabled: false, mandateId: null, autopayAuthRequiredAt: null,
+        updatedAt: new Date(),
+      }).where(eq(workspaceSubscriptions.workspaceRootId, currentOwnerId));
+
+      // Withdraw the outgoing owner's instruments locally. Gateway revocation is
+      // network I/O and cannot join this transaction; the caller performs it
+      // after commit and the reconciliation sweep catches any drift. Marking them
+      // revoked here without waiting is the safe direction — it stops charging.
+      const revoked = await tx.update(paymentMandates).set({
+        status: MANDATE_STATUS.REVOKED, revokedAt: new Date(), updatedAt: new Date(),
+      }).where(and(
+        eq(paymentMandates.workspaceRootId, currentOwnerId),
+        inArray(paymentMandates.status, [MANDATE_STATUS.PENDING, MANDATE_STATUS.ACTIVE, MANDATE_STATUS.PAUSED]),
+      )).returning();
+
+      return {
+        ok: true, previousOwnerId: currentOwnerId, newOwnerId,
+        revokedMandateIds: revoked.map(m => m.id),
+      };
     });
   },
 
