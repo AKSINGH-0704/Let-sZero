@@ -7,6 +7,9 @@ import { upgradePlanIfHigher } from "./fulfillPayment.js";
 // credit clawback path (it granted no credits, so the clawback is a silent no-op
 // that would mark the payment REFUNDED while the seats stayed live).
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
+// M52 — AutoPay is arranged during checkout, so a settled purchase may carry a
+// mandate to activate. Shared with the verify endpoint; see autopayCheckout.js.
+import { bindMandateFromPayment } from "./autopayCheckout.js";
 import { sendPaymentReceiptEmail } from "./email.js";
 import { PAYMENT_STATUS } from "../shared/schema.js";
 // M51 Phase 5.3 — mandate lifecycle events. Routing stays here (one entry point);
@@ -124,6 +127,16 @@ export async function razorpayWebhookHandler(req, res) {
         // Seats grant no credits and never move the plan ladder — plan is derived
         // from credit volume, and a seat purchase says nothing about volume.
         const applied = await fulfillSeatPayment(completedPayment);
+        // M52 — bind the mandate the purchase registered. THIS PATH IS THE POINT:
+        // a customer who paid and then closed the tab never reaches the verify
+        // endpoint, and without this they would receive their seats and silently
+        // NOT receive the AutoPay they explicitly asked for and authorised at
+        // their bank. Idempotent with verify — whichever settles first wins and
+        // the other reports `already_bound`.
+        const autopay = await bindMandateFromPayment(completedPayment);
+        if (!autopay.bound && autopay.reason !== "not_requested") {
+          console.warn(`[RZP-WEBHOOK] order.paid — ${repPayment.id} autopay not bound: ${autopay.reason}`);
+        }
         console.log(
           `[RZP-WEBHOOK] order.paid — ${repPayment.id} SEATS ${applied.applied ? "fulfilled" : `skipped (${applied.reason})`}`
         );
