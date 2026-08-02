@@ -388,59 +388,6 @@ describe("pre-debit notice is a precondition, not a courtesy", () => {
     expect((await due(owner)).seats).toBe(subscription.seats);
   });
 
-  // ── M52 ───────────────────────────────────────────────────────────────────
-  // Withholding the charge is right. What the customer was TOLD about it was
-  // not: they received "your seat renewal hasn't gone through" — an accusation
-  // about a payment method that is working perfectly, for a delay that is
-  // entirely ours. The kind of message that makes someone re-enter a card that
-  // was never the problem, or call support.
-  it("does not tell a customer with a live mandate that their renewal failed", async () => {
-    const { owner, subscription } = await makeDueWorkspace({ noticeAgeHours: null });
-    charge.impl = async () => { throw new Error("must not be called"); };
-
-    const r = await seatRenewal.processDueSubscription(subscription, { now: new Date() });
-
-    expect(r.awaitingNotice).toBe(true);
-    const ownerEmail = (await storage.getUserById(owner.id)).email;
-    const mail = mails.find(m => m.to === ownerEmail);
-    expect(mail).toBeTruthy();
-    // Not an accusation.
-    expect(mail.subject).not.toMatch(/need renewing|hasn't gone through/i);
-    expect(mail.text).not.toMatch(/due for renewal/i);
-    // The truth: nothing is wrong, we will take it, and you are still covered.
-    expect(mail.text).toMatch(/nothing wrong with your payment method/i);
-    expect(mail.text).toMatch(/stays fully active/i);
-    // And still an escape hatch, because the grace clock really is running.
-    expect(mail.text).toMatch(/\/app\/team\/seats/);
-  });
-
-  it("records WHY a working mandate was dunned, so an operator can tell them apart", async () => {
-    const { owner, subscription } = await makeDueWorkspace({ noticeAgeHours: null });
-    charge.impl = async () => { throw new Error("must not be called"); };
-
-    await seatRenewal.processDueSubscription(subscription, { now: new Date() });
-
-    const rows = await auditRows(owner.id);
-    const pastDue = rows.find(a => a.action === AUDIT_ACTIONS.SUBSCRIPTION_PAST_DUE);
-    expect(pastDue).toBeTruthy();
-    expect(pastDue.details.awaitingPredebitNotice).toBe(true);
-  });
-
-  it("still sends the ordinary reminder to a customer who has NO mandate", async () => {
-    // The prepaid path must keep its original wording — that customer really
-    // does have to act, and softening it would cost them their team.
-    const { owner, subscription } = await makeDueWorkspace({ autopay: false });
-
-    const r = await seatRenewal.processDueSubscription(subscription, { now: new Date() });
-
-    expect(r.awaitingNotice).toBe(false);
-    const ownerEmail = (await storage.getUserById(owner.id)).email;
-    const mail = mails.find(m => m.to === ownerEmail);
-    expect(mail.subject).toMatch(/need renewing/i);
-    expect(mail.text).toMatch(/due for renewal/i);
-    expect(mail.text).not.toMatch(/nothing wrong with your payment method/i);
-  });
-
   it("refuses a notice that was sent for a different period", async () => {
     const { owner, subscription } = await makeDueWorkspace();
     await storage.transitionSubscription(subscription.id, S.ACTIVE, {

@@ -443,49 +443,15 @@ export function quoteSeats({
 }
 
 // ── Billing period arithmetic ────────────────────────────────────────────────
-// ANNIVERSARY-BASED, not calendar-anchored: a period runs from the moment money
-// was received to the same day-of-month one term later. There is no anchoring to
-// the 1st, no partial first period and no calendar proration anywhere in this
-// module — `periodFor(purchaseInstant, term)` is the whole model.
-//
-// Whole calendar months (not 30 days), clamped for short months so a 31st-of-the
-// -month anchor never skips February. Deterministic and UTC-based: the renewal
-// boundary must not depend on the server's local timezone (a defect class this
-// codebase has already paid for once with `first_send_at`).
-//
-// ── M52: THE ANCHOR IS STABLE, NOT JUST CLAMPED ──────────────────────────────
-// Clamping alone loses the anniversary permanently. Because each renewal chained
-// from the PREVIOUS boundary, a 31 January subscriber went 31 Jan → 28 Feb → 28
-// Mar → the 28th forever: the clamp applied once and the chain never restored
-// the day the customer actually bought on. That is a silent, permanent ~3-day
-// shortening of every subsequent period, and it directly contradicts the one
-// promise this billing model makes — that the renewal date is simply the day you
-// bought, every term.
-//
-// `anchorDay` carries the customer's ORIGINAL day-of-month forward, so the clamp
-// becomes a per-period accommodation rather than a permanent loss:
-//   31 Jan → 28 Feb → 31 Mar → 30 Apr → 31 May …
-//
-// Deliberately OPTIONAL and null-by-default. A null anchorDay reproduces the
-// pre-M52 arithmetic exactly, which is what makes the migration entitlement- and
-// date-neutral for every subscription that already exists.
+// Calendar-month anchored, clamped for short months so a 31st-of-the-month anchor
+// never skips February. Deterministic and UTC-based: the renewal boundary must
+// not depend on the server's local timezone (a defect class this codebase has
+// already paid for once with `first_send_at`).
 
-/**
- * Add whole months to a UTC instant, clamping the day to the target month's length.
- *
- * @param {Date|string|number} date
- * @param {number} months
- * @param {number|null} anchorDay  original day-of-month (1-31) to restore where the
- *   target month is long enough. Null ⇒ use `date`'s own day (pre-M52 behaviour).
- */
-export function addMonthsUTC(date, months, anchorDay = null) {
+/** Add whole months to a UTC instant, clamping the day to the target month's length. */
+export function addMonthsUTC(date, months) {
   const d = new Date(date);
-  // Guard the anchor rather than trusting the column: a corrupt or out-of-range
-  // value must degrade to the old behaviour, never produce an invalid date.
-  const anchor = Number.isInteger(anchorDay) && anchorDay >= 1 && anchorDay <= 31
-    ? anchorDay
-    : null;
-  const day = anchor ?? d.getUTCDate();
+  const day = d.getUTCDate();
   const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1,
     d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
@@ -493,26 +459,11 @@ export function addMonthsUTC(date, months, anchorDay = null) {
   return target;
 }
 
-/**
- * The period a term produces from an anchor.
- *
- * @param {Date|string|number} anchor  the instant the period starts
- * @param {string} term                MONTHLY | ANNUAL
- * @param {number|null} anchorDay      see addMonthsUTC. Null ⇒ pre-M52 behaviour.
- */
-export function periodFor(anchor, term, anchorDay = null) {
+/** The period a term produces from an anchor. */
+export function periodFor(anchor, term) {
   const months = SEAT_TERMS[term]?.months ?? 1;
   const start = new Date(anchor);
-  return { start, end: addMonthsUTC(start, months, anchorDay) };
-}
-
-/**
- * The day-of-month a new subscription should anchor to, taken from the instant
- * the customer actually paid. One line, but it is the ONE place the anchor is
- * derived, so "which day does this customer renew on?" has a single answer.
- */
-export function anchorDayFor(purchasedAt) {
-  return new Date(purchasedAt).getUTCDate();
+  return { start, end: addMonthsUTC(start, months) };
 }
 
 /**

@@ -105,10 +105,9 @@ describe("renewal is MANUAL — the page says who must act, and by when", () => 
 });
 
 describe("renewal is AUTOMATIC — the same page states the charge", () => {
-  // M51/M52 — `renewalMode` is now DERIVED (per subscription from its mandate,
-  // and pre-purchase from the rollout gate) rather than read from a platform
-  // constant. This block is the rendering contract that derivation feeds: what
-  // the server decides must actually change what the customer reads.
+  // Nothing sets this today; it is the contract a future autopay integration
+  // inherits. Pinning it now is what makes the constant a real switch rather
+  // than a comment — flipping CURRENT_RENEWAL_MODE must change the product.
   const html = () => render({ renewalMode: "AUTOMATIC" });
 
   it("states the next charge", () => {
