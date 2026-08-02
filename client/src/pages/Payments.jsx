@@ -369,13 +369,43 @@ function ProcessPayment({ paymentId }) {
 
     setCheckoutOpened(true);
 
+    // M52 — this screen is shared by credit purchases and seat purchases, and a
+    // seat purchase may also be registering a payment method for automatic
+    // renewal. Both facts have to be right here, because this is the last thing
+    // the customer reads before they authorise money at their bank.
+    const isSeats = payment.kind === "SEATS";
+    // The description said "<plan> — 0 credits" for every seat purchase, because
+    // a seat grants none. Wrong, and wrong at the highest-trust moment in the
+    // product. `planName` already reads "Team Seats — 3 × Monthly".
+    //
+    // Deliberately makes NO claim about renewal. This screen cannot see
+    // `renewalMode`, and the M44 rule is that only a surface which can tell
+    // whether a period renews by itself is allowed to say so. The confirmation
+    // dialog the customer just came through states the arrangement in full, and
+    // Razorpay's own modal labels a recurring authorisation.
+    const description = isSeats
+      ? payment.planName
+      : `${payment.planName} — ${formatNumber(payment.credits)} credits`;
+
     const options = {
       key: keyId,
-      amount: payment.amountLocal * 100, // paise
+      // Minor units are authoritative. `amountLocal` is a ROUNDED rupee integer
+      // (the payments table predates minor units), so a prorated seat upgrade
+      // would show a different figure here than the one the order carries.
+      // Razorpay takes the amount from the order when `order_id` is present, so
+      // this was never a mischarge — but the two must not disagree.
+      amount: payment.amountMinor ?? payment.amountLocal * 100,
       currency: "INR",
       name: "RepMail",
-      description: `${payment.planName} — ${formatNumber(payment.credits)} credits`,
+      description,
       order_id: orderId,
+      // M52 — a purchase that also registers an instrument must open the modal
+      // in recurring mode against the gateway customer the order was created
+      // for. Absent ⇒ an ordinary one-off checkout, which every pre-M52 payment
+      // was, so credit purchases are untouched.
+      ...(payment.metadata?.autopayAtCheckout && payment.metadata?.razorpay_customer_id
+        ? { customer_id: payment.metadata.razorpay_customer_id, recurring: 1 }
+        : {}),
       handler: (response) => {
         verifyMutation.mutate({
           razorpay_payment_id: response.razorpay_payment_id,
