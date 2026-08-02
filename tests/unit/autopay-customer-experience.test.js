@@ -68,12 +68,16 @@ async function api(method, path, { cookie, body } = {}) {
   return { status: res.status, body: json ?? {} };
 }
 
-async function makeUser({ parentId = null, role = USER_ROLES.USER } = {}) {
-  const u = await storage.createUser({
+async function makeUser({ parentId = null, role = USER_ROLES.USER, senderPhone = "9999999999" } = {}) {
+  const created = await storage.createUser({
     username: `cx_${rand()}`, email: `cx_${rand()}@example.com`,
     password: "pw-" + rand(), role, parentId,
     plan: "growth", isTrialUser: false, mustResetPassword: false,
   });
+  // `createUser` seeds every sender-profile field null by design; the phone is
+  // set through the profile path, which is also where a real owner sets it.
+  // AutoPay setup needs it, because Razorpay requires a contact on a recurring order.
+  const u = senderPhone ? await storage.updateUser(created.id, { senderPhone }) : created;
   const s = await storage.createSession(u.id);
   return { user: u, cookie: `token=${s.token}` };
 }
@@ -350,6 +354,25 @@ describe("a customer can actually turn AutoPay on", () => {
     expect(view.body.renewalMode).toBe(RENEWAL_MODE.AUTOMATIC);
     expect(view.body.autopay.displayState).toBe(AUTOPAY_DISPLAY_STATE.ACTIVE);
     expect(view.body.mandate.instrumentLabel).toBeTruthy();
+  });
+
+  // Razorpay resolves a recurring order against the gateway customer and rejects
+  // the token order without a contact on it. Found by the live gateway probe
+  // (Audit 213) — the whole 1270-test suite passed over it, because nothing in
+  // the suite talks to the gateway. Refused up front so the customer gets an
+  // actionable message instead of an opaque gateway error, and so no orphan
+  // PENDING mandate is left behind.
+  it("refuses setup when the owner has no contact number, and creates no mandate", async () => {
+    const { owner } = await workspace();
+    await storage.updateUser(owner.user.id, { senderPhone: null });
+
+    const setup = await api("POST", "/api/seats/autopay/setup", { cookie: owner.cookie, body: {} });
+    expect(setup.status).toBe(409);
+    expect(setup.body.code).toBe("CONTACT_REQUIRED");
+
+    const sub = await storage.getWorkspaceSubscription(owner.user.id);
+    expect(sub.mandateId).toBeNull();
+    expect(sub.autopayEnabled).toBe(false);
   });
 
   it("replacing binds the new instrument before revoking the old one", async () => {

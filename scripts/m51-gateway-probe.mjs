@@ -16,13 +16,18 @@ const MIN_CHARGEABLE_MINOR = 100;
 const renewalAmountMinor = 12900;                       // the real production subscription
 const maxAmountMinor = Math.max(renewalAmountMinor * 2, MIN_CHARGEABLE_MINOR);
 
+// `contact` is REQUIRED on the customer for a recurring/token order. Razorpay
+// resolves it from the customer record referenced by `customer_id`, and rejects
+// the order with "The contact field is required for recurring links" when it is
+// absent. Found by this probe on 2026-08-02; see Audit 213.
 let customerId = null;
 try {
   const customer = await rzp.customers.create({
-    name: 'M51 Gateway Probe', email: `m51probe+${Date.now()}@letszero.in`, fail_existing: '0',
+    name: 'M51 Gateway Probe', email: `m51probe+${Date.now()}@letszero.in`,
+    contact: '9999999999', fail_existing: '0',
   });
   customerId = customer?.id ?? null;
-  console.log('\n[1] customers.create -> OK', customerId);
+  console.log('\n[1] customers.create (with contact) -> OK', customerId);
 } catch (e) {
   console.log('\n[1] customers.create -> FAILED');
   console.log(JSON.stringify(e?.error ?? { message: e.message }, null, 1));

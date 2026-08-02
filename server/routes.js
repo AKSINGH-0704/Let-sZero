@@ -4046,12 +4046,31 @@ export async function registerRoutes(httpServer, app) {
       // computed) — never from the client, and never recomputed here.
       const maxAmountMinor = Math.max(Number(ctx.sub.renewalAmountMinor || 0) * 2, MIN_CHARGEABLE_MINOR);
 
+      // A recurring order is resolved against the gateway CUSTOMER, and Razorpay
+      // rejects the token order outright without a contact on it ("The contact
+      // field is required for recurring links"). Like email, the contact is a
+      // property of the PERSON, so it comes from the owner — the same authority
+      // the charge path already reads (`autopayCharge.js`).
+      //
+      // Checked before the mandate row is created, so a missing number cannot
+      // leave an orphan PENDING mandate behind. Enforced in every environment,
+      // not just production: it is a real requirement of the product, and gating
+      // it on NODE_ENV would put it exactly where the suite cannot reach it.
+      const payerContact = req.user.senderPhone?.trim() || null;
+      if (!payerContact) {
+        return res.status(409).json({
+          message: "Add a phone number to your sender profile before setting up automatic payment.",
+          code: "CONTACT_REQUIRED",
+        });
+      }
+
       let providerCustomerId = null;
       let authOrder = null;
       if (process.env.NODE_ENV === "production") {
         if (!rzp) return res.status(503).json({ message: "Payments are not configured.", code: "GATEWAY_UNAVAILABLE" });
         const customer = await rzp.customers.create({
-          name: req.user.username, email: req.user.email, fail_existing: "0",
+          name: req.user.username, email: req.user.email,
+          contact: payerContact, fail_existing: "0",
         });
         providerCustomerId = customer?.id ?? null;
         // The authorisation transaction. Its amount is the gateway minimum, not
