@@ -26,12 +26,13 @@ import {
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
-import { SUBSCRIPTION_STATUS, CURRENT_RENEWAL_MODE, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
+import { SUBSCRIPTION_STATUS, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 // M51 — AutoPay. The authority for liveness, display state and the rollout gate;
 // routes orchestrate and never re-derive any of it.
 import {
   MANDATE_STATUS, MANDATE_METHOD, renewalModeFor, autopayDisplayState, autopayAllowedFor,
+  prospectiveRenewalMode,
 } from "../shared/autopay.js";
 import { revokeMandate } from "./autopayCharge.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
@@ -3676,9 +3677,17 @@ export async function registerRoutes(httpServer, app) {
         // M51 — renewal mode is now DERIVED PER SUBSCRIPTION from its own
         // instrument, not read from a platform constant. Same field, same
         // consumers, same contract: M44 centralised this precisely so autopay
-        // could change what fills it in without a copy hunt. Falls back to the
-        // platform constant when there is no subscription at all.
-        renewalMode: sub ? renewalModeFor(sub, mandate) : CURRENT_RENEWAL_MODE,
+        // could change what fills it in without a copy hunt.
+        //
+        // M52 — with NO subscription this used to fall back to the frozen
+        // platform constant and answer MANUAL. That is now a lie at the worst
+        // possible moment: AutoPay is established during checkout, so a
+        // first-time buyer inside the rollout renews automatically. The
+        // pre-purchase answer is derived from the SAME rollout gate the checkout
+        // path consults, so what we promise and what we do cannot diverge.
+        renewalMode: sub
+          ? renewalModeFor(sub, mandate)
+          : prospectiveRenewalMode(rootId, autopayConfig),
         isOwner: isWorkspaceOwner(req.user),
         // ── AutoPay projection (M51 Phase 5.5) ────────────────────────────
         // Derived on the SERVER so the client cannot invent a seventh display

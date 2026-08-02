@@ -206,6 +206,32 @@ export function renewalModeFor(subscription, mandate, opts = {}) {
     : RENEWAL_MODE.MANUAL;
 }
 
+/**
+ * M52 — how a period WOULD end for a workspace that has not bought yet.
+ *
+ * `renewalModeFor` needs a subscription; before the first purchase there isn't
+ * one, so the API fell back to the frozen platform constant and answered MANUAL.
+ * That was true while a mandate could only be created after a subscription
+ * existed. It stopped being true the moment AutoPay became part of checkout: a
+ * first-time buyer inside the rollout WILL renew automatically, so the one field
+ * M44 created precisely so no surface could misdescribe renewal was about to
+ * state the opposite of the truth — at the exact moment the customer decides
+ * whether to hand over a card.
+ *
+ * Deliberately gated on the SAME rollout predicate the checkout path uses, so
+ * "what we tell you before you buy" and "what we actually do when you buy"
+ * cannot disagree. Outside the rollout this returns MANUAL, which is both
+ * correct and identical to the previous behaviour.
+ *
+ * @param {string} workspaceRootId
+ * @param {{scope:string, allowlist:string[], limitPct:number}} autopayConfig
+ */
+export function prospectiveRenewalMode(workspaceRootId, autopayConfig) {
+  return autopayAllowedFor(workspaceRootId, autopayConfig)
+    ? RENEWAL_MODE.AUTOMATIC
+    : RENEWAL_MODE.MANUAL;
+}
+
 // ── Additional-factor authentication (AFA) ───────────────────────────────────
 //
 // RBI caps AFA-exempt recurring debits at ₹15,000 per transaction. Above it the
