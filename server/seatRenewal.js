@@ -96,10 +96,26 @@ export async function processDueSubscription(sub, { now = new Date() } = {}) {
       userId: sub.workspaceRootId,
       action: AUDIT_ACTIONS.SUBSCRIPTION_PAST_DUE,
       targetType: "subscription", targetId: sub.id,
-      details: { workspaceRootId: sub.workspaceRootId, graceEndsAt: graceEnd, seats: sub.seats, attempt: 1 },
+      details: {
+        workspaceRootId: sub.workspaceRootId, graceEndsAt: graceEnd, seats: sub.seats, attempt: 1,
+        // M52 — record WHY we are chasing a customer who has a working mandate,
+        // so an operator reading the trail can tell a real decline from a
+        // notice that had not matured, or from a renewal that outgrew its
+        // authorised ceiling.
+        ...(charged.awaitingNotice ? { awaitingPredebitNotice: true } : {}),
+        ...(charged.needsReauthorisation ? { exceedsMandateCeiling: true } : {}),
+      },
     });
-    await notify(sub, { attempt: 1, graceEnd, now });
-    return { action: "past_due", graceEndsAt: graceEnd };
+    await notify(sub, {
+      attempt: 1, graceEnd, now,
+      autopayPending: charged.awaitingNotice === true,
+      needsReauthorisation: charged.needsReauthorisation === true,
+    });
+    return {
+      action: "past_due", graceEndsAt: graceEnd,
+      awaitingNotice: charged.awaitingNotice === true,
+      needsReauthorisation: charged.needsReauthorisation === true,
+    };
   }
 
   if (sub.status === SUBSCRIPTION_STATUS.PAST_DUE) {
@@ -167,8 +183,20 @@ async function tryCharge(sub, { now, trigger, graceEnd = null, attempt = 1 }) {
   // A charge without a matured pre-debit notice is not permitted. Deferring is
   // safe: entitlement is retained for the whole grace window, so waiting a tick
   // costs the customer nothing, while charging early costs compliance.
+  //
+  // M52 — the DEFERRAL is right; what the customer was then told was not. This
+  // falls through to the prepaid branch, which emails "your seat renewal hasn't
+  // gone through" to somebody whose card is fine and whose mandate is live. In
+  // the steady state the notice pass (72h look-ahead, hourly, idempotent) means
+  // this is rare — but a worker outage spanning the window, an SMTP failure, or
+  // a period boundary rescheduled inside the lead time all land here, and each
+  // turns a paying customer with working AutoPay into a dunned one.
+  //
+  // `awaitingNotice` is surfaced so the caller can say the true thing instead.
+  // Lifecycle behaviour is deliberately unchanged: the grace clock still starts,
+  // because the period really has ended and the entitlement really is finite.
   if (!predebitNoticeSatisfied(sub, amountMinor, now)) {
-    return { ...NOTHING, deferred: false }; // fall through: let the period lapse into grace
+    return { ...NOTHING, deferred: false, awaitingNotice: true };
   }
 
   let attemptResult;
@@ -186,6 +214,14 @@ async function tryCharge(sub, { now, trigger, graceEnd = null, attempt = 1 }) {
     const platformSide = ["payment_in_progress", "gateway_unavailable", "unknown_provider"];
     if (platformSide.includes(attemptResult.reason)) {
       return { ...NOTHING, deferred: true, result: { action: "charge_skipped", reason: attemptResult.reason } };
+    }
+    // ── M52: the renewal outgrew the ceiling the customer authorised ─────────
+    // Falls through to the grace window (the period HAS ended, and they can pay
+    // manually), but the reminder must say the one true thing: the card is fine,
+    // the standing limit is not, and re-authorising is what fixes it. Telling
+    // them "your renewal failed" would send them to re-enter a card that works.
+    if (attemptResult.reason === "exceeds_mandate_ceiling") {
+      return { ...NOTHING, needsReauthorisation: true };
     }
     return NOTHING;
   }
@@ -322,12 +358,53 @@ async function expire(sub, reason, now) {
 }
 
 /** Renewal reminder. Never blocks the sweep — email failure is logged, not fatal. */
-async function notify(sub, { attempt, graceEnd }) {
+async function notify(sub, { attempt, graceEnd, autopayPending = false, needsReauthorisation = false }) {
   try {
     const owner = await storage.getUserById(sub.workspaceRootId);
     if (!owner?.email) return;
     const amount = formatMinor(sub.renewalAmountMinor, sub.currency);
     const deadline = new Date(graceEnd).toDateString();
+
+    // ── M52: the renewal outgrew the authorised ceiling ──────────────────────
+    // Almost always the consequence of a seat upgrade. The card is fine; the
+    // standing limit agreed with the bank is not. Saying "your payment failed"
+    // would send the customer to re-enter a working card and would not fix
+    // anything — only re-authorising raises the limit.
+    if (needsReauthorisation) {
+      await sendTransactionalEmail(
+        owner.email,
+        "Confirm the new amount for your RepMail seats",
+        `Hi ${owner.username},\n\n` +
+        `Your team has grown, so your renewal is now ${amount} — more than the amount your bank has us approved to take automatically.\n\n` +
+        `There's nothing wrong with your card. To keep renewing automatically, confirm the new amount here:\n` +
+        `${APP_URL()}/app/team/seats\n\n` +
+        `You can also just pay this renewal manually from the same page. Your team stays fully active until ${deadline}.\n\n` +
+        `— The RepMail Team`
+      );
+      return;
+    }
+
+    // ── M52: do not accuse a customer whose payment method is fine ───────────
+    // The charge was withheld because the mandatory pre-debit notice had not
+    // matured — a compliance step of OURS, not a failure of theirs. Telling them
+    // their renewal "hasn't gone through" is both false and the kind of thing
+    // that makes someone re-enter a card that was never the problem. They still
+    // need the option to pay now, because the grace clock is genuinely running.
+    if (autopayPending) {
+      await sendTransactionalEmail(
+        owner.email,
+        "We'll take your RepMail seat renewal shortly",
+        `Hi ${owner.username},\n\n` +
+        `Your ${sub.seats}-seat RepMail team subscription has reached its renewal date (${amount}).\n\n` +
+        `There's nothing wrong with your payment method and nothing for you to do — we send a notice before every automatic payment, ` +
+        `and we'll take this one as soon as that notice has been out long enough.\n\n` +
+        `Your team stays fully active in the meantime. If you'd rather not wait, you can pay now:\n` +
+        `${APP_URL()}/app/team/seats\n\n` +
+        `— The RepMail Team`
+      );
+      return;
+    }
+
     await sendTransactionalEmail(
       owner.email,
       attempt === 1 ? "Your RepMail team seats need renewing" : `Reminder: renew your RepMail team seats by ${deadline}`,

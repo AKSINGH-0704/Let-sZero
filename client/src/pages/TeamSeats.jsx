@@ -19,6 +19,11 @@ import { AlertTriangle, ArrowLeft, CalendarClock, CreditCard, Info, Receipt, Shi
 import AppLayout from "@/components/layout/AppLayout";
 import PageHeader from "@/components/common/PageHeader";
 import SeatCalculator from "@/components/pricing/SeatCalculator";
+// M52 — the confirmation body. Extracted so the highest-stakes screen in the
+// product can actually be rendered in a test (it only mounts behind a state
+// change, and this repo's harness is SSR renderToString). M50-C: a UI change is
+// not verified until it has been rendered and looked at.
+import SeatChangeSummary from "@/components/teams/SeatChangeSummary";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +51,11 @@ export default function TeamSeats() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(null); // { preview, seats, term }
+  // M52 — whether this purchase should also set up automatic renewal. Defaults
+  // ON, and the customer is told exactly what that means before they pay, not
+  // after. Kept in page state (not in the preview) because it is a decision
+  // about THIS checkout, not a property of the price.
+  const [autopayAtCheckout, setAutopayAtCheckout] = useState(true);
 
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: SEATS_KEY });
 
@@ -58,8 +68,8 @@ export default function TeamSeats() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async ({ seats, term }) => {
-      const res = await apiRequest("POST", "/api/seats/checkout", { seats, term });
+    mutationFn: async ({ seats, term, autopay }) => {
+      const res = await apiRequest("POST", "/api/seats/checkout", { seats, term, autopay });
       return res.json();
     },
     onSuccess: (result) => {
@@ -73,6 +83,19 @@ export default function TeamSeats() {
       }
       if (result.noop) {
         toast({ title: "Nothing to change", description: "That's already your current seat count." });
+        return;
+      }
+      // M52 — if the customer asked for automatic renewal and we could not
+      // arrange it, say so HERE rather than letting them discover it a month
+      // later when nothing was charged. The purchase itself still succeeded,
+      // so this is a note on a success, not an error.
+      if (result.autopayUnavailable || result.autopay?.bound === false) {
+        toast({
+          title: "Seats updated — renewal is manual",
+          description: result.autopayUnavailable === "CONTACT_REQUIRED"
+            ? "Your seats are live. To renew automatically, add a phone number to your sender profile and turn it on from this page."
+            : "Your seats are live, but we couldn't save a payment method for automatic renewal. We'll email you a reminder before your period ends.",
+        });
         return;
       }
       toast({
@@ -243,7 +266,34 @@ export default function TeamSeats() {
   // read from the server (`renewalMode`), never assumed here. Defaults to false
   // while unknown: promising an automatic charge that never happens costs the
   // customer their team, whereas an unnecessary reminder costs them nothing.
+  //
+  // M52 — for a workspace with NO subscription yet, the server now answers this
+  // from the rollout gate rather than a frozen constant, so it describes what
+  // checkout will actually do. Same field, same rule: never derived here.
   const autoRenews = data.renewalMode === "AUTOMATIC";
+
+  // ── M52 checkout decisions ────────────────────────────────────────────────
+  // Offer the AutoPay choice only when there is a real choice to make: the
+  // workspace is in the rollout, the person can act on it, and no usable
+  // instrument is already saved. Re-asking somebody who has already given us a
+  // card would invite them to replace one that is working perfectly.
+  const instrumentUsable = !!mandate
+    && !["REVOKED", "FAILED", "EXPIRED"].includes(mandate.status);
+  //
+  // A phone number is a hard precondition: Razorpay refuses a recurring order
+  // for a customer with no contact (Audit 213), so the server would degrade to a
+  // plain order. In production the checkout response then REDIRECTS straight to
+  // the gateway, so a "renewal is manual after all" toast would never be seen —
+  // the customer would tick "Renew automatically", pay, and only discover a
+  // month later that nothing was arranged. The condition is knowable here, so
+  // the promise is simply not offered when we cannot keep it.
+  const canRegisterInstrument = !!user?.senderPhone;
+  const offerAutopay = billingEnabled && isOwner && autopay?.inRollout === true
+    && !instrumentUsable && canRegisterInstrument;
+  // In the rollout, wants an instrument, but cannot have one yet — say why, and
+  // say it before they pay rather than after.
+  const autopayBlockedOnContact = billingEnabled && isOwner && autopay?.inRollout === true
+    && !instrumentUsable && !canRegisterInstrument;
 
   return (
     <AppLayout>
@@ -353,6 +403,32 @@ export default function TeamSeats() {
                   {renewMutation.isPending ? "Working…" : `Approve ${formatMinor(sub.renewalAmountMinor, sub.currency)}`}
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Renewal outgrew the authorised ceiling (M52) ─────────────────── */}
+      {/* Deliberately NOT framed as a payment failure. The card works; the
+          standing limit agreed with the bank does not cover the new amount,
+          which is almost always the consequence of adding seats. Telling a
+          customer their payment "failed" here would send them to re-enter a
+          card that is fine and fix nothing. */}
+      {autopay?.exceedsCeiling && isOwner && (
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-5" data-testid="autopay-ceiling">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div>
+              <p className="font-medium">Confirm the new amount to keep renewing automatically</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Your team has grown, so your renewal is now{" "}
+                {renewal ? formatMinor(renewal.totalMinor, sub.currency) : "higher than before"} — more than your bank
+                has approved us to take automatically. There's nothing wrong with your payment method.
+                Confirm it once and automatic renewal continues as normal.
+              </p>
+              <Button className="mt-4" onClick={() => startAutopay({ replace: true })} disabled={autopayBusy} data-testid="autopay-ceiling-action">
+                {autopayBusy ? "Working…" : "Confirm the new amount"}
+              </Button>
             </div>
           </div>
         </div>
@@ -553,6 +629,12 @@ export default function TeamSeats() {
       )}
 
       {/* ── Confirmation ─────────────────────────────────────────────────── */}
+      {/* M52 — the highest-stakes screen in the product. It must answer, without
+          the customer doing any arithmetic: what am I paying today, how many
+          seats do I get, when am I charged again, how much, will it happen by
+          itself, and what if the payment fails. Nothing here exposes a
+          proration fraction, a "remainder of period" calculation, or two
+          amounts without saying which is which. */}
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent data-testid="seat-confirm">
           <AlertDialogHeader>
@@ -560,46 +642,25 @@ export default function TeamSeats() {
               {confirm?.preview?.chargeNowMinor > 0 ? "Confirm your seat change" : "Schedule this change"}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-3 text-left">
-                {confirm?.preview?.chargeNowMinor > 0 ? (
-                  <>
-                    <p>
-                      You'll be charged{" "}
-                      <span className="font-medium text-foreground">
-                        {formatMinor(confirm.preview.chargeNowMinor, confirm.preview.currency)}
-                      </span>{" "}
-                      now for the rest of this billing period, and your new seats are available immediately.
-                    </p>
-                    {/* M44 — "you'll pay ... per period" read as a standing
-                        arrangement at the highest-stakes moment in the flow.
-                        Renewal is manual, so state the cost of renewing. */}
-                    {confirm.preview.renewal?.totalMinor != null && (
-                      <p>
-                        {autoRenews ? "From" : "Renewing on"} {fmtDate(confirm.preview.renewal.at)}{" "}
-                        {autoRenews ? "you'll pay" : "costs"}{" "}
-                        {formatMinor(confirm.preview.renewal.totalMinor, confirm.preview.currency)} for{" "}
-                        {confirm.preview.renewal.seats} seats.
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p>
-                    Nothing is charged now and nothing changes today — you keep all{" "}
-                    {confirm?.preview?.effectiveSeats} seats until {fmtDate(confirm?.preview?.scheduled?.at)}. From then
-                    you'll be on {confirm?.preview?.scheduled?.seats} seats
-                    {confirm?.preview?.renewal?.totalMinor != null
-                      ? ` at ${formatMinor(confirm.preview.renewal.totalMinor, confirm.preview.currency)}`
-                      : ""}
-                    .
-                  </p>
-                )}
-              </div>
+              <SeatChangeSummary
+                preview={confirm?.preview}
+                renewalMode={data.renewalMode}
+                offerAutopay={offerAutopay}
+                autopayBlockedOnContact={autopayBlockedOnContact}
+                autopayAtCheckout={autopayAtCheckout}
+                onAutopayChange={setAutopayAtCheckout}
+              />
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Not now</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => checkoutMutation.mutate({ seats: confirm.seats, term: confirm.term })}
+              onClick={() => checkoutMutation.mutate({
+                seats: confirm.seats, term: confirm.term,
+                // Only ever sent as a real decision. When we are not offering
+                // the choice, the server's own rollout gate decides.
+                autopay: offerAutopay ? autopayAtCheckout : undefined,
+              })}
               disabled={checkoutMutation.isPending}
               data-testid="seat-confirm-action"
             >

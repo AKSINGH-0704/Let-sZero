@@ -86,6 +86,61 @@ afterAll(async () => {
   await storage.setPlatformSetting(AUTOPAY_SETTING_KEYS.SCOPE, "OFF", null);
 });
 
+// ── M52 / Audit E, defect E-DEF-2 ──────────────────────────────────────────
+//
+// `maxAmountMinor` is the ceiling the customer registered at their bank. The
+// schema has always described it as something detected "AT UPGRADE TIME rather
+// than surfacing 30 days later as a mystery decline" — and until now nothing
+// anywhere compared a renewal against it. Under M51 that was nearly harmless:
+// mandates were rare. M52 gives every purchaser one, sized against their FIRST
+// renewal, then makes upgrading the most common next action.
+//
+// This exercises the REAL `attemptRecurringCharge`, unmocked, because the whole
+// point is that the request never reaches the gateway.
+describe("a charge is never sent above the ceiling the customer authorised", () => {
+  async function chargeable({ ceiling, renewalAmountMinor }) {
+    const { owner, subscription } = await makeSubscribedWorkspace(1);
+    const mandate = await makeActiveMandate(owner.id, { maxAmountMinor: ceiling });
+    await storage.bindMandateToSubscription(subscription.id, mandate.id);
+    await storage.transitionSubscription(subscription.id, S.ACTIVE, { renewalAmountMinor });
+    await storage.setPlatformSetting(AUTOPAY_SETTING_KEYS.SCOPE, "GA", null);
+    const { attemptRecurringCharge } = await import("../../server/autopayCharge.js");
+    return { owner, subscription, mandate, attemptRecurringCharge };
+  }
+
+  it("refuses when the renewal has outgrown the registered limit", async () => {
+    const { owner, attemptRecurringCharge } = await chargeable({ ceiling: 25800, renewalAmountMinor: 57500 });
+    const sub = await storage.getWorkspaceSubscription(owner.id);
+
+    const r = await attemptRecurringCharge(sub, { now: new Date() });
+
+    expect(r.skipped).toBe(true);
+    expect(r.reason).toBe("exceeds_mandate_ceiling");
+    expect(r.amountMinor).toBe(57500);
+    expect(r.maxAmountMinor).toBe(25800);
+    // Nothing was created — no payment row, so no stalled PENDING to reconcile.
+    expect(r.payment).toBeUndefined();
+  });
+
+  it("allows a renewal exactly AT the ceiling", async () => {
+    // The limit is a maximum, not an exclusive bound. Refusing the exact amount
+    // would reject the very renewal the ceiling was sized for.
+    const { owner, attemptRecurringCharge } = await chargeable({ ceiling: 25800, renewalAmountMinor: 25800 });
+    const sub = await storage.getWorkspaceSubscription(owner.id);
+    const r = await attemptRecurringCharge(sub, { now: new Date() });
+    expect(r.reason).not.toBe("exceeds_mandate_ceiling");
+  });
+
+  it("does not block when no ceiling was ever registered", async () => {
+    // Mandates predating this check carry null. An unknown limit must not
+    // become a refusal — that would stop renewals that work today.
+    const { owner, attemptRecurringCharge } = await chargeable({ ceiling: null, renewalAmountMinor: 5_000_00 });
+    const sub = await storage.getWorkspaceSubscription(owner.id);
+    const r = await attemptRecurringCharge(sub, { now: new Date() });
+    expect(r.reason).not.toBe("exceeds_mandate_ceiling");
+  });
+});
+
 // ── 1. Mandate ownership lifecycle ──────────────────────────────────────────
 
 describe("mandate ownership lifecycle", () => {

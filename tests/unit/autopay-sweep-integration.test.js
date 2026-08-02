@@ -388,6 +388,120 @@ describe("pre-debit notice is a precondition, not a courtesy", () => {
     expect((await due(owner)).seats).toBe(subscription.seats);
   });
 
+  // ── M52 ───────────────────────────────────────────────────────────────────
+  // Withholding the charge is right. What the customer was TOLD about it was
+  // not: they received "your seat renewal hasn't gone through" — an accusation
+  // about a payment method that is working perfectly, for a delay that is
+  // entirely ours. The kind of message that makes someone re-enter a card that
+  // was never the problem, or call support.
+  it("does not tell a customer with a live mandate that their renewal failed", async () => {
+    const { owner, subscription } = await makeDueWorkspace({ noticeAgeHours: null });
+    charge.impl = async () => { throw new Error("must not be called"); };
+
+    const r = await seatRenewal.processDueSubscription(subscription, { now: new Date() });
+
+    expect(r.awaitingNotice).toBe(true);
+    const ownerEmail = (await storage.getUserById(owner.id)).email;
+    const mail = mails.find(m => m.to === ownerEmail);
+    expect(mail).toBeTruthy();
+    // Not an accusation.
+    expect(mail.subject).not.toMatch(/need renewing|hasn't gone through/i);
+    expect(mail.text).not.toMatch(/due for renewal/i);
+    // The truth: nothing is wrong, we will take it, and you are still covered.
+    expect(mail.text).toMatch(/nothing wrong with your payment method/i);
+    expect(mail.text).toMatch(/stays fully active/i);
+    // And still an escape hatch, because the grace clock really is running.
+    expect(mail.text).toMatch(/\/app\/team\/seats/);
+  });
+
+  it("records WHY a working mandate was dunned, so an operator can tell them apart", async () => {
+    const { owner, subscription } = await makeDueWorkspace({ noticeAgeHours: null });
+    charge.impl = async () => { throw new Error("must not be called"); };
+
+    await seatRenewal.processDueSubscription(subscription, { now: new Date() });
+
+    const rows = await auditRows(owner.id);
+    const pastDue = rows.find(a => a.action === AUDIT_ACTIONS.SUBSCRIPTION_PAST_DUE);
+    expect(pastDue).toBeTruthy();
+    expect(pastDue.details.awaitingPredebitNotice).toBe(true);
+  });
+
+  // ── Audit E, defect E-DEF-2 ───────────────────────────────────────────────
+  // `maxAmountMinor` is the ceiling the customer registered at their bank, and
+  // the schema has always described it as something detected "AT UPGRADE TIME
+  // rather than surfacing 30 days later as a mystery decline". Nothing anywhere
+  // compared a renewal against it. Under M51 that was nearly harmless — mandates
+  // were rare. M52 gives every purchaser one, sized against their FIRST renewal,
+  // and then makes upgrading the most common next action.
+  //
+  // Unchecked, the sequence is: buy 1 seat, upgrade to 5, and every automatic
+  // attempt from then on is a certain decline against a perfectly good card —
+  // including every dunning retry, so the ladder runs out and a paying team is
+  // expired for something no retry could ever fix.
+  // The charge path's own refusal is tested against the REAL
+  // `attemptRecurringCharge` in autopay-payment-execution.test.js — it is mocked
+  // in this file. What belongs HERE is what the sweep does with that verdict.
+  it("retains entitlement and does not burn a dunning rung on a certain decline", async () => {
+    const { owner, subscription } = await makeDueWorkspace({ seats: 1 });
+    await storage.transitionSubscription(subscription.id, S.ACTIVE, { renewalAmountMinor: 57500 });
+    charge.impl = async () => ({ skipped: true, reason: "exceeds_mandate_ceiling", amountMinor: 57500, maxAmountMinor: 25800 });
+
+    const r = await seatRenewal.processDueSubscription(await due(owner), { now: new Date() });
+
+    expect(r.needsReauthorisation).toBe(true);
+    // Entitlement is RETAINED — this is not the customer's fault.
+    const after = await due(owner);
+    expect(after.status).toBe(S.PAST_DUE);
+    expect(after.seats).toBe(subscription.seats);
+    // No decline was recorded, because none happened.
+    expect(after.lastChargeError ?? null).toBeNull();
+  });
+
+  it("tells the customer their card is fine and names the one action that fixes it", async () => {
+    const { owner, subscription } = await makeDueWorkspace({ seats: 1 });
+    await storage.transitionSubscription(subscription.id, S.ACTIVE, { renewalAmountMinor: 57500 });
+    charge.impl = async () => ({ skipped: true, reason: "exceeds_mandate_ceiling" });
+
+    await seatRenewal.processDueSubscription(await due(owner), { now: new Date() });
+
+    const ownerEmail = (await storage.getUserById(owner.id)).email;
+    const mail = mails.find(m => m.to === ownerEmail);
+    expect(mail).toBeTruthy();
+    expect(mail.text).toMatch(/nothing wrong with your card/i);
+    expect(mail.text).toMatch(/more than the amount your bank has us approved to take/i);
+    // ⚠️ Must NOT accuse the payment method — that would send them to re-enter a
+    // working card, which fixes nothing.
+    expect(mail.subject).not.toMatch(/failed|need renewing/i);
+    expect(mail.text).not.toMatch(/couldn't take the payment|payment failed/i);
+  });
+
+  it("records the ceiling overflow in the audit trail", async () => {
+    const { owner, subscription } = await makeDueWorkspace({ seats: 1 });
+    await storage.transitionSubscription(subscription.id, S.ACTIVE, { renewalAmountMinor: 57500 });
+    charge.impl = async () => ({ skipped: true, reason: "exceeds_mandate_ceiling" });
+
+    await seatRenewal.processDueSubscription(await due(owner), { now: new Date() });
+
+    const rows = await auditRows(owner.id);
+    const pastDue = rows.find(a => a.action === AUDIT_ACTIONS.SUBSCRIPTION_PAST_DUE);
+    expect(pastDue.details.exceedsMandateCeiling).toBe(true);
+  });
+
+  it("still sends the ordinary reminder to a customer who has NO mandate", async () => {
+    // The prepaid path must keep its original wording — that customer really
+    // does have to act, and softening it would cost them their team.
+    const { owner, subscription } = await makeDueWorkspace({ autopay: false });
+
+    const r = await seatRenewal.processDueSubscription(subscription, { now: new Date() });
+
+    expect(r.awaitingNotice).toBe(false);
+    const ownerEmail = (await storage.getUserById(owner.id)).email;
+    const mail = mails.find(m => m.to === ownerEmail);
+    expect(mail.subject).toMatch(/need renewing/i);
+    expect(mail.text).toMatch(/due for renewal/i);
+    expect(mail.text).not.toMatch(/nothing wrong with your payment method/i);
+  });
+
   it("refuses a notice that was sent for a different period", async () => {
     const { owner, subscription } = await makeDueWorkspace();
     await storage.transitionSubscription(subscription.id, S.ACTIVE, {

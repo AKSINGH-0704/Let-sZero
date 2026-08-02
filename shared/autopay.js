@@ -195,6 +195,31 @@ export function isAutopayLive(subscription, mandate, { now = new Date() } = {}) 
 }
 
 /**
+ * M52 — would this charge exceed the ceiling the customer registered at their bank?
+ *
+ * `maxAmountMinor` is the limit authorised at mandate creation. The schema has
+ * always described it as something "detected AT UPGRADE TIME rather than
+ * surfacing 30 days later as a mystery decline" — but nothing anywhere compared
+ * a renewal amount against it. Under M51 that was nearly harmless: mandates were
+ * rare. M52 gives every purchaser one, sized against their FIRST renewal, and
+ * then makes upgrading the most common next action.
+ *
+ * Left unchecked the sequence is: buy 1 seat (ceiling 2×₹129), upgrade to 5
+ * seats (renewal ₹575), and thirty days later the bank refuses a debit above the
+ * registered limit. The customer has a valid card, has done nothing wrong, and
+ * enters a dunning ladder that cannot possibly recover — every retry hits the
+ * same ceiling. That is worse than a decline: it is an unrecoverable one.
+ *
+ * A null ceiling means "no limit was registered" and never blocks — an unknown
+ * limit must not become a refusal for the mandates that predate this check.
+ */
+export function exceedsMandateCeiling(amountMinor, mandate) {
+  const ceiling = mandate?.maxAmountMinor;
+  if (ceiling == null) return false;
+  return Number(amountMinor) > Number(ceiling);
+}
+
+/**
  * How this subscription's period actually ends. M44 (Audit 195) withheld a launch
  * because the UI promised "Next charge ₹X on <date>" for a system that could not
  * charge; the fix centralised the fact into ONE projected field. M51 changes only
@@ -202,6 +227,32 @@ export function isAutopayLive(subscription, mandate, { now = new Date() } = {}) 
  */
 export function renewalModeFor(subscription, mandate, opts = {}) {
   return isAutopayLive(subscription, mandate, opts)
+    ? RENEWAL_MODE.AUTOMATIC
+    : RENEWAL_MODE.MANUAL;
+}
+
+/**
+ * M52 — how a period WOULD end for a workspace that has not bought yet.
+ *
+ * `renewalModeFor` needs a subscription; before the first purchase there isn't
+ * one, so the API fell back to the frozen platform constant and answered MANUAL.
+ * That was true while a mandate could only be created after a subscription
+ * existed. It stopped being true the moment AutoPay became part of checkout: a
+ * first-time buyer inside the rollout WILL renew automatically, so the one field
+ * M44 created precisely so no surface could misdescribe renewal was about to
+ * state the opposite of the truth — at the exact moment the customer decides
+ * whether to hand over a card.
+ *
+ * Deliberately gated on the SAME rollout predicate the checkout path uses, so
+ * "what we tell you before you buy" and "what we actually do when you buy"
+ * cannot disagree. Outside the rollout this returns MANUAL, which is both
+ * correct and identical to the previous behaviour.
+ *
+ * @param {string} workspaceRootId
+ * @param {{scope:string, allowlist:string[], limitPct:number}} autopayConfig
+ */
+export function prospectiveRenewalMode(workspaceRootId, autopayConfig) {
+  return autopayAllowedFor(workspaceRootId, autopayConfig)
     ? RENEWAL_MODE.AUTOMATIC
     : RENEWAL_MODE.MANUAL;
 }

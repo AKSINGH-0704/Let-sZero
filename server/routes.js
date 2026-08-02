@@ -26,13 +26,17 @@ import {
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
-import { SUBSCRIPTION_STATUS, CURRENT_RENEWAL_MODE, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
+import { SUBSCRIPTION_STATUS, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 // M51 — AutoPay. The authority for liveness, display state and the rollout gate;
 // routes orchestrate and never re-derive any of it.
 import {
   MANDATE_STATUS, MANDATE_METHOD, renewalModeFor, autopayDisplayState, autopayAllowedFor,
+  prospectiveRenewalMode, isMandateTerminal, exceedsMandateCeiling,
 } from "../shared/autopay.js";
+// M52 — AutoPay is arranged during the purchase. The binder runs on BOTH
+// settlement paths (verify and the order.paid webhook), so it lives in one place.
+import { bindMandateFromPayment } from "./autopayCheckout.js";
 import { revokeMandate } from "./autopayCharge.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
@@ -314,10 +318,73 @@ function buildSeatCharge(amountMinor, planLabel) {
   };
 }
 
+// ── M52: arranging AutoPay as part of the purchase ───────────────────────────
+//
+// Before M52 an instrument could only be registered AFTER a subscription
+// existed: `autopayContext` 404s without one, so a customer had to buy, come
+// back to the Team Seats page, find "Turn on automatic payment", and complete a
+// SECOND Razorpay modal that debited ₹1 purely to register a card and then
+// refunded it asynchronously. Most customers will never take a second deliberate
+// step, so in practice almost every renewal depended on someone clicking a link
+// inside a grace window.
+//
+// Razorpay registers a token on an ORDINARY order — `customer_id` + `method` +
+// `token{}` — and the order's `amount` is just the order's amount. So the first
+// real payment can do both jobs: buy period one and register the instrument.
+// That removes the second modal, the second card entry, the ₹1 debit and the
+// refund that sometimes fails.
+//
+// ⚠️ THE RULE THAT OUTRANKS EVERYTHING ELSE HERE: arranging AutoPay must never
+// cost the customer the PURCHASE. Every failure below degrades to the plain
+// order this function has always created, records why, and lets the sale
+// complete with manual renewal. A customer who cannot register a card must still
+// be able to buy seats.
+async function prepareMandateIntent({ rootId, owner, amountMinor, method }) {
+  const skip = (reason) => ({ mandate: null, providerCustomerId: null, unavailable: reason });
+
+  // The contact is a property of the PERSON, not the instrument, and Razorpay
+  // refuses a token order when the customer it resolves carries none ("The
+  // contact field is required for recurring links" — Audit 213). Checked BEFORE
+  // anything is created so a missing number cannot leave an orphan mandate row.
+  const payerContact = owner?.senderPhone?.trim() || null;
+  if (!payerContact) return skip("CONTACT_REQUIRED");
+
+  // The ceiling registered with the bank. Derived from the amount the pricing
+  // authority already computed — never from the client. Headroom of 2x so an
+  // ordinary seat upgrade does not immediately exceed the mandate.
+  const maxAmountMinor = Math.max(Number(amountMinor || 0) * 2, MIN_CHARGEABLE_MINOR);
+
+  let providerCustomerId = null;
+  if (process.env.NODE_ENV === "production") {
+    if (!rzp) return skip("GATEWAY_UNAVAILABLE");
+    try {
+      const customer = await rzp.customers.create({
+        name: owner.username, email: owner.email,
+        contact: payerContact, fail_existing: "0",
+      });
+      providerCustomerId = customer?.id ?? null;
+    } catch (err) {
+      // Not fatal. The purchase proceeds without a token.
+      console.error("[SEATS] mandate customer creation failed:", err.message);
+      return skip("CUSTOMER_CREATE_FAILED");
+    }
+    if (!providerCustomerId) return skip("CUSTOMER_CREATE_FAILED");
+  }
+
+  const mandate = await storage.createMandate({
+    workspaceRootId: rootId, method, providerCustomerId, maxAmountMinor,
+  });
+  return { mandate, providerCustomerId, unavailable: null };
+}
+
 // The single seat-payment initiation path (change, upgrade, renewal). Keeping one
 // copy means the duplicate-payment guard, the gateway floor and the metadata
 // shape are enforced identically wherever seats are bought.
-async function startSeatPayment(req, res, { seatMeta, charge, redirectUrl }) {
+//
+// M52 — and it is also why arranging AutoPay lands here rather than in the
+// checkout route: every path that opens a seat order already funnels through
+// this function, so one edit covers first purchase, upgrade and manual renewal.
+async function startSeatPayment(req, res, { seatMeta, charge, redirectUrl, mandateIntent = null }) {
   const common = {
     userId: req.user.id, kind: PAYMENT_KIND.SEATS,
     planName: charge.planLabel, credits: 0,
@@ -326,12 +393,28 @@ async function startSeatPayment(req, res, { seatMeta, charge, redirectUrl }) {
     currency: "INR", exchangeRate: DEFAULT_EXCHANGE_RATE.toString(),
   };
 
+  // Arrange the instrument BEFORE the order, because the order has to reference
+  // the gateway customer. A null intent (customer declined, outside the rollout,
+  // already has a live mandate) is the pre-M52 path exactly.
+  const intent = mandateIntent
+    ? await prepareMandateIntent(mandateIntent)
+    : { mandate: null, providerCustomerId: null, unavailable: null };
+
+  const autopayMeta = {
+    ...(intent.mandate ? { mandateId: intent.mandate.id, autopayAtCheckout: true } : {}),
+    ...(intent.unavailable ? { autopayUnavailable: intent.unavailable } : {}),
+  };
+
   if (process.env.NODE_ENV !== "production") {
     const payment = await storage.createPayment({
-      ...common, paymentMethod: "SIMULATED", status: PAYMENT_STATUS.SUCCESS, metadata: seatMeta,
+      ...common, paymentMethod: "SIMULATED", status: PAYMENT_STATUS.SUCCESS,
+      metadata: { ...seatMeta, ...autopayMeta },
     });
     const applied = await fulfillSeatPayment(payment);
-    return res.json({ payment, applied, redirectUrl });
+    // Dev/test has no gateway, so there is no modal to complete. Binding here
+    // keeps the whole journey — including the mandate — exercisable end to end.
+    const bound = await bindMandateFromPayment(payment, { actorUserId: req.user.id });
+    return res.json({ payment, applied, autopay: bound, redirectUrl });
   }
 
   if (!rzp) return res.status(503).json({ message: "INR payments not configured. Contact support." });
@@ -340,17 +423,67 @@ async function startSeatPayment(req, res, { seatMeta, charge, redirectUrl }) {
   if (charge.amountMinor < MIN_CHARGEABLE_MINOR) {
     return res.status(400).json({ message: "Amount is below the minimum chargeable value.", code: "BELOW_MIN_CHARGE" });
   }
-  const rzpOrder = await rzp.orders.create({
-    amount: charge.amountMinor, currency: "INR", receipt: crypto.randomUUID(),
-  });
+
+  // The order. When an instrument is being registered it carries the token block
+  // AND the real price — one payment, one authorisation, one modal.
+  const baseOrder = { amount: charge.amountMinor, currency: "INR", receipt: crypto.randomUUID() };
+  const tokenOrder = intent.mandate ? {
+    ...baseOrder,
+    customer_id: intent.providerCustomerId,
+    method: intent.mandate.method === MANDATE_METHOD.UPI ? "upi" : "card",
+    payment_capture: 1,
+    token: {
+      max_amount: intent.mandate.maxAmountMinor,
+      expire_at: Math.floor(Date.now() / 1000) + 10 * 365 * 24 * 60 * 60,
+      frequency: "as_presented",
+    },
+    notes: { purpose: "seat_purchase_with_mandate", workspace_root_id: seatMeta.workspaceRootId },
+  } : baseOrder;
+
+  let rzpOrder;
+  let degraded = intent.unavailable;
+  try {
+    rzpOrder = await rzp.orders.create(tokenOrder);
+  } catch (err) {
+    if (!intent.mandate) throw err;   // a plain order failing is a real failure
+    // ⚠️ THE DEGRADATION PATH. The gateway refused the token order — the payload,
+    // the rail, or the customer. The SALE is not the casualty: retry as the plain
+    // order this function has always created, and let the customer renew
+    // manually. Loud in the logs because it means nobody in this cohort is
+    // getting AutoPay.
+    console.error("[SEATS] token order rejected, falling back to a plain order:", err.message);
+    Sentry.captureMessage("SEAT_MANDATE_ORDER_REJECTED: purchase proceeding without AutoPay", {
+      level: "warning",
+      extra: { workspaceRootId: seatMeta.workspaceRootId, mandateId: intent.mandate.id, error: err.message },
+    });
+    await storage.transitionMandate(intent.mandate.id, MANDATE_STATUS.FAILED, {
+      lastError: `order_rejected: ${err.message}`,
+    }).catch(() => {});
+    delete autopayMeta.mandateId;
+    delete autopayMeta.autopayAtCheckout;
+    degraded = "ORDER_REJECTED";
+    autopayMeta.autopayUnavailable = degraded;
+    rzpOrder = await rzp.orders.create(baseOrder);
+  }
+
   const payment = await storage.createPayment({
     ...common, paymentMethod: "RAZORPAY", status: PAYMENT_STATUS.PENDING,
-    metadata: { ...seatMeta, razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID },
+    metadata: {
+      ...seatMeta, ...autopayMeta,
+      razorpay_order_id: rzpOrder.id, razorpay_key_id: RAZORPAY_KEY_ID,
+      ...(autopayMeta.autopayAtCheckout ? { razorpay_customer_id: intent.providerCustomerId } : {}),
+    },
   });
   return res.json({
     payment, gateway: "razorpay",
     razorpayOrderId: rzpOrder.id, razorpayKeyId: RAZORPAY_KEY_ID,
     amount: charge.amountMinor, currency: "INR",
+    // The client needs these to open the modal in recurring mode. Absent ⇒ an
+    // ordinary one-off checkout, which is what every pre-M52 payment was.
+    ...(autopayMeta.autopayAtCheckout
+      ? { recurring: true, razorpayCustomerId: intent.providerCustomerId }
+      : {}),
+    ...(degraded ? { autopayUnavailable: degraded } : {}),
     redirectUrl: `/app/payments/process/${payment.id}`,
   });
 }
@@ -3676,9 +3809,17 @@ export async function registerRoutes(httpServer, app) {
         // M51 — renewal mode is now DERIVED PER SUBSCRIPTION from its own
         // instrument, not read from a platform constant. Same field, same
         // consumers, same contract: M44 centralised this precisely so autopay
-        // could change what fills it in without a copy hunt. Falls back to the
-        // platform constant when there is no subscription at all.
-        renewalMode: sub ? renewalModeFor(sub, mandate) : CURRENT_RENEWAL_MODE,
+        // could change what fills it in without a copy hunt.
+        //
+        // M52 — with NO subscription this used to fall back to the frozen
+        // platform constant and answer MANUAL. That is now a lie at the worst
+        // possible moment: AutoPay is established during checkout, so a
+        // first-time buyer inside the rollout renews automatically. The
+        // pre-purchase answer is derived from the SAME rollout gate the checkout
+        // path consults, so what we promise and what we do cannot diverge.
+        renewalMode: sub
+          ? renewalModeFor(sub, mandate)
+          : prospectiveRenewalMode(rootId, autopayConfig),
         isOwner: isWorkspaceOwner(req.user),
         // ── AutoPay projection (M51 Phase 5.5) ────────────────────────────
         // Derived on the SERVER so the client cannot invent a seventh display
@@ -3689,6 +3830,14 @@ export async function registerRoutes(httpServer, app) {
           enabled: sub?.autopayEnabled === true,
           authRequiredAt: sub?.autopayAuthRequiredAt ?? null,
           inRollout: autopayAllowedFor(rootId, autopayConfig),
+          // M52 — the upcoming renewal is larger than the ceiling the customer
+          // registered at their bank, so the automatic charge is a certain
+          // decline. Surfaced HERE, on the billing page, rather than discovered
+          // at the period boundary — which is what the schema has always claimed
+          // happened and, until now, never did.
+          exceedsCeiling: !!sub && !!mandate
+            && exceedsMandateCeiling(renewal && !renewal.error ? renewal.totalMinor : sub.renewalAmountMinor, mandate),
+          maxAmountMinor: (mandate && isWorkspaceOwner(req.user)) ? (mandate.maxAmountMinor ?? null) : null,
         },
         mandate: (mandate && isWorkspaceOwner(req.user)) ? {
           id: mandate.id,
@@ -3760,7 +3909,15 @@ export async function registerRoutes(httpServer, app) {
   // never a platform operator acting on a customer's behalf.
   app.post("/api/seats/checkout", authMiddleware, adminMiddleware, paymentInitiateLimiter, async (req, res) => {
     try {
-      const { seats, term = SEAT_TERMS.MONTHLY.id, couponCode = null } = req.body || {};
+      const {
+        seats, term = SEAT_TERMS.MONTHLY.id, couponCode = null,
+        // M52 — whether to arrange automatic renewal as part of this purchase.
+        // Defaults to true: the customer is shown the arrangement before paying
+        // and can opt out there, and can switch it off in one click afterwards.
+        // Absent ⇒ true keeps the field optional for any existing client.
+        autopay = true,
+        autopayMethod = null,
+      } = req.body || {};
       if (!isWorkspaceOwner(req.user)) {
         return res.status(403).json({ message: "Only the workspace owner can buy seats.", code: "NOT_WORKSPACE_OWNER" });
       }
@@ -3873,7 +4030,31 @@ export async function registerRoutes(httpServer, app) {
         preview.chargeNowMinor,
         `Team Seats — ${preview.quote.seatsGranted} × ${SEAT_TERMS[preview.quote.term].label}`,
       );
-      return await startSeatPayment(req, res, { seatMeta, charge, redirectUrl: "/app/team/seats" });
+
+      // ── M52: arrange AutoPay as part of THIS payment ──────────────────────
+      // Gated on the SAME rollout predicate that decides what the customer was
+      // told pre-purchase (`prospectiveRenewalMode`), so the promise and the
+      // behaviour cannot diverge.
+      //
+      // Skipped when the workspace ALREADY has a usable instrument: re-registering
+      // one on every seat change would create a second mandate the customer never
+      // asked for and silently replace a card that was working.
+      const autopayConfig = await storage.getAutopayConfig();
+      const existingMandate = sub?.mandateId ? await storage.getMandate(sub.mandateId) : null;
+      const alreadyHasInstrument = !!existingMandate
+        && !isMandateTerminal(existingMandate.status);
+      const mandateIntent = (autopay === true
+        && autopayAllowedFor(rootId, autopayConfig)
+        && !alreadyHasInstrument)
+        ? {
+          rootId, owner: req.user, amountMinor: preview.renewal?.totalMinor ?? charge.amountMinor,
+          method: MANDATE_METHOD[autopayMethod] || MANDATE_METHOD.CARD,
+        }
+        : null;
+
+      return await startSeatPayment(req, res, {
+        seatMeta, charge, redirectUrl: "/app/team/seats", mandateIntent,
+      });
     } catch (error) {
       console.error("[SEATS] Checkout error:", error.message);
       res.status(500).json({ message: error.message });
@@ -4643,14 +4824,21 @@ export async function registerRoutes(httpServer, app) {
       // this racing the webhook is safe: whichever arrives second is a no-op.
       if (isSeatPayment(payment)) {
         const applied = await fulfillSeatPayment(payment);
+        // M52 — the subscription now exists, so the instrument the customer just
+        // authorised can be activated and pointed at it. Runs AFTER fulfillment
+        // for that reason, and is deliberately non-fatal: the seats are paid for
+        // and granted, so the worst available outcome is a manual renewal.
+        // The order.paid webhook calls the same binder, because a customer who
+        // closes the tab must not silently lose the AutoPay they asked for.
+        const autopay = await bindMandateFromPayment(payment, { actorUserId: req.user.id });
         const seatUser = await storage.getUserById(payment.userId);
         if (applied.applied && seatUser) {
           sendPaymentReceiptEmail(seatUser.email, seatUser.username, payment, seatUser.creditsRemaining).catch(err =>
             console.error("[EMAIL] Seat receipt failed:", err.message)
           );
         }
-        console.log(`[RAZORPAY] Seat payment ${repmail_payment_id} verified — ${applied.applied ? "fulfilled" : applied.reason}`);
-        return res.json({ payment, applied, user: storage.sanitizeUser(seatUser) });
+        console.log(`[RAZORPAY] Seat payment ${repmail_payment_id} verified — ${applied.applied ? "fulfilled" : applied.reason}, autopay ${autopay.bound ? "bound" : autopay.reason}`);
+        return res.json({ payment, applied, autopay, user: storage.sanitizeUser(seatUser) });
       }
 
       const user = await upgradePlanIfHigher(payment.userId, payment.planName, payment.id);

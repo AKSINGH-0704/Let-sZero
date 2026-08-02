@@ -706,6 +706,17 @@ export const workspaceSubscriptions = pgTable("workspace_subscriptions", {
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
 
+  // ── The renewal anniversary (M52) ─────────────────────────────────────────
+  // The day-of-month the customer originally bought on, carried forward so a
+  // short month cannot permanently move the renewal date. Without it, each
+  // renewal chained from the previous (already clamped) boundary, so a 31 Jan
+  // subscriber renewed on the 28th for the rest of the subscription's life.
+  //
+  // NULLABLE ON PURPOSE. A null anchor makes the period arithmetic behave
+  // exactly as it did before M52, which is what lets this ship without moving a
+  // single existing customer's renewal date. See shared/seatPricing.js.
+  billingAnchorDay: integer("billing_anchor_day"),
+
   // ── Deferred changes (downgrades and term switches never take effect mid-term)
   scheduledSeats: integer("scheduled_seats"),
   scheduledTerm: text("scheduled_term"),
