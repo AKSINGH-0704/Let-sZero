@@ -303,6 +303,16 @@ describe("renewal uniqueness (Invariant R)", () => {
     expect(renewalReceipt("sub-1", end)).not.toBe(renewalReceipt("sub-2", end));
   });
 
+  // Razorpay caps `receipt` at 40 chars. The natural `renew:{uuid}:{epochMs}`
+  // form is 56, so order creation would have been rejected on EVERY recurring
+  // charge and autopay would have stalled platform-wide.
+  it("the receipt fits inside the gateway's 40-character limit", () => {
+    const uuid = "3f2a1b4c-0000-4000-8000-abcdefabcdef";
+    const r = renewalReceipt(uuid, new Date("2027-03-31T10:00:00.000Z"));
+    expect(r.length).toBeLessThanOrEqual(40);
+    expect(r).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
   // THE HIGHEST-RISK MISROUTING IN M51. A duplicate-renewal refund moves money
   // only. Routing it through reverseSeatPayment would expire a subscription the
   // WINNING payment legitimately owns and deactivate the customer's members.

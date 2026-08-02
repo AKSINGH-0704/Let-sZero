@@ -15,6 +15,7 @@
 // NOTHING CALLS THIS YET. Wiring it into the renewal sweep is Phase 5.4, so this
 // module deploys inert alongside the rest of M51.
 
+import crypto from "crypto";
 import * as Sentry from "@sentry/node";
 import { storage } from "./storage.js";
 import { rzp, RAZORPAY_KEY_ID } from "./gateways.js";
@@ -34,7 +35,16 @@ import { SEAT_TERMS } from "../shared/seatPricing.js";
  * this is defence in depth above the period fence, not a substitute for it.
  */
 export function renewalReceipt(subscriptionId, periodEnd) {
-  return `renew:${subscriptionId}:${new Date(periodEnd).getTime()}`;
+  // Razorpay caps `receipt` at 40 characters. The natural form —
+  // `renew:{uuid}:{epochMs}` — is 56, so order creation would have been REJECTED
+  // on every recurring charge, which the charge path would then have read as an
+  // unknown outcome and stalled on. A truncated SHA-256 of the same inputs keeps
+  // the property that matters (identical for the same subscription+period,
+  // different for any other) inside the limit.
+  const digest = crypto.createHash("sha256")
+    .update(`renew:${subscriptionId}:${new Date(periodEnd).getTime()}`)
+    .digest("hex");
+  return `rnw_${digest.slice(0, 32)}`; // 36 chars
 }
 
 /**
@@ -69,16 +79,21 @@ const PROVIDERS = {
      * the outcome is genuinely unknown (network/timeout), which the caller treats
      * as "assume it succeeded" rather than retrying blind.
      */
-    async charge({ amountMinor, currency, mandate, receipt, description }) {
+    async charge({ amountMinor, currency, mandate, receipt, description, payer }) {
       const order = await rzp.orders.create({
         amount: amountMinor, currency, receipt,
         payment_capture: 1,
         notes: { kind: PAYMENT_KIND.SEATS, mandate_id: mandate.id },
       });
 
+      // `email` and `contact` are REQUIRED by Razorpay and are properties of the
+      // person, not of the instrument — the mandate row has no such columns, so
+      // reading them from the mandate silently sent `undefined` and every charge
+      // would have been rejected at validation. They come from the workspace
+      // owner, who is the only party authorised to be debited (ADR-017).
       const res = await rzp.payments.createRecurringPayment({
-        email: mandate.customerEmail,
-        contact: mandate.customerContact,
+        email: payer.email,
+        contact: payer.contact,
         amount: amountMinor,
         currency,
         order_id: order.id,
@@ -88,31 +103,38 @@ const PROVIDERS = {
         description,
       });
 
-      // Razorpay reports an AFA-gated debit as a payment that is created but not
-      // captured, carrying a next-action. Treating that as a decline would burn a
-      // dunning rung for something the customer has done nothing wrong about.
+      const providerPaymentId = res?.razorpay_payment_id || res?.id || null;
+      const base = { providerPaymentId, providerOrderId: order.id };
+
+      // An AFA-gated debit comes back uncaptured WITH a next-action. Not a
+      // decline: the customer must approve it, and burning a dunning rung for
+      // that would punish them for doing nothing wrong.
       const nextAction = res?.next?.[0];
-      if (nextAction || res?.status === "created" || res?.status === "authorized") {
-        if (nextAction) {
-          return {
-            outcome: CHARGE_OUTCOME.AUTH_REQUIRED,
-            providerPaymentId: res?.razorpay_payment_id || res?.id || null,
-            providerOrderId: order.id,
-            authUrl: nextAction?.url || null,
-          };
-        }
+      if (nextAction) {
+        return { ...base, outcome: CHARGE_OUTCOME.AUTH_REQUIRED, authUrl: nextAction?.url || null };
       }
-      if (res?.status === "captured") {
-        return {
-          outcome: CHARGE_OUTCOME.SUCCEEDED,
-          providerPaymentId: res?.razorpay_payment_id || res?.id || null,
-          providerOrderId: order.id,
-        };
+
+      if (res?.status === "captured") return { ...base, outcome: CHARGE_OUTCOME.SUCCEEDED };
+
+      // ── `created` / `authorized` with NO next-action is UNKNOWN, not failed ──
+      // Previously this fell through to FAILED. An authorized payment is money
+      // HELD on the customer's card, and the order carries payment_capture: 1, so
+      // the gateway may still capture it. Recording FAILED would have dunned a
+      // customer whose money we were about to take, and left a captured payment
+      // with no entitlement. Throwing routes it to the caller's unknown-outcome
+      // path: the PENDING row stands, no retry, and the webhook or reconciliation
+      // settles it — the same treatment a network timeout gets, for the same
+      // reason (we do not know, so we must not guess).
+      if (res?.status === "created" || res?.status === "authorized") {
+        const err = new Error(`recurring charge pending capture (status=${res.status})`);
+        err.providerPaymentId = providerPaymentId;
+        err.providerOrderId = order.id;
+        throw err;
       }
+
       return {
+        ...base,
         outcome: CHARGE_OUTCOME.FAILED,
-        providerPaymentId: res?.razorpay_payment_id || res?.id || null,
-        providerOrderId: order.id,
         error: res?.error_description || res?.error_code || `unexpected_status:${res?.status ?? "none"}`,
       };
     },
@@ -221,12 +243,20 @@ export async function attemptRecurringCharge(subscription, {
     metadata: { ...seatMeta, razorpay_key_id: RAZORPAY_KEY_ID },
   });
 
+  // The person being debited. Required by the gateway and not derivable from the
+  // instrument; the workspace OWNER is the only party who may be charged.
+  const owner = await storage.getUserById(rootId);
+  if (!owner?.email) {
+    return { skipped: true, reason: CHARGE_SKIP_REASON.NOTHING_TO_CHARGE, detail: "no_payer_email" };
+  }
+
   let result;
   try {
     result = await provider.charge({
       amountMinor,
       currency: subscription.currency || "INR",
       mandate,
+      payer: { email: owner.email, contact: owner.senderPhone || undefined },
       receipt: renewalReceipt(subscription.id, subscription.periodEnd),
       description: label,
     });
