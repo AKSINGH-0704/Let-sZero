@@ -37,7 +37,7 @@ import {
   SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
   SUBSCRIPTION_ENTITLING_STATUSES,
 } from "../shared/subscriptionStateMachine.js";
-import { quoteSeats, periodFor, previewSeatChange } from "../shared/seatPricing.js";
+import { quoteSeats, periodFor, previewSeatChange, anchorDayFor } from "../shared/seatPricing.js";
 // M51 — AutoPay. Same shared authority the memory backend uses, so the two
 // backends cannot diverge on mandate legality or rollout scope.
 import {
@@ -2675,13 +2675,19 @@ const dbStorage = {
         return { subscription: updated, changed: true, created: false, previousSeats: existing.seats, supersededScheduledSeats };
       }
 
-      const period = periodFor(now, term);
+      // M52 — the anniversary is recorded at purchase, from the instant money was
+      // received, and every later period is derived from it. Stored rather than
+      // re-derived from periodStart because periodStart moves at every renewal:
+      // by period three there is nothing left to recover the original day from.
+      const anchorDay = anchorDayFor(now);
+      const period = periodFor(now, term, anchorDay);
       const [created] = await tx.insert(workspaceSubscriptions).values({
         workspaceRootId: rootId,
         status: SUBSCRIPTION_STATUS.ACTIVE,
         seats, term, pricingVersion, currency, region,
         unitPriceOverrideMinor, couponCode, renewalAmountMinor,
         periodStart: period.start, periodEnd: period.end,
+        billingAnchorDay: anchorDay,
         lastPaymentId: paymentId,
         activatedAt: now, createdAt: now, updatedAt: now,
       }).returning();
@@ -2777,7 +2783,10 @@ const dbStorage = {
 
       const term = current.scheduledTerm || current.term;
       const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
-      const period = periodFor(current.periodEnd, term);
+      // M52 — chain from this period's end, but restore the ORIGINAL anniversary
+      // day where the target month is long enough. A null anchor (every pre-M52
+      // row) reproduces the previous arithmetic exactly.
+      const period = periodFor(current.periodEnd, term, current.billingAnchorDay ?? null);
       const quote = quoteSeats({
         seats, term, region: current.region,
         unitPriceOverrideMinor: current.unitPriceOverrideMinor,

@@ -28,7 +28,7 @@ import {
 import {
   SUBSCRIPTION_STATUS, canSubscriptionTransition, isEntitling,
 } from "../shared/subscriptionStateMachine.js";
-import { quoteSeats, periodFor } from "../shared/seatPricing.js";
+import { quoteSeats, periodFor, anchorDayFor } from "../shared/seatPricing.js";
 // M51 — AutoPay. Identical shared authority to storage.js, so the two backends
 // cannot diverge on mandate legality or rollout scope.
 import {
@@ -2318,7 +2318,9 @@ export const memoryStorage = {
       existing.updatedAt = now;
       return { subscription: existing, changed: true, created: false, previousSeats, supersededScheduledSeats };
     }
-    const period = periodFor(now, term);
+    // M52 parity with storage.js — the anniversary is recorded at purchase.
+    const anchorDay = anchorDayFor(now);
+    const period = periodFor(now, term, anchorDay);
     const sub = {
       id: generateUUID(),
       workspaceRootId: rootId,
@@ -2326,6 +2328,7 @@ export const memoryStorage = {
       seats, term, pricingVersion, currency, region,
       unitPriceOverrideMinor, couponCode, renewalAmountMinor,
       periodStart: period.start, periodEnd: period.end,
+      billingAnchorDay: anchorDay,
       scheduledSeats: null, scheduledTerm: null,
       cancelAtPeriodEnd: false,
       grandfatheredSeats: 0, grandfatheredUntil: null,
@@ -2387,7 +2390,9 @@ export const memoryStorage = {
 
     const term = current.scheduledTerm || current.term;
     const seats = current.scheduledSeats == null ? current.seats : current.scheduledSeats;
-    const period = periodFor(current.periodEnd, term);
+    // M52 parity with storage.js — restore the original anniversary day where the
+    // target month allows; a null anchor is exactly the pre-M52 arithmetic.
+    const period = periodFor(current.periodEnd, term, current.billingAnchorDay ?? null);
     const quote = quoteSeats({ seats, term, region: current.region, unitPriceOverrideMinor: current.unitPriceOverrideMinor });
     const appliedScheduledChange = current.scheduledSeats != null || current.scheduledTerm != null;
 

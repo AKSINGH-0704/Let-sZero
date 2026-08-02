@@ -28,6 +28,7 @@ const catalog = getSeatCatalog();
 const SUBSCRIPTION_MIGRATIONS = [
   "0008_m42_seat_subscriptions.sql",
   "0009_m51_autopay_mandates.sql",
+  "0011_m52_billing_anchor.sql",
 ];
 
 describe("migration 0008 matches the schema it implements", () => {
@@ -219,6 +220,55 @@ describe("migration 0010 matches the schema it implements", () => {
   it("is not registered as schemaCheck-critical in the milestone that adds it", async () => {
     const guard = await read("server/schemaCheck.js");
     expect(guard).not.toContain("webhook_events");
+  });
+});
+
+// M52 — the stable renewal anniversary. Same convergence discipline, and one
+// extra invariant this migration has that the others do not: it must be
+// BEHAVIOUR-NEUTRAL for every subscription that already exists.
+describe("migration 0011 matches the schema it implements", () => {
+  const FILE = "migrations/0011_m52_billing_anchor.sql";
+
+  it("adds the anchor column the Drizzle table declares", async () => {
+    const sql = await read(FILE);
+    expect(sql).toContain(`ADD COLUMN IF NOT EXISTS "billing_anchor_day"`);
+    const declared = Object.values(workspaceSubscriptions)
+      .filter((c) => c && typeof c === "object" && typeof c.name === "string" && c.columnType)
+      .map((c) => c.name);
+    expect(declared).toContain("billing_anchor_day");
+  });
+
+  // The column must be NULLABLE with no default and no backfill. That is not a
+  // style preference: a null anchor is what makes addMonthsUTC reproduce the
+  // pre-M52 arithmetic, so any default or backfill here would silently move the
+  // renewal date of a live, paying subscription.
+  it("is nullable, has no default, and backfills nothing", async () => {
+    const sql = await read(FILE);
+    expect(sql).not.toMatch(/billing_anchor_day"?\s+integer[^;]*NOT NULL/i);
+    expect(sql).not.toMatch(/billing_anchor_day"?\s+integer[^;]*DEFAULT/i);
+    expect(sql).not.toMatch(/^\s*UPDATE\s+"workspace_subscriptions"/im);
+    expect(sql).not.toMatch(/^\s*INSERT INTO/im);
+  });
+
+  it("touches no other table and adds no index", async () => {
+    const sql = await read(FILE);
+    for (const t of ["payments", "payment_mandates", "users", "platform_settings", "webhook_events"]) {
+      expect(sql).not.toMatch(new RegExp(`(CREATE|ALTER|INSERT INTO|DROP)[^;]*"${t}"`, "i"));
+    }
+    expect(sql).not.toMatch(/^\s*CREATE (UNIQUE )?INDEX/im);
+  });
+
+  it("is safely re-runnable", async () => {
+    const sql = await read(FILE);
+    const alters = sql.match(/^ALTER TABLE[\s\S]*?ADD COLUMN/gim) || [];
+    const guarded = sql.match(/ADD COLUMN IF NOT EXISTS/gim) || [];
+    expect(guarded.length).toBe(alters.length);
+  });
+
+  // MEMORY-013 / M42 lesson: drizzle-kit applies the JOURNAL, not the folder.
+  it("is registered in the migration journal", async () => {
+    const journal = JSON.parse(await read("migrations/meta/_journal.json"));
+    expect(journal.entries.map(e => e.tag)).toContain("0011_m52_billing_anchor");
   });
 });
 
