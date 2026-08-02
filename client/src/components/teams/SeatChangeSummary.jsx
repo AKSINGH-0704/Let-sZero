@@ -59,6 +59,19 @@ export default function SeatChangeSummary({
   renewalMode = "MANUAL",
   /** True when the customer is being offered the AutoPay decision right now. */
   offerAutopay = false,
+  /**
+   * True when automatic renewal is available to this workspace but cannot be
+   * arranged yet because the owner has no phone number — a hard gateway
+   * requirement for a recurring authorisation.
+   *
+   * It gets its own state rather than silently falling back to "renewal is
+   * manual", because the two are not the same message: one is a fact, the other
+   * is a fact plus the single action that changes it. Saying it HERE also
+   * matters more than it looks — in production the checkout response redirects
+   * straight to the gateway, so anything we only discover server-side would
+   * reach the customer a month late.
+   */
+  autopayBlockedOnContact = false,
   autopayAtCheckout = true,
   onAutopayChange,
 }) {
@@ -66,9 +79,18 @@ export default function SeatChangeSummary({
   const currency = preview.currency;
   const paysToday = preview.chargeNowMinor > 0;
 
-  // Automatic only if the platform says so AND — where the choice is live on
-  // this very screen — the customer has not just declined it.
-  const willAutoRenew = renewalMode === "AUTOMATIC" && (!offerAutopay || autopayAtCheckout);
+  // Automatic only if ALL THREE hold: the platform says so, the customer has not
+  // just declined it on this very screen, and nothing is blocking an instrument
+  // from being registered at all.
+  //
+  // The third clause is not redundant. `renewalMode` answers "is this workspace
+  // in the rollout?", which stays AUTOMATIC even when the owner has no phone
+  // number and therefore cannot have a mandate. Without it, the summary row
+  // would read "Then 2 Sep" — an automatic charge — directly above a paragraph
+  // explaining that renewal will be manual.
+  const willAutoRenew = renewalMode === "AUTOMATIC"
+    && (!offerAutopay || autopayAtCheckout)
+    && !autopayBlockedOnContact;
 
   // ── Deferred change: nothing moves today ──────────────────────────────────
   if (!paysToday) {
@@ -159,6 +181,12 @@ export default function SeatChangeSummary({
             {" "}We always email you first, and you can turn this off any time — it won't cancel your subscription.
           </span>
         </label>
+      ) : autopayBlockedOnContact ? (
+        <p className="text-sm" data-testid="autopay-blocked">
+          <span className="font-medium text-foreground">Renewal will be manual.</span>{" "}
+          To renew automatically, add a phone number to your sender profile — your bank needs it to
+          approve a recurring payment. You can do that any time; it won't affect this purchase.
+        </p>
       ) : willAutoRenew ? (
         <p className="text-sm" data-testid="autopay-existing">
           This renews automatically on your saved payment method. Nothing else to set up.

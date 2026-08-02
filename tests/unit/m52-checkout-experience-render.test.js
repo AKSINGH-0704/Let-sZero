@@ -160,6 +160,38 @@ describe("what it says about automatic renewal is true in every state", () => {
     expect(h).toMatch(/Renew by/);
   });
 
+  // ── Audit E, defect E-DEF-1 ─────────────────────────────────────────────
+  // Razorpay refuses a recurring order for a customer with no contact, so the
+  // server degrades to a plain order. In production the checkout response
+  // REDIRECTS straight to the gateway, so a "renewal is manual after all" toast
+  // is never seen: the customer ticks "Renew automatically", pays, and finds out
+  // a month later. The condition is knowable before they confirm, so the promise
+  // must simply not be offered.
+  it("does not offer a promise it cannot keep when the owner has no phone number", () => {
+    const h = html({
+      preview: immediate(), offerAutopay: false, autopayBlockedOnContact: true,
+      renewalMode: "AUTOMATIC",
+    });
+    // No consent control at all — not a ticked box that quietly does nothing.
+    expect(h).not.toMatch(/checked=""/);
+    expect(h).not.toMatch(/Renew automatically<\/span> using/);
+    // States the outcome AND the one action that changes it.
+    expect(h).toMatch(/Renewal will be manual/i);
+    expect(h).toMatch(/add a phone number/i);
+    // And reassures them it does not block what they are doing right now.
+    expect(h).toMatch(/won't affect this purchase/i);
+  });
+
+  it("labels the renewal row as manual when AutoPay is blocked on contact", () => {
+    const h = html({
+      preview: immediate(), offerAutopay: false, autopayBlockedOnContact: true,
+      renewalMode: "AUTOMATIC",
+    });
+    // ⚠️ renewalMode is AUTOMATIC (the workspace IS in the rollout) but no
+    // instrument can be registered, so the row must NOT say "Then".
+    expect(h).toMatch(/Renew by/);
+  });
+
   it("defaults to MANUAL when the server's answer is unknown", () => {
     // Promising an automatic charge that never happens costs a customer their
     // team; an unnecessary reminder costs them nothing. The default must be
