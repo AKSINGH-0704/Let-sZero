@@ -32,7 +32,7 @@ import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfill
 // routes orchestrate and never re-derive any of it.
 import {
   MANDATE_STATUS, MANDATE_METHOD, renewalModeFor, autopayDisplayState, autopayAllowedFor,
-  prospectiveRenewalMode, isMandateTerminal,
+  prospectiveRenewalMode, isMandateTerminal, exceedsMandateCeiling,
 } from "../shared/autopay.js";
 // M52 — AutoPay is arranged during the purchase. The binder runs on BOTH
 // settlement paths (verify and the order.paid webhook), so it lives in one place.
@@ -3830,6 +3830,14 @@ export async function registerRoutes(httpServer, app) {
           enabled: sub?.autopayEnabled === true,
           authRequiredAt: sub?.autopayAuthRequiredAt ?? null,
           inRollout: autopayAllowedFor(rootId, autopayConfig),
+          // M52 — the upcoming renewal is larger than the ceiling the customer
+          // registered at their bank, so the automatic charge is a certain
+          // decline. Surfaced HERE, on the billing page, rather than discovered
+          // at the period boundary — which is what the schema has always claimed
+          // happened and, until now, never did.
+          exceedsCeiling: !!sub && !!mandate
+            && exceedsMandateCeiling(renewal && !renewal.error ? renewal.totalMinor : sub.renewalAmountMinor, mandate),
+          maxAmountMinor: (mandate && isWorkspaceOwner(req.user)) ? (mandate.maxAmountMinor ?? null) : null,
         },
         mandate: (mandate && isWorkspaceOwner(req.user)) ? {
           id: mandate.id,

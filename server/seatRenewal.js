@@ -100,12 +100,22 @@ export async function processDueSubscription(sub, { now = new Date() } = {}) {
         workspaceRootId: sub.workspaceRootId, graceEndsAt: graceEnd, seats: sub.seats, attempt: 1,
         // M52 — record WHY we are chasing a customer who has a working mandate,
         // so an operator reading the trail can tell a real decline from a
-        // notice that had not matured.
+        // notice that had not matured, or from a renewal that outgrew its
+        // authorised ceiling.
         ...(charged.awaitingNotice ? { awaitingPredebitNotice: true } : {}),
+        ...(charged.needsReauthorisation ? { exceedsMandateCeiling: true } : {}),
       },
     });
-    await notify(sub, { attempt: 1, graceEnd, now, autopayPending: charged.awaitingNotice === true });
-    return { action: "past_due", graceEndsAt: graceEnd, awaitingNotice: charged.awaitingNotice === true };
+    await notify(sub, {
+      attempt: 1, graceEnd, now,
+      autopayPending: charged.awaitingNotice === true,
+      needsReauthorisation: charged.needsReauthorisation === true,
+    });
+    return {
+      action: "past_due", graceEndsAt: graceEnd,
+      awaitingNotice: charged.awaitingNotice === true,
+      needsReauthorisation: charged.needsReauthorisation === true,
+    };
   }
 
   if (sub.status === SUBSCRIPTION_STATUS.PAST_DUE) {
@@ -204,6 +214,14 @@ async function tryCharge(sub, { now, trigger, graceEnd = null, attempt = 1 }) {
     const platformSide = ["payment_in_progress", "gateway_unavailable", "unknown_provider"];
     if (platformSide.includes(attemptResult.reason)) {
       return { ...NOTHING, deferred: true, result: { action: "charge_skipped", reason: attemptResult.reason } };
+    }
+    // ── M52: the renewal outgrew the ceiling the customer authorised ─────────
+    // Falls through to the grace window (the period HAS ended, and they can pay
+    // manually), but the reminder must say the one true thing: the card is fine,
+    // the standing limit is not, and re-authorising is what fixes it. Telling
+    // them "your renewal failed" would send them to re-enter a card that works.
+    if (attemptResult.reason === "exceeds_mandate_ceiling") {
+      return { ...NOTHING, needsReauthorisation: true };
     }
     return NOTHING;
   }
@@ -340,12 +358,31 @@ async function expire(sub, reason, now) {
 }
 
 /** Renewal reminder. Never blocks the sweep — email failure is logged, not fatal. */
-async function notify(sub, { attempt, graceEnd, autopayPending = false }) {
+async function notify(sub, { attempt, graceEnd, autopayPending = false, needsReauthorisation = false }) {
   try {
     const owner = await storage.getUserById(sub.workspaceRootId);
     if (!owner?.email) return;
     const amount = formatMinor(sub.renewalAmountMinor, sub.currency);
     const deadline = new Date(graceEnd).toDateString();
+
+    // ── M52: the renewal outgrew the authorised ceiling ──────────────────────
+    // Almost always the consequence of a seat upgrade. The card is fine; the
+    // standing limit agreed with the bank is not. Saying "your payment failed"
+    // would send the customer to re-enter a working card and would not fix
+    // anything — only re-authorising raises the limit.
+    if (needsReauthorisation) {
+      await sendTransactionalEmail(
+        owner.email,
+        "Confirm the new amount for your RepMail seats",
+        `Hi ${owner.username},\n\n` +
+        `Your team has grown, so your renewal is now ${amount} — more than the amount your bank has us approved to take automatically.\n\n` +
+        `There's nothing wrong with your card. To keep renewing automatically, confirm the new amount here:\n` +
+        `${APP_URL()}/app/team/seats\n\n` +
+        `You can also just pay this renewal manually from the same page. Your team stays fully active until ${deadline}.\n\n` +
+        `— The RepMail Team`
+      );
+      return;
+    }
 
     // ── M52: do not accuse a customer whose payment method is fine ───────────
     // The charge was withheld because the mandatory pre-debit notice had not

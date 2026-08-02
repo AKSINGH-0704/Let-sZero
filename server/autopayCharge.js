@@ -23,6 +23,7 @@ import { PAYMENT_KIND, PAYMENT_STATUS } from "../shared/schema.js";
 import {
   CHARGE_OUTCOME, PAYMENT_PROVIDER, DEFAULT_PAYMENT_PROVIDER,
   MANDATE_STATUS, isAutopayLive, requiresAfa, autopayAllowedFor,
+  exceedsMandateCeiling,
 } from "../shared/autopay.js";
 import { SEAT_TERMS } from "../shared/seatPricing.js";
 
@@ -59,6 +60,11 @@ export const CHARGE_SKIP_REASON = Object.freeze({
   NOTHING_TO_CHARGE: "nothing_to_charge",
   GATEWAY_UNAVAILABLE: "gateway_unavailable",
   UNKNOWN_PROVIDER: "unknown_provider",
+  // M52 — the renewal is larger than the ceiling the customer registered at
+  // their bank (typically after a seat upgrade). Sending it would guarantee a
+  // decline, and every dunning retry would hit the same wall. Skipped rather
+  // than attempted, so the ladder is not burned on something a retry cannot fix.
+  EXCEEDS_MANDATE_CEILING: "exceeds_mandate_ceiling",
 });
 
 // ── Provider dispatch ────────────────────────────────────────────────────────
@@ -196,6 +202,20 @@ export async function attemptRecurringCharge(subscription, {
   const amountMinor = Number(subscription.renewalAmountMinor || 0);
   if (!(amountMinor > 0)) {
     return { skipped: true, reason: CHARGE_SKIP_REASON.NOTHING_TO_CHARGE };
+  }
+
+  // ── M52: never send a charge the bank has already been told to refuse ───────
+  // The mandate carries the ceiling the customer authorised. A seat upgrade can
+  // lift the renewal above it, and from that moment every attempt — including
+  // every dunning retry — is a certain decline against a perfectly good card.
+  // Attempting anyway would burn the ladder and expire a paying team for a
+  // reason no retry could ever fix. Skipping here leaves entitlement intact and
+  // routes the customer to the one action that DOES fix it: re-authorising.
+  if (exceedsMandateCeiling(amountMinor, mandate)) {
+    return {
+      skipped: true, reason: CHARGE_SKIP_REASON.EXCEEDS_MANDATE_CEILING,
+      amountMinor, maxAmountMinor: mandate.maxAmountMinor,
+    };
   }
 
   const provider = providerFor(mandate);

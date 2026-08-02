@@ -279,7 +279,21 @@ export default function TeamSeats() {
   // card would invite them to replace one that is working perfectly.
   const instrumentUsable = !!mandate
     && !["REVOKED", "FAILED", "EXPIRED"].includes(mandate.status);
-  const offerAutopay = billingEnabled && isOwner && autopay?.inRollout === true && !instrumentUsable;
+  //
+  // A phone number is a hard precondition: Razorpay refuses a recurring order
+  // for a customer with no contact (Audit 213), so the server would degrade to a
+  // plain order. In production the checkout response then REDIRECTS straight to
+  // the gateway, so a "renewal is manual after all" toast would never be seen —
+  // the customer would tick "Renew automatically", pay, and only discover a
+  // month later that nothing was arranged. The condition is knowable here, so
+  // the promise is simply not offered when we cannot keep it.
+  const canRegisterInstrument = !!user?.senderPhone;
+  const offerAutopay = billingEnabled && isOwner && autopay?.inRollout === true
+    && !instrumentUsable && canRegisterInstrument;
+  // In the rollout, wants an instrument, but cannot have one yet — say why, and
+  // say it before they pay rather than after.
+  const autopayBlockedOnContact = billingEnabled && isOwner && autopay?.inRollout === true
+    && !instrumentUsable && !canRegisterInstrument;
 
   return (
     <AppLayout>
@@ -389,6 +403,32 @@ export default function TeamSeats() {
                   {renewMutation.isPending ? "Working…" : `Approve ${formatMinor(sub.renewalAmountMinor, sub.currency)}`}
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Renewal outgrew the authorised ceiling (M52) ─────────────────── */}
+      {/* Deliberately NOT framed as a payment failure. The card works; the
+          standing limit agreed with the bank does not cover the new amount,
+          which is almost always the consequence of adding seats. Telling a
+          customer their payment "failed" here would send them to re-enter a
+          card that is fine and fix nothing. */}
+      {autopay?.exceedsCeiling && isOwner && (
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-5" data-testid="autopay-ceiling">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div>
+              <p className="font-medium">Confirm the new amount to keep renewing automatically</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Your team has grown, so your renewal is now{" "}
+                {renewal ? formatMinor(renewal.totalMinor, sub.currency) : "higher than before"} — more than your bank
+                has approved us to take automatically. There's nothing wrong with your payment method.
+                Confirm it once and automatic renewal continues as normal.
+              </p>
+              <Button className="mt-4" onClick={() => startAutopay({ replace: true })} disabled={autopayBusy} data-testid="autopay-ceiling-action">
+                {autopayBusy ? "Working…" : "Confirm the new amount"}
+              </Button>
             </div>
           </div>
         </div>
@@ -606,6 +646,7 @@ export default function TeamSeats() {
                 preview={confirm?.preview}
                 renewalMode={data.renewalMode}
                 offerAutopay={offerAutopay}
+                autopayBlockedOnContact={autopayBlockedOnContact}
                 autopayAtCheckout={autopayAtCheckout}
                 onAutopayChange={setAutopayAtCheckout}
               />
