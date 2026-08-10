@@ -263,3 +263,138 @@ describe("A3 — only invitations that become invalid are revoked", () => {
     expect(entry.details.reason).toMatch(/inviter deactivated/i);
   });
 });
+
+// ── Phase B ────────────────────────────────────────────────────────────────
+describe("Phase B — the audit trail names what actually happened", () => {
+  it("emits USER_DEACTIVATED, not USER_DELETED, for a reversible deactivation", async () => {
+    const { owner, cookie } = await makeWorkspace();
+    const member = await addChild(owner.id, USER_ROLES.USER);
+    await api("DELETE", `/api/users/${member.id}`, { cookie });
+    const logs = await storage.getAuditLogs({ limit: 200 });
+    const entry = logs.find((l) => l.targetId === member.id && l.action === "USER_DEACTIVATED");
+    expect(entry, "deactivation was not recorded as USER_DEACTIVATED").toBeTruthy();
+    // The account is still there — which is the whole reason the name changed.
+    expect(await storage.getUserById(member.id)).toBeTruthy();
+  });
+});
+
+// ── Phase C ────────────────────────────────────────────────────────────────
+describe("Phase C — ownership transfer preserves the whole workspace", () => {
+  async function workspaceWithEverything() {
+    const { owner, cookie } = await makeWorkspace();
+    const successor = await addChild(owner.id, USER_ROLES.USER);
+    await storage.createSenderDomain({ userId: owner.id, domain: `d${rnd()}.com`, status: "VERIFIED" });
+    await storage.applySeatPurchase(owner.id, {
+      seats: 4, term: "MONTHLY", pricingVersion: "2026-07-29.1", renewalAmountMinor: 31600,
+    });
+    return { owner, cookie, successor };
+  }
+
+  it("carries the verified sending domain to the new owner", async () => {
+    // ⚠️ THE DEFECT THIS FILE EXISTS FOR. Workspace domain reads resolve
+    // `senderDomains.userId == rootId`. The transfer moved the root and left the
+    // rows behind, so the workspace resolved to NO verified domain and every
+    // member's sending broke — while the rows became invisible to everyone.
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    expect(await storage.hasVerifiedDomainForUser(owner.id)).toBe(true);
+
+    const res = await api("POST", "/api/workspace/transfer-ownership", {
+      cookie, body: { newOwnerId: successor.id },
+    });
+    expect(res.status).toBe(200);
+    expect(await storage.hasVerifiedDomainForUser(successor.id)).toBe(true);
+    // And the departed owner, now a member, still resolves the same workspace.
+    expect(await storage.hasVerifiedDomainForUser(owner.id)).toBe(true);
+  });
+
+  it("carries the subscription and revokes the departed owner's AutoPay", async () => {
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+
+    const sub = await storage.getWorkspaceSubscription(successor.id);
+    expect(sub, "subscription did not follow the workspace").toBeTruthy();
+    expect(sub.seats).toBe(4);
+    // A mandate is a personal banking authorisation and must never be inherited.
+    expect(sub.autopayEnabled).toBe(false);
+    expect(sub.mandateId).toBeNull();
+    expect(await storage.getWorkspaceSubscription(owner.id)).toBeNull();
+  });
+
+  it("re-parents both directions so the tree stays valid", async () => {
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    expect((await storage.getUserById(successor.id)).parentId).toBeNull();
+    expect((await storage.getUserById(owner.id)).parentId).toBe(successor.id);
+  });
+
+  it("gives the departed owner a parent, so their credits can be reclaimed (IDENT-005)", async () => {
+    // Credits follow the PERSON — unchanged commercial behaviour. What changes
+    // is that an ex-owner now has a parent, so the existing reclaim path works.
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    expect((await storage.getUserById(owner.id)).parentId).toBe(successor.id);
+  });
+
+  it("records the transfer", async () => {
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    const logs = await storage.getAuditLogs({ limit: 200 });
+    expect(logs.some((l) => l.action === "WORKSPACE_OWNERSHIP_TRANSFERRED" && l.targetId === successor.id)).toBe(true);
+  });
+
+  it("refuses a non-owner (RBAC)", async () => {
+    const { owner, successor } = await workspaceWithEverything();
+    const other = await addChild(owner.id, USER_ROLES.SUB_ADMIN);
+    const res = await api("POST", "/api/workspace/transfer-ownership", {
+      cookie: await cookieFor(other.id), body: { newOwnerId: successor.id },
+    });
+    expect(res.status).toBe(403);
+    expect(res.json.code).toBe("NOT_WORKSPACE_OWNER");
+  });
+
+  it("refuses transfer to somebody outside the workspace (tenant isolation)", async () => {
+    const { cookie } = await workspaceWithEverything();
+    const stranger = await makeWorkspace();
+    const res = await api("POST", "/api/workspace/transfer-ownership", {
+      cookie, body: { newOwnerId: stranger.owner.id },
+    });
+    expect(res.status).toBe(403);
+    expect((await storage.getUserById(stranger.owner.id)).parentId).toBeNull();
+  });
+
+  it("refuses transfer to a deactivated member", async () => {
+    const { owner, cookie, successor } = await workspaceWithEverything();
+    await api("DELETE", `/api/users/${successor.id}`, { cookie });
+    const res = await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    expect(res.status).toBe(403);
+    expect((await storage.getUserById(owner.id)).parentId).toBeNull();
+  });
+
+  it("refuses transfer to yourself", async () => {
+    const { owner, cookie } = await workspaceWithEverything();
+    const res = await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: owner.id } });
+    expect(res.status).toBe(400);
+  });
+
+  it("is not replayable — a second transfer by the old owner is refused", async () => {
+    // Double submit, stale tab, or a replayed request. After commit the caller
+    // is no longer the owner, so the ownership guard rejects the repeat.
+    const { cookie, successor } = await workspaceWithEverything();
+    const first = await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    expect(first.status).toBe(200);
+    const replay = await api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } });
+    expect(replay.status).toBe(403);
+    expect((await storage.getUserById(successor.id)).parentId).toBeNull();
+  });
+
+  it("survives concurrent duplicate submissions with exactly one winner", async () => {
+    const { cookie, successor } = await workspaceWithEverything();
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        api("POST", "/api/workspace/transfer-ownership", { cookie, body: { newOwnerId: successor.id } })
+      )
+    );
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect((await storage.getUserById(successor.id)).parentId).toBeNull();
+  });
+});
