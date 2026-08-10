@@ -51,6 +51,12 @@ export default function TeamSeats() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(null); // { preview, seats, term }
+  // M53/UX-1 — ending the subscription is the only destructive control on this
+  // page and it used to fire on a single click, from a ghost button labelled
+  // "Turn off auto-renewal" that sat beside "Turn off automatic payment". One of
+  // those keeps the team and one deletes its seats. The labels now name their
+  // outcomes and the destructive one asks first.
+  const [confirmCancel, setConfirmCancel] = useState(false);
   // M52 — whether this purchase should also set up automatic renewal. Defaults
   // ON, and the customer is told exactly what that means before they pay, not
   // after. Kept in page state (not in the preview) because it is a decision
@@ -161,7 +167,7 @@ export default function TeamSeats() {
             amount: setup.amount,
             currency: "INR",
             name: "RepMail",
-            description: "Authorise automatic payment for your team seats",
+            description: "Set up automatic renewal for your team seats",
             handler: (r) => resolve(r),
             modal: { ondismiss: () => reject(new Error("Authorisation cancelled — nothing has changed.")) },
             prefill: { email: user?.email, name: user?.username },
@@ -184,27 +190,28 @@ export default function TeamSeats() {
 
       qc.invalidateQueries({ queryKey: SEATS_KEY });
       toast({
-        title: replace ? "Payment method replaced" : "Automatic payment is on",
+        title: replace ? "Payment method replaced" : "Automatic renewal is on",
         description: replace
           ? "Your next renewal will use the new payment method."
           : "We'll always email you before we charge. You can turn this off any time — it won't cancel your subscription.",
       });
     } catch (e) {
-      toast({ title: replace ? "Couldn't replace it" : "Couldn't turn on automatic payment", description: e.message, variant: "destructive" });
+      toast({ title: replace ? "Couldn't replace it" : "Couldn't turn on automatic renewal", description: e.message, variant: "destructive" });
     } finally {
       setAutopayBusy(false);
     }
   }
 
-  const autopayDisable = useMutation(autopayAction("disable", "Automatic payment is off. Your subscription is still active."));
-  const autopayEnable = useMutation(autopayAction("enable", "Automatic payment is back on."));
-  const autopayPause = useMutation(autopayAction("pause", "Automatic payment paused. Your subscription is still active."));
-  const autopayResume = useMutation(autopayAction("resume", "Automatic payment resumed."));
+  const autopayDisable = useMutation(autopayAction("disable", "Automatic renewal is off. Your subscription is still active."));
+  const autopayEnable = useMutation(autopayAction("enable", "Automatic renewal is back on."));
+  const autopayPause = useMutation(autopayAction("pause", "Automatic renewal paused. Your subscription is still active."));
+  const autopayResume = useMutation(autopayAction("resume", "Automatic renewal resumed."));
 
   const cancelMutation = useMutation({
     mutationFn: async () => (await apiRequest("POST", "/api/seats/cancel", {})).json(),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: SEATS_KEY });
+      setConfirmCancel(false);
       toast({ title: "Your seats will end", description: `They stay fully active until ${fmtDate(r.seatsUntil)}, then this workspace returns to its included allowance.` });
     },
     onError: (e) => toast({ title: "Couldn't cancel", description: e.message, variant: "destructive" }),
@@ -451,9 +458,9 @@ export default function TeamSeats() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {autopay.displayState === "ACTIVE" && <>Renews automatically on {fmtDate(sub.periodEnd)}.</>}
                     {autopay.displayState === "PAUSED" && (
-                      <>Automatic payment is off. <span className="text-foreground">Your subscription is still active</span> — renewal is manual.</>
+                      <>Automatic renewal is off. <span className="text-foreground">Your subscription is still active</span> — renewal is manual.</>
                     )}
-                    {autopay.displayState === "PENDING_AUTH" && <>Finish authorising this payment method to turn on automatic payment.</>}
+                    {autopay.displayState === "PENDING_AUTH" && <>Finish authorising this payment method to turn on automatic renewal.</>}
                     {autopay.displayState === "NEEDS_ATTENTION" && (
                       <>This payment method can no longer be used. Your subscription is <span className="text-foreground">not cancelled</span> — replace it to renew automatically again.</>
                     )}
@@ -477,7 +484,7 @@ export default function TeamSeats() {
                 nothing else can create one. */}
             {(autopay.displayState === "NOT_SET_UP" || autopay.displayState === "PENDING_AUTH") && (
               <Button onClick={() => startAutopay()} disabled={autopayBusy} data-testid="autopay-setup">
-                {autopayBusy ? "Working…" : "Turn on automatic payment"}
+                {autopayBusy ? "Working…" : "Turn on automatic renewal"}
               </Button>
             )}
             {/* Replacement is the primary recovery from a dead instrument, and
@@ -498,7 +505,7 @@ export default function TeamSeats() {
             {autopay.displayState === "ACTIVE" && (
               <>
                 <Button variant="ghost" onClick={() => autopayDisable.mutate()} disabled={autopayDisable.isPending} data-testid="autopay-disable">
-                  Turn off automatic payment
+                  Turn off automatic renewal
                 </Button>
                 <Button variant="ghost" onClick={() => autopayPause.mutate({ days: 30 })} disabled={autopayPause.isPending} data-testid="autopay-pause">
                   Pause for 30 days
@@ -512,12 +519,12 @@ export default function TeamSeats() {
                 disabled={autopayResume.isPending || autopayEnable.isPending}
                 data-testid="autopay-resume"
               >
-                Turn automatic payment back on
+                Turn automatic renewal back on
               </Button>
             )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Turning off automatic payment does not cancel your subscription — you'll just renew manually.
+            Turning off automatic renewal does not cancel your subscription — you'll just renew manually.
           </p>
         </div>
       )}
@@ -613,14 +620,28 @@ export default function TeamSeats() {
                   for a system with no auto-renewal. What the customer is actually
                   choosing is whether the seats END at the period date or whether we
                   chase them to renew. Label the outcome, not a mechanism that does
-                  not exist. */}
+                  not exist.
+
+                  M53/UX-1 — and NEVER borrow the automatic-renewal vocabulary for
+                  it. While AutoPay was on, this button read "Turn off auto-renewal"
+                  directly beside the payment card's "Turn off automatic payment".
+                  Those two sentences are indistinguishable at a glance and their
+                  outcomes are opposite: one keeps the team and renews by hand, the
+                  other ends the seats and deactivates members. The label is now the
+                  outcome in both states, and it never varies on `autoRenews`. */}
               {sub.cancelAtPeriodEnd ? (
                 <Button variant="outline" onClick={() => resumeMutation.mutate()} disabled={resumeMutation.isPending} data-testid="seat-resume">
-                  {autoRenews ? "Turn auto-renewal back on" : "Keep these seats"}
+                  Keep these seats
                 </Button>
               ) : (
-                <Button variant="ghost" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="seat-cancel">
-                  {autoRenews ? "Turn off auto-renewal" : `Let seats end ${fmtDate(sub.periodEnd)}`}
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setConfirmCancel(true)}
+                  disabled={cancelMutation.isPending}
+                  data-testid="seat-cancel"
+                >
+                  End seats on {fmtDate(sub.periodEnd)}
                 </Button>
               )}
             </div>
@@ -667,6 +688,48 @@ export default function TeamSeats() {
               {checkoutMutation.isPending
                 ? "Working…"
                 : confirm?.preview?.chargeNowMinor > 0 ? "Pay and add seats" : "Schedule it"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── End seats (M53/UX-1) ─────────────────────────────────────────── */}
+      {/* The only destructive action on this page. It states what the customer
+          KEEPS first, then what they lose and when, then that it is reversible —
+          in that order, because the fear this dialog has to answer is "have I
+          just deleted my team?". */}
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent data-testid="seat-cancel-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>End your seats on {fmtDate(sub?.periodEnd)}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-left">
+                <p>
+                  Your team keeps all {sub?.seats} seat{sub?.seats === 1 ? "" : "s"} until{" "}
+                  <span className="font-medium text-foreground">{fmtDate(sub?.periodEnd)}</span>. Nothing
+                  changes before then and you are not charged again.
+                </p>
+                <p>
+                  From that date this workspace returns to its included allowance, and any members beyond
+                  it are deactivated — most recently added first.{" "}
+                  <span className="font-medium text-foreground">Nobody is deleted</span>, and your credits
+                  are never affected.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You can undo this any time before {fmtDate(sub?.periodEnd)} with “Keep these seats”.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="seat-cancel-dismiss">Keep my seats</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="seat-cancel-action"
+            >
+              {cancelMutation.isPending ? "Working…" : "End seats"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
