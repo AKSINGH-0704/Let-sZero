@@ -1715,9 +1715,49 @@ export async function registerRoutes(httpServer, app) {
     try {
       const { id } = req.params;
 
+      // a0. M56/A1 — NOBODY ENDS THEIR OWN ACCESS.
+      //
+      // This is the first check in the handler because it must hold before any
+      // side effect, and because it was the only reachable path to an
+      // owner-less workspace. A workspace owner passed every existing guard on
+      // themselves: `adminMiddleware` admits `isWorkspaceOwner` explicitly, the
+      // ROOT_ADMIN guard below only fires when the TARGET is ROOT_ADMIN (a
+      // customer owner is role USER — ownership is tree position, ADR-017), and
+      // `getWorkspaceMemberIds` returns the root itself, so
+      // `isSameWorkspaceAdmin(owner, owner.id)` is true.
+      //
+      // The result was unrecoverable: `authMiddleware` then 401s them with
+      // "Contact your administrator" when they ARE the administrator, and
+      // `reactivate` is tree-scoped, so no member, no manager and no platform
+      // operator can restore them. Meanwhile the seat subscription kept
+      // charging, and `/api/seats/cancel` is owner-gated — the only person who
+      // could stop the billing was the one locked out.
+      //
+      // Applied to EVERY identity, not just owners: a manager deactivating
+      // themselves is recoverable but still an invalid action, and one rule
+      // with no exceptions cannot be reasoned around later.
+      // ⚠️ Compared against the CANONICAL id from the database, never against the
+      // raw path parameter. Postgres `uuid` comparison normalises case, so
+      // `getUserById("ABC-...")` resolves the same row as "abc-..." while a
+      // string `===` on the raw parameter does not — an uppercased UUID would
+      // have walked straight past a check written on `req.params`. The
+      // in-memory backend does NOT normalise, so it returns 404 and a test
+      // written against it passes for the wrong reason. This is the
+      // memoryStorage/Postgres parity trap (QA-002, SEAT-010) applied to an
+      // authorization guard, which is the worst place to meet it.
+      //
+      // Both statements below are reads. Nothing has been mutated yet.
+
       // a. Load and verify target user
       const target = await storage.getUserById(id);
       if (!target) return res.status(404).json({ message: "User not found" });
+
+      if (target.id === req.user.id) {
+        return res.status(409).json({
+          message: "You cannot deactivate your own account. Ask another administrator, or contact support.",
+          code: "CANNOT_DEACTIVATE_SELF",
+        });
+      }
       if (target.role === "ROOT_ADMIN" && req.user.role !== USER_ROLES.ROOT_ADMIN) {
         return res.status(403).json({ message: "Cannot deactivate root admin" });
       }
@@ -1731,6 +1771,57 @@ export async function registerRoutes(httpServer, app) {
       const isWorkspaceAdmin = await isSameWorkspaceAdmin(req.user, target.id);
       if (!isDirectManager && !isWorkspaceAdmin) {
         return res.status(403).json({ message: "Forbidden" });
+      }
+
+      // a1. M56/A2 — DEACTIVATING AN OWNER MUST NOT LEAVE A LIVE SUBSCRIPTION.
+      //
+      // Deactivation previously touched billing zero times, so an owner
+      // deactivated by a ROOT_ADMIN kept an ACTIVE subscription and a live
+      // mandate. `processDueSubscription` never checks `isActive`, so the sweep
+      // would charge a workspace whose owner could not log in.
+      //
+      // The commercial relationship is NOT terminated here: the subscription
+      // stays ACTIVE until the period it was already paid for closes, seats
+      // keep working for the remaining members, and nothing is refunded or
+      // withdrawn. Only the RENEWAL is stopped. That reuses the exact primitive
+      // `/api/seats/cancel` uses — same transition, same audit action — rather
+      // than introducing a second way to end a subscription.
+      //
+      // ⚠️ FAIL-CLOSED, and deliberately placed before any side effect. If the
+      // subscription is in a live billing state and cannot be scheduled to
+      // stop, we refuse the deactivation rather than complete it and leave the
+      // customer paying for a workspace they cannot reach. Refusing is
+      // recoverable; the alternative is the defect this milestone exists to
+      // close.
+      if (isWorkspaceOwner(target)) {
+        const ownerSub = await storage.getWorkspaceSubscription(target.id);
+        const LIVE = [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.PAST_DUE];
+        if (ownerSub && LIVE.includes(ownerSub.status)) {
+          const scheduled = await storage.transitionSubscription(
+            ownerSub.id,
+            SUBSCRIPTION_STATUS.CANCEL_SCHEDULED,
+            { cancelAtPeriodEnd: true },
+          );
+          if (!scheduled.ok) {
+            return res.status(409).json({
+              message: "This workspace's subscription could not be scheduled to stop, so the owner was not deactivated. Contact support.",
+              code: "SUBSCRIPTION_NOT_SCHEDULABLE",
+            });
+          }
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.SUBSCRIPTION_CANCEL_SCHEDULED,
+            targetType: "subscription",
+            targetId: ownerSub.id,
+            details: {
+              workspaceRootId: target.id,
+              seatsUntil: ownerSub.periodEnd,
+              seats: ownerSub.seats,
+              reason: "workspace owner deactivated",
+              deactivatedUserId: target.id,
+            },
+          });
+        }
       }
 
       // b. Terminate active and pending campaigns
@@ -1827,13 +1918,54 @@ export async function registerRoutes(httpServer, app) {
       // f. Soft-deactivate the account
       await storage.updateUser(id, { isActive: false });
 
+      // f2. M56/A3 — REVOKE ONLY THE INVITES THIS DEACTIVATION INVALIDATES.
+      //
+      // `/api/invites/accept` sets `parentId: invite.invitedBy` and never checks
+      // that the inviter is still active. So an invite issued by the person
+      // being deactivated would, on acceptance, create an ACTIVE member whose
+      // parent is INACTIVE — a live account hanging off a dead branch, holding a
+      // seat, with no manager above it.
+      //
+      // That is the precise scope. Invites issued by OTHER still-active admins
+      // in the same workspace remain perfectly valid and are deliberately left
+      // alone: the workspace still exists, its seats still exist, and revoking
+      // them would cancel colleagues' pending hires as a side effect of an
+      // unrelated deactivation.
+      //
+      // Reuses the same primitive and audit action as `/api/invites/:id/revoke`
+      // — one invite lifecycle, not two. Non-fatal: the account is already
+      // deactivated and its sessions are gone, so a failure here must not
+      // resurrect access. It is logged loudly instead.
+      let invitesRevoked = 0;
+      try {
+        const orphanedInvites = await storage.getPendingInvitesByAdmin(id);
+        for (const invite of orphanedInvites) {
+          await storage.deleteInvite(invite.id);
+          invitesRevoked += 1;
+          await storage.createAuditLog({
+            userId: req.user.id,
+            action: AUDIT_ACTIONS.INVITE_REVOKED,
+            targetType: "invite",
+            targetId: invite.id,
+            details: {
+              email: invite.email,
+              role: invite.role,
+              reason: "inviter deactivated — acceptance would have orphaned the new member",
+              invitedBy: id,
+            },
+          });
+        }
+      } catch (err) {
+        console.error(`[DELETE_USER] Pending-invite revocation failed for ${id}:`, err.message);
+      }
+
       // g. Audit trail
       await storage.createAuditLog({
         userId: req.user.id,
         action: AUDIT_ACTIONS.USER_DELETED,
         targetType: "user",
         targetId: id,
-        details: { username: target.username, role: target.role, previousParentId: target.parentId ?? null, newParentId: req.user.id, campaignsTerminated: activeCampaigns.length, creditsReclaimed: unspent > 0 ? unspent : 0, childrenReassigned: reassignedChildCount },
+        details: { username: target.username, role: target.role, previousParentId: target.parentId ?? null, newParentId: req.user.id, campaignsTerminated: activeCampaigns.length, creditsReclaimed: unspent > 0 ? unspent : 0, childrenReassigned: reassignedChildCount, invitesRevoked },
       });
 
       res.json({ message: "User deactivated successfully" });

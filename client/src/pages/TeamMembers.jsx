@@ -145,6 +145,11 @@ export default function TeamMembers() {
     ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
     : null;
   const activeMembers = useMemo(() => (members || []).filter(m => m.isActive), [members]);
+  // M56/A1 — the server refuses a self-deactivation (409 CANNOT_DEACTIVATE_SELF).
+  // A manager viewing this list appears in it, so without this the UI would
+  // offer them a Remove button on themselves that can only ever fail. The
+  // server guard is the control; this stops the dead affordance being shown.
+  const isSelf = (m) => m.id === user?.id;
   const used = activeMembers.length;
   // `included: null` while loading renders as unlimited, so the UI never briefly
   // tells someone their team is full before the real number arrives.
@@ -407,7 +412,7 @@ export default function TeamMembers() {
                             <TableCell className="text-muted-foreground">{fmtRelative(m.lastActivityAt || m.lastLoginAt)}</TableCell>
                             <TableCell className="text-right tabular-nums">{(m.creditsRemaining ?? 0).toLocaleString()}</TableCell>
                             <TableCell className="text-right">
-                              {m.isActive ? (
+                              {m.isActive && !isSelf(m) ? (
                                 <Button variant="ghost" size="icon" aria-label={`Remove ${m.username}`}
                                   className="text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
                                   onClick={() => setRemoveTarget(m)} data-testid={`button-remove-${m.id}`}>
@@ -440,7 +445,7 @@ export default function TeamMembers() {
                             <div className="truncate font-medium">{m.username}</div>
                             <div className="truncate text-xs text-muted-foreground">{m.email}</div>
                           </div>
-                          {m.isActive ? (
+                          {m.isActive && !isSelf(m) ? (
                             <Button variant="ghost" size="icon" aria-label={`Remove ${m.username}`}
                               className="text-red-500" onClick={() => setRemoveTarget(m)}>
                               <Trash2 className="h-4 w-4" aria-hidden="true" />
