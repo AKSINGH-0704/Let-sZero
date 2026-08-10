@@ -100,7 +100,9 @@ describe("renewal is MANUAL — the page says who must act, and by when", () => 
   });
 
   it("labels the opt-out by its outcome rather than a mechanism that does not exist", () => {
-    expect(html()).toMatch(/Let seats end/);
+    // M53/UX-1 — the outcome wording is now the SAME in both renewal modes; see
+    // the AUTOMATIC block below for why it stopped varying.
+    expect(html()).toMatch(/End seats on/);
   });
 });
 
@@ -119,8 +121,28 @@ describe("renewal is AUTOMATIC — the same page states the charge", () => {
     expect(html()).toMatch(/Renews /);
   });
 
-  it("offers the auto-renewal opt-out", () => {
-    expect(html()).toMatch(/Turn off auto-renewal/);
+  // M53/UX-1 — this control used to read "Turn off auto-renewal" in AUTOMATIC
+  // mode, which put it one word away from the payment card's "Turn off automatic
+  // payment" directly above it. The two outcomes are opposite: that one keeps the
+  // team and renews by hand, THIS one ends the seats and deactivates members. It
+  // was also a ghost button that fired on a single click with no confirmation.
+  //
+  // The label is now the outcome, identical in both modes, and it must never
+  // borrow the renewal vocabulary again.
+  it("names the destructive outcome, and never reuses the renewal vocabulary", () => {
+    const h = html();
+    expect(h).toMatch(/End seats on/);
+    expect(h).not.toMatch(/Turn off auto-?renewal/i);
+  });
+
+  it("keeps the two opposite controls verbally distinct", () => {
+    const h = html();
+    // "Turn off automatic renewal" (keeps the team) may exist on this page; what
+    // must not exist is a second control whose label reads like it.
+    const endSeats = /End seats on/.test(h);
+    const collides = /Turn off auto-?renewal[^<]*<\/button>[\s\S]{0,400}?Turn off auto-?renewal/i.test(h);
+    expect(endSeats).toBe(true);
+    expect(collides).toBe(false);
   });
 });
 

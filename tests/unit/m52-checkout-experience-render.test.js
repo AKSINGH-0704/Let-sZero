@@ -121,25 +121,38 @@ describe("the customer never has to calculate anything", () => {
 });
 
 describe("what it says about automatic renewal is true in every state", () => {
-  it("offers the decision, pre-ticked, with the exact amount and date", () => {
+  // M53/UX-4 — this was ONE pre-ticked checkbox. It is now two visible options,
+  // so the assertions move from "is the box ticked" to "which option is selected"
+  // — the customer-visible property is the same decision either way. The reason
+  // for the change is that a pre-ticked box is the dark-pattern shape for consent
+  // to a standing bank authorisation, and it also hid the fact that declining was
+  // available at all.
+  const selected = (h, testId) =>
+    new RegExp(`data-testid="${testId}-input"[^>]*checked=""`).test(h);
+
+  it("offers BOTH options, with the exact amount and date on the automatic one", () => {
     const h = html({
       preview: immediate(), offerAutopay: true, autopayAtCheckout: true, renewalMode: "AUTOMATIC",
     });
     expect(h).toMatch(/Renew automatically/);
-    expect(h).toMatch(/checked=""/);           // opt-OUT, not opt-in
+    // Declining is a visible, labelled choice — not the absence of a tick.
+    expect(h).toMatch(/Remind me instead/);
+    expect(h).toMatch(/role="radiogroup"/);
+    expect(selected(h, "autopay-choice-auto")).toBe(true);
+    expect(selected(h, "autopay-choice-manual")).toBe(false);
     expect(h).toMatch(/We'll charge/);
     expect(h).toMatch(RENEWAL_DATE);
-    // The two promises that make an opt-out default defensible.
+    // The two promises that make a pre-selected default defensible.
     expect(h).toMatch(/always email you first/i);
     expect(h).toMatch(/won't cancel your subscription/i);
   });
 
-  it("respects the customer unticking it", () => {
+  it("respects the customer choosing to be reminded instead", () => {
     const h = html({
       preview: immediate(), offerAutopay: true, autopayAtCheckout: false, renewalMode: "AUTOMATIC",
     });
-    expect(h).toMatch(/Renew automatically/);
-    expect(h).not.toMatch(/checked=""/);
+    expect(selected(h, "autopay-choice-manual")).toBe(true);
+    expect(selected(h, "autopay-choice-auto")).toBe(false);
     // And the summary row must follow the decision, not the platform default.
     expect(h).toMatch(/Renew by/);
     expect(h).not.toMatch(/Then 2 Sep/);
