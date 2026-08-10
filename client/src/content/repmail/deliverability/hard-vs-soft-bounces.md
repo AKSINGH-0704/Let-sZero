@@ -14,6 +14,9 @@ nextStep:
   label: "Cold email templates that protect deliverability"
   href: "/repmail/learn/cold-email/cold-email-templates"
   description: "Put these deliverability habits into what you actually send."
+prerequisites:
+  - label: "Where bounces actually come from"
+    href: "/repmail/learn/cold-email/build-and-verify-a-cold-email-list"
 assets:
   - type: table
     title: Bounce type reference

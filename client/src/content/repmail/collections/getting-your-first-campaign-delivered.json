@@ -4,7 +4,9 @@
   "description": "A deliverability-focused bundle: warm-up pacing, bounce handling, and templates built to keep your first campaign out of spam.",
   "articleSlugs": [
     "separate-sending-domain-for-cold-email",
+    "build-and-verify-a-cold-email-list",
     "why-new-domains-need-warm-up",
+    "how-to-warm-up-a-domain-in-14-days",
     "hard-vs-soft-bounces",
     "google-yahoo-sender-requirements",
     "pre-send-deliverability-checklist",

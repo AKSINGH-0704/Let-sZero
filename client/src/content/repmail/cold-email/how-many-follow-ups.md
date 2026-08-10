@@ -19,6 +19,9 @@ nextStep:
   label: "What to A/B test first"
   href: "/repmail/learn/cold-email/what-to-ab-test-first"
   description: "With your cadence set, start improving what is actually underperforming."
+prerequisites:
+  - label: "When to send them"
+    href: "/repmail/learn/cold-email/best-day-and-time-to-send-cold-email"
 assets:
   - type: table
     title: Suggested follow-up cadence

@@ -21,7 +21,7 @@ afterAll(async () => {
 });
 
 describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wave 1 Getting Started path + Collection (M22-C), alongside the M27 additions", () => {
-  it("loads the real Getting Started path with its beginner level and 6 ordered steps", () => {
+  it("loads the real Getting Started path with its beginner level and ordered steps", () => {
     const paths = resourceCenterContent.getLearningPathsForProduct("repmail");
     // M27 added deliverability-mastery and email-infrastructure; look the Wave 1
     // path up by slug rather than by position, which glob order decides.
@@ -33,6 +33,9 @@ describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wav
       level: "beginner",
       product: "repmail",
     });
+    // M55/RC-001 — list building and CSV hygiene appended. A beginner reaches
+    // "clean your data" after the sending basics, not before them, so both go
+    // at the end rather than in the middle.
     expect(gettingStarted.steps).toEqual([
       "where-repmail-fits-in-your-workflow",
       "verify-your-sending-domain",
@@ -40,6 +43,8 @@ describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wav
       "subject-lines-that-get-opened",
       "personalize-cold-email-at-scale",
       "pre-send-deliverability-checklist",
+      "build-and-verify-a-cold-email-list",
+      "csv-formatting-for-email-lists",
     ]);
   });
 
@@ -59,9 +64,13 @@ describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wav
     // before the pre-send checklist means much. The assertion still pins exact
     // order, which is the property under test: the loader reads real curation
     // data in the order an editor chose, not whatever the filesystem returns.
+    // M55/RC-001 — the sequence now follows the real order of the work: choose
+    // a domain, build the list, understand warm-up, then follow the schedule.
     expect(firstCampaign.articleSlugs).toEqual([
       "separate-sending-domain-for-cold-email",
+      "build-and-verify-a-cold-email-list",
       "why-new-domains-need-warm-up",
+      "how-to-warm-up-a-domain-in-14-days",
       "hard-vs-soft-bounces",
       "google-yahoo-sender-requirements",
       "pre-send-deliverability-checklist",

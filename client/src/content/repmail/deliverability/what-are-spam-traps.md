@@ -7,6 +7,8 @@ authorSlug: repmail-team
 publishedAt: "2026-07-17"
 tags: ["spam-traps", "blacklist", "deliverability", "bounces"]
 prerequisites:
+  - label: "Build and verify a list properly"
+    href: "/repmail/learn/cold-email/build-and-verify-a-cold-email-list"
   - label: "What sender reputation is"
     href: "/repmail/learn/deliverability/sender-reputation"
 commonMistakes:

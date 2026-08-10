@@ -13,6 +13,8 @@ keyTakeaways:
   - "Open rate has become an unreliable metric: Apple Mail preloads tracking pixels, inflating opens, so treat it as directional at best."
   - "The numbers that actually gate deliverability are bounce rate (keep under 2 to 3%) and spam complaints (keep under 0.3%)."
 prerequisites:
+  - label: "Why open rate is no longer reliable"
+    href: "/repmail/learn/cold-email/open-rate-tracking-apple-mpp"
   - label: "The complete guide to cold email"
     href: "/repmail/learn/cold-email/complete-guide-to-cold-email"
 commonMistakes:

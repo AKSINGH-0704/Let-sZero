@@ -20,6 +20,9 @@ nextStep:
   label: "Hard vs. soft bounces, explained"
   href: "/repmail/learn/deliverability/hard-vs-soft-bounces"
   description: "Bounces are the clearest early signal that something is off. Learn which ones to act on."
+prerequisites:
+  - label: "The 14-day warm-up schedule"
+    href: "/repmail/learn/deliverability/how-to-warm-up-a-domain-in-14-days"
 assets:
   - type: table
     title: A 4-week warm-up schedule

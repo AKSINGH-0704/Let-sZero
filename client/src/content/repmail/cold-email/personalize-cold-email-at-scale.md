@@ -14,6 +14,9 @@ nextStep:
   label: "Run the pre-send checklist"
   href: "/repmail/learn/deliverability/pre-send-deliverability-checklist"
   description: "Message written? Confirm everything else is in place before you hit send."
+prerequisites:
+  - label: "Clean the data first"
+    href: "/repmail/learn/cold-email/csv-formatting-for-email-lists"
 assets:
   - type: template
     title: Personalization variable reference
