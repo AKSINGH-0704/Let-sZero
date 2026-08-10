@@ -52,9 +52,18 @@ describe("getLearningPathsForProduct / getCollectionsForProduct — the real Wav
       name: "Getting Your First Campaign Delivered",
       product: "repmail",
     });
+    // M54 — two articles were added to this collection deliberately, so the
+    // fixture moves with the curation rather than freezing it. A first-time
+    // sender decides whether to use a separate sending domain BEFORE warming
+    // anything (hence position 0), and needs the Google/Yahoo requirements
+    // before the pre-send checklist means much. The assertion still pins exact
+    // order, which is the property under test: the loader reads real curation
+    // data in the order an editor chose, not whatever the filesystem returns.
     expect(firstCampaign.articleSlugs).toEqual([
+      "separate-sending-domain-for-cold-email",
       "why-new-domains-need-warm-up",
       "hard-vs-soft-bounces",
+      "google-yahoo-sender-requirements",
       "pre-send-deliverability-checklist",
       "cold-email-templates",
     ]);

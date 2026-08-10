@@ -12,6 +12,8 @@ keyTakeaways:
   - "It is set by four things: authentication, sending consistency, list quality, and recipient engagement."
   - "Reputation is earned slowly and lost quickly. One bad send to a stale list can undo weeks of careful warm-up."
 prerequisites:
+  - label: "Shared vs dedicated IP"
+    href: "/repmail/learn/infrastructure/shared-vs-dedicated-ip"
   - label: "How email authentication works"
     href: "/repmail/learn/deliverability/email-authentication"
 commonMistakes:

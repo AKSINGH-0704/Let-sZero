@@ -13,6 +13,8 @@ keyTakeaways:
   - "SPF lists who may send as you, DKIM signs each message, and DMARC decides what happens when either check fails."
   - "ARC preserves authentication across forwarders, and BIMI displays your logo once DMARC is enforced. Both build on the first three."
 prerequisites:
+  - label: "Google and Yahoo sender requirements"
+    href: "/repmail/learn/deliverability/google-yahoo-sender-requirements"
   - label: "What sender reputation is"
     href: "/repmail/learn/deliverability/sender-reputation"
 commonMistakes:

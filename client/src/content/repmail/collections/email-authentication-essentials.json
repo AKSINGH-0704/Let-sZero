@@ -7,6 +7,7 @@
     "what-is-spf",
     "what-is-dkim",
     "what-is-dmarc",
-    "dns-records-for-email"
+    "dns-records-for-email",
+    "google-yahoo-sender-requirements"
   ]
 }

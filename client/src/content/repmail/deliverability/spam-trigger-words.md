@@ -7,6 +7,8 @@ authorSlug: repmail-team
 publishedAt: "2026-07-17"
 tags: ["spam-score", "deliverability", "cold-email", "inbox-placement"]
 prerequisites:
+  - label: "Plain text vs HTML for cold email"
+    href: "/repmail/learn/deliverability/plain-text-vs-html-email"
   - label: "What a good spam score is"
     href: "/repmail/learn/deliverability/what-is-a-good-spam-score"
 commonMistakes:
