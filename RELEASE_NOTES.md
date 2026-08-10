@@ -19,7 +19,8 @@ The confirmation screen already told you what you pay today and when you renew. 
 - **Choosing how you renew is now an open choice, not a pre-ticked box.** "Renew automatically" and "Remind me instead" are both shown, each stating exactly what it means. Automatic remains the default, and you can change it at any time without cancelling anything.
 - **The confirmation names your billing term** — monthly or annual — alongside the amount, and confirms that the figure shown is the full amount charged today.
 - **Ending your seats now asks first.** The control that ends a subscription sat one word away from the control that simply turns off automatic renewal, and it acted on a single click. It is now clearly labelled by what it does, and it confirms before doing it — telling you what you keep, what changes and when, and that you can undo it.
-- **"How long do I have if a payment fails?" is answered before you pay.** Your team keeps working for 14 days while we retry and email you.
+- **"How long do I have if a payment fails?" is answered before you pay.** Your team keeps working for 14 days while we chase it — by retrying your payment method if you renew automatically, or by emailing you reminders if you renew manually.
+- **The page you see after a missed renewal now shows one deadline, not two.** It previously showed the date your period ended — already in the past — beside a note saying your team keeps access until a later date. It now shows the date that actually applies to you.
 - **One name for one thing.** "Automatic payment", "auto-renewal" and "AutoPay" all meant the same thing in different places, including in emails. Everything now says automatic renewal.
 
 Nothing about pricing, billing dates, entitlements or existing subscriptions changed in this release.
