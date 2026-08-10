@@ -84,12 +84,25 @@ export const STATIC_ROUTES = [
     title: "LetsZero — Email infrastructure built for outbound teams",
     description: "LetsZero builds RepMail and the infrastructure behind it — campaign automation, deliverability intelligence, and performance analytics for outbound email teams.",
     ogImage: "https://www.letszero.in/letszero-logo.png",
+    // Entity markup, not keyword targeting. `alternateName` is the mechanism
+    // search engines use to resolve real-world name variants to one entity —
+    // people write "Lets Zero" and "LetsZero Solutions" for the same company,
+    // and without this each is an unrelated string. The legitimate alternative
+    // to declaring variants here would be building pages for them, which is a
+    // doorway pattern and is deliberately not done.
+    // `description` and `sameAs` give the entity a definition and a link to the
+    // product it publishes, which is what makes RepMail resolvable as "a thing
+    // made by LetsZero" rather than an unattached brand string.
     jsonLd: (url) => ({
       "@context": "https://schema.org",
       "@type": "Organization",
       name: "LetsZero",
+      alternateName: ["Lets Zero", "LetsZero Solutions", "LetsZero Solutions Private Limited"],
+      description:
+        "LetsZero builds email sending infrastructure for outbound teams, including RepMail — a cold email platform covering sending domains, deliverability and campaign automation.",
       url,
       logo: "https://www.letszero.in/letszero-logo.png",
+      sameAs: ["https://www.letszero.in/products/repmail"],
     }),
   },
   {
@@ -97,13 +110,21 @@ export const STATIC_ROUTES = [
     componentPath: "/src/pages/Landing.jsx",
     title: "RepMail — Cold email infrastructure by LetsZero",
     description: "RepMail is a credit-based cold email platform: verified sending domains, AI-assisted personalization, spam analysis, and team-based sending, built by LetsZero.",
+    // Same reasoning as the Organization entity above: state the variants and
+    // the publisher relationship as data, so "RepMail", "Rep Mail" and
+    // "RepMail by LetsZero" resolve to one product rather than three strings,
+    // and the product is attributed to the company that makes it.
     jsonLd: (url) => ({
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       name: "RepMail",
+      alternateName: ["Rep Mail", "RepMail by LetsZero"],
+      description:
+        "RepMail is a cold email platform for outbound teams: verified sending domains with SPF and DKIM, progressive domain warm-up, AI-assisted personalization, spam analysis, suppression and delivery telemetry.",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       url,
+      publisher: { "@type": "Organization", name: "LetsZero", url: "https://www.letszero.in" },
     }),
   },
   {
