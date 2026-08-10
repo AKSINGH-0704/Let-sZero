@@ -51,7 +51,12 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Users as UsersIcon, UserPlus, Mail, Trash2, RotateCcw, ArrowUpRight, Info } from "lucide-react";
+import { Users as UsersIcon, UserPlus, Mail, Trash2, RotateCcw, ArrowUpRight, Info, ShieldCheck } from "lucide-react";
+import DangerZone from "@/components/common/DangerZone";
+// M57 — the confirmation body. Extracted so the highest-stakes copy in this
+// journey can actually be rendered in a test (it only mounts behind a state
+// change). Same reasoning as SeatChangeSummary in M52.
+import OwnershipTransferSummary from "@/components/teams/OwnershipTransferSummary";
 import { PLAN_LIMITS } from "@shared/schema";
 import { ENTERPRISE_CONTACT_PATH } from "@shared/enterprise";
 import { cn } from "@/lib/utils";
@@ -206,6 +211,61 @@ export default function TeamMembers() {
       toast({ title: "Team member added", description: "They can sign in and will be asked to set a password." });
     },
     onError: (err) => toast({ title: "Couldn't add the member", description: err.message, variant: "destructive" }),
+  });
+
+  // ── M57 — workspace ownership transfer ────────────────────────────────────
+  // Exposes the EXISTING production endpoint (POST /api/workspace/transfer-
+  // ownership, Audit 220). No validation, RBAC or commercial rule is repeated
+  // here: the server owns all of it, and this screen's job is to make the
+  // consequences legible before the customer commits to them.
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTo, setTransferTo] = useState("");
+
+  // Only an ACTIVE member of this workspace can receive ownership — the same
+  // rule the transaction enforces, mirrored here so we never offer a choice the
+  // server will refuse. The owner is excluded: transferring to yourself is a
+  // no-op the endpoint rejects with 400.
+  const transferCandidates = useMemo(
+    () => (members || []).filter((m) => m.isActive && m.id !== user?.id),
+    [members, user?.id]
+  );
+  const transferTarget = transferCandidates.find((m) => m.id === transferTo) || null;
+
+  const transferMutation = useMutation({
+    mutationFn: (newOwnerId) => apiRequest("POST", "/api/workspace/transfer-ownership", { newOwnerId }),
+    onSuccess: () => {
+      setTransferOpen(false);
+      setTransferTo("");
+      // The caller is no longer the owner, so their own identity is the first
+      // thing that must be refetched — every permission on this page derives
+      // from it. Without this the screen would keep rendering owner controls
+      // that now 403.
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/seats/subscription"] });
+      toast({
+        title: "Ownership transferred",
+        description: "You're now a member of this workspace. The new owner looks after billing from here.",
+      });
+    },
+    onError: (e) => {
+      // The server's refusal message is deliberately terse ("Ownership transfer
+      // refused.") and its actionable detail lives in `code`. Translating the
+      // code here is presentation, not a second copy of the rule — the server
+      // still decides, and an unrecognised code falls through to its message.
+      const REASONS = {
+        TARGET_INACTIVE: "That teammate's account is deactivated. Restore their access first, then try again.",
+        NOT_A_MEMBER: "You can only hand the workspace to someone who is already a member of it.",
+        NOT_OWNER: "You're no longer the owner of this workspace.",
+        NOT_WORKSPACE_OWNER: "Only the current workspace owner can transfer ownership.",
+        NOT_FOUND: "That teammate no longer exists. Refresh the page and try again.",
+      };
+      toast({
+        title: "Couldn't transfer ownership",
+        description: REASONS[e?.body?.code] || e?.message || "Please try again, or contact support.",
+        variant: "destructive",
+      });
+    },
   });
 
   const removeMutation = useMutation({
@@ -582,6 +642,72 @@ export default function TeamMembers() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ── Workspace ownership (M57) ────────────────────────────────────── */}
+      {/* Owner-only. Deliberately at the foot of the page in a DangerZone: it is
+          a real, consequential action, but it is not an everyday one, and it
+          should not compete with inviting a teammate. */}
+      {isWorkspaceOwner && (
+        <DangerZone
+          title="Workspace ownership"
+          description="Hand this workspace, and its billing, to someone else on your team."
+          action={
+            <Button
+              variant="outline"
+              onClick={() => setTransferOpen(true)}
+              disabled={transferCandidates.length === 0}
+              data-testid="button-transfer-ownership"
+            >
+              Transfer ownership
+            </Button>
+          }
+        />
+      )}
+      {isWorkspaceOwner && transferCandidates.length === 0 && (
+        <p className="mt-2 text-xs text-muted-foreground" data-testid="transfer-no-candidates">
+          You need at least one other active teammate before you can hand over the workspace.
+        </p>
+      )}
+
+      {/* Transfer confirmation */}
+      <AlertDialog open={transferOpen} onOpenChange={(o) => { if (!o) { setTransferOpen(false); setTransferTo(""); } }}>
+        <AlertDialogContent data-testid="transfer-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transfer this workspace to a teammate</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4 text-left">
+                <div>
+                  <Label htmlFor="transfer-to" className="text-sm">Who should own this workspace?</Label>
+                  <Select value={transferTo} onValueChange={setTransferTo}>
+                    <SelectTrigger id="transfer-to" className="mt-1.5" data-testid="select-transfer-to">
+                      <SelectValue placeholder="Choose a teammate" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transferCandidates.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.username} — {m.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <OwnershipTransferSummary newOwnerName={transferTarget?.username} />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="transfer-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); transferTo && transferMutation.mutate(transferTo); }}
+              disabled={!transferTo || transferMutation.isPending}
+              data-testid="transfer-confirm"
+            >
+              {transferMutation.isPending
+                ? "Transferring…"
+                : transferTarget ? `Make ${transferTarget.username} the owner` : "Transfer ownership"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Remove confirmation */}
       <AlertDialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
