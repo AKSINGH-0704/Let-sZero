@@ -3225,6 +3225,17 @@ const dbStorage = {
         updatedAt: new Date(),
       }).where(eq(workspaceSubscriptions.workspaceRootId, currentOwnerId));
 
+      // ── THE WORKSPACE'S SENDING IDENTITY FOLLOWS THE ROOT (M56 Phase C) ────
+      // `senderDomains` rows are keyed on `userId`, and every workspace-scoped
+      // read resolves them as `userId == rootId` (hasVerifiedDomainForUser,
+      // getDomainsForWorkspace). Moving the root without moving the rows left
+      // the domains owned by a user who is no longer the root, so the workspace
+      // resolved to NO verified domain and every member's sending broke — while
+      // the rows themselves became invisible to everyone, including the person
+      // who could have fixed it. Proven by test before this line existed.
+      await tx.update(senderDomains).set({ userId: newOwnerId, updatedAt: new Date() })
+        .where(eq(senderDomains.userId, currentOwnerId));
+
       // Withdraw the outgoing owner's instruments locally. Gateway revocation is
       // network I/O and cannot join this transaction; the caller performs it
       // after commit and the reconciliation sweep catches any drift. Marking them

@@ -2661,6 +2661,15 @@ export const memoryStorage = {
     next.updatedAt = new Date();
     owner.parentId = newOwnerId;
     owner.updatedAt = new Date();
+    // Parity with storage.js (M56 Phase C): the workspace's sending identity
+    // follows the root. Workspace-scoped domain reads resolve `userId == rootId`,
+    // so leaving these behind stripped the workspace of its verified domain and
+    // broke every member's sending.
+    // `_senderDomains` is lazily created by createSenderDomain; every other
+    // reader in this file guards for that, and so must this one.
+    for (const d of (this._senderDomains?.values() ?? [])) {
+      if (d.userId === currentOwnerId) { d.userId = newOwnerId; d.updatedAt = new Date(); }
+    }
     // Parity with storage.js: the subscription follows the workspace, but AUTOPAY
     // DOES NOT (M51 D-M51-07, defect 7.1). A mandate is a personal banking
     // authorisation; left alone the departed owner's card would be debited
