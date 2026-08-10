@@ -1962,7 +1962,7 @@ export async function registerRoutes(httpServer, app) {
       // g. Audit trail
       await storage.createAuditLog({
         userId: req.user.id,
-        action: AUDIT_ACTIONS.USER_DELETED,
+        action: AUDIT_ACTIONS.USER_DEACTIVATED,
         targetType: "user",
         targetId: id,
         details: { username: target.username, role: target.role, previousParentId: target.parentId ?? null, newParentId: req.user.id, campaignsTerminated: activeCampaigns.length, creditsReclaimed: unspent > 0 ? unspent : 0, childrenReassigned: reassignedChildCount, invitesRevoked },
@@ -4705,6 +4705,24 @@ export async function registerRoutes(httpServer, app) {
         const status = result.error === "not_found" ? 404 : 403;
         return res.status(status).json({ message: "Ownership transfer refused.", code: result.error.toUpperCase() });
       }
+      // M56 Phase C — WITHDRAW THE INSTRUMENT AT THE GATEWAY, NOT ONLY LOCALLY.
+      // `transferWorkspaceOwnership` marks the outgoing owner's mandates REVOKED
+      // inside the transaction and its comment states that "the caller performs
+      // [gateway revocation] after commit". No caller did. The local status
+      // stopped US charging, but the customer's standing authorisation remained
+      // live at the provider — a personal banking authorisation left open for a
+      // workspace they no longer own. Best-effort and non-fatal by design: the
+      // transfer has already committed and must not be undone by a network
+      // failure, and `revokeMandate` already reports gateway failures to Sentry.
+      for (const mandateId of result.revokedMandateIds || []) {
+        try {
+          const m = await storage.getMandate(mandateId);
+          if (m) await revokeMandate(m, { reason: "ownership_transferred" });
+        } catch (err) {
+          console.error(`[WORKSPACE] Gateway revoke failed for mandate ${mandateId}:`, err.message);
+        }
+      }
+
       await storage.createAuditLog({
         userId: req.user.id, action: AUDIT_ACTIONS.WORKSPACE_OWNERSHIP_TRANSFERRED,
         targetType: "user", targetId: newOwnerId,

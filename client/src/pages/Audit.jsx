@@ -42,7 +42,9 @@ const ACTION_CONFIG = {
   USER_LOGIN: { icon: LogIn, label: "Login", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400" },
   USER_LOGOUT: { icon: LogOut, label: "Logout", color: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400" },
   USER_CREATED: { icon: UserPlus, label: "User Created", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
-  USER_DELETED: { icon: UserMinus, label: "User Deleted", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+  // M56 Phase B — historical rows keep their own label; nothing is rewritten.
+  USER_DELETED: { icon: UserMinus, label: "User Deactivated (legacy)", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
+  USER_DEACTIVATED: { icon: UserMinus, label: "User Deactivated", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
   PASSWORD_CHANGED: { icon: Settings, label: "Password Changed", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400" },
   CREDITS_ALLOCATED: { icon: Coins, label: "Credits Allocated", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
   CREDITS_USED: { icon: Coins, label: "Credits Used", color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" },
@@ -171,7 +173,8 @@ export default function Audit() {
                   <SelectItem value="USER_LOGIN">Login</SelectItem>
                   <SelectItem value="USER_LOGOUT">Logout</SelectItem>
                   <SelectItem value="USER_CREATED">User Created</SelectItem>
-                  <SelectItem value="USER_DELETED">User Deleted</SelectItem>
+                  <SelectItem value="USER_DEACTIVATED">User Deactivated</SelectItem>
+                  <SelectItem value="USER_DELETED">User Deactivated (legacy)</SelectItem>
                   <SelectItem value="CREDITS_ALLOCATED">Credits Allocated</SelectItem>
                   <SelectItem value="CAMPAIGN_CREATED">Campaign Created</SelectItem>
                   <SelectItem value="CAMPAIGN_COMPLETED">Campaign Completed</SelectItem>

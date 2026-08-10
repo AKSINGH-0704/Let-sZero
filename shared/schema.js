@@ -74,7 +74,14 @@ export const AUDIT_ACTIONS = {
   USER_LOGOUT: "USER_LOGOUT",
   USER_CREATED: "USER_CREATED",
   USER_UPDATED: "USER_UPDATED",
+  // M56 Phase B — `DELETE /api/users/:id` performs a REVERSIBLE deactivation:
+  // no row is removed and no PII is erased. USER_DELETED named an operation the
+  // platform has never had, and support read it as "the account is gone".
+  // USER_DEACTIVATED is what is emitted from M56 onward. USER_DELETED is
+  // RETAINED, never rewritten: thousands of historical rows carry it, and
+  // reassigning their meaning would be falsifying the audit trail.
   USER_DELETED: "USER_DELETED",
+  USER_DEACTIVATED: "USER_DEACTIVATED",
   // Distinct from USER_REACTIVATED (below) — that action is reserved for the inactivity
   // governance system auto-clearing isDormant (self/system-triggered, userId===targetId in
   // every existing call site). This one is an explicit admin action flipping isActive back
