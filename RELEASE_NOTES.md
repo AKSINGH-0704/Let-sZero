@@ -2,13 +2,27 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-08-10 (v2.4.0)
+**Last updated:** 2026-08-10 (v2.4.1)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.4.0 (2026-08-10)
+## Current Release — v2.4.1 (2026-08-10)
+
+**Five new Resource Center guides, covering gaps the library did not address.**
+
+- **Google and Yahoo sender requirements** — what the bulk-sender rules actually require, including the two places senders satisfy them on paper and still fail.
+- **Plain text vs HTML for cold email** — why filters do not penalise HTML itself, and how many links is too many.
+- **Shared vs dedicated IP** — why a dedicated IP is not an upgrade for most senders, and the volume at which that changes.
+- **Do you need a separate sending domain?** — the argument that matters most, which is about protecting your invoices rather than your outreach.
+- **Cold email compliance: CAN-SPAM, GDPR and the rest** — the library's first compliance coverage, correcting the two most common misreadings of both regimes.
+
+Nothing changed in the product, your account, or how sending works. This release adds documentation only.
+
+---
+
+## v2.4.0 (2026-08-10)
 
 **Buying seats now explains itself from start to finish.**
 
