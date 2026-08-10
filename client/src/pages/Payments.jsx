@@ -306,6 +306,14 @@ function ProcessPayment({ paymentId }) {
       // experience (handleActivationClose below).
       invalidateAfter("creditsChanged");
       queryClient.invalidateQueries({ queryKey: ["/api/payments"], exact: true });
+      // M53 — a seat purchase changes seat entitlement, not credits, and
+      // `creditsChanged` does not carry the seat query. Without this the
+      // activation panel that now reports seats, the renewal date and whether
+      // automatic renewal was established would render the PRE-purchase payload
+      // it already had cached — reporting the state the customer just changed.
+      if (data?.payment?.kind === "SEATS") {
+        queryClient.invalidateQueries({ queryKey: ["/api/seats/subscription"] });
+      }
       // M20-C: a premium activation overlay replaces the old toast + banner —
       // reinforces the plan's value and drives the customer toward whichever
       // real setup step (domain / team / first campaign) is actually missing,

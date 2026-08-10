@@ -33,6 +33,15 @@ import { CheckCircle, Users, Globe, Shield, Mail, ArrowRight, X } from "lucide-r
 import { useAuth } from "@/context/AuthContext";
 import { formatNumber } from "@/lib/utils";
 import { markTeamsEducationSeen } from "@/lib/teamsEducation";
+// M53 — a seat purchase states amounts and dates here, so it borrows the same
+// formatter the billing surfaces use rather than growing a second one.
+import { formatMinor } from "@shared/seatPricing";
+
+/** Same date presentation as the seat pages, so one journey reads as one product. */
+function fmtDay(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
 
 // The paid tiers, and only the paid tiers. MAX_TEAM_MEMBERS also carries
 // free/trial seat limits (both 25, uniform since M20), so matching a plan name
@@ -115,12 +124,31 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   const planKey = (payment?.planId || payment?.planName || "").toLowerCase();
   const paidTier = PAID_TIERS.find(t => planKey.includes(t)) || null;
 
+  // ── M53/UX-2 — a seat purchase is not a credit purchase ────────────────────
+  // This panel is rendered for EVERY payment kind (Payments.jsx sets
+  // `activatedPayment` from the verify response without branching), and it was
+  // written for credits only: it told a seat buyer "your credits are in" and
+  // showed them "Credits added +0" seconds after they paid for seats.
+  //
+  // M52 fixed exactly this false claim one screen earlier — the Razorpay modal
+  // called a seat purchase "0 credits" — and stopped there. Same defect, same
+  // journey, one screen later.
+  //
+  // `kind` is the payment authority's own field, the same one the server forks
+  // every value-moving path on (`isSeatPayment`). Never re-derived from copy.
+  const isSeats = payment?.kind === "SEATS";
+
   // /api/users/team-usage is admin-gated (adminMiddleware). A member-role
   // purchaser would get a 403 here, which must not be read as "this workspace
   // has no team" and used to push them at a Team Management page they cannot
   // open — so the role check gates the query itself, not just the CTA.
   const canManageTeam = TEAM_ADMIN_ROLES.includes(user?.role);
-  const teamIntroEligible = !!paidTier && canManageTeam;
+  // M53 — a seat purchase IS the paid team purchase, but it never matched here:
+  // `paidTier` is sniffed from the plan name, and a seat payment's planName reads
+  // "Team Seats — 3 × Monthly", which contains no tier word. So the customer who
+  // had just bought seats fell to the compact variant and was never offered the
+  // one action those seats exist for. `kind` answers this directly.
+  const teamIntroEligible = (!!paidTier || isSeats) && canManageTeam;
 
   const { data: teamUsage, isLoading: teamUsageLoading } = useQuery({
     queryKey: ["/api/users/team-usage"],
@@ -144,6 +172,71 @@ export default function PostPurchaseActivation({ payment, onClose }) {
     ? (seatInfo.entitlement.unlimited ? Infinity : seatInfo.entitlement.seats)
     : null;
   const hasTeamMembers = (teamUsage?.totalMembers ?? 0) > 0;
+
+  // ── M53 — the seat purchase's own facts, all read from existing authorities ──
+  const seatSub = seatInfo?.subscription ?? null;
+  const renewalAt = seatInfo?.renewal?.at ?? seatSub?.periodEnd ?? null;
+  // Whether this renews by itself is `renewalMode` — the ONE server-derived field
+  // M44 created so no surface can answer that question its own way. Deriving it
+  // here from the instrument's display state instead would have been a second
+  // authority for one fact, which is the drift M44 exists to prevent; the
+  // commercial-consistency guard caught exactly that and is why this reads the
+  // centralised field. PENDING_AUTH (authorisation abandoned at the bank)
+  // correctly resolves to MANUAL through it.
+  const renewsAutomatically = seatInfo?.renewalMode === "AUTOMATIC";
+  // The reason the server gave when it could not arrange automatic renewal. It
+  // was already persisted on the payment (`startSeatPayment` writes it into
+  // metadata); this is the first surface that reads it.
+  const autopayUnavailable = payment?.metadata?.autopayUnavailable ?? null;
+  const askedForAutopay = payment?.metadata?.autopayAtCheckout === true;
+
+  /**
+   * What to tell the customer about automatic renewal, in the state they are
+   * actually in. Returns null while the seat payload is still unknown — an
+   * unanswered server has made no claim, and this panel must not invent one
+   * (the M43 silence rule) seconds after a payment.
+   */
+  const autopayOutcome = (() => {
+    if (!isSeats || !seatInfo) return null;
+    const manualTail = "We'll email you a reminder before your period ends.";
+
+    if (renewsAutomatically) {
+      const amount = seatInfo?.renewal?.totalMinor != null
+        ? formatMinor(seatInfo.renewal.totalMinor, seatSub?.currency || "INR")
+        : null;
+      return {
+        ok: true,
+        title: "Automatic renewal is on",
+        detail: `${amount && renewalAt ? `We'll charge ${amount} on ${fmtDay(renewalAt)} and each period after. ` : ""}`
+          + "We always email you first, and you can turn it off any time — it won't cancel your subscription.",
+      };
+    }
+
+    if (autopayUnavailable === "CONTACT_REQUIRED") {
+      return {
+        ok: false,
+        // The panel headline already says the seats are active; repeating it here
+        // in different words ("live") is a second vocabulary for one fact.
+        title: "Renewal is manual",
+        detail: "We couldn't set up automatic renewal because your bank needs a phone number for it. "
+          + `Add one to your sender profile and you can switch it on from the billing page. ${manualTail}`,
+      };
+    }
+    if (autopayUnavailable || askedForAutopay) {
+      // GATEWAY_UNAVAILABLE / CUSTOMER_CREATE_FAILED / ORDER_REJECTED — or asked
+      // for and not established. The customer does not need to know which.
+      return {
+        ok: false,
+        title: "Renewal is manual",
+        detail: `We couldn't save a payment method for automatic renewal this time. Your purchase went through in full, and you can set automatic renewal up from the billing page whenever you like. ${manualTail}`,
+      };
+    }
+    return {
+      ok: true,
+      title: "Renewal is manual",
+      detail: `Nothing is charged automatically. ${manualTail} You can switch automatic renewal on any time from the billing page.`,
+    };
+  })();
 
   // Only introduce Teams to a paid workspace that hasn't built one. While the
   // team count is still loading we deliberately hold the compact variant: it is
@@ -180,11 +273,18 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   // customer something about money that the billing system disagrees with. While
   // the state is unknown the commercial clause is omitted rather than guessed,
   // which is the same silence rule `commercialModel` follows.
-  const seatNote = seatInfo?.billingEnabled === undefined
+  // M53 — a SEAT buyer is never told anything about credits on this screen. The
+  // separation is worth stating to somebody who just bought credits and is being
+  // introduced to Teams; to somebody who just bought seats it is noise about a
+  // product they did not buy, on the screen that confirms what they did.
+  // (The seat calculator already makes the separation before they pay.)
+  const seatNote = isSeats
     ? "Invite them whenever you're ready."
-    : seatInfo.billingEnabled
-      ? "Seats are billed separately from credits. Invite them whenever you're ready."
-      : "Included in your plan, at no extra cost. Invite them whenever you're ready.";
+    : seatInfo?.billingEnabled === undefined
+      ? "Invite them whenever you're ready."
+      : seatInfo.billingEnabled
+        ? "Seats are billed separately from credits. Invite them whenever you're ready."
+        : "Included in your plan, at no extra cost. Invite them whenever you're ready.";
 
   const collaboration = [
     { icon: Mail,   text: "Every campaign in one place, visible to the whole workspace" },
@@ -246,32 +346,90 @@ export default function PostPurchaseActivation({ payment, onClose }) {
           </div>
 
           <h2 id="activation-title" className="text-center text-2xl font-bold" style={{ color: "#F0F0F5", fontFamily: "'Cabinet Grotesk', sans-serif" }}>
-            You're on {payment?.planName || "your new plan"}
+            {isSeats ? "Your seats are active" : `You're on ${payment?.planName || "your new plan"}`}
           </h2>
           <p className="mt-1.5 text-center text-sm" style={{ color: "#9898B8" }}>
-            Payment confirmed, your credits are in. A receipt is on its way to your inbox.
+            {isSeats
+              ? "Payment confirmed. Your team can start using the new seats right away, and a receipt is on its way to your inbox."
+              : "Payment confirmed, your credits are in. A receipt is on its way to your inbox."}
           </p>
 
-          {/* Credits added this purchase + the resulting total — both numbers
-              visible together so the customer never has to do the addition
-              themselves or wonder whether the purchase actually landed. Shown
-              in both variants: it is the point of the purchase. */}
-          <div className="mt-6 grid grid-cols-2 gap-2.5">
-            <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
-              <p className="text-xs" style={{ color: "#7878A0" }}>Credits added</p>
-              <p className="mt-0.5 text-lg font-bold" style={{ color: "#00E5C8" }}>
-                +{formatNumber(payment?.credits ?? 0)}
+          {isSeats ? (
+            /* What became active, and what happens next — the two questions a
+               seat buyer has. Both come from the seat authority
+               (`/api/seats/subscription`), the same payload the billing page
+               renders, so this screen and that one cannot disagree. Each figure
+               is omitted rather than guessed while unknown (the M43 silence
+               rule): a wrong number here is a number the customer read seconds
+               after paying. */
+            <div className="mt-6 grid grid-cols-2 gap-2.5" data-testid="activation-seat-stats">
+              <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
+                <p className="text-xs" style={{ color: "#7878A0" }}>Seats now active</p>
+                <p className="mt-0.5 text-lg font-bold" style={{ color: "#00E5C8" }} data-testid="activation-seat-count">
+                  {seatLimit === Infinity ? "Unlimited"
+                    : typeof seatLimit === "number" ? formatNumber(seatLimit)
+                    : <span className="inline-block h-5 w-10 rounded animate-pulse motion-reduce:animate-none" style={{ background: "#1A1A2E" }} aria-hidden="true" />}
+                </p>
+              </div>
+              <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
+                <p className="text-xs" style={{ color: "#7878A0" }}>
+                  {renewsAutomatically ? "Renews" : "Renew by"}
+                </p>
+                <p className="mt-0.5 text-lg font-bold" style={{ color: "#F0F0F5" }} data-testid="activation-renewal">
+                  {renewalAt
+                    ? fmtDay(renewalAt)
+                    : <span className="inline-block h-5 w-14 rounded animate-pulse motion-reduce:animate-none" style={{ background: "#1A1A2E" }} aria-hidden="true" />}
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Credits added this purchase + the resulting total — both numbers
+                visible together so the customer never has to do the addition
+                themselves or wonder whether the purchase actually landed. */
+            <div className="mt-6 grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
+                <p className="text-xs" style={{ color: "#7878A0" }}>Credits added</p>
+                <p className="mt-0.5 text-lg font-bold" style={{ color: "#00E5C8" }}>
+                  +{formatNumber(payment?.credits ?? 0)}
+                </p>
+              </div>
+              <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
+                <p className="text-xs" style={{ color: "#7878A0" }}>New balance</p>
+                <p className="mt-0.5 text-lg font-bold" style={{ color: "#F0F0F5" }}>
+                  {creditsInfo
+                    ? formatNumber(creditsInfo.total ?? 0)
+                    : <span className="inline-block h-5 w-14 rounded animate-pulse motion-reduce:animate-none" style={{ background: "#1A1A2E" }} aria-hidden="true" />}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── M53/UX-3: was automatic renewal actually arranged? ───────────── */}
+          {/* THE SILENT-DEGRADATION FIX. The customer chose "Renew automatically"
+              on the confirmation screen and then went to the gateway. Four server
+              paths can refuse to arrange it (CONTACT_REQUIRED, GATEWAY_UNAVAILABLE,
+              CUSTOMER_CREATE_FAILED, ORDER_REJECTED); each correctly degrades to a
+              plain order so the SALE always completes, and each was recorded on the
+              payment and then never shown, because the checkout response redirects
+              to the gateway before the client can read it. The customer found out a
+              month later, when nothing was charged.
+              Nothing new is computed here: the outcome is the seat authority's own
+              `autopay.displayState`, and the REASON is the code the server already
+              persisted in payment metadata. */}
+          {isSeats && autopayOutcome && (
+            <div
+              className="mt-4 rounded-xl p-3.5"
+              style={{ background: "#08080F", border: `1px solid ${autopayOutcome.ok ? "#1A1A2E" : "#4A3A16"}` }}
+              data-testid="activation-autopay"
+            >
+              <p className="text-sm font-semibold" style={{ color: autopayOutcome.ok ? "#00E5C8" : "#E8B34A" }}>
+                {autopayOutcome.title}
+              </p>
+              <p className="mt-1 text-xs" style={{ color: "#9898B8" }} data-testid="activation-autopay-detail">
+                {autopayOutcome.detail}
               </p>
             </div>
-            <div className="rounded-xl p-3.5 text-center" style={{ background: "#08080F", border: "1px solid #1A1A2E" }}>
-              <p className="text-xs" style={{ color: "#7878A0" }}>New balance</p>
-              <p className="mt-0.5 text-lg font-bold" style={{ color: "#F0F0F5" }}>
-                {creditsInfo
-                  ? formatNumber(creditsInfo.total ?? 0)
-                  : <span className="inline-block h-5 w-14 rounded animate-pulse motion-reduce:animate-none" style={{ background: "#1A1A2E" }} aria-hidden="true" />}
-              </p>
-            </div>
-          </div>
+          )}
 
           {showTeamIntro ? (
             <>
