@@ -279,9 +279,25 @@ export default function SeatChangeSummary({
           M53/UX-7 — "not straight away" was reassuring and unbounded, which is
           the shape of an answer that generates the follow-up question rather
           than closing it. The system enforces a definite window, so quote it. */}
+      {/* CDP-2 — this note used to be identical in both renewal modes, which put
+          a contradiction on one screen: a customer who had just selected "Remind
+          me instead — nothing is charged automatically" then read that we would
+          "retry" a payment. Nothing retries for them; their risk is forgetting,
+          not a decline. The grace window is the same either way (a period that
+          ends unpaid enters it regardless of how it was meant to be paid), so
+          only the cause and the remedy change. */}
       <p className="text-xs text-muted-foreground" data-testid="confirm-failure-note">
-        If a payment ever fails, nothing is switched off straight away — your whole team keeps working
-        for {GRACE_PERIOD_DAYS} days while we retry and email you.
+        {willAutoRenew ? (
+          <>
+            If a payment ever fails, nothing is switched off straight away — your whole team keeps
+            working for {GRACE_PERIOD_DAYS} days while we retry and email you.
+          </>
+        ) : (
+          <>
+            If you don't renew in time, nothing is switched off straight away — your whole team keeps
+            working for {GRACE_PERIOD_DAYS} days while we email you reminders.
+          </>
+        )}
       </p>
     </div>
   );

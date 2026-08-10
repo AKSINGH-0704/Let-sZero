@@ -189,6 +189,13 @@ export default function PostPurchaseActivation({ payment, onClose }) {
   // metadata); this is the first surface that reads it.
   const autopayUnavailable = payment?.metadata?.autopayUnavailable ?? null;
   const askedForAutopay = payment?.metadata?.autopayAtCheckout === true;
+  // CDP-1 — whether the billing page can actually OFFER automatic renewal to
+  // this workspace. The payment-method card there is gated on the rollout, so a
+  // workspace outside it has no such control; telling that customer to "switch
+  // it on from the billing page" sends them to look for a button that is not
+  // rendered. Same gate, read from the same field, so the instruction and the
+  // control can never disagree.
+  const canSelfServeAutopay = seatInfo?.autopay?.inRollout === true;
 
   /**
    * What to tell the customer about automatic renewal, in the state they are
@@ -228,13 +235,16 @@ export default function PostPurchaseActivation({ payment, onClose }) {
       return {
         ok: false,
         title: "Renewal is manual",
-        detail: `We couldn't save a payment method for automatic renewal this time. Your purchase went through in full, and you can set automatic renewal up from the billing page whenever you like. ${manualTail}`,
+        detail: "We couldn't save a payment method for automatic renewal this time. Your purchase went through in full"
+          + (canSelfServeAutopay ? ", and you can set automatic renewal up from the billing page whenever you like. " : ". ")
+          + manualTail,
       };
     }
     return {
       ok: true,
       title: "Renewal is manual",
-      detail: `Nothing is charged automatically. ${manualTail} You can switch automatic renewal on any time from the billing page.`,
+      detail: `Nothing is charged automatically. ${manualTail}`
+        + (canSelfServeAutopay ? " You can switch automatic renewal on any time from the billing page." : ""),
     };
   })();
 

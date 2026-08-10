@@ -340,11 +340,19 @@ export default function TeamSeats() {
                   `autoRenews` comes from the server's renewalMode, so this flips
                   automatically if autopay is ever integrated. */}
               <p className="mt-2 text-sm text-muted-foreground">
-                {sub.cancelAtPeriodEnd
-                  ? `Ends ${fmtDate(sub.periodEnd)}`
-                  : autoRenews
-                    ? `Renews ${fmtDate(sub.periodEnd)}`
-                    : `Renew by ${fmtDate(sub.periodEnd)}`}
+                {/* CDP-3 — in PAST_DUE the period has already ended, so quoting
+                    `periodEnd` printed a date in the PAST directly above a
+                    banner promising access until the GRACE date. The deadline
+                    that actually applies to the customer is the grace date, and
+                    it is the one the banner, the dunning emails and the
+                    expiry sweep all act on. */}
+                {sub.status === "PAST_DUE" && sub.graceEndsAt
+                  ? `Renew by ${fmtDate(sub.graceEndsAt)}`
+                  : sub.cancelAtPeriodEnd
+                    ? `Ends ${fmtDate(sub.periodEnd)}`
+                    : autoRenews
+                      ? `Renews ${fmtDate(sub.periodEnd)}`
+                      : `Renew by ${fmtDate(sub.periodEnd)}`}
               </p>
             </div>
           )}
@@ -469,7 +477,11 @@ export default function TeamSeats() {
                 </>
               ) : (
                 <p className="mt-1 text-sm text-muted-foreground">
-                  No payment method saved — renewal is manual. We'll email you a reminder before your period ends.
+                  {/* CDP-3 — the reminder promise is future-tense and the period
+                      has already ended in PAST_DUE, where the dunning emails are
+                      the ones actually being sent. */}
+                  No payment method saved — renewal is manual.
+                  {sub?.status !== "PAST_DUE" && " We'll email you a reminder before your period ends."}
                 </p>
               )}
             </div>
@@ -562,7 +574,13 @@ export default function TeamSeats() {
       )}
 
       {/* ── Renewal preview ──────────────────────────────────────────────── */}
-      {sub && renewal && !sub.cancelAtPeriodEnd && (
+      {/* CDP-3 — suppressed while PAST_DUE. The period has already ended in that
+          state, so this panel was telling the customer to "Renew by <a date in
+          the past>" directly underneath a banner explaining that the renewal had
+          already failed and that access now runs to the GRACE date. Two dates,
+          two tenses, one screen. The past-due banner above already carries the
+          amount, the deadline that actually applies and the action. */}
+      {sub && renewal && !sub.cancelAtPeriodEnd && sub.status !== "PAST_DUE" && (
         <div className="mt-4 flex items-start gap-3 rounded-xl border border-border p-5 text-sm" data-testid="seat-renewal">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           {/* M44 — this said "Next charge ₹X on <date>". Nothing charges: v1 is

@@ -260,6 +260,60 @@ describe("UX-7 — the failure promise is bounded", () => {
   });
 });
 
+// ── CDP audit findings (pre-deployment adversarial pass) ───────────────────
+describe("CDP-1 — never point a customer at a control their workspace cannot show", () => {
+  // The billing page's payment-method card is gated on the autopay rollout, so a
+  // workspace outside it has NO "turn on automatic renewal" control. Telling that
+  // customer to switch it on there is a dead end: they go and find nothing.
+  const rollout = (inRollout) => {
+    const s = seatState();
+    s.autopay = { ...s.autopay, inRollout };
+    return s;
+  };
+
+  it("omits the billing-page instruction when the workspace is outside the rollout", () => {
+    const h = activation({ payment: seatPayment(), seats: rollout(false) });
+    expect(h).toMatch(/Renewal is manual/i);          // still states the outcome
+    expect(h).not.toMatch(/from the billing page/i);   // but sends them nowhere
+  });
+
+  it("keeps the instruction when the control genuinely exists", () => {
+    expect(activation({ payment: seatPayment(), seats: rollout(true) }))
+      .toMatch(/from the billing page/i);
+  });
+
+  it("applies the same rule to a degraded purchase", () => {
+    const h = activation({
+      payment: seatPayment({ autopayUnavailable: "ORDER_REJECTED" }), seats: rollout(false),
+    });
+    expect(h).toMatch(/purchase went through in full/i);
+    expect(h).not.toMatch(/from the billing page/i);
+  });
+});
+
+describe("CDP-2 — the failure note never contradicts the customer's own choice", () => {
+  it("promises retries only to a customer who will actually be charged", () => {
+    const h = summary({ preview: immediate(), offerAutopay: true, autopayAtCheckout: true, renewalMode: "AUTOMATIC" });
+    expect(h).toMatch(/while we retry/i);
+  });
+
+  it("does not promise a retry to a customer who chose to be reminded", () => {
+    // They selected "Nothing is charged automatically" moments earlier on this
+    // same screen; nothing can retry for them.
+    const h = summary({ preview: immediate(), offerAutopay: true, autopayAtCheckout: false, renewalMode: "AUTOMATIC" });
+    expect(h).not.toMatch(/while we retry/i);
+    expect(h).toMatch(/if you don't renew in time/i);
+    expect(h).toMatch(/email you reminders/i);
+  });
+
+  it("still states the same grace window in both modes", () => {
+    for (const choice of [true, false]) {
+      expect(summary({ preview: immediate(), offerAutopay: true, autopayAtCheckout: choice, renewalMode: "AUTOMATIC" }))
+        .toMatch(new RegExp(`${GRACE_PERIOD_DAYS} days`));
+    }
+  });
+});
+
 // ── UX-8 ───────────────────────────────────────────────────────────────────
 describe("UX-8 — one renewal vocabulary, and no internal words, on every screen", () => {
   const surfaces = () => [

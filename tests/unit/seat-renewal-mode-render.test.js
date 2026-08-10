@@ -146,6 +146,40 @@ describe("renewal is AUTOMATIC — the same page states the charge", () => {
   });
 });
 
+// CDP-3 — found by the pre-deployment journey audit. In PAST_DUE the period has
+// already ended, so every surface quoting `periodEnd` printed a date in the PAST
+// beside a banner promising access until the GRACE date: two dates, two tenses,
+// one screen, on the page a worried customer opens after a failed renewal.
+describe("PAST_DUE — every date on the page is the one that actually applies", () => {
+  const pastDue = () => {
+    const base = payload({ renewalMode: "MANUAL" });
+    base.subscription.status = "PAST_DUE";
+    base.subscription.graceEndsAt = "2026-09-13T00:00:00.000Z";
+    base.seatsAtRisk = 2;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["/api/auth/me"], OWNER);
+    qc.setQueryData(["/api/seats/subscription"], base);
+    return renderToString(makeTree(qc)).replace(/<!-- -->/g, "").replace(/&#x27;/g, "'");
+  };
+
+  it("quotes the grace deadline, not the period that already elapsed", () => {
+    const h = pastDue();
+    expect(h).toContain("Seats in use");            // the page really rendered
+    expect(h).toMatch(/Renew by 13 Sept? 2026/);    // the deadline that applies
+    expect(h).not.toMatch(/Renew by 30 Aug 2026/);  // the elapsed period end
+  });
+
+  it("drops the forward-looking renewal preview while past due", () => {
+    // It said "Renew by <past date> to keep N seats" under a banner explaining
+    // the renewal had already failed.
+    expect(pastDue()).not.toMatch(/to keep 10 seats/);
+  });
+
+  it("does not promise a reminder for a period that has already ended", () => {
+    expect(pastDue()).not.toMatch(/reminder before your period ends/i);
+  });
+});
+
 describe("already opted out — both modes say the seats end", () => {
   it("states the end date and does not chase a renewal", () => {
     const h = render({ renewalMode: "MANUAL", cancelAtPeriodEnd: true });

@@ -43,7 +43,15 @@ beforeAll(async () => {
   await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
   const { port } = httpServer.address();
   baseUrl = `http://127.0.0.1:${port}`;
-});
+  // QA-003 — this hook does the heaviest setup in the suite (the storage layer,
+  // the ENTIRE route table, then a live HTTP server) and was the only such file
+  // relying on the 30s default; every other heavy-setup suite here declares
+  // 60000. Under a full serial run it intermittently exceeded 30s and reported
+  // a failure that had nothing to do with tenant isolation, while passing
+  // standalone every time. Not a tolerance change: no assertion is relaxed and
+  // all 18 checks are unchanged — the suite simply gets the same setup budget
+  // its siblings already have.
+}, 60000);
 
 afterAll(() => {
   httpServer?.close();
