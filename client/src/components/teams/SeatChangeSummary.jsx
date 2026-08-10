@@ -25,7 +25,12 @@
  * derives no price, no seat count and no renewal date.
  */
 
-import { formatMinor } from "@shared/seatPricing";
+import { formatMinor, SEAT_TERMS } from "@shared/seatPricing";
+// M53/UX-7 — the grace window is a property of the billing system, not a number
+// to retype in copy. Read it from the authority that enforces it so the sentence
+// can never outlive a policy change.
+import { GRACE_PERIOD_DAYS } from "@shared/subscriptionStateMachine";
+import { cn } from "@/lib/utils";
 
 function fmtDate(d) {
   if (!d) return "—";
@@ -78,6 +83,9 @@ export default function SeatChangeSummary({
   if (!preview) return null;
   const currency = preview.currency;
   const paysToday = preview.chargeNowMinor > 0;
+  // The term the customer is committing to. Named by the pricing authority, never
+  // restated here — a term label in a component is a label that goes stale.
+  const termLabel = SEAT_TERMS[preview.renewal?.term ?? preview.scheduled?.term]?.label ?? null;
 
   // Automatic only if ALL THREE hold: the platform says so, the customer has not
   // just declined it on this very screen, and nothing is blocking an instrument
@@ -140,6 +148,14 @@ export default function SeatChangeSummary({
           value={preview.effectiveSeats ?? preview.quote?.seatsGranted}
           testId="confirm-seats"
         />
+        {/* M53/UX-5 — the term was the one commercial fact this screen never
+            stated. An annual buyer committing ₹19,500 saw a date twelve months
+            out and no word confirming they were buying a year; the per-seat rate
+            and "billed yearly" label both live on the calculator, one step back
+            and already dismissed. Read from the pricing authority's own label. */}
+        {termLabel && (
+          <Row label="Billing term" value={termLabel} testId="confirm-term" />
+        )}
         {preview.renewal?.totalMinor != null && (
           <Row
             label={`${willAutoRenew ? "Then" : "Renew by"} ${fmtDate(preview.renewal.at)}`}
@@ -148,6 +164,18 @@ export default function SeatChangeSummary({
           />
         )}
       </dl>
+
+      {/* M53/UX-6 — "is anything added at checkout?" is the question this answers,
+          and it is answerable. What is NOT answerable here is the tax treatment:
+          the pricing authority makes no tax claim, GST invoicing is unbuilt
+          (SEAT-004), and the renewal receipt email already tells customers a GST
+          invoice is not included. So this states the fact that is true under
+          every tax treatment — the figure above is what leaves the account — and
+          invents nothing about GST. */}
+      <p className="text-xs text-muted-foreground" data-testid="confirm-total-note">
+        {formatMinor(preview.chargeNowMinor, currency)} is the full amount charged today — nothing is
+        added at checkout.
+      </p>
 
       {/* A mid-period upgrade charges a part-period amount. Say why in one
           plain sentence and make clear the renewal date does NOT move. The
@@ -160,27 +188,75 @@ export default function SeatChangeSummary({
         </p>
       )}
 
-      {/* The AutoPay decision, made BEFORE paying — never after, never silently. */}
+      {/* The automatic-renewal decision, made BEFORE paying — never after, never
+          silently.
+
+          M53/UX-4 — this was a single PRE-TICKED checkbox. The disclosure beside
+          it was already excellent (exact amount, exact date, how to stop), but a
+          pre-ticked box is the classic dark-pattern shape for consent to a
+          standing bank authorisation, and it is the one thing on this screen a
+          regulator, a chargeback or a dispute would look at first. A ticked box
+          also hides the alternative: nothing on the screen told the customer that
+          declining was an option at all.
+
+          Two visible options fix both. The choice is now explicit and legible,
+          each option states its own consequence, and neither is a hidden default.
+
+          ⚠️ One IS pre-selected, deliberately. Requiring an untouched customer to
+          choose before they can pay would let an unanswered question block the
+          SALE — and the rule that outranks everything in this journey (ADR-023)
+          is that arranging automatic renewal must never cost the customer their
+          purchase. A visible, labelled, equally-weighted default is the strongest
+          position available that cannot block checkout. */}
       {offerAutopay ? (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4" data-testid="autopay-consent">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-            checked={autopayAtCheckout}
-            onChange={(e) => onAutopayChange?.(e.target.checked)}
-            data-testid="autopay-consent-input"
-          />
-          <span className="text-sm">
-            <span className="font-medium text-foreground">Renew automatically</span> using this payment method.
-            {preview.renewal?.totalMinor != null && (
-              <>
-                {" "}We'll charge {formatMinor(preview.renewal.totalMinor, currency)} on{" "}
-                {fmtDate(preview.renewal.at)} and each period after.
-              </>
-            )}
-            {" "}We always email you first, and you can turn this off any time — it won't cancel your subscription.
-          </span>
-        </label>
+        <div
+          role="radiogroup"
+          aria-label="How would you like to renew?"
+          className="space-y-2"
+          data-testid="autopay-consent"
+        >
+          {[
+            {
+              value: true,
+              testId: "autopay-choice-auto",
+              title: "Renew automatically",
+              body: preview.renewal?.totalMinor != null
+                ? `We'll charge ${formatMinor(preview.renewal.totalMinor, currency)} on ${fmtDate(preview.renewal.at)} and each period after, using this payment method. We always email you first, and you can turn it off any time — it won't cancel your subscription.`
+                : "We'll charge your renewal to this payment method. We always email you first, and you can turn it off any time — it won't cancel your subscription.",
+            },
+            {
+              value: false,
+              testId: "autopay-choice-manual",
+              title: "Remind me instead",
+              body: "We'll email you before your period ends and you pay when you're ready. Nothing is charged automatically.",
+            },
+          ].map((opt) => {
+            const selected = autopayAtCheckout === opt.value;
+            return (
+              <label
+                key={opt.testId}
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors",
+                  selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40"
+                )}
+                data-testid={opt.testId}
+              >
+                <input
+                  type="radio"
+                  name="seat-renewal-choice"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                  checked={selected}
+                  onChange={() => onAutopayChange?.(opt.value)}
+                  data-testid={`${opt.testId}-input`}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-foreground">{opt.title}</span>
+                  {" — "}{opt.body}
+                </span>
+              </label>
+            );
+          })}
+        </div>
       ) : autopayBlockedOnContact ? (
         <p className="text-sm" data-testid="autopay-blocked">
           <span className="font-medium text-foreground">Renewal will be manual.</span>{" "}
@@ -198,10 +274,14 @@ export default function SeatChangeSummary({
       )}
 
       {/* What happens if it fails. Every customer wonders; answering it here is
-          cheaper than answering it in support after it has happened. */}
+          cheaper than answering it in support after it has happened.
+
+          M53/UX-7 — "not straight away" was reassuring and unbounded, which is
+          the shape of an answer that generates the follow-up question rather
+          than closing it. The system enforces a definite window, so quote it. */}
       <p className="text-xs text-muted-foreground" data-testid="confirm-failure-note">
         If a payment ever fails, nothing is switched off straight away — your whole team keeps working
-        while we retry and email you.
+        for {GRACE_PERIOD_DAYS} days while we retry and email you.
       </p>
     </div>
   );
