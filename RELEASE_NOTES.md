@@ -2,13 +2,31 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-07-28 (v2.3.1)
+**Last updated:** 2026-08-10 (v2.4.0)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.3.1 (2026-07-28)
+## Current Release — v2.4.0 (2026-08-10)
+
+**Buying seats now explains itself from start to finish.**
+
+The confirmation screen already told you what you pay today and when you renew. Everything after it — the screen you land on once the payment clears — was still written for credit top-ups, and a few questions were left for you to ask support. That is closed.
+
+- **The screen after payment is about what you actually bought.** A seat purchase used to confirm your payment by telling you "your credits are in" and showing "Credits added +0". It now tells you how many seats are active, when they renew, and whether renewal is automatic.
+- **If automatic renewal could not be set up, you are told immediately** — on that same screen, with the one thing that fixes it. Previously the purchase completed correctly and the arrangement quietly did not, and there was no way to know until a renewal did not happen.
+- **Choosing how you renew is now an open choice, not a pre-ticked box.** "Renew automatically" and "Remind me instead" are both shown, each stating exactly what it means. Automatic remains the default, and you can change it at any time without cancelling anything.
+- **The confirmation names your billing term** — monthly or annual — alongside the amount, and confirms that the figure shown is the full amount charged today.
+- **Ending your seats now asks first.** The control that ends a subscription sat one word away from the control that simply turns off automatic renewal, and it acted on a single click. It is now clearly labelled by what it does, and it confirms before doing it — telling you what you keep, what changes and when, and that you can undo it.
+- **"How long do I have if a payment fails?" is answered before you pay.** Your team keeps working for 14 days while we retry and email you.
+- **One name for one thing.** "Automatic payment", "auto-renewal" and "AutoPay" all meant the same thing in different places, including in emails. Everything now says automatic renewal.
+
+Nothing about pricing, billing dates, entitlements or existing subscriptions changed in this release.
+
+---
+
+## v2.3.1 (2026-07-28)
 
 **The gradual sending ramp announced in v2.3.0 is now actually applied.**
 
