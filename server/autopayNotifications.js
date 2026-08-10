@@ -75,7 +75,7 @@ export async function sendPredebitNotice({
         `If it isn't confirmed, nothing is lost immediately — you'll keep everything ` +
         `while we retry, and you can always pay manually from the same page.\n\n`
       : `You don't need to do anything — this is just advance notice.\n\n`) +
-    `To change your payment method, turn off automatic payment, or cancel, visit:\n${billingUrl()}\n\n` +
+    `To change your payment method, turn off automatic renewal, or cancel, visit:\n${billingUrl()}\n\n` +
     `— The RepMail Team`;
 
   return deliver(to, subject, body, "predebit");
@@ -94,7 +94,7 @@ export async function sendRenewalConfirmation({
     `Next renewal: ${day(periodEnd)}\n\n` +
     `This is your receipt. A GST invoice is not included — if you need tax ` +
     `documentation, reply to this email and we'll help.\n\n` +
-    `Manage automatic payment any time:\n${billingUrl()}\n\n` +
+    `Manage automatic renewal any time:\n${billingUrl()}\n\n` +
     `— The RepMail Team`;
 
   return deliver(to, `Payment receipt — ${amount} for ${product}`, body, "renewal-confirmation");
