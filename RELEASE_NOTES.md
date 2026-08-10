@@ -2,13 +2,28 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-08-10 (v2.4.1)
+**Last updated:** 2026-08-10 (v2.4.2)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.4.1 (2026-08-10)
+## Current Release — v2.4.2 (2026-08-10)
+
+**Six more Resource Center guides, covering the parts of outbound the library had skipped.**
+
+- **How to warm up a cold email domain in 14 days** — a day-by-day schedule with real volume numbers, and what to watch at each step so you know when to slow down instead of continuing.
+- **How to build and verify a cold email list** — where contacts should come from, what verification does and does not catch, and what a bounce actually costs you.
+- **CSV formatting mistakes that break cold campaigns** — the unglamorous one: the invisible whitespace and encoding problems that produce "Hi ," in a real inbox.
+- **Why open rates are no longer reliable** — what Apple Mail Privacy Protection changed, and why suppressing "unengaged" contacts on open data now makes your list worse.
+- **Cold email vs LinkedIn outreach** — how the two channels actually compare, and why sequencing them beats choosing.
+- **The best day and time to send B2B cold email** — the usual answer is roughly right; here is how much it actually matters and how to test it for your own list.
+
+Nothing changed in the product, your account, or how sending works. This release adds documentation only.
+
+---
+
+## v2.4.1 (2026-08-10)
 
 **Five new Resource Center guides, covering gaps the library did not address.**
 
