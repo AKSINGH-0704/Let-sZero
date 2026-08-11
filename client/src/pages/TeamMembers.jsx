@@ -24,7 +24,7 @@
  * platform-wide administration.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useSearch } from "wouter";
 import { formatDistanceToNow } from "date-fns";
@@ -220,6 +220,9 @@ export default function TeamMembers() {
   // consequences legible before the customer commits to them.
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTo, setTransferTo] = useState("");
+  // M58/IDENT-010 — where initial focus goes when the dialog opens. See the
+  // dialog's onOpenAutoFocus for why it is the picker and not Cancel.
+  const transferSelectRef = useRef(null);
 
   // Only an ACTIVE member of this workspace can receive ownership — the same
   // rule the transaction enforces, mirrored here so we never offer a choice the
@@ -650,7 +653,22 @@ export default function TeamMembers() {
       {isWorkspaceOwner && (
         <DangerZone
           title="Workspace ownership"
-          description="Hand this workspace, and its billing, to someone else on your team."
+          // M58/IDENT-010 — the "why is this greyed out?" sentence used to sit in a
+          // separate paragraph AFTER the region, associated with the disabled
+          // button by proximity alone. A disabled button is not focusable, so a
+          // screen-reader user tabbing the page never reached the control and
+          // never met the explanation either. Moving it into the region's own
+          // description puts the reason where the region is read, and it is now
+          // announced whether or not the button can be reached.
+          description={
+            transferCandidates.length === 0
+              ? (
+                <span data-testid="transfer-no-candidates">
+                  You need at least one other active teammate before you can hand over the workspace.
+                </span>
+              )
+              : "Hand this workspace, and its billing, to someone else on your team."
+          }
           action={
             <Button
               variant="outline"
@@ -663,37 +681,65 @@ export default function TeamMembers() {
           }
         />
       )}
-      {isWorkspaceOwner && transferCandidates.length === 0 && (
-        <p className="mt-2 text-xs text-muted-foreground" data-testid="transfer-no-candidates">
-          You need at least one other active teammate before you can hand over the workspace.
-        </p>
-      )}
 
       {/* Transfer confirmation */}
+      {/* ── M58 / IDENT-010 (a11y) ────────────────────────────────────────────
+          The picker and the consequence summary used to live INSIDE
+          AlertDialogDescription, which is the dialog's `aria-describedby`
+          target — so opening it announced a combo box and roughly two hundred
+          words of consequences as one continuous "description", before the
+          customer had heard the title settle. Nothing was unusable; it was
+          unreadable by ear.
+
+          The description now holds the one sentence that orients someone, and
+          everything interactive or scannable is a SIBLING in the dialog body,
+          where a screen reader reaches it in ordinary reading order. Purely a
+          markup relocation: identical visual design, identical behaviour, same
+          endpoint, same copy. */}
       <AlertDialog open={transferOpen} onOpenChange={(o) => { if (!o) { setTransferOpen(false); setTransferTo(""); } }}>
-        <AlertDialogContent data-testid="transfer-dialog">
+        <AlertDialogContent
+          data-testid="transfer-dialog"
+          // Focus the picker, not the Cancel button. This dialog cannot be
+          // completed without a choice — its confirm button is disabled until
+          // one is made — so landing a keyboard user on the only control that
+          // unblocks them is the shortest correct path. Falls back to Radix's
+          // own placement if the trigger is not mounted, so focus is never lost.
+          onOpenAutoFocus={(e) => {
+            if (!transferSelectRef.current) return;
+            e.preventDefault();
+            transferSelectRef.current.focus();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Transfer this workspace to a teammate</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-4 text-left">
-                <div>
-                  <Label htmlFor="transfer-to" className="text-sm">Who should own this workspace?</Label>
-                  <Select value={transferTo} onValueChange={setTransferTo}>
-                    <SelectTrigger id="transfer-to" className="mt-1.5" data-testid="select-transfer-to">
-                      <SelectValue placeholder="Choose a teammate" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {transferCandidates.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.username} — {m.email}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <OwnershipTransferSummary newOwnerName={transferTarget?.username} />
-              </div>
+            <AlertDialogDescription>
+              Choose who takes over this workspace and its billing. You stay on as a member.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          <div className="space-y-4 text-left">
+            <div>
+              <Label htmlFor="transfer-to" className="text-sm">Who should own this workspace?</Label>
+              <Select value={transferTo} onValueChange={setTransferTo}>
+                <SelectTrigger
+                  id="transfer-to"
+                  ref={transferSelectRef}
+                  className="mt-1.5"
+                  data-testid="select-transfer-to"
+                >
+                  <SelectValue placeholder="Choose a teammate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {transferCandidates.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.username} — {m.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <OwnershipTransferSummary newOwnerName={transferTarget?.username} />
+          </div>
+
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="transfer-cancel">Cancel</AlertDialogCancel>
             <AlertDialogAction

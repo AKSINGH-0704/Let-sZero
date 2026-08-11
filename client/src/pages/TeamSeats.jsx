@@ -680,17 +680,36 @@ export default function TeamSeats() {
             <AlertDialogTitle>
               {confirm?.preview?.chargeNowMinor > 0 ? "Confirm your seat change" : "Schedule this change"}
             </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <SeatChangeSummary
-                preview={confirm?.preview}
-                renewalMode={data.renewalMode}
-                offerAutopay={offerAutopay}
-                autopayBlockedOnContact={autopayBlockedOnContact}
-                autopayAtCheckout={autopayAtCheckout}
-                onAutopayChange={setAutopayAtCheckout}
-              />
+            {/* ── M58 / A11Y-002 (a11y) ──────────────────────────────────────
+                The renewal CHOICE — a radiogroup with two options and their
+                full consequences — used to live inside this description, which
+                is the dialog's `aria-describedby` target. Opening the
+                highest-stakes screen in the product therefore read out the
+                entire summary, both renewal options and every explanatory
+                sentence as one uninterrupted "description" before the customer
+                could interact with anything. Individually the radios were fine:
+                focusable, correctly announced, native arrow-key navigation. It
+                was verbose, not broken — and verbose enough on this screen to
+                matter.
+
+                The description is now the one sentence that orients someone;
+                the summary and its controls are a sibling in the dialog body,
+                reached in ordinary reading order. Markup relocation only:
+                identical component, identical props, identical copy, identical
+                visual design. */}
+            <AlertDialogDescription>
+              Check what you're paying and what changes before you confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          <SeatChangeSummary
+            preview={confirm?.preview}
+            renewalMode={data.renewalMode}
+            offerAutopay={offerAutopay}
+            autopayBlockedOnContact={autopayBlockedOnContact}
+            autopayAtCheckout={autopayAtCheckout}
+            onAutopayChange={setAutopayAtCheckout}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Not now</AlertDialogCancel>
             <AlertDialogAction

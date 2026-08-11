@@ -24,8 +24,15 @@ export default function OwnershipTransferSummary({ newOwnerName }) {
   const them = newOwnerName || "This person";
   return (
     <div className="space-y-4 text-left" data-testid="transfer-summary">
-      <div className="rounded-lg border border-border p-3">
-        <p className="text-sm font-medium text-foreground">What changes</p>
+      {/* M58/IDENT-010 — these two group headings were styled paragraphs. To a
+          screen reader they were body text, so "what changes" and "what stays"
+          were not landmarks a listener could jump between; the whole summary
+          arrived as one undifferentiated block. They are real headings now, at
+          h3 — the dialog title (AlertDialogTitle) is the h2 above them, so the
+          level is correct rather than merely plausible. The classes are
+          unchanged, so the visual design is identical. */}
+      <section className="rounded-lg border border-border p-3" aria-labelledby="transfer-changes-heading">
+        <h3 id="transfer-changes-heading" className="text-sm font-medium text-foreground">What changes</h3>
         <ul className="mt-1.5 space-y-1 text-sm text-muted-foreground">
           <li data-testid="transfer-change-owner">
             {them} becomes the workspace owner and takes over billing.
@@ -39,10 +46,10 @@ export default function OwnershipTransferSummary({ newOwnerName }) {
             Your card is never charged for a workspace you no longer own, so the new owner sets up their own.
           </li>
         </ul>
-      </div>
+      </section>
 
-      <div className="rounded-lg border border-border p-3">
-        <p className="text-sm font-medium text-foreground">What stays exactly as it is</p>
+      <section className="rounded-lg border border-border p-3" aria-labelledby="transfer-keeps-heading">
+        <h3 id="transfer-keeps-heading" className="text-sm font-medium text-foreground">What stays exactly as it is</h3>
         <ul className="mt-1.5 space-y-1 text-sm text-muted-foreground">
           <li data-testid="transfer-keep-subscription">Your subscription, seats, renewal date and amount.</li>
           <li data-testid="transfer-keep-domains">Your verified sending domains, and everyone&apos;s ability to send.</li>
@@ -50,7 +57,7 @@ export default function OwnershipTransferSummary({ newOwnerName }) {
           <li data-testid="transfer-keep-credits">Your own credits stay yours. Billing history and receipts are kept.</li>
           <li>Pending invitations, and everyone else&apos;s access.</li>
         </ul>
-      </div>
+      </section>
 
       {/* Not reversible BY YOU. The customer must understand this before they
           commit, because the recovery path runs through another person. */}

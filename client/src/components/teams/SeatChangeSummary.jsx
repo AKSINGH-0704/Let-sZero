@@ -25,6 +25,7 @@
  * derives no price, no seat count and no renewal date.
  */
 
+import { useId } from "react";
 import { formatMinor, SEAT_TERMS } from "@shared/seatPricing";
 // M53/UX-7 — the grace window is a property of the billing system, not a number
 // to retype in copy. Read it from the authority that enforces it so the sentence
@@ -80,6 +81,10 @@ export default function SeatChangeSummary({
   autopayAtCheckout = true,
   onAutopayChange,
 }) {
+  // Stable across server render and hydration (React 18). Ids are only needed
+  // to wire aria-labelledby/aria-describedby below; hand-written ones would
+  // collide the moment this component is ever mounted twice.
+  const optionIdPrefix = useId();
   if (!preview) return null;
   const currency = preview.currency;
   const paysToday = preview.chargeNowMinor > 0;
@@ -232,6 +237,18 @@ export default function SeatChangeSummary({
             },
           ].map((opt) => {
             const selected = autopayAtCheckout === opt.value;
+            // M58/A11Y-002 — the wrapping <label> made each radio's accessible
+            // NAME its entire label text: title, em dash, and a forty-word
+            // consequence. A screen-reader user heard the whole paragraph twice
+            // (once reading the group, once on focus) and had to hold both
+            // options in memory to compare them. Naming the radio with its
+            // title and DESCRIBING it with its consequence is the same
+            // information in the two slots ARIA has for exactly this: the
+            // choice is announced as "Renew automatically, radio button,
+            // selected", and the detail follows. Nothing visual changes, and
+            // the label still makes the whole card clickable.
+            const nameId = `${optionIdPrefix}-${opt.testId}-name`;
+            const descId = `${optionIdPrefix}-${opt.testId}-desc`;
             return (
               <label
                 key={opt.testId}
@@ -247,11 +264,13 @@ export default function SeatChangeSummary({
                   className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
                   checked={selected}
                   onChange={() => onAutopayChange?.(opt.value)}
+                  aria-labelledby={nameId}
+                  aria-describedby={descId}
                   data-testid={`${opt.testId}-input`}
                 />
                 <span className="text-sm">
-                  <span className="font-medium text-foreground">{opt.title}</span>
-                  {" — "}{opt.body}
+                  <span id={nameId} className="font-medium text-foreground">{opt.title}</span>
+                  {" — "}<span id={descId}>{opt.body}</span>
                 </span>
               </label>
             );

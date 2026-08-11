@@ -301,12 +301,22 @@ export default function Suppressions() {
                       <TableCell>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
+                            {/* M58 — the trigger for a destructive dialog, named.
+                                It had an icon and a `title`, so its accessible
+                                name depended on a browser/AT fallback rather
+                                than being stated; and with several rows on the
+                                page every one of them announced identically.
+                                The name now says WHICH suppression it removes,
+                                and the icon is hidden from the accessibility
+                                tree so it cannot compete with it. */}
                             <button
+                              type="button"
                               className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                               title="Remove suppression"
+                              aria-label={`Remove suppression for ${s.email}`}
                               disabled={deleteMutation.isPending}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
