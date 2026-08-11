@@ -23,7 +23,7 @@ import { PAYMENT_KIND, PAYMENT_STATUS } from "../shared/schema.js";
 import {
   CHARGE_OUTCOME, PAYMENT_PROVIDER, DEFAULT_PAYMENT_PROVIDER,
   MANDATE_STATUS, isAutopayLive, requiresAfa, autopayAllowedFor,
-  exceedsMandateCeiling,
+  exceedsMandateCeiling, GATEWAY_REVOKE_PENDING,
 } from "../shared/autopay.js";
 import { SEAT_TERMS } from "../shared/seatPricing.js";
 
@@ -343,7 +343,56 @@ export async function revokeMandate(mandate, { reason = "customer_revoked" } = {
     }
   }
 
-  const t = await storage.transitionMandate(mandate.id, MANDATE_STATUS.REVOKED, { lastError: null });
+  // ── M58 / IDENT-008 — REMEMBER THAT THE GATEWAY STILL HOLDS IT ─────────────
+  // The local status has always been the truth about whether WE will charge. It
+  // has never been the truth about whether the customer's BANK still holds a
+  // standing authorisation in our name. When the gateway call failed, that
+  // divergence was reported to Sentry and then forgotten — nothing retried, and
+  // the "reconciliation sweep" the transfer path's comment referred to did not
+  // exist. A departed workspace owner could be left authorised at their bank
+  // indefinitely.
+  //
+  // The marker goes in `lastError`, the column that already exists for exactly
+  // this kind of per-mandate fact, so this needs no migration. It is written
+  // ONLY when there is something at the gateway to withdraw — a mandate that
+  // never got a token has nothing on the other side, and marking those would
+  // fill the queue with work that can never complete.
+  const stillLiveAtGateway = !gateway.revoked && !!mandate.providerTokenId;
+  const t = await storage.transitionMandate(mandate.id, MANDATE_STATUS.REVOKED, {
+    lastError: stillLiveAtGateway ? `${GATEWAY_REVOKE_PENDING}:${gateway.reason || "unknown"}` : null,
+  });
   const fanout = await storage.disableAutopayForMandate(mandate.id);
   return { ok: t.ok, gateway, affectedSubscriptions: fanout.affected, reason };
+}
+
+/**
+ * Retry a gateway withdrawal that has already been recorded locally.
+ *
+ * Deliberately narrow: the mandate is ALREADY REVOKED here, and this changes no
+ * status, no subscription and no entitlement. It attempts one thing — telling
+ * the provider to stop honouring the token — and clears the marker only on a
+ * confirmed success, so a failure is retried on the next sweep rather than
+ * silently declared done.
+ */
+export async function retryGatewayRevocation(mandate) {
+  const provider = providerFor(mandate);
+  if (!provider?.available()) return { retried: false, revoked: false, reason: "no_provider" };
+  if (!mandate.providerTokenId) return { retried: false, revoked: false, reason: "no_token" };
+
+  let outcome;
+  try {
+    outcome = await provider.revoke({ mandate });
+  } catch (err) {
+    outcome = { revoked: false, reason: err.message };
+  }
+  if (outcome?.revoked) {
+    // Clearing the marker IS the record that the authorisation is gone. Nothing
+    // else changes: the mandate was already REVOKED locally.
+    await storage.updateMandate(mandate.id, { lastError: null });
+    return { retried: true, revoked: true, reason: null };
+  }
+  await storage.updateMandate(mandate.id, {
+    lastError: `${GATEWAY_REVOKE_PENDING}:${outcome?.reason || "unknown"}`,
+  });
+  return { retried: true, revoked: false, reason: outcome?.reason || "unknown" };
 }

@@ -34,6 +34,7 @@ import { quoteSeats, periodFor, anchorDayFor } from "../shared/seatPricing.js";
 import {
   MANDATE_STATUS, canMandateTransition, DEFAULT_PAYMENT_PROVIDER,
   AUTOPAY_SETTING_KEYS, parseAutopayScope, parseAutopayAllowlist, parseAutopayLimitPct,
+  GATEWAY_REVOKE_PENDING,
 } from "../shared/autopay.js";
 
 function generateToken() {
@@ -2541,6 +2542,19 @@ export const memoryStorage = {
       .filter(m => m.status === MANDATE_STATUS.ACTIVE
         && m.expiresAt && new Date(m.expiresAt) < new Date(before))
       .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt))
+      .slice(0, limit);
+  },
+
+  // M58 / IDENT-008 — parity with storage.js. Same three conditions, same
+  // oldest-first order: REVOKED locally, a token still held at the provider, and
+  // the marker `revokeMandate` leaves when the withdrawal call did not succeed.
+  async getMandatesPendingGatewayRevocation(limit = 100) {
+    return Array.from(store.paymentMandates.values())
+      .filter(m => m.status === MANDATE_STATUS.REVOKED
+        && m.providerTokenId
+        && typeof m.lastError === "string"
+        && m.lastError.startsWith(GATEWAY_REVOKE_PENDING))
+      .sort((a, b) => new Date(a.revokedAt || 0) - new Date(b.revokedAt || 0))
       .slice(0, limit);
   },
 

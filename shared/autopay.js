@@ -57,6 +57,21 @@ export const MANDATE_STATUS = Object.freeze({
 });
 
 /**
+ * M58 / IDENT-008 — the marker written into `paymentMandates.lastError` when a
+ * mandate has been revoked WITH US but the provider could not be told.
+ *
+ * It lives here, with the other autopay protocol constants, for two reasons: the
+ * producer (`revokeMandate`) and the consumer (`runMandateRevocationPass`) must
+ * never drift apart, and both storage backends need to query for it — importing
+ * it from `server/autopayCharge.js` would make storage depend on a module that
+ * already depends on storage.
+ *
+ * The stored value is `gateway_revoke_pending:<reason>`, so a prefix match finds
+ * the queue and the reason stays readable to a human debugging one row.
+ */
+export const GATEWAY_REVOKE_PENDING = "gateway_revoke_pending";
+
+/**
  * Legal successor statuses.
  *  - PENDING → ACTIVE (confirmed), FAILED (bank declined), REVOKED (abandoned/cancelled)
  *  - ACTIVE  → PAUSED, REVOKED, EXPIRED

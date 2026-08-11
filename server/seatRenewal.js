@@ -19,6 +19,7 @@
 // Idempotent by construction: every action is derived from the row's own state,
 // so running the sweep twice in one window changes nothing the second time.
 
+import * as Sentry from "@sentry/node";
 import { storage } from "./storage.js";
 import { sendTransactionalEmail } from "./email.js";
 import { AUDIT_ACTIONS, PAYMENT_STATUS } from "../shared/schema.js";
@@ -27,7 +28,7 @@ import {
 } from "../shared/subscriptionStateMachine.js";
 import { formatMinor } from "../shared/seatPricing.js";
 // M51 Phase 5.4 — the charge step this sweep was shaped for from the start.
-import { attemptRecurringCharge } from "./autopayCharge.js";
+import { attemptRecurringCharge, retryGatewayRevocation } from "./autopayCharge.js";
 import { fulfillSeatPayment } from "./fulfillSeats.js";
 import {
   CHARGE_OUTCOME, RENEWAL_TRIGGER, predebitNoticeLeadHours, isAutopayLive,
@@ -437,13 +438,26 @@ export async function runSeatRenewalSweep({ now = new Date(), limit = 100 } = {}
   const first = !announced;
   announced = true;
 
+  // ── M58 / IDENT-008 — runs BEFORE the billing gate, deliberately ───────────
+  // Every other pass here is about charging, and charging is meaningless while
+  // seat billing is off. This one is about a STANDING AUTHORISATION the customer
+  // gave their bank in our name, which we have already told them is withdrawn.
+  // Whether we are currently selling seats has no bearing on our obligation to
+  // actually withdraw it, and switching billing off must not quietly park a
+  // queue of open authorisations.
+  const revocations = await runMandateRevocationPass({ now, limit });
+
   // While seat billing is off, entitlement ignores subscriptions entirely — so
   // expiring them would be noise with no customer-visible meaning.
   if (!config.billingEnabled) {
     if (first) {
       console.log("[SEAT-RENEWAL] Sweep registered and running — seat billing is DISABLED, so it is a no-op until seat_billing_enabled=true");
     }
-    return { skipped: true, reason: "seat_billing_disabled", registered: true };
+    return {
+      skipped: true, reason: "seat_billing_disabled", registered: true,
+      gatewayRevocationsResolved: revocations.resolved,
+      gatewayRevocationsPending: revocations.stillPending,
+    };
   }
   if (first) {
     console.log(`[SEAT-RENEWAL] Sweep registered and running — seat billing is ENABLED (free floor ${config.freeFloor})`);
@@ -462,6 +476,8 @@ export async function runSeatRenewalSweep({ now = new Date(), limit = 100 } = {}
     processed: 0, pastDue: 0, expired: 0, reminders: 0, errors: 0,
     autoRenewed: 0, chargeFailed: 0, authRequired: 0, deferred: 0,
     predebitNotices: notices.sent, reconciled: reconciled.resolved,
+    gatewayRevocationsResolved: revocations.resolved,
+    gatewayRevocationsPending: revocations.stillPending,
   };
   for (const sub of due) {
     try {
@@ -480,7 +496,8 @@ export async function runSeatRenewalSweep({ now = new Date(), limit = 100 } = {}
       console.error(`[SEAT-RENEWAL] Failed on subscription ${sub.id}:`, err.message);
     }
   }
-  if (summary.processed > 0 || summary.predebitNotices > 0 || summary.reconciled > 0) {
+  if (summary.processed > 0 || summary.predebitNotices > 0 || summary.reconciled > 0
+    || summary.gatewayRevocationsResolved > 0 || summary.gatewayRevocationsPending > 0) {
     console.log(`[SEAT-RENEWAL] ${JSON.stringify(summary)}`);
   }
   return summary;
@@ -546,6 +563,85 @@ export async function runPredebitNoticePass({ now = new Date(), limit = 100 } = 
     } catch (err) {
       out.errors++;
       console.error(`[SEAT-RENEWAL] predebit notice failed for ${sub.id}:`, err.message);
+    }
+  }
+  return out;
+}
+
+/** How long an authorisation may stay open at the provider before it is a page. */
+const GATEWAY_REVOKE_ESCALATE_MS = 7 * 24 * HOUR_MS;
+
+/**
+ * M58 / IDENT-008 — finish revocations the gateway did not accept.
+ *
+ * ── THE GAP THIS CLOSES ─────────────────────────────────────────────────────
+ * `revokeMandate` withdraws an instrument at the provider and then records the
+ * revocation locally. When the provider call failed it reported to Sentry and
+ * moved on: the LOCAL row said REVOKED — so we would never charge it again —
+ * while the customer's standing authorisation stayed live at their bank. On the
+ * ownership-transfer path that is a DEPARTED owner left authorised for a
+ * workspace they no longer own, and the transfer confirmation and the M58
+ * handover email both tell them, in as many words, that it has been withdrawn.
+ * `storage.transferWorkspaceOwnership` has carried a comment since M51 saying
+ * "the reconciliation sweep catches any drift". No such sweep existed. This is
+ * it.
+ *
+ * ── WHY IT IS HERE AND NOT IN A NEW WORKER ──────────────────────────────────
+ * The same reason the pre-debit and payment-reconciliation passes are here: this
+ * function is already registered exactly once (server/index.js), already guarded
+ * against self-overlap, already alerting on failure. A second scheduler would
+ * multiply the ways this can silently stop running — the INCIDENT-001 failure
+ * shape. Nothing new is scheduled; one more pass runs inside the existing hour.
+ *
+ * ── SAFETY ──────────────────────────────────────────────────────────────────
+ * Narrow by construction. Every mandate it touches is ALREADY REVOKED locally,
+ * so it can neither restore a charging capability nor take one away: the worst
+ * outcome of a bug here is that a withdrawal is attempted twice, which is what
+ * the customer asked for either way. It changes no status, no subscription and
+ * no entitlement.
+ */
+export async function runMandateRevocationPass({ now = new Date(), limit = 100 } = {}) {
+  const out = { considered: 0, resolved: 0, stillPending: 0, errors: 0 };
+  let pending = [];
+  try {
+    pending = await storage.getMandatesPendingGatewayRevocation(limit);
+  } catch (err) {
+    console.error("[SEAT-RENEWAL] gateway-revocation query failed:", err.message);
+    return out;
+  }
+
+  for (const mandate of pending) {
+    out.considered++;
+    try {
+      const result = await retryGatewayRevocation(mandate);
+      if (result.revoked) { out.resolved++; continue; }
+      out.stillPending++;
+
+      // A retry that keeps failing is not self-healing, and the thing left open
+      // is a customer's bank authorisation. After a week it needs a human at the
+      // provider's dashboard, so it stops being a log line and becomes an alert.
+      // It then fires on every sweep until somebody clears it — deliberately:
+      // Sentry groups by message fingerprint, so a persistent problem is ONE
+      // issue with a rising count rather than one alert that scrolled past.
+      const openForMs = new Date(now).getTime() - new Date(mandate.revokedAt || now).getTime();
+      if (openForMs >= GATEWAY_REVOKE_ESCALATE_MS) {
+        Sentry.captureMessage(
+          "AUTOPAY_MANDATE_GATEWAY_REVOKE_UNRESOLVED: authorisation may still be live at the provider",
+          {
+            level: "error",
+            tags: { subsystem: "autopay", alert: "GATEWAY_REVOKE_UNRESOLVED" },
+            extra: {
+              mandateId: mandate.id, provider: mandate.provider,
+              workspaceRootId: mandate.workspaceRootId,
+              revokedAt: mandate.revokedAt, lastReason: result.reason,
+              openForDays: Math.floor(openForMs / (24 * HOUR_MS)),
+            },
+          },
+        );
+      }
+    } catch (err) {
+      out.errors++;
+      console.error(`[SEAT-RENEWAL] gateway revocation retry failed for mandate ${mandate.id}:`, err.message);
     }
   }
   return out;

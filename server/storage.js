@@ -43,10 +43,11 @@ import { quoteSeats, periodFor, previewSeatChange, anchorDayFor } from "../share
 import {
   MANDATE_STATUS, canMandateTransition, DEFAULT_PAYMENT_PROVIDER,
   AUTOPAY_SETTING_KEYS, parseAutopayScope, parseAutopayAllowlist, parseAutopayLimitPct,
+  GATEWAY_REVOKE_PENDING,
 } from "../shared/autopay.js";
 
 // Use imports only when not in dev mode
-const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
+const { eq, and, desc, gte, sql, lt, inArray, notInArray, or, asc, ilike, like, isNull, isNotNull } = (!isDevMode && db) ? drizzleOps : {};
 const {
   users, sessions, templates, contacts, campaigns,
   campaignEmails, creditTransactions, auditLogs, payments, contactSubmissions, waitlist,
@@ -2985,6 +2986,30 @@ const dbStorage = {
         .where(eq(paymentMandates.id, id)).returning();
       return { ok: true, mandate: updated };
     });
+  },
+
+  /**
+   * M58 / IDENT-008 — mandates revoked with us but possibly still live at the
+   * provider.
+   *
+   * `revokeMandate` stamps `lastError` with the GATEWAY_REVOKE_PENDING marker
+   * when the withdrawal call fails, and clears it on a confirmed success. This
+   * is the work queue that marker creates. Ordered oldest-first so the
+   * authorisation that has been open longest is retried first.
+   *
+   * `providerTokenId IS NOT NULL` is not decoration: a mandate that never
+   * received a token has nothing at the gateway to withdraw, and including it
+   * would make the queue permanently non-empty.
+   */
+  async getMandatesPendingGatewayRevocation(limit = 100) {
+    return await db.select().from(paymentMandates)
+      .where(and(
+        eq(paymentMandates.status, MANDATE_STATUS.REVOKED),
+        isNotNull(paymentMandates.providerTokenId),
+        like(paymentMandates.lastError, `${GATEWAY_REVOKE_PENDING}%`),
+      ))
+      .orderBy(asc(paymentMandates.revokedAt))
+      .limit(limit);
   },
 
   /** ACTIVE mandates expiring before `before` — drives the T-30/T-7 notices. */
