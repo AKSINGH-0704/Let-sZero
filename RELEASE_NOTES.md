@@ -2,13 +2,29 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-08-10 (v2.4.2)
+**Last updated:** 2026-08-11 (v2.5.0)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.4.2 (2026-08-10)
+## Current Release — v2.5.0 (2026-08-11)
+
+**You can hand your workspace to a teammate, and now both of you are told exactly what changed.**
+
+- **Transfer ownership of a workspace.** If you own a workspace, you can hand it — and its billing — to any active teammate, from the Team page. The confirmation states what changes and what does not, and names the person before you commit.
+- **Both people get an email.** The new owner is told plainly that billing is now theirs, what the subscription costs and when it renews, and that they need to set up their own payment method. The outgoing owner gets a receipt confirming what moved, what stayed, and that only the new owner can hand it back.
+- **Your saved payment method never follows a workspace.** A saved card or UPI mandate is a personal banking authorisation, so it is withdrawn — with us and with your bank — when you hand a workspace over. Your card is never charged for a workspace you no longer own, and the emails say so explicitly.
+- **Nothing about the workspace itself moves or breaks.** The subscription, seats, renewal date and amount, verified sending domains, campaigns and their history, credits and pending invitations all continue exactly as they were.
+
+**Accessibility and small-screen fixes on the screens where money changes hands.**
+
+- The ownership-transfer and seat-change confirmations are now readable with a screen reader: the choice you have to make is announced as a choice, not buried inside a two-hundred-word description read out on open.
+- The teammate picker no longer pushes the transfer dialog sideways on a phone when a colleague has a long email address.
+
+---
+
+## v2.4.2 (2026-08-10)
 
 **Six more Resource Center guides, covering the parts of outbound the library had skipped.**
 
