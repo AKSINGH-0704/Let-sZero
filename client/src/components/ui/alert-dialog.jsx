@@ -32,7 +32,16 @@ const AlertDialogContent = React.forwardRef(({ className, ...props }, ref) => (
         // carries the defect identically, and it is the worse of the two to lose
         // — a confirm/cancel pair the customer cannot reach leaves a destructive
         // action half-committed.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 dialog-viewport-fit data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+        //
+        // M58: and it carried the M39 Investigation 4/5 defect identically too —
+        // this comment said so and the fix was never applied here. A bare `grid`
+        // has an implicit `auto` column that sizes to its items' MAX-CONTENT, so
+        // one unbreakable string (a teammate's email in the ownership-transfer
+        // picker) pushed the content to scrollWidth 480 inside a 341px dialog at
+        // 375 — MEASURED, on the M57 markup, before any M58 change. `grid-cols-1`
+        // (`minmax(0,1fr)`) makes children wrap at the dialog's real width and
+        // `overflow-x-hidden` is the backstop, exactly as on DialogContent.
+        "fixed left-[50%] top-[50%] z-50 grid grid-cols-1 w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-x-hidden border bg-background p-6 shadow-lg duration-200 dialog-viewport-fit data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
         className
       )}
       {...props}

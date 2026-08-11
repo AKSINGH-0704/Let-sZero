@@ -16,7 +16,15 @@ const SelectTrigger = React.forwardRef(({ className, children, ...props }, ref) 
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      // M58: `line-clamp-1` was already here to keep a long value on one line,
+      // and it could not do its job. The span is a FLEX ITEM, whose default
+      // `min-width: auto` refuses to shrink below max-content — so an
+      // unbreakable string (an email address, which has no break opportunity)
+      // widened the button past its own container instead of being clipped.
+      // Measured in the ownership-transfer picker: button scrollWidth 418 inside
+      // clientWidth 276 at a 375px viewport. `min-w-0` restores the shrink that
+      // makes the existing clamp effective; nothing else changes.
+      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 [&>span]:min-w-0 [&>span]:text-left",
       className
     )}
     {...props}
