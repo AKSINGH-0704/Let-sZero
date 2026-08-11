@@ -38,6 +38,9 @@ import {
 // settlement paths (verify and the order.paid webhook), so it lives in one place.
 import { bindMandateFromPayment } from "./autopayCheckout.js";
 import { revokeMandate } from "./autopayCharge.js";
+// M58 / IDENT-011 — the ownership-transfer notifications. Reuses
+// sendTransactionalEmail; it is not a second notification system.
+import { notifyOwnershipTransfer } from "./workspaceNotifications.js";
 import { ENTERPRISE_CONTACT_PATH, buildEnterpriseContactPath } from "../shared/enterprise.js";
 import { runCampaignLoop, waitForCampaignReleaseAndFinalize } from "./campaignLoop.js";
 import { normalizeDomain, validateFromEmail, assertDomainEligible, registerDomain, checkDomainVerification, removeDomain, unsuspendDomain, getDomainPollHealth } from "./domainManager.js";
@@ -4736,6 +4739,64 @@ export async function registerRoutes(httpServer, app) {
           autopayRevoked: (result.revokedMandateIds || []).length > 0,
         },
       });
+
+      // ── M58 / IDENT-011 — TELL BOTH PEOPLE ────────────────────────────────
+      // The incoming owner acquired financial responsibility for a workspace and
+      // nothing in the product told them: they discovered it by noticing that
+      // billing controls had appeared. The outgoing owner was never told their
+      // saved payment method had been withdrawn — the consequence most likely to
+      // be discovered at a renewal that did not happen.
+      //
+      // Everything here is AFTER the commit and non-fatal by construction. The
+      // transfer has happened; a bounced email must never be reported to the
+      // caller as a failed transfer, or they go looking for a rollback that does
+      // not exist. `notifyOwnershipTransfer` never throws, and the try/catch
+      // covers the reads around it.
+      //
+      // Delivery is recorded as its OWN audit event, because telling two people
+      // can half-succeed and "was the new owner ever told?" is the first
+      // question support asks.
+      let notified = { newOwnerNotified: false, previousOwnerNotified: false };
+      try {
+        // The canonical row, not the request parameter (M56: Postgres normalises
+        // uuid case, so a parameter is never a safe identity).
+        const newOwner = await storage.getUserById(result.newOwnerId);
+        notified = await notifyOwnershipTransfer({
+          previousOwner: req.user,
+          newOwner,
+          // Read from the NEW root — the subscription moved in the transaction.
+          subscription: newOwner ? await storage.getWorkspaceSubscription(newOwner.id) : null,
+          autopayRevoked: (result.revokedMandateIds || []).length > 0,
+        });
+      } catch (err) {
+        console.error("[WORKSPACE] Transfer notification failed:", err.message);
+      }
+      try {
+        await storage.createAuditLog({
+          userId: req.user.id, action: AUDIT_ACTIONS.WORKSPACE_OWNERSHIP_TRANSFER_NOTIFIED,
+          targetType: "user", targetId: result.newOwnerId,
+          details: {
+            previousOwnerId: req.user.id, newOwnerId: result.newOwnerId,
+            ...notified,
+            // Both false means nobody knows the workspace changed hands. Named
+            // so it is greppable in the audit trail rather than inferred.
+            allDelivered: notified.newOwnerNotified && notified.previousOwnerNotified,
+          },
+        });
+      } catch (err) {
+        console.error("[WORKSPACE] Transfer notification audit failed:", err.message);
+      }
+      // Nobody was told a workspace changed hands. The audit row records it, but
+      // an audit row is something you consult AFTER a customer complains; this is
+      // the case where the first person to notice should be us.
+      if (!notified.newOwnerNotified && !notified.previousOwnerNotified) {
+        Sentry.captureMessage("WORKSPACE_TRANSFER_UNNOTIFIED: ownership changed and neither party could be emailed", {
+          level: "warning",
+          tags: { subsystem: "identity", alert: "WORKSPACE_TRANSFER_UNNOTIFIED" },
+          extra: { previousOwnerId: req.user.id, newOwnerId: result.newOwnerId },
+        });
+      }
+
       res.json(result);
     } catch (error) {
       console.error("[WORKSPACE] Transfer error:", error.message);

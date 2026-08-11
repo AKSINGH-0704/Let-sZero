@@ -205,6 +205,14 @@ export const AUDIT_ACTIONS = {
   SUBSCRIPTION_CANCELLED:          "SUBSCRIPTION_CANCELLED",
   SEAT_OVERAGE_DEACTIVATED:        "SEAT_OVERAGE_DEACTIVATED",
   WORKSPACE_OWNERSHIP_TRANSFERRED: "WORKSPACE_OWNERSHIP_TRANSFERRED",
+  // M58 / IDENT-011 — DELIVERY, recorded separately from the transfer itself.
+  // Deliberately its own event and not a field on the transfer: the transfer
+  // either happened or did not, whereas telling two people about it can half
+  // succeed, and "was the new owner ever told they now own the billing?" is the
+  // first question support asks. Folding it into the transfer entry would also
+  // mean an email failure could not be recorded at all, since that entry is
+  // already written by the time the sends are attempted.
+  WORKSPACE_OWNERSHIP_TRANSFER_NOTIFIED: "WORKSPACE_OWNERSHIP_TRANSFER_NOTIFIED",
   // AutoPay (M51) — the mandate lifecycle and the automatic charge path.
   // SUBSCRIPTION_AUTO_RENEWED is deliberately DISTINCT from SUBSCRIPTION_RENEWED
   // and stays that way permanently: "did the customer initiate this, or did we?"
