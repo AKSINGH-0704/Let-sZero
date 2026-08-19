@@ -86,14 +86,30 @@ app.use((req, _res, next) => {
 // remain across every built asset. Removing them narrows the policy back to
 // 'self' for both styles and fonts, so a future third-party stylesheet cannot
 // load silently on the strength of an allowlist entry nobody needs.
+//
+// M59 — Google Ads measurement. The allowlist grows by exactly three hosts and
+// gains NO new directive capability:
+//   script-src  www.googletagmanager.com  — serves gtag.js itself.
+//   connect-src www.google-analytics.com  — where gtag.js posts measurement.
+//   img-src     www.googleadservices.com, googleads.g.doubleclick.net
+//                                         — the conversion pings, which are
+//                                           pixel GETs rather than fetches.
+//
+// 'unsafe-inline' is deliberately NOT added to script-src, even though Google
+// supplies the tag as an inline snippet. The tag is bootstrapped from a bundled
+// module instead (client/src/lib/analytics/googleAds.js), which reproduces the
+// snippet's behaviour exactly while remaining an external script — so the
+// property that inline scripts cannot execute, which is what stops
+// user-controlled template-preview HTML from running, is preserved intact.
+// No wildcards: each host is named in full.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'", "https://checkout.razorpay.com"],
+      scriptSrc:  ["'self'", "https://checkout.razorpay.com", "https://www.googletagmanager.com"],
       styleSrc:   ["'self'", "'unsafe-inline'"],
-      imgSrc:     ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com"],
+      imgSrc:     ["'self'", "data:", "blob:", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"],
+      connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com", "https://www.google-analytics.com"],
       fontSrc:    ["'self'"],
       objectSrc:  ["'none'"],
       frameSrc:   ["https://api.razorpay.com"],
