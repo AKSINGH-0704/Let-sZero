@@ -17,6 +17,7 @@ import { invalidateAfter } from "@/lib/queryInvalidation";
 import { initiatePurchase } from "@/lib/commerce/checkout";
 import { fetchQuote } from "@/lib/commerce/quote";
 import { loadPurchaseIntent, clearPurchaseIntent } from "@/lib/commerce/purchaseIntent";
+import { trackPurchase } from "@/lib/analytics/conversions";
 import { useToast } from "@/hooks/use-toast";
 import {
   Check, X, Shield, CreditCard, Zap, Users, ArrowRight,
@@ -314,6 +315,16 @@ function ProcessPayment({ paymentId }) {
       if (data?.payment?.kind === "SEATS") {
         queryClient.invalidateQueries({ queryKey: ["/api/seats/subscription"] });
       }
+      // M59 — the Google Ads purchase conversion, fired here and nowhere else.
+      // This is the first point at which the SERVER has confirmed the money
+      // moved: data.payment is its own record, already transitioned to SUCCESS
+      // by storage.completePayment. Firing on checkout open, on the Razorpay
+      // modal, or on the handler callback would each report a sale that may
+      // never have completed. trackPurchase re-checks status and deduplicates
+      // on the payment id, so the "Already completed" replay this endpoint
+      // returns cannot produce a second conversion.
+      trackPurchase(data.payment);
+
       // M20-C: a premium activation overlay replaces the old toast + banner —
       // reinforces the plan's value and drives the customer toward whichever
       // real setup step (domain / team / first campaign) is actually missing,

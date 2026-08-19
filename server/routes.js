@@ -865,7 +865,17 @@ export async function registerRoutes(httpServer, app) {
             userAgent: req.headers["user-agent"],
           });
           const isNewOAuthUser = req.user._isNewOAuthUser === true;
-          res.redirect(isNewOAuthUser ? "/app/onboarding" : "/app/dashboard");
+          // M59 — a one-shot nonce marking that THIS redirect followed an actual
+          // account creation, so the client can attribute a sign-up conversion to
+          // a real registration rather than to a button press. Set only on the
+          // branch that just created a user, so returning members never carry it.
+          //
+          // A random per-event nonce, deliberately NOT the user id: it identifies
+          // the creation event for deduplication and carries no tenant meaning,
+          // so nothing identifying reaches the tracking layer. The client strips
+          // it from the URL immediately (see useSignupConversion).
+          const signupNonce = crypto.randomUUID();
+          res.redirect(isNewOAuthUser ? `/app/onboarding?signup=${signupNonce}` : "/app/dashboard");
         } catch (err) {
           console.error("Google callback error:", err);
           res.redirect("/login?error=google_failed");

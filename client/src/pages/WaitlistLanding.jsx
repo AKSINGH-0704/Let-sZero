@@ -16,6 +16,7 @@ import {
   CheckCircle2, Zap, Eye
 } from "lucide-react";
 import { useSubmitGuard } from "@/hooks/useSubmitGuard";
+import { trackQualifiedLead } from "@/lib/analytics/conversions";
 
 const FONT_HEADING = "'Space Grotesk', sans-serif";
 const FONT_BODY    = "'Inter', sans-serif";
@@ -477,7 +478,12 @@ function WaitlistForm({ variant = "hero" }) {
     try {
       const res  = await fetch("/api/waitlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: trimmed, source: variant }) });
       const data = await res.json();
-      if (res.ok) { setStatus("success"); setEmail(""); }
+      // M59 — secondary conversion, keyed on the id the SERVER assigned to the
+      // accepted entry. Fired only on a 2xx, so a rejected, rate-limited or
+      // duplicate submission never counts; keyed on that id rather than on the
+      // email, so nothing identifying reaches the tracking layer and a repeat
+      // submission of the same entry cannot double-count.
+      if (res.ok) { trackQualifiedLead(data?.id); setStatus("success"); setEmail(""); }
       else if (res.status === 409) { setErrorMessage("You're already on the list."); setStatus("error"); }
       else { setErrorMessage(data.message || "Something went wrong."); setStatus("error"); }
     } catch { setErrorMessage("Network error. Please try again."); setStatus("error"); }

@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invalidateAfter } from "@/lib/queryInvalidation";
+import { useSignupConversion } from "@/lib/analytics/useSignupConversion";
 import { normalizeDomain, validateFromEmail } from "@shared/domainUtils";
 import { DEFAULT_WARMUP_LADDER } from "@shared/warmupPolicy";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,6 +20,10 @@ import { Globe, Loader2 } from "lucide-react";
 export default function Onboarding() {
   const { user, isRootAdmin, isWorkspaceOwner, refetch } = useAuth();
   const [, navigate] = useLocation();
+  // M59 — fires the sign-up conversion if, and only if, this page was reached
+  // by the OAuth redirect that just created the account. A no-op on every other
+  // visit to onboarding.
+  useSignupConversion();
   const [senderName, setSenderName] = useState("");
   const [domain, setDomain] = useState("");
   const [fromEmail, setFromEmail] = useState("");
