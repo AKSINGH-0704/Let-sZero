@@ -59,6 +59,7 @@ import Terms from "@/pages/Terms";
 import NotFound from "@/pages/not-found";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import ConsentBanner from "@/components/consent/ConsentBanner";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 
@@ -477,6 +478,13 @@ export default function App() {
         <AuthProvider>
           <TooltipProvider>
             <Toaster />
+            {/* M59 — one consent surface for every route, mounted once.
+                Deliberately OUTSIDE AppRoutes: that component returns a
+                LoadingScreen early while the auth check is in flight, so a
+                banner mounted inside it would be withheld from a public visitor
+                for as long as /api/auth/me takes to answer. Consent is not a
+                function of authentication and must not wait on it. */}
+            <ConsentBanner />
             <AppRoutes />
           </TooltipProvider>
         </AuthProvider>
