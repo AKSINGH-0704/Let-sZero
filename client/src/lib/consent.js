@@ -162,13 +162,21 @@ export function setConsent(categories) {
   return next;
 }
 
-/** Accept every category. */
-export function acceptAll() {
-  return setConsent({
-    [CONSENT_CATEGORIES.ANALYTICS]: true,
-    [CONSENT_CATEGORIES.ADVERTISING]: true,
-  });
-}
+// There is deliberately no `acceptAll()`.
+//
+// A blanket grant would set categories the visitor was never asked about. The
+// consent surface asks about advertising and nothing else, because advertising
+// measurement is the only purpose this platform currently performs — so the
+// surface grants advertising and nothing else, by calling setConsent directly
+// with what it actually asked.
+//
+// ANALYTICS remains modelled here because Consent Mode v2 requires
+// `analytics_storage` to be declared on every request, and it is: as "denied",
+// permanently, because no analytics consumer exists (no GA4 property, nothing
+// reads the signal — see ADS-004). Nothing in the application grants it. If an
+// analytics product is ever added, that is a NEW purpose: it needs its own
+// question on the surface and a CONSENT_VERSION bump, because a decision made
+// about advertising cannot be silently reused for analytics.
 
 /** Refuse every non-essential category. */
 export function rejectAll() {

@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { acceptAll, rejectAll, needsConsentDecision } from "@/lib/consent";
+import {
+  CONSENT_CATEGORIES,
+  setConsent,
+  rejectAll,
+  needsConsentDecision,
+} from "@/lib/consent";
 
 // M59 — the consent surface.
 //
@@ -44,10 +49,17 @@ export default function ConsentBanner() {
       className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
       <div className="mx-auto flex max-w-4xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Asks about advertising and nothing else, because advertising
+            measurement is the only purpose this platform performs. An earlier
+            draft said "advertising and analytics cookies" while no analytics
+            consumer existed (ADS-004) — soliciting consent for something that
+            never happens, and disagreeing with both the implementation and the
+            proposed policy wording. That is the M53 CDP-1 shape: two surfaces
+            describing one thing under different conditions. */}
         <p className="min-w-0 text-sm text-muted-foreground">
           We use cookies that are necessary to run this site. With your
-          permission we would also use advertising and analytics cookies to
-          measure which campaigns bring people here.{" "}
+          permission we would also use Google Ads advertising cookies to measure
+          which advertising brings people here.{" "}
           <Link
             href="/privacy"
             className="font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -73,7 +85,10 @@ export default function ConsentBanner() {
           </Button>
           <Button
             size="sm"
-            onClick={() => decide(acceptAll)}
+            // Grants exactly what the copy above asked about. setConsent
+            // coerces every unlisted category to false, so analytics cannot be
+            // granted by a question that was never posed.
+            onClick={() => decide(() => setConsent({ [CONSENT_CATEGORIES.ADVERTISING]: true }))}
             data-testid="consent-accept"
           >
             Accept
