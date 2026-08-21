@@ -2019,16 +2019,38 @@ const dbStorage = {
     return row ? { ok: true, payment: row } : { ok: true, payment, alreadyRefunded: true };
   },
 
-  async completePayment(paymentId, transactionId) {
+  /**
+   * ADS-001 — `completionPath` records WHICH settlement path finalized the
+   * payment: "browser" (the customer's tab reached /api/payments/razorpay/verify)
+   * or "webhook" (Razorpay's order.paid arrived; the customer may have closed
+   * the tab). It is written INSIDE the same UPDATE that performs the
+   * PENDING -> SUCCESS transition, so only the caller that actually wins the
+   * race records it — a second caller's UPDATE matches zero rows and writes
+   * nothing, exactly like the credit allocation below.
+   *
+   * It goes into the existing `metadata` jsonb rather than a new column: no
+   * migration, and every existing reader spread-merges metadata, so an added
+   * key is inert to all of them.
+   *
+   * Deliberately NOT the audit row. `credited` is false for every SEATS
+   * payment (see the early return below), so the PAYMENT_SUCCESS audit entry is
+   * never written for seat purchases — which are the payments the Google Ads
+   * Purchase conversion actually reports. Recording the path there would have
+   * measured only credit top-ups and missed the entire question.
+   *
+   * Diagnostic only. It is never sent to Google Ads, and carries no PII.
+   */
+  async completePayment(paymentId, transactionId, { completionPath = null } = {}) {
     const payment = await this.getPayment(paymentId);
     if (!payment) throw new Error("Payment not found");
     // Fast path: already completed — no writes needed.
-    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false };
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false, transitioned: false };
 
     const user = await this.getUserById(payment.userId);
     const balanceBefore = user?.creditsRemaining ?? 0;
 
     let credited = false;
+    let didTransition = false;
     await db.transaction(async (tx) => {
       // Atomic state transition. .returning() exposes whether the WHERE clause
       // matched — i.e., whether THIS caller won the PENDING → SUCCESS race.
@@ -2039,11 +2061,21 @@ const dbStorage = {
       // and returns 0 rows. Credit allocation is gated on this result, so only the
       // winning caller allocates credits.
       const transitioned = await tx.update(payments)
-        .set({ status: PAYMENT_STATUS.SUCCESS, transactionId, completedAt: new Date() })
+        .set({
+          status: PAYMENT_STATUS.SUCCESS,
+          transactionId,
+          completedAt: new Date(),
+          // jsonb concat preserves whatever the row already carries (seat
+          // metadata, razorpay ids, autopay markers) and adds one key.
+          ...(completionPath
+            ? { metadata: sql`coalesce(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ completionPath })}::jsonb` }
+            : {}),
+        })
         .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`))
         .returning({ id: payments.id });
 
       if (transitioned.length === 0) return; // concurrent caller won; no credit mutation
+      didTransition = true;
 
       // M42 — a SEATS payment buys a service period, not credits. Writing a
       // 0-credit "purchase" row here would put seat money into the credit ledger,
@@ -2080,7 +2112,11 @@ const dbStorage = {
       });
     }
 
-    return { payment: await this.getPayment(paymentId), credited };
+    // `transitioned` tells a caller whether IT won the race. `credited` cannot
+    // serve that purpose: it is false for every SEATS payment regardless of who
+    // won, so a seat caller previously had no way to distinguish "I completed
+    // this" from "someone else already had".
+    return { payment: await this.getPayment(paymentId), credited, transitioned: didTransition };
   },
 
   async cancelPayment(paymentId) {

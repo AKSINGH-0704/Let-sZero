@@ -5038,7 +5038,12 @@ export async function registerRoutes(httpServer, app) {
         return res.json({ payment: existing, message: "Already completed" });
       }
 
-      const { payment, credited } = await storage.completePayment(repmail_payment_id, razorpay_payment_id);
+      // ADS-001 — the customer's browser reached us, so this settlement is one the
+      // client-side Google Ads conversion can observe. Recorded only by whichever
+      // caller wins the PENDING -> SUCCESS race; diagnostic only, never sent to Google.
+      const { payment, credited } = await storage.completePayment(
+        repmail_payment_id, razorpay_payment_id, { completionPath: "browser" },
+      );
 
       // M42 — a seat payment grants seats, not credits, and never moves the plan
       // ladder (plan is derived from credit volume). Fulfillment is idempotent, so

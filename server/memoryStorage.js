@@ -1805,15 +1805,22 @@ export const memoryStorage = {
     return { ok: true, payment };
   },
 
-  async completePayment(paymentId, transactionId) {
+  // ADS-001 parity with storage.js — same `completionPath` diagnostic, same
+  // `transitioned` race result. Kept identical deliberately: the M56 lesson was
+  // an authorization test that passed against memoryStorage for the wrong
+  // reason because the two backends behaved differently.
+  async completePayment(paymentId, transactionId, { completionPath = null } = {}) {
     const payment = store.payments.get(paymentId);
     if (!payment) throw new Error("Payment not found");
-    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false };
+    if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false, transitioned: false };
 
     // Update payment status
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.transactionId = transactionId;
     payment.completedAt = new Date();
+    if (completionPath) {
+      payment.metadata = { ...(payment.metadata || {}), completionPath };
+    }
 
     // M42 parity with storage.js — a SEATS payment buys a service period, not
     // credits. No credit mutation, no credit_transactions row: seat money must
@@ -1826,7 +1833,7 @@ export const memoryStorage = {
         targetId: paymentId,
         details: { kind: payment.kind, transactionId, credits: 0 },
       });
-      return { payment, credited: false };
+      return { payment, credited: false, transitioned: true };
     }
 
     // Credit user account
@@ -1861,7 +1868,7 @@ export const memoryStorage = {
       details: { credits: payment.credits, transactionId }
     });
 
-    return { payment, credited: true };
+    return { payment, credited: true, transitioned: true };
   },
 
   // M39 Phase 2 — parity with dbStorage.cancelPayment. Previously missing here, so

@@ -121,7 +121,13 @@ export async function razorpayWebhookHandler(req, res) {
       }
 
       const transactionId = payment?.id || order.id;
-      const { payment: completedPayment, credited } = await storage.completePayment(repPayment.id, transactionId);
+      // ADS-001 — settled by Razorpay's callback with no browser necessarily
+      // present (the customer may have closed the tab). This is precisely the
+      // population the client-side Purchase conversion cannot see, so recording it
+      // is what makes the size of that blind spot measurable.
+      const { payment: completedPayment, credited } = await storage.completePayment(
+        repPayment.id, transactionId, { completionPath: "webhook" },
+      );
 
       if (isSeatPayment(completedPayment)) {
         // Seats grant no credits and never move the plan ladder — plan is derived
