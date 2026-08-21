@@ -72,9 +72,15 @@ function installBrowser() {
     configurable: true,
   });
 
+  const storageHandlers = [];
   globalThis.window = {
     localStorage: makeStorage(),
     location: { hostname: "www.letszero.in", href: "https://www.letszero.in/" },
+    // consent.js registers a module-scope `storage` listener for cross-tab
+    // coherence; capture it so a foreign-tab write can be simulated.
+    addEventListener: (type, fn) => { if (type === "storage") storageHandlers.push(fn); },
+    removeEventListener: () => {},
+    __storageHandlers: storageHandlers,
   };
   globalThis.document = doc;
   globalThis.localStorage = globalThis.window.localStorage;
@@ -213,6 +219,46 @@ describe("consent withdrawal (ADS-005)", () => {
 
     expect(again.consent.getConsent()[again.consent.CONSENT_CATEGORIES.ADVERTISING]).toBe(false);
     expect(tagScripts(doc2)).toHaveLength(0);
+  });
+
+  it("propagates a withdrawal made in another tab", async () => {
+    // Found in a real two-tab browser run. The other tab refused conversions
+    // (fireConversion re-reads storage every call) but its gtag still held
+    // ad_storage=granted, so Google's tag kept operating under a consent the
+    // visitor had already revoked — until that tab happened to reload.
+    const { consent, googleAds } = await loadModules();
+    googleAds.initGoogleAds();
+    GRANT(consent);
+    expect(consentCalls("update").at(-1)[2].ad_storage).toBe("granted");
+
+    // Simulate the OTHER tab writing storage. A real `storage` event fires only
+    // in tabs that did not perform the write, and carries no in-process call.
+    globalThis.window.localStorage.setItem(
+      "letszero.consent.v1",
+      JSON.stringify({ version: 1, decidedAt: new Date().toISOString(), categories: { analytics: false, advertising: false } }),
+    );
+    const handler = globalThis.window.__storageHandlers?.[0];
+    expect(handler, "a storage listener must be registered").toBeTypeOf("function");
+    handler({ key: "letszero.consent.v1" });
+
+    expect(consentCalls("update").at(-1)[2]).toEqual({
+      ad_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+      analytics_storage: "denied",
+    });
+  });
+
+  it("ignores unrelated storage keys", async () => {
+    const { consent, googleAds } = await loadModules();
+    googleAds.initGoogleAds();
+    GRANT(consent);
+    const before = consentCalls("update").length;
+
+    const handler = globalThis.window.__storageHandlers[0];
+    handler({ key: "some-other-app-key" });
+
+    expect(consentCalls("update")).toHaveLength(before);
   });
 
   it("allows re-consent without loading a second tag", async () => {

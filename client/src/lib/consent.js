@@ -150,6 +150,12 @@ export function setConsent(categories) {
 
   // Notified even when persistence failed: the decision governs THIS page view
   // regardless of whether it survives to the next one.
+  notify(next);
+
+  return next;
+}
+
+function notify(next) {
   for (const listener of listeners) {
     try {
       listener(next);
@@ -158,8 +164,30 @@ export function setConsent(categories) {
       // decision — particularly the tag loader, which enforces it.
     }
   }
+}
 
-  return next;
+// ─── Cross-tab coherence ─────────────────────────────────────────────────────
+//
+// A visitor with two tabs open who withdraws consent in one has withdrawn it,
+// not withdrawn it here. Without this, the other tab kept a live Google tag that
+// had never been told: `fireConversion` re-reads storage on every call so no
+// conversion could fire, but gtag itself still held ad_storage=granted and went
+// on setting and reading advertising cookies until that tab happened to reload.
+// Measured in a real two-tab browser run before this existed.
+//
+// The `storage` event fires only in OTHER tabs of the same origin, which is
+// exactly the audience that needs telling. Listeners are notified through the
+// same path a local decision uses, so every subscriber — present and future —
+// stays coherent without knowing tabs exist.
+//
+// Installed at module scope and guarded for SSR: script/prerender.js evaluates
+// this module under Node, where there is no window.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("storage", (event) => {
+    // key === null means the whole store was cleared, which changes consent too.
+    if (event.key !== null && event.key !== STORAGE_KEY) return;
+    notify(getConsent());
+  });
 }
 
 // There is deliberately no `acceptAll()`.
