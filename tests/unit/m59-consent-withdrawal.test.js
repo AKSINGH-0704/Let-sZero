@@ -307,6 +307,24 @@ describe("consent withdrawal (ADS-005)", () => {
     expect(wrapper).not.toMatch(/from "@\/components\/ui\/(dialog|switch|button|label)"/);
   });
 
+  it("makes no claim about what Google receives, only about what we send", async () => {
+    const dialog = await read("client/src/components/consent/CookiePreferencesDialog.jsx");
+    const copy = dialog
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+    // An already-loaded gtag.js may still transmit after a denied consent
+    // update; Consent Mode does not promise otherwise, and verification blocked
+    // Google throughout, so nothing here observed it. Copy must stay on our
+    // side of that boundary.
+    expect(copy).not.toMatch(/Google receives no/i);
+    expect(copy).toMatch(/We will not send Google/i);
+
+    // The sweep attempts path=/ only and cannot reach Google's own domains,
+    // so "the advertising cookies" without qualification would overclaim.
+    expect(copy).toMatch(/cookies we can access/i);
+  });
+
   it("does not claim it can delete cookies it cannot reach", async () => {
     const src = await read("client/src/lib/analytics/googleAds.js");
     // The limitation must stay written down next to the code that has it.

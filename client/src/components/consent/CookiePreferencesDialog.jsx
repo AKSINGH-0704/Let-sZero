@@ -128,16 +128,24 @@ export default function CookiePreferencesDialog({ open, onOpenChange }) {
             className="text-sm text-muted-foreground"
             data-testid="consent-advertising-state"
           >
-            {/* Deliberately does NOT promise that every Google cookie is gone.
-                The sweep clears the first-party ones this origin can reach; it
-                cannot touch cookies on Google's own domains, and deletion is
-                best-effort even for the ones it can see. Claiming complete
-                removal would be the same class of overstatement as telling
-                customers Google uses their data "solely" for measurement —
-                a promise made about something we do not control. */}
+            {/* Every clause here is restricted to what this application does,
+                because that is the only thing it can evidence.
+                  - "We will not send Google any further conversion data" is
+                    verifiable: fireConversion re-reads consent on every call.
+                    An earlier draft said "Google receives no further
+                    measurement", which is a claim about what a already-loaded
+                    gtag.js transmits after a denied consent update — something
+                    we never observed, having blocked Google throughout
+                    verification, and which Consent Mode does not guarantee.
+                  - "the advertising cookies we can access" is bounded on
+                    purpose: the sweep expires first-party _gcl_*/_gac_* at
+                    path=/ only, cannot reach cookies on Google's own domains,
+                    and cannot see HttpOnly cookies.
+                Claiming more would be the same overstatement as telling
+                customers Google uses their data "solely" for measurement. */}
             {advertising
               ? "Advertising cookies are allowed."
-              : "Advertising cookies are turned off. Google receives no further measurement from this browser, and we have cleared the advertising cookies set on this site."}
+              : "Advertising cookies are turned off. We will not send Google any further conversion data from this browser, and we have cleared the advertising cookies we can access on this site."}
           </p>
         </div>
 
