@@ -60,6 +60,7 @@ import NotFound from "@/pages/not-found";
 import LandingExperience from "@marketing/LFP_final/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ConsentBanner from "@/components/consent/ConsentBanner";
+import CookiePreferences from "@/components/consent/CookiePreferences";
 import { Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 
@@ -485,6 +486,11 @@ export default function App() {
                 for as long as /api/auth/me takes to answer. Consent is not a
                 function of authentication and must not wait on it. */}
             <ConsentBanner />
+            {/* M59 / ADS-005 — mounted once beside the banner, and outside
+                AppRoutes for the same reason: changing a consent decision must
+                not wait on the auth check. Opened by a DOM event, so any
+                surface can reach it without prop drilling. */}
+            <CookiePreferences />
             <AppRoutes />
           </TooltipProvider>
         </AuthProvider>

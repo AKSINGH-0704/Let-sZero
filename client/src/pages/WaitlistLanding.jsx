@@ -16,6 +16,7 @@ import {
   CheckCircle2, Zap, Eye
 } from "lucide-react";
 import { useSubmitGuard } from "@/hooks/useSubmitGuard";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import { trackQualifiedLead } from "@/lib/analytics/conversions";
 
 const FONT_HEADING = "'Space Grotesk', sans-serif";
@@ -924,6 +925,7 @@ export default function WaitlistLanding() {
             <a href="/privacy" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Privacy</a>
             <a href="/terms" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Terms</a>
             <a href="/contact" className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }}>Contact</a>
+            <CookiePreferencesLink className="inline-flex min-h-[24px] items-center px-1 text-xs text-gray-400 hover:text-white transition-colors" style={{ fontFamily: FONT_BODY }} />
           </div>
           {/* M35-F — text-gray-600 on #0a0a0f measures 2.61:1, below the 4.5:1
               WCAG 1.4.3 minimum. gray-400 measures 7.77:1 on the same ground. */}

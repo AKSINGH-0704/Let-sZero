@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 
 export default function Terms() {
   return (
@@ -374,6 +375,7 @@ export default function Terms() {
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
+            <CookiePreferencesLink className="hover:text-white transition-colors" />
           </div>
         </div>
       </footer>

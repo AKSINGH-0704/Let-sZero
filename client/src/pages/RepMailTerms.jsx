@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import {
   Layers, Shield, Ban, Users, CreditCard, Sparkles,
   ShieldOff, Users2, Gauge, UserX, TriangleAlert,
@@ -565,6 +566,7 @@ export default function RepMailTerms() {
           <div className="flex items-center gap-6 text-sm">
             <Link href="/repmail/privacy" style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/repmail/terms" style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors">Terms</Link>
+            <CookiePreferencesLink style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors" />
             <Link href="/contact" style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors">Contact</Link>
             <Link href="/terms" style={{ color: "#4B5563" }} className="hover:text-white transition-colors text-xs">LetsZero Legal</Link>
           </div>

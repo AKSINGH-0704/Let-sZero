@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 
 export default function Privacy() {
   return (
@@ -23,6 +24,7 @@ export default function Privacy() {
           <div className="flex items-center gap-6 text-sm" style={{ color: "#8888A0" }}>
             <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
+            <CookiePreferencesLink className="hover:text-white transition-colors" />
             <Link href="/login">
               <span
                 className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"

@@ -154,6 +154,63 @@ function loadTagOnce() {
 }
 
 /**
+ * Cookies this application can honestly act on when consent is withdrawn.
+ *
+ * `_gcl_*` is written by gtag.js as a FIRST-PARTY cookie on this site's own
+ * domain, so ordinary JavaScript can expire it. That is the whole extent of
+ * what is possible, and the limit is stated rather than glossed:
+ *
+ *   - Cookies Google sets on ITS OWN domains (google.com, doubleclick.net) are
+ *     third-party and cannot be read or deleted from here by any means.
+ *   - HttpOnly cookies are invisible to script.
+ *   - Deletion is best-effort: a cookie only disappears if it is expired with
+ *     the same path and domain it was written with, which is why several
+ *     variants are attempted below.
+ *
+ * So this reduces what remains on the visitor's machine; it does not and cannot
+ * guarantee that every Google cookie is gone. Any customer-facing wording must
+ * say the same — see the privacy record.
+ */
+const ADVERTISING_COOKIE_PREFIXES = ["_gcl_", "_gac_"];
+
+function clearAdvertisingCookies() {
+  if (!isBrowser()) return [];
+
+  // `document.cookie` is a string in every browser, but it is absent or
+  // restricted in enough non-browser and sandboxed contexts (SSR shims, some
+  // embedded webviews, a document with cookies disabled) that assuming it is a
+  // string is not safe. This runs inside applyConsent, which initGoogleAds
+  // calls directly and NOT inside a try/catch — so throwing here would take
+  // consent initialisation down with it rather than merely skipping a cleanup.
+  if (typeof document.cookie !== "string") return [];
+
+  const names = document.cookie
+    .split(";")
+    .map((c) => c.split("=")[0].trim())
+    .filter((n) => n && ADVERTISING_COOKIE_PREFIXES.some((p) => n.startsWith(p)));
+
+  if (names.length === 0) return [];
+
+  // A cookie is only removed when expired with the same domain/path it was set
+  // with, and gtag.js may use either the host or the registrable domain. Try
+  // each; the ones that do not match are silently ignored by the browser.
+  const host = window.location.hostname;
+  const labels = host.split(".");
+  const domains = [null, host, `.${host}`];
+  if (labels.length > 2) domains.push(`.${labels.slice(-2).join(".")}`);
+
+  for (const name of names) {
+    for (const domain of domains) {
+      document.cookie =
+        `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/` +
+        (domain ? `; domain=${domain}` : "");
+    }
+  }
+
+  return names;
+}
+
+/**
  * Apply a consent decision: tell the tag, and load it if it is now allowed to
  * run.
  *
@@ -166,7 +223,17 @@ function applyConsent(consent) {
   gtag("consent", "update", toConsentSignals(consent));
 
   // Basic Consent Mode: no advertising consent, no tag, no request.
-  if (consent[CONSENT_CATEGORIES.ADVERTISING] !== true) return;
+  //
+  // This branch is also the WITHDRAWAL path. A visitor who revokes advertising
+  // consent from the preferences dialog lands here: the denied update above is
+  // pushed to a tag that may already be live (it cannot be unloaded — nothing
+  // can unload a script), and every advertising cookie this origin controls is
+  // expired. `fireConversion` re-reads consent on every call, so no further
+  // conversion can fire regardless of the tag still being present.
+  if (consent[CONSENT_CATEGORIES.ADVERTISING] !== true) {
+    clearAdvertisingCookies();
+    return;
+  }
 
   loadTagOnce();
 }
@@ -237,6 +304,9 @@ export function fireConversion(conversionKey, params = {}) {
 
   return true;
 }
+
+/** Test-only: exposes the cookie sweep so its behaviour can be asserted. */
+export const __clearAdvertisingCookiesForTests = clearAdvertisingCookies;
 
 /** Test-only reset of module state. Not reachable from any app path. */
 export function __resetGoogleAdsForTests() {

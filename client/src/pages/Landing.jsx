@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { Link } from "wouter";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowRight, 
@@ -731,6 +732,7 @@ export default function Landing() {
             <Link href="/repmail/learn" className="hover:text-white transition-colors">Resources</Link>
             <Link href="/repmail/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/repmail/terms" className="hover:text-white transition-colors">Terms</Link>
+            <CookiePreferencesLink className="hover:text-white transition-colors" />
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
           </div>
         </div>

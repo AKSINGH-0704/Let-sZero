@@ -6,6 +6,7 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { Link, useLocation } from "wouter";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import { useAuth } from "@/context/AuthContext";
 import {
   motion,
@@ -1791,6 +1792,15 @@ export default function PublicPricing() {
                 {label}
               </Link>
             ))}
+            {/* M59 / ADS-005 — a control, not a route, so it sits after the
+                link map rather than inside it. Same size, colour and hover
+                treatment as its siblings. */}
+            <CookiePreferencesLink
+              className="inline-flex min-h-[24px] items-center px-1 text-xs transition-colors"
+              style={{ color: "#7878A0" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#B0B0C8")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#7878A0")}
+            />
           </div>
           <div className="text-xs" style={{ color: "#7878A0" }}>
             © {new Date().getFullYear()} LetsZero. All rights reserved.

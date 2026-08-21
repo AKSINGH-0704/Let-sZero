@@ -1554,6 +1554,19 @@ export default function LandingExperience() {
                 {link.label}
               </a>
             ))}
+            {/* M59 / ADS-005 — consent withdrawal, reachable from the homepage
+                footer. Dispatches the same DOM event CookiePreferences listens
+                for rather than importing it: this file lives in the marketing
+                sub-project with its own module tree and TypeScript config, and
+                a plain event keeps the two trees decoupled. */}
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("letszero:cookie-preferences"))}
+              className="inline-flex min-h-[24px] items-center rounded py-1 text-xs text-[#9CA3AF] transition-colors hover:text-[#E5E7EB] focus-visible:text-[#E5E7EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              style={{ fontFamily: "'Inter', sans-serif" }}
+            >
+              Cookie preferences
+            </button>
           </nav>
           {/* RC-1 — #6B7280 on #0A0A0F measured 4.08:1, below the 4.5:1 AA
               minimum for body text (Lighthouse color-contrast, the only
