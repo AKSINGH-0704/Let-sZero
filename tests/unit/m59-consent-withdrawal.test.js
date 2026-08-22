@@ -360,8 +360,13 @@ describe("settlement-path diagnostic (ADS-001)", () => {
     const storage = await read("server/storage.js");
     expect(storage).toContain("coalesce(");
     expect(storage).toContain("'{}'::jsonb");
-    // Concat, not replace — existing metadata must survive.
-    expect(storage).toMatch(/\|\|\s*\$\{JSON\.stringify\(\{ completionPath \}\)\}::jsonb/);
+    // Concat, not replace — existing metadata must survive. Asserted on the
+    // `||` concat shape rather than on the exact expression interpolated into
+    // it: ADS-008 changed WHAT value is written (a renewal is relabelled
+    // "autopay") without changing that it is merged rather than substituted,
+    // and this guard owns the merge, not the value.
+    expect(storage).toMatch(/\|\|\s*\$\{JSON\.stringify\([\s\S]*?\)\}::jsonb/);
+    expect(storage).not.toMatch(/set\(\{[\s\S]*?metadata:\s*\$\{JSON\.stringify/);
 
     const migrations = await readFile(join(root, "migrations", "meta", "_journal.json"), "utf8")
       .catch(() => "");

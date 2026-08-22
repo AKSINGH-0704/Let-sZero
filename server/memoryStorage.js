@@ -1814,12 +1814,18 @@ export const memoryStorage = {
     if (!payment) throw new Error("Payment not found");
     if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false, transitioned: false };
 
+    // ADS-008 parity with storage.js — a recurring AutoPay debit has no browser
+    // and no ad click, and seatRenewal.js races the order.paid webhook to settle
+    // it, so classifying by caller is non-deterministic. `metadata.autopay` is
+    // written when the row is created and settles it deterministically.
+    const settlementPath = payment.metadata?.autopay === true ? "autopay" : completionPath;
+
     // Update payment status
     payment.status = PAYMENT_STATUS.SUCCESS;
     payment.transactionId = transactionId;
     payment.completedAt = new Date();
-    if (completionPath) {
-      payment.metadata = { ...(payment.metadata || {}), completionPath };
+    if (settlementPath) {
+      payment.metadata = { ...(payment.metadata || {}), completionPath: settlementPath };
     }
 
     // M42 parity with storage.js — a SEATS payment buys a service period, not

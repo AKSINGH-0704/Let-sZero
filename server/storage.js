@@ -2021,9 +2021,11 @@ const dbStorage = {
 
   /**
    * ADS-001 — `completionPath` records WHICH settlement path finalized the
-   * payment: "browser" (the customer's tab reached /api/payments/razorpay/verify)
-   * or "webhook" (Razorpay's order.paid arrived; the customer may have closed
-   * the tab). It is written INSIDE the same UPDATE that performs the
+   * payment: "browser" (the customer's tab reached /api/payments/razorpay/verify),
+   * "webhook" (Razorpay's order.paid arrived; the customer may have closed
+   * the tab), or "autopay" (a recurring mandate debit — no browser existed at
+   * all; see ADS-008 below, which overrides the caller's value for those rows).
+   * It is written INSIDE the same UPDATE that performs the
    * PENDING -> SUCCESS transition, so only the caller that actually wins the
    * race records it — a second caller's UPDATE matches zero rows and writes
    * nothing, exactly like the credit allocation below.
@@ -2046,6 +2048,31 @@ const dbStorage = {
     // Fast path: already completed — no writes needed.
     if (payment.status === PAYMENT_STATUS.SUCCESS) return { payment, credited: false, transitioned: false };
 
+    // ADS-008 — a recurring AutoPay charge belongs to NEITHER settlement path.
+    // There is no browser and no ad click: the debit happens in a worker tick.
+    //
+    // Classifying it by CALLER would be non-deterministic and biased. A renewal
+    // is an ordinary order to the gateway (autopayCharge.js stores the same
+    // `razorpay_order_id` the manual flow uses), so Razorpay fires `order.paid`
+    // for it and the webhook races seatRenewal.js to settle it. Whichever wins
+    // decides the label: "webhook" if the gateway callback lands first, nothing
+    // at all if the worker does. So the same business event gets two different
+    // classifications on gateway timing alone.
+    //
+    // Both are wrong, and "webhook" is the damaging one: that bucket means "a
+    // customer-initiated purchase whose tab closed before it could report" —
+    // the population whose size decides whether server-side offline conversion
+    // import is worth building (ADS-001). Renewals landing there inflate it with
+    // revenue no browser instrumentation could ever have captured, and would
+    // argue for building an architecture the real blind spot may not justify.
+    //
+    // The row itself is unambiguous. `metadata.autopay` is written by
+    // autopayCharge.js when the PENDING row is created, before any race exists,
+    // and by nothing else — a renewal the customer pays MANUALLY after a decline
+    // does not carry it, and correctly stays "browser", because that one really
+    // is observable.
+    const settlementPath = payment.metadata?.autopay === true ? "autopay" : completionPath;
+
     const user = await this.getUserById(payment.userId);
     const balanceBefore = user?.creditsRemaining ?? 0;
 
@@ -2067,8 +2094,8 @@ const dbStorage = {
           completedAt: new Date(),
           // jsonb concat preserves whatever the row already carries (seat
           // metadata, razorpay ids, autopay markers) and adds one key.
-          ...(completionPath
-            ? { metadata: sql`coalesce(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ completionPath })}::jsonb` }
+          ...(settlementPath
+            ? { metadata: sql`coalesce(${payments.metadata}, '{}'::jsonb) || ${JSON.stringify({ completionPath: settlementPath })}::jsonb` }
             : {}),
         })
         .where(and(eq(payments.id, paymentId), sql`status != 'SUCCESS'`))

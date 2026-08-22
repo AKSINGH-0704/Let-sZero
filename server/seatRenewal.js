@@ -241,7 +241,13 @@ async function tryCharge(sub, { now, trigger, graceEnd = null, attempt = 1 }) {
     // webhook is safe — whichever arrives second short-circuits on the
     // seatsFulfilledAt marker, and the period fence guarantees one advance.
     const txnId = attemptResult.payment?.metadata?.provider_payment_id || attemptResult.payment.id;
-    const { payment } = await storage.completePayment(attemptResult.payment.id, txnId);
+    // ADS-008 — stated at the call site as well as enforced in storage. This
+    // settlement had no browser, so the client-side Purchase conversion could
+    // never have observed it; it must not fall into the "webhook" bucket, which
+    // means "a customer-initiated purchase whose tab closed".
+    const { payment } = await storage.completePayment(
+      attemptResult.payment.id, txnId, { completionPath: "autopay" },
+    );
     const applied = await fulfillSeatPayment(payment);
 
     if (!applied.applied && applied.reason === "stale_period") {
