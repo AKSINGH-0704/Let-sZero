@@ -116,7 +116,38 @@ function ensureDataLayer() {
   return window.gtag;
 }
 
-/** Map internal categories onto Google's four Consent Mode v2 signals. */
+/**
+ * Map internal categories onto Google's four Consent Mode v2 signals.
+ *
+ * Three of the four are derived; `ad_personalization` is pinned denied, and
+ * that asymmetry is the point.
+ *
+ *   ad_storage         — the conversion cookie. Measurement cannot work
+ *                        without it, and it is what the visitor is asked for.
+ *   ad_user_data       — permission to send Google data for advertising
+ *                        purposes. We do send a conversion event, so claiming
+ *                        otherwise while sending one would be the dishonest
+ *                        direction.
+ *   analytics_storage  — permanently denied. No analytics consumer exists
+ *                        (ADS-004); nothing would read the signal.
+ *   ad_personalization — permanently denied. THIS IS NOT MEASUREMENT.
+ *
+ * ad_personalization governs use of the data for personalized advertising and
+ * remarketing audiences. Both consent surfaces ask for one thing and name it
+ * exactly: "measure which advertising brings people here". Deriving
+ * personalization from that answer would grant a purpose the visitor was never
+ * asked about — the same defect Audit 224 fixed in the opposite direction, when
+ * the banner solicited consent for analytics that never happened.
+ *
+ * This module already states the rule for the analytics case: a new purpose
+ * needs its own question on the surface and a CONSENT_VERSION bump, because a
+ * decision made about one purpose cannot be silently reused for a wider one.
+ * Personalization is a wider purpose. It gets the same treatment.
+ *
+ * Nothing is lost: the account runs no remarketing audiences, and conversion
+ * counting does not depend on this signal. If remarketing is ever wanted, it is
+ * a new question — not a quiet re-read of this one.
+ */
 function toConsentSignals(consent) {
   const ads = consent[CONSENT_CATEGORIES.ADVERTISING] === true ? "granted" : "denied";
   const analytics = consent[CONSENT_CATEGORIES.ANALYTICS] === true ? "granted" : "denied";
@@ -124,7 +155,7 @@ function toConsentSignals(consent) {
   return {
     ad_storage: ads,
     ad_user_data: ads,
-    ad_personalization: ads,
+    ad_personalization: "denied",
     analytics_storage: analytics,
   };
 }

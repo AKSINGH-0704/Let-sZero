@@ -272,16 +272,35 @@ describe("Google tag loading", () => {
 
     const updates = gtagCalls("consent").filter((a) => a[1] === "update");
     // All four v2 signals are declared on every update — that is the Consent
-    // Mode contract. But analytics_storage is permanently denied: the platform
-    // performs no analytics, nothing consumes the signal, and the consent
-    // surface never asks about it (ADS-004). Granting it would tell Google we
-    // hold a permission we never sought.
+    // Mode contract. But TWO of the four are permanently denied, for the same
+    // reason: granting either would tell Google we hold a permission we never
+    // sought.
+    //
+    //   analytics_storage  — the platform performs no analytics and nothing
+    //                        consumes the signal (ADS-004).
+    //   ad_personalization — governs personalized advertising and remarketing
+    //                        audiences. Both consent surfaces ask to "measure
+    //                        which advertising brings people here" and nothing
+    //                        more, so personalization is a purpose the visitor
+    //                        was never asked about. Granting it off the back of
+    //                        a measurement answer is the same defect Audit 224
+    //                        fixed in the other direction.
+    //
+    // Only ad_storage and ad_user_data follow the visitor's decision — the two
+    // the conversion actually needs.
     expect(updates.at(-1)[2]).toEqual({
       ad_storage: "granted",
       ad_user_data: "granted",
-      ad_personalization: "granted",
+      ad_personalization: "denied",
       analytics_storage: "denied",
     });
+
+    // A grant must never be able to reach ad_personalization by ANY route, so
+    // this asserts on every consent update the module has ever pushed, not just
+    // the last one.
+    for (const update of updates) {
+      expect(update[2].ad_personalization).toBe("denied");
+    }
   });
 
   it("is inert in a non-production build", async () => {
