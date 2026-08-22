@@ -108,7 +108,7 @@ export default function RepMailPrivacy() {
             Privacy Policy
           </h1>
           <p className="text-sm mb-4" style={{ color: "#475569" }}>
-            Last updated: June 2026 &nbsp;·&nbsp; Applies to all RepMail accounts
+            Last updated: August 2026 &nbsp;·&nbsp; Applies to all RepMail accounts
           </p>
           <p className="text-base leading-relaxed max-w-2xl" style={{ color: "#94A3B8" }}>
             How RepMail (operated by LetsZero Solutions Private Limited) collects, uses, and protects your data.
@@ -193,7 +193,11 @@ export default function RepMailPrivacy() {
               <p>
                 Your account credentials are protected with bcrypt password hashing (cost factor 12).
                 Sessions are maintained via a server-side session cookie. We do not use persistent
-                tracking cookies or advertising identifiers.
+                tracking cookies or advertising identifiers unless you have consented to
+                advertising measurement, and you can withdraw that consent at any time from
+                &ldquo;Cookie preferences&rdquo; in the footer. Where you have consented, the
+                conversion data we send Google never includes your email address, your name, or
+                your account details.
               </p>
             </Section>
 

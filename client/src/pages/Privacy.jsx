@@ -52,7 +52,7 @@ export default function Privacy() {
           Privacy Policy
         </h1>
         <p className="text-base mb-2" style={{ color: "#7878A0" }}>
-          Last updated: June 2026 &nbsp;&middot;&nbsp; Applies to all LetsZero accounts and products
+          Last updated: August 2026 &nbsp;&middot;&nbsp; Applies to all LetsZero accounts and products
         </p>
         <p className="text-base leading-relaxed" style={{ color: "#A8A8C0" }}>
           LetsZero Solutions Private Limited (&ldquo;LetsZero&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) develops and operates
@@ -137,8 +137,9 @@ export default function Privacy() {
           <p>
             We collect data about how you interact with our products, including feature usage, API
             request timestamps, and error events. This data is used for platform reliability,
-            performance monitoring, and product improvement. We do not use third-party advertising
-            networks or ad-tracking pixels.
+            performance monitoring, and product improvement, and it is not shared with advertising
+            networks. Separately, and only if you consent, we use Google Ads conversion measurement
+            to understand which advertising brings people to us; see section 2.7.
           </p>
 
           <SubHead>2.3 Billing Information</SubHead>
@@ -170,9 +171,34 @@ export default function Privacy() {
 
           <SubHead>2.7 Cookies and Sessions</SubHead>
           <p>
-            We use session cookies to keep you authenticated during your use of our products. We
-            do not use advertising cookies or third-party tracking cookies. Disabling cookies will
-            prevent you from signing in.
+            We use session cookies to keep you authenticated during your use of our products. With
+            your consent, we also use Google Ads advertising cookies to understand which
+            advertising brings people to us. They are not set unless you accept them, and you can
+            decline without losing any product functionality. You can change your choice at any
+            time from &ldquo;Cookie preferences&rdquo; in the footer of our public pages.
+          </p>
+          <p className="mt-3">
+            What we send Google is limited to which conversion occurred — a sign-up or a
+            purchase — and, for a purchase, the amount, the currency, and a random reference
+            for that payment. It never includes your email address, your name, your account or
+            workspace details, or which plan you bought. We do not send Google hashed identifiers,
+            and Enhanced Conversions is not enabled.
+          </p>
+          <p className="mt-3">
+            If you turn advertising off, we stop sending Google conversion data from your browser
+            and we expire the advertising cookies this site is able to remove. Cookies stored on
+            Google&rsquo;s own domains are not ours to remove, and we cannot guarantee that a
+            cookie stored under a different path is cleared. As with any content loaded from
+            another company, your browser&rsquo;s request to Google carries technical information
+            such as your IP address and browser type.
+          </p>
+          <p className="mt-3">
+            Your choice is recorded in your browser&rsquo;s local storage on the device you make it
+            on. If you clear your browser data, or use a different browser or device, the choice
+            goes with it and we will ask again.
+          </p>
+          <p className="mt-3">
+            Disabling cookies will prevent you from signing in.
           </p>
         </Section>
 
@@ -190,8 +216,10 @@ export default function Privacy() {
             <li>To maintain platform reliability and improve product quality.</li>
           </ul>
           <p className="mt-4">
-            We do not sell your data. We do not use your data for advertising. We do not share
-            your data with advertising networks.
+            We do not sell your data. We do not share your contact lists, campaign content, or
+            recipient data with advertising networks. Where you have consented to advertising
+            measurement, we send Google the limited conversion data described in section 2.7, and
+            nothing else.
           </p>
         </Section>
 
@@ -221,7 +249,10 @@ export default function Privacy() {
         </Section>
 
         <Section id="data-sharing" title="5. Who We Share Data With">
-          <p>We share your data only with service providers necessary to operate our platform:</p>
+          <p>
+            We share your data with service providers necessary to operate our platform, and —
+            only if you have consented — with Google for advertising measurement:
+          </p>
           <ul className="list-disc pl-5 space-y-2 mt-3">
             <li>
               <strong style={{ color: "#F0F0F5" }}>Cloud infrastructure providers</strong> —
@@ -235,10 +266,16 @@ export default function Privacy() {
               <strong style={{ color: "#F0F0F5" }}>Identity providers</strong> — third-party
               sign-in services, if you choose to authenticate through them.
             </li>
+            <li>
+              <strong style={{ color: "#F0F0F5" }}>Advertising measurement</strong> — Google,
+              only if you have consented to advertising cookies, and limited to the conversion data
+              described in section 2.7.
+            </li>
           </ul>
           <p className="mt-4">
             We may also disclose data when required by law, court order, or to protect the safety
-            and rights of our users. We do not sell your data or share it for marketing or
+            and rights of our users. We do not sell your data, and apart from the consent-based
+            advertising measurement described in section 2.7, we do not share it for marketing or
             advertising purposes.
           </p>
           <p className="mt-3">
