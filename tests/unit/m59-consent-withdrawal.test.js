@@ -390,3 +390,83 @@ describe("settlement-path diagnostic (ADS-001)", () => {
     expect(pg).toMatch(/didTransition = true/);
   });
 });
+
+// ── Reachability ─────────────────────────────────────────────────────────────
+//
+// Nothing covered WHERE the withdrawal control appears, and the gap was real:
+// every public footer carried the link except ResourceCenterLayout, which is
+// the footer for 71 guides across most of the public route table — the pages
+// paid traffic actually lands on. Consent a visitor cannot revisit from the
+// page they are standing on is not a decision they can change.
+//
+// Derived from the source tree rather than a hand-written list, so a NEW public
+// footer added without the control fails this instead of shipping quietly.
+
+describe("withdrawal reachability (ADS-005)", () => {
+  const PUBLIC_FOOTER_FILES = [
+    "client/src/pages/Landing.jsx",
+    "client/src/pages/Privacy.jsx",
+    "client/src/pages/Terms.jsx",
+    "client/src/pages/PublicPricing.jsx",
+    "client/src/pages/RepMailPrivacy.jsx",
+    "client/src/pages/RepMailTerms.jsx",
+    "client/src/pages/WaitlistLanding.jsx",
+    "client/src/components/resource-center/ResourceCenterLayout.jsx",
+  ];
+
+  it("puts the control in every public footer", async () => {
+    for (const file of PUBLIC_FOOTER_FILES) {
+      const src = await read(file);
+      expect(src, `${file} renders a footer without a cookie-preferences control`)
+        .toMatch(/CookiePreferencesLink/);
+    }
+  });
+
+  it("enumerates every file that actually renders a footer", async () => {
+    // The list above is only a guard if it is complete. Walk the public source
+    // tree, find everything with a <footer>, and require it to be accounted
+    // for — so a new public footer cannot be added without either carrying the
+    // control or being consciously listed as an exception here.
+    const { readdir } = await import("node:fs/promises");
+    const roots = ["client/src/pages", "client/src/components"];
+    const found = [];
+
+    async function walk(dir) {
+      let entries;
+      try { entries = await readdir(join(root, dir), { withFileTypes: true }); }
+      catch { return; }
+      for (const e of entries) {
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) await walk(rel);
+        else if (/\.(jsx|tsx)$/.test(e.name)) {
+          if ((await read(rel)).includes("<footer")) found.push(rel);
+        }
+      }
+    }
+    for (const r of roots) await walk(r);
+
+    // The marketing sub-project has its own module tree and dispatches the same
+    // DOM event directly rather than importing the component (see
+    // LandingExperience.tsx), so it is verified by event name instead.
+    expect(await read("marketing/LFP_final/LandingExperience.tsx"))
+      .toContain("letszero:cookie-preferences");
+
+    const unaccounted = found.filter((f) => !PUBLIC_FOOTER_FILES.includes(f));
+    expect(unaccounted, "public footer(s) with no cookie-preferences control").toEqual([]);
+    expect(found.length).toBe(PUBLIC_FOOTER_FILES.length);
+  });
+
+  it("keeps the control out of the entry bundle's dependency weight", async () => {
+    // The link imports only the opener, never the dialog. If it ever reaches
+    // for Dialog/Switch directly, Radix lands in the entry chunk that all 116
+    // prerendered pages download — the PERF-004/PERF-006 regression the split
+    // exists to prevent.
+    const link = await read("client/src/components/consent/CookiePreferencesLink.jsx");
+    expect(link).not.toMatch(/@\/components\/ui\/(dialog|switch)/);
+    expect(link).toContain("openCookiePreferences");
+
+    const shell = await read("client/src/components/consent/CookiePreferences.jsx");
+    expect(shell).toMatch(/lazy\(\s*\(\)\s*=>\s*import\("\.\/CookiePreferencesDialog"\)\s*\)/);
+    expect(shell).not.toMatch(/@\/components\/ui\/(dialog|switch)/);
+  });
+});

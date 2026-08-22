@@ -15,6 +15,7 @@ import { Link, useLocation } from "wouter";
 import { GraduationCap, Search, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ResourceCenterSearch from "./ResourceCenterSearch";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import {
   getArticlesForProduct,
   getLearningPathsForProduct,
@@ -223,6 +224,19 @@ export default function ResourceCenterLayout({ product, children }) {
                 {l.label}
               </Link>
             ))}
+            {/* M59 / ADS-005 — withdrawal has to be reachable from the pages
+                people actually land on. Every other public footer got this
+                link; this layout was missed, and it is the one that matters
+                most: it serves 71 guides across the majority of the public
+                route table, which is precisely where paid traffic arrives. A
+                consent decision a visitor cannot revisit from the page they
+                are standing on is not a decision they can change.
+
+                A control, not a route, so it sits after the link map rather
+                than inside it — and it carries the siblings' exact classes so
+                it is visually and dimensionally native, including the 24px
+                minimum hit target M31-D established here. */}
+            <CookiePreferencesLink className="inline-flex min-h-[24px] items-center rounded py-1 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring" />
           </nav>
         </div>
       </footer>
