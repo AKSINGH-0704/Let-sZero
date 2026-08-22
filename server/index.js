@@ -87,13 +87,38 @@ app.use((req, _res, next) => {
 // 'self' for both styles and fonts, so a future third-party stylesheet cannot
 // load silently on the strength of an allowlist entry nobody needs.
 //
-// M59 — Google Ads measurement. The allowlist grows by exactly three hosts and
-// gains NO new directive capability:
-//   script-src  www.googletagmanager.com  — serves gtag.js itself.
-//   connect-src www.google-analytics.com  — where gtag.js posts measurement.
-//   img-src     www.googleadservices.com, googleads.g.doubleclick.net
-//                                         — the conversion pings, which are
-//                                           pixel GETs rather than fetches.
+// M59 — Google Ads measurement.
+//
+// ⚠️ The hosts below were OBSERVED, not assumed. The first version of this
+// allowlist was written from what the endpoints were believed to be, and every
+// single one was wrong: gtag.js loaded fine and then had all of its measurement
+// blocked in production. The tag reported no error, gtag() returned normally,
+// and fireConversion() returned true — measurement that looks successful and is
+// completely inert. It was only caught by loading the real tag on the real site
+// and reading the CSP violations. Verification that BLOCKS Google cannot find
+// this, because the tag never gets far enough to reveal where it sends.
+//
+//   script-src  www.googletagmanager.com   — serves gtag.js itself.
+//
+//   connect-src pagead2.googlesyndication.com  — /ccm/collect, the primary
+//               www.google.com                   measurement transport. gtag
+//               ad.doubleclick.net               tries fetch() FIRST.
+//
+//   img-src     pagead2.googlesyndication.com  — the same collectors again, as
+//               www.google.com                   the pixel fallback when fetch
+//                                                is unavailable. BOTH are
+//                                                needed: blocking either half
+//                                                silently drops conversions.
+//
+//   img-src     www.googleadservices.com       — documented conversion hosts,
+//               googleads.g.doubleclick.net      retained; not observed in the
+//   connect-src www.google-analytics.com         smoke test, but removing them
+//                                                on the strength of one session
+//                                                risks re-creating exactly the
+//                                                silent-drop defect above.
+//
+// No wildcards: every host is named in full, and none of them can execute
+// script — only googletagmanager.com is in script-src.
 //
 // 'unsafe-inline' is deliberately NOT added to script-src, even though Google
 // supplies the tag as an inline snippet. The tag is bootstrapped from a bundled
@@ -108,8 +133,13 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc:  ["'self'", "https://checkout.razorpay.com", "https://www.googletagmanager.com"],
       styleSrc:   ["'self'", "'unsafe-inline'"],
-      imgSrc:     ["'self'", "data:", "blob:", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"],
-      connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com", "https://www.google-analytics.com"],
+      imgSrc:     ["'self'", "data:", "blob:",
+                   "https://www.googleadservices.com", "https://googleads.g.doubleclick.net",
+                   "https://pagead2.googlesyndication.com", "https://www.google.com"],
+      connectSrc: ["'self'", "https://api.razorpay.com", "https://lumberjack.razorpay.com",
+                   "https://www.google-analytics.com",
+                   "https://pagead2.googlesyndication.com", "https://www.google.com",
+                   "https://ad.doubleclick.net"],
       fontSrc:    ["'self'"],
       objectSrc:  ["'none'"],
       frameSrc:   ["https://api.razorpay.com"],

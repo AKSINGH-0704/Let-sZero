@@ -581,6 +581,40 @@ describe("architecture guarantees", () => {
     expect(directives).not.toMatch(/'unsafe-eval'/);
   });
 
+  it("allows the hosts gtag.js actually sends to, on both transports", async () => {
+    // ── Why this test is specific rather than general ────────────────────────
+    //
+    // The first allowlist was written from what the endpoints were assumed to
+    // be, and every entry was wrong. gtag.js loaded, gtag() returned normally,
+    // fireConversion() returned true — and every measurement request was
+    // CSP-blocked in production. Nothing in the application could observe it.
+    //
+    // Found only by loading the REAL tag against the REAL site and reading the
+    // violations. These are the hosts it contacted:
+    //
+    //   pagead2.googlesyndication.com/ccm/collect
+    //   www.google.com/ccm/collect
+    //   ad.doubleclick.net/ccm/s/collect
+    //
+    // gtag tries fetch() first and falls back to an image, so a host missing
+    // from EITHER connect-src or img-src loses conversions silently on some
+    // browsers and not others — the worst possible failure shape.
+    const src = await read("server/index.js");
+    const imgSrc = /imgSrc:\s*\[([\s\S]*?)\]/.exec(src)[1];
+    const connectSrc = /connectSrc:\s*\[([\s\S]*?)\]/.exec(src)[1];
+
+    for (const host of ["https://pagead2.googlesyndication.com", "https://www.google.com"]) {
+      expect(connectSrc, `${host} missing from connect-src`).toContain(host);
+      expect(imgSrc, `${host} missing from img-src (pixel fallback)`).toContain(host);
+    }
+    expect(connectSrc).toContain("https://ad.doubleclick.net");
+
+    // Still no wildcard, and still nothing new that can execute script.
+    expect(imgSrc).not.toMatch(/\*/);
+    expect(connectSrc).not.toMatch(/\*/);
+    expect(/scriptSrc:\s*\[([^\]]*)\]/.exec(src)[1]).not.toContain("googlesyndication");
+  });
+
   it("marks the signup redirect with a random nonce rather than the user id", async () => {
     const src = await read("server/routes.js");
     expect(src).toContain("const signupNonce = crypto.randomUUID();");
