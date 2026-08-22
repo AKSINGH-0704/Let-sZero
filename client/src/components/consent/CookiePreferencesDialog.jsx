@@ -138,9 +138,12 @@ export default function CookiePreferencesDialog({ open, onOpenChange }) {
                     we never observed, having blocked Google throughout
                     verification, and which Consent Mode does not guarantee.
                   - "the advertising cookies we can access" is bounded on
-                    purpose: the sweep expires first-party _gcl_*/_gac_* at
-                    path=/ only, cannot reach cookies on Google's own domains,
-                    and cannot see HttpOnly cookies.
+                    purpose: the sweep expires the first-party _gcl_ and _gac_
+                    cookies at path=/ only, cannot reach cookies on Google's
+                    own domains, and cannot see HttpOnly cookies.
+                    (Written without a wildcard on purpose: a literal asterisk
+                    followed by a slash would close this comment early and the
+                    file would not compile.)
                 Claiming more would be the same overstatement as telling
                 customers Google uses their data "solely" for measurement. */}
             {advertising
