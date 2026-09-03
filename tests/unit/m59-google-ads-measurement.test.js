@@ -545,12 +545,30 @@ describe("architecture guarantees", () => {
   it("asks for exactly the consent it grants, and no more", async () => {
     const banner = await read("client/src/components/consent/ConsentBanner.jsx");
 
-    // Everything from the opening <p> to its close: the words the visitor
-    // actually reads before deciding.
-    const copy = /<p className="min-w-0 text-sm text-muted-foreground">([\s\S]*?)<\/p>/
-      .exec(banner)[1]
+    // The words the visitor actually reads: the heading and every paragraph.
+    //
+    // This used to key on one literal className (`min-w-0 text-sm
+    // text-muted-foreground`) and read the single <p> that carried it. That
+    // made a styling change silently disable the guard, and it could only ever
+    // see one paragraph — so copy added anywhere else on the surface was
+    // unchecked. Comments are stripped first, because this file legitimately
+    // *discusses* analytics in prose while explaining why the surface must not
+    // mention it; matching that would assert on documentation.
+    const markup = banner
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, " ")  // JSX comment blocks
+      .replace(/^\s*\/\/.*$/gm, " ");         // line comments
+    const copy = [...markup.matchAll(/<(h2|p)\b[^>]*>([\s\S]*?)<\/\1>/g)]
+      .map((m) => m[2])
+      .join(" ")
       .replace(/\{[\s\S]*?\}/g, " ")   // JSX expressions
       .replace(/<[^>]+>/g, " ");        // nested elements (the policy link)
+
+    // The extraction must actually have found the surface. Without this the
+    // assertions below pass trivially on an empty string the moment the markup
+    // shape changes — which is exactly how the previous version would have
+    // failed open.
+    expect(copy).toMatch(/cookies/i);
+    expect(copy.length).toBeGreaterThan(80);
 
     // The banner previously solicited consent for "advertising and analytics
     // cookies" while no analytics consumer existed — asking for a permission

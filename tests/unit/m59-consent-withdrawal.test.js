@@ -402,6 +402,57 @@ describe("settlement-path diagnostic (ADS-001)", () => {
 // Derived from the source tree rather than a hand-written list, so a NEW public
 // footer added without the control fails this instead of shipping quietly.
 
+describe("banner/authority coherence (CONSENT-001)", () => {
+  // Measured against production before the fix: a visitor who opened Cookie
+  // preferences from the footer and granted advertising there had the decision
+  // STORED — and the banner stayed on screen, still asking. Clicking its
+  // "Reject" then silently overwrote the grant. The mirror case is the
+  // damaging one: a refusal in the dialog could be overturned by the stale
+  // "Accept" behind it, granting advertising storage to someone who declined.
+  //
+  // Root cause: the banner read consent once, in a mount-only effect, and
+  // never again — so it could not observe a decision made by any other
+  // surface, including another tab.
+  //
+  // These are structural tripwires on the wiring. The BEHAVIOUR they stand for
+  // is proven in a real browser against the real build, because this suite runs
+  // under `environment: "node"` with no DOM: React effects never fire here, so
+  // a mounted-component assertion is not available without adding jsdom, and
+  // CDP against the actual artefact is stronger evidence than a simulated one.
+  it("derives banner visibility from the one authority, not a latched read", async () => {
+    const banner = await read("client/src/components/consent/ConsentBanner.jsx");
+    const code = banner
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, " ")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^\s*\/\/.*$/gm, " ");
+
+    // Subscribed, and the subscription is returned from the effect so it is
+    // torn down rather than leaked on unmount.
+    expect(code).toContain("onConsentChange");
+    expect(code).toMatch(/return onConsentChange\(/);
+
+    // Visibility is a function of the authority. A literal `useState(true)` or
+    // a lone mount read would reintroduce the defect.
+    expect(code).toMatch(/needsConsentDecision\(\)/);
+    expect(code).toMatch(/useState\(false\)/);
+
+    // And it still keeps no consent state of its own.
+    expect(code).not.toMatch(/localStorage/);
+    expect(code).not.toMatch(/dataLayer|gtag\(/);
+  });
+
+  it("opens the existing preferences surface rather than a second one", async () => {
+    const banner = await read("client/src/components/consent/ConsentBanner.jsx");
+
+    // The settings control must reuse the one opener. Importing Dialog/Switch
+    // here would put Radix in the entry bundle every prerendered page pays for
+    // — the PERF-004/PERF-006 regression the lazy split exists to prevent.
+    expect(banner).toContain("openCookiePreferences");
+    expect(banner).not.toMatch(/@\/components\/ui\/(dialog|switch)/);
+    expect(banner).not.toMatch(/CookiePreferencesDialog/);
+  });
+});
+
 describe("withdrawal reachability (ADS-005)", () => {
   const PUBLIC_FOOTER_FILES = [
     "client/src/pages/Landing.jsx",
@@ -454,6 +505,35 @@ describe("withdrawal reachability (ADS-005)", () => {
     const unaccounted = found.filter((f) => !PUBLIC_FOOTER_FILES.includes(f));
     expect(unaccounted, "public footer(s) with no cookie-preferences control").toEqual([]);
     expect(found.length).toBe(PUBLIC_FOOTER_FILES.length);
+  });
+
+  // CONSENT-002 — the footer guard above proves every footer CARRIES the
+  // control. It cannot see a public page that renders no footer at all, so such
+  // a page is never examined and the gap is invisible. Two exist, found by
+  // walking real routes in a browser rather than by reading the tree:
+  //
+  //   /repmail/changelog          RepMailChangelog.jsx — no <footer>
+  //   any unmatched route (404)   not-found.jsx        — no <footer>
+  //
+  // A visitor who has already decided and lands on either has no in-page route
+  // to change their mind. Adding footers to these two is a layout change on
+  // pages this milestone does not otherwise touch, so it is recorded for
+  // scheduling rather than taken here. This test pins the CURRENT gap so it
+  // cannot silently grow: adding another footerless public page, or fixing one
+  // of these, fails until the list is updated deliberately.
+  it("pins the known footerless public pages (CONSENT-002)", async () => {
+    const KNOWN_WITHOUT_CONTROL = [
+      "client/src/pages/RepMailChangelog.jsx",
+      "client/src/pages/not-found.jsx",
+    ];
+
+    for (const file of KNOWN_WITHOUT_CONTROL) {
+      const src = await read(file);
+      expect(src, `${file} now has a control — remove it from the CONSENT-002 exception list`)
+        .not.toMatch(/CookiePreferencesLink|openCookiePreferences/);
+      expect(src, `${file} now renders a footer — it belongs in PUBLIC_FOOTER_FILES`)
+        .not.toContain("<footer");
+    }
   });
 
   it("keeps the control out of the entry bundle's dependency weight", async () => {

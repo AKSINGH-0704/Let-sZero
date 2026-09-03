@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -104,11 +105,21 @@ export default function CookiePreferencesDialog({ open, onOpenChange }) {
           <div className="flex items-start justify-between gap-4 border-t border-border pt-5">
             <div className="min-w-0">
               <Label htmlFor="consent-advertising" className="text-sm font-medium">
-                Google Ads advertising
+                Google Ads measurement
               </Label>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Lets us measure which advertising brings people here. We never
-                send Google your email address, name, or account details.
+              {/* Describes the same one purpose as the banner and the published
+                  policy, at the same resolution. The policy already discloses
+                  the outcomes ("which conversion occurred — a sign-up or a
+                  purchase"); this surface previously stopped at the visit,
+                  which made it the least complete of the three.
+
+                  The second sentence stays exactly as verified: it is a claim
+                  about what THIS application sends, which conversions.js pins
+                  by test, and not a claim about what Google does with it. */}
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Lets us understand which advertising brings people to LetsZero,
+                and whether it leads to sign-ups and purchases. We never send
+                Google your email address, name, or account details.
               </p>
             </div>
             <Switch
@@ -151,6 +162,27 @@ export default function CookiePreferencesDialog({ open, onOpenChange }) {
               : "Advertising cookies are turned off. We will not send Google any further conversion data from this browser, and we have cleared the advertising cookies we can access on this site."}
           </p>
         </div>
+
+        {/* PRIV-001 parity. The published policy already tells customers their
+            choice lives in the browser they made it in and that we will ask
+            again elsewhere; the surface where they actually make the choice did
+            not say so. Stated here in the same terms rather than more strongly:
+            there is deliberately no server-side consent record, because proving
+            consent server-side means identifying an otherwise anonymous
+            visitor. */}
+        <p className="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
+          Your choice is saved in this browser, on this device. If you use
+          another browser or clear your site data, we will ask again. See our{" "}
+          <Link
+            href="/privacy"
+            className="font-medium text-foreground underline underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            onClick={() => onOpenChange(false)}
+            data-testid="cookie-preferences-privacy"
+          >
+            Privacy Policy
+          </Link>{" "}
+          for what we send and why.
+        </p>
 
         <DialogFooter>
           <Button type="button" onClick={() => onOpenChange(false)} data-testid="cookie-preferences-done">

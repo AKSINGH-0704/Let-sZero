@@ -235,10 +235,24 @@ describe("published privacy claims (LEGAL-001)", () => {
     // one thing differently is the M53 CDP-1 defect shape.
     const banner = await read("client/src/components/consent/ConsentBanner.jsx");
     const dialog = await read("client/src/components/consent/CookiePreferencesDialog.jsx");
-    for (const src of [banner, dialog]) {
-      expect(flat(src)).toMatch(/measure\s+which advertising brings people here/i);
+    // One purpose, described at the SAME resolution everywhere. The anchor is
+    // the purpose clause itself rather than a single literal sentence, because
+    // the three surfaces legitimately name the destination differently
+    // ("...to LetsZero" on the consent surfaces, "...to us" in our own policy).
+    for (const src of [banner, dialog, letszero]) {
+      expect(flat(src)).toMatch(/which advertising brings people to/i);
     }
-    expect(letszero).toMatch(/which advertising brings people to us/i);
+
+    // ...and all three name the OUTCOMES, not just the visit. The banner and
+    // dialog previously stopped at "brings people here" while the policy
+    // already disclosed "which conversion occurred — a sign-up or a purchase",
+    // making the surfaces the visitor decides on the least complete of the
+    // three. sign_up and purchase are exactly the two labels that are live;
+    // qualified_lead compiles to null and is deliberately not mentioned.
+    for (const src of [banner, dialog, letszero]) {
+      expect(flat(src)).toMatch(/sign-ups? (and|or) (a )?purchases?/i);
+    }
+    expect(flat(banner)).not.toMatch(/qualified.lead|waitlist/i);
     expect(letszero).not.toMatch(/personali[sz]ed advertising|remarketing/i);
 
     // ...and the signals actually sent must not exceed that purpose.
