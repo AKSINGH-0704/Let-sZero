@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useSubmitGuard } from "@/hooks/useSubmitGuard";
+import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import { 
   Mail, 
   Clock, 
@@ -40,6 +41,35 @@ const REASONS = [
   { value: "ENTERPRISE_PRICING", label: "Enterprise / Custom Pricing", icon: Building2, description: "Custom volumes and dedicated support" },
   { value: "OTHER", label: "Other", icon: HelpCircle, description: "General questions and feedback" }
 ];
+
+// M59 / CONSENT-002 — /contact is a public, prerendered route that rendered no
+// footer, in either of its two states. The ADS-005 guard proves every footer
+// CARRIES the withdrawal control; it cannot see a page that has none, so this
+// was invisible to it and was found by walking all 117 public routes in a
+// browser instead. A visitor who has already decided and lands here had no
+// in-page route back to that decision.
+//
+// Declared once rather than inlined twice because this page returns two
+// different documents — the form and the post-submit confirmation — and both
+// are public surfaces. It stays local to this file so the source-tree guard
+// still attributes the <footer> to the page that renders it.
+function ContactFooter() {
+  const linkClass =
+    "inline-flex min-h-[24px] items-center rounded py-1 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  return (
+    <footer className="border-t border-border">
+      <nav
+        className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 px-4 py-6 text-sm text-muted-foreground"
+        aria-label="Footer"
+      >
+        <Link href="/" className={linkClass}>Home</Link>
+        <Link href="/privacy" className={linkClass}>Privacy</Link>
+        <Link href="/terms" className={linkClass}>Terms</Link>
+        <CookiePreferencesLink className={linkClass} />
+      </nav>
+    </footer>
+  );
+}
 
 export default function Contact() {
   const { user, isAuthenticated } = useAuth();
@@ -120,26 +150,29 @@ export default function Contact() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <Card className="max-w-md w-full border-card-border">
-          <CardContent className="pt-12 pb-12 text-center">
-            <div className="flex justify-center mb-6">
-              <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <CheckCircle className="h-8 w-8 text-green-600" />
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex flex-1 items-center justify-center px-4">
+          <Card className="max-w-md w-full border-card-border">
+            <CardContent className="pt-12 pb-12 text-center">
+              <div className="flex justify-center mb-6">
+                <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                  <CheckCircle className="h-8 w-8 text-green-600" />
+                </div>
               </div>
-            </div>
-            <h2 className="text-2xl font-semibold mb-2">Message Sent!</h2>
-            <p className="text-muted-foreground mb-6">
-              Thank you for reaching out. Our team will respond within 24 hours.
-            </p>
-            <Button onClick={() => {
-              setSubmitted(false);
-              setFormData({ name: user?.username || "", email: user?.email || "", company: "", reason: "", message: "" });
-            }}>
-              Send Another Message
-            </Button>
-          </CardContent>
-        </Card>
+              <h2 className="text-2xl font-semibold mb-2">Message Sent!</h2>
+              <p className="text-muted-foreground mb-6">
+                Thank you for reaching out. Our team will respond within 24 hours.
+              </p>
+              <Button onClick={() => {
+                setSubmitted(false);
+                setFormData({ name: user?.username || "", email: user?.email || "", company: "", reason: "", message: "" });
+              }}>
+                Send Another Message
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+        <ContactFooter />
       </div>
     );
   }
@@ -320,6 +353,7 @@ export default function Contact() {
           </div>
         </div>
       </div>
+      <ContactFooter />
     </div>
   );
 }

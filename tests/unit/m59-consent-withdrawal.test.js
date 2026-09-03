@@ -463,13 +463,26 @@ describe("withdrawal reachability (ADS-005)", () => {
     "client/src/pages/RepMailTerms.jsx",
     "client/src/pages/WaitlistLanding.jsx",
     "client/src/components/resource-center/ResourceCenterLayout.jsx",
+    // CONSENT-002 — these two rendered no footer at all, so the guard below had
+    // nothing to inspect and the gap was invisible to it. Both are public
+    // surfaces a decided visitor can land on: the changelog is prerendered and
+    // indexed, and the 404 catches every mistyped or expired URL, including ad
+    // landing pages. Each now carries the same control the other footers do.
+    "client/src/pages/RepMailChangelog.jsx",
+    "client/src/pages/not-found.jsx",
+    "client/src/pages/Contact.jsx",
   ];
 
   it("puts the control in every public footer", async () => {
     for (const file of PUBLIC_FOOTER_FILES) {
       const src = await read(file);
+      // The ELEMENT, not the identifier. Matching the bare name passed on a
+      // file that still imported the component but no longer rendered it —
+      // proven by deleting the JSX from not-found.jsx and watching this stay
+      // green. A guard that an unused import satisfies is evidence about the
+      // guard, not about the page.
       expect(src, `${file} renders a footer without a cookie-preferences control`)
-        .toMatch(/CookiePreferencesLink/);
+        .toMatch(/<CookiePreferencesLink[\s/>]/);
     }
   });
 
@@ -507,33 +520,41 @@ describe("withdrawal reachability (ADS-005)", () => {
     expect(found.length).toBe(PUBLIC_FOOTER_FILES.length);
   });
 
-  // CONSENT-002 — the footer guard above proves every footer CARRIES the
-  // control. It cannot see a public page that renders no footer at all, so such
-  // a page is never examined and the gap is invisible. Two exist, found by
-  // walking real routes in a browser rather than by reading the tree:
+  // CONSENT-002 — the guard above proves every footer CARRIES the control. It
+  // cannot see a public page that renders no footer at all: such a page is
+  // never inspected, so the gap is invisible to it rather than reported. Two
+  // existed, found by walking real routes in a browser instead of reading the
+  // tree:
   //
   //   /repmail/changelog          RepMailChangelog.jsx — no <footer>
   //   any unmatched route (404)   not-found.jsx        — no <footer>
+  //   /contact                    Contact.jsx          — no <footer>, in
+  //                                                      EITHER of its two
+  //                                                      rendered states
   //
-  // A visitor who has already decided and lands on either has no in-page route
-  // to change their mind. Adding footers to these two is a layout change on
-  // pages this milestone does not otherwise touch, so it is recorded for
-  // scheduling rather than taken here. This test pins the CURRENT gap so it
-  // cannot silently grow: adding another footerless public page, or fixing one
-  // of these, fails until the list is updated deliberately.
-  it("pins the known footerless public pages (CONSENT-002)", async () => {
-    const KNOWN_WITHOUT_CONTROL = [
-      "client/src/pages/RepMailChangelog.jsx",
-      "client/src/pages/not-found.jsx",
-    ];
+  // The third was not on the original CONSENT-002 list. It was found the only
+  // way a footerless page can be found: by rendering all 117 public routes and
+  // asking each one for the control, rather than by reading the tree.
+  //
+  // Both now carry one, which the list above pins. What that list still cannot
+  // prove is that the fixed FILE is the one the ROUTE renders — the defect was
+  // reachability, not file contents, and a page nothing routes to fixes
+  // nothing. So this asserts the two entry points as well.
+  it("routes the two formerly footerless surfaces at the fixed pages (CONSENT-002)", async () => {
+    const app = await read("client/src/App.jsx");
 
-    for (const file of KNOWN_WITHOUT_CONTROL) {
-      const src = await read(file);
-      expect(src, `${file} now has a control — remove it from the CONSENT-002 exception list`)
-        .not.toMatch(/CookiePreferencesLink|openCookiePreferences/);
-      expect(src, `${file} now renders a footer — it belongs in PUBLIC_FOOTER_FILES`)
-        .not.toContain("<footer");
-    }
+    // The public contact route.
+    expect(app).toMatch(/path="\/contact"/);
+    expect(app).toMatch(/import Contact from "@\/pages\/Contact"/);
+
+    // The prerendered, indexed changelog route.
+    expect(app).toMatch(/path="\/repmail\/changelog"/);
+    expect(app).toMatch(/const RepMailChangelog = lazy\(\(\) => import\("@\/pages\/RepMailChangelog"\)\)/);
+
+    // The catch-all. Every mistyped or expired URL — including an ad landing
+    // page whose route has since moved — lands here.
+    expect(app).toMatch(/import NotFound from "@\/pages\/not-found"/);
+    expect(app).toMatch(/<Route component=\{NotFound\} \/>/);
   });
 
   it("keeps the control out of the entry bundle's dependency weight", async () => {
