@@ -67,6 +67,7 @@ function clearBrowser() {
 }
 
 const STORAGE_KEY = "letszero.attr.v1";
+const CONSENT_KEY = "letszero.consent.v1";
 const stored = () => {
   const raw = globalThis.window.localStorage.getItem(STORAGE_KEY);
   return raw ? JSON.parse(raw) : null;
@@ -235,6 +236,32 @@ describe("attribution capture", () => {
     expect(record.first.utm_campaign).toBe("acquire");
     expect(record.last.gclid).toBe("SECOND");
     expect(record.last.utm_campaign).toBe("retarget");
+  });
+
+  it("does not erase an existing record on a later unattributed page load", async () => {
+    const first = await land("https://www.letszero.in/?gclid=ACQUIRED");
+    grant(first.consent);
+    // Carry BOTH keys, as a real browser does. Carrying the attribution record
+    // without the decision that permitted it would describe a state the app
+    // cannot reach, and the clear-on-no-consent it triggers is correct.
+    const carried = globalThis.window.localStorage.getItem(STORAGE_KEY);
+    const carriedConsent = globalThis.window.localStorage.getItem(CONSENT_KEY);
+
+    // The OAuth round trip lands the customer back on a URL with no ad
+    // parameters at all (/app/onboarding?signup=...). initAttribution runs
+    // there too, and must leave the acquiring click alone — losing it here
+    // would silently unattribute every customer who signed in with Google,
+    // which is every self-serve customer this platform has.
+    clearBrowser();
+    installBrowser("https://www.letszero.in/app/onboarding?signup=abc");
+    globalThis.window.localStorage.setItem(STORAGE_KEY, carried);
+    globalThis.window.localStorage.setItem(CONSENT_KEY, carriedConsent);
+    vi.resetModules();
+    await import("../../client/src/lib/consent.js");
+    const attribution2 = await import("../../client/src/lib/analytics/attribution.js");
+    attribution2.initAttribution();
+
+    expect(attribution2.getAttribution().first.gclid).toBe("ACQUIRED");
   });
 
   it("re-validates a hand-edited stored record rather than trusting it", async () => {
