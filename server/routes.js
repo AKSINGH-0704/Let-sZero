@@ -26,6 +26,7 @@ import {
   getSeatCatalog, SEAT_TERMS, SEAT_CHANGE, MIN_CHARGEABLE_MINOR,
 } from "../shared/seatPricing.js";
 import { seatsAtRisk, planSeatAllowance } from "../shared/seatEntitlement.js";
+import { sanitizeAttribution } from "../shared/attribution.js";
 import { SUBSCRIPTION_STATUS, nextDunningAttemptAt } from "../shared/subscriptionStateMachine.js";
 import { fulfillSeatPayment, reverseSeatPayment, isSeatPayment } from "./fulfillSeats.js";
 // M51 — AutoPay. The authority for liveness, display state and the rollout gate;
@@ -1274,6 +1275,62 @@ export async function registerRoutes(httpServer, app) {
       res.json({ message: "Logged out successfully" });
     } catch (error) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── M60: first-party advertising attribution ────────────────────────────
+  //
+  // ADS-001 could not be closed because the application kept no record of the
+  // click that produced a customer: Google Ads reports a conversion, the
+  // database records a payment, and nothing joins them. This endpoint is that
+  // join, and it is deliberately the SMALLEST thing that can be: one audit row
+  // per account, written once, at the only moment account creation is already
+  // proven.
+  //
+  // WHAT MAKES IT TRUSTWORTHY IS THE TIMING, NOT THE PAYLOAD. The body comes
+  // from localStorage in the customer's browser and is therefore attacker-
+  // controlled in the ordinary sense — the caller can put any campaign name in
+  // it. What the caller cannot do is create an account, and this row is only
+  // ever written against `req.user.id`, at most once, for an account the server
+  // itself created. So the population is exactly the real accounts; only the
+  // labels within a row are self-reported, and they are never sent to Google
+  // and never used to authorise anything.
+  //
+  // It is NOT called on every login. `useSignupConversion` calls it on the
+  // sign-up nonce branch alone, so a returning customer who clicks a later ad
+  // does not overwrite the source that acquired them.
+  app.post("/api/attribution/signup", authMiddleware, async (req, res) => {
+    try {
+      const attribution = sanitizeAttribution(req.body?.attribution);
+      if (!attribution) return res.json({ recorded: false, reason: "no_attribution" });
+
+      // One row per account. Checked rather than enforced by a constraint,
+      // because the audit table is deliberately append-only and untyped — and
+      // because this is a report input, not an authorisation decision.
+      //
+      // The check is NOT atomic, and is not claimed to be: two concurrent posts
+      // could both pass it and write. That is why the reconciliation report
+      // reduces to the EARLIEST row per user rather than counting rows. A
+      // duplicate here costs a redundant row; it does not inflate a total.
+      const existing = await storage.getAuditLogs({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.SIGNUP_ATTRIBUTED,
+        limit: 1,
+      });
+      if (existing.length > 0) return res.json({ recorded: false, reason: "already_recorded" });
+
+      await storage.createAuditLog({
+        userId: req.user.id,
+        action: AUDIT_ACTIONS.SIGNUP_ATTRIBUTED,
+        details: attribution,
+      });
+
+      res.json({ recorded: true });
+    } catch (error) {
+      // Attribution is reporting, not function. A failure here must never
+      // surface to a customer who has just created an account.
+      console.error("[ATTRIBUTION] signup record failed:", error.message);
+      res.status(500).json({ message: "Could not record attribution" });
     }
   });
 

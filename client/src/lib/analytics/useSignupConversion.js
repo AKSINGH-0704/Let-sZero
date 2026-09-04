@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { trackSignUp } from "./conversions";
+import { getAttribution } from "./attribution";
 
 // M59 — attribute a sign-up conversion to an account that actually exists.
 //
@@ -19,6 +20,14 @@ import { trackSignUp } from "./conversions";
 //
 // replaceState rather than pushState: the pre-strip URL must not become a
 // history entry the customer can navigate back to.
+//
+// M60 — the same proven moment also associates the click that acquired this
+// account. It is done HERE and nowhere else for exactly the reason the nonce
+// exists: this is the one point in the application where "an account was just
+// created" is a fact the server has already committed, rather than something
+// inferred from a page the customer happens to be on. Associating attribution
+// on any authenticated page would overwrite the acquiring campaign every time a
+// returning customer clicked a later ad.
 
 export function useSignupConversion() {
   useEffect(() => {
@@ -36,5 +45,20 @@ export function useSignupConversion() {
     );
 
     trackSignUp(nonce);
+
+    // Attribution is reporting, not function. It is deliberately not awaited
+    // and its failure is swallowed: a customer who has just created an account
+    // must never see an error, or wait, because a diagnostic row could not be
+    // written. Returns without a request when the visitor never granted
+    // advertising consent, since nothing was ever captured to send.
+    const attribution = getAttribution();
+    if (attribution) {
+      fetch("/api/attribution/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ attribution }),
+      }).catch(() => {});
+    }
   }, []);
 }

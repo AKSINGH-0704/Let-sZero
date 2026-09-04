@@ -73,6 +73,14 @@ export const AUDIT_ACTIONS = {
   FREE_LIMIT_REACHED: "FREE_LIMIT_REACHED",
   USER_LOGOUT: "USER_LOGOUT",
   USER_CREATED: "USER_CREATED",
+  // M60 — the advertising click that acquired this account, recorded ONCE at
+  // the moment account creation is already proven (the sign-up nonce branch of
+  // the Google OAuth callback). Diagnostic and reconciliation only: it is never
+  // sent to Google, and it carries no PII — an allowlist of click identifiers
+  // and campaign labels, nothing read from the profile. Absent for every
+  // account acquired without an ad, and for every visitor who declined
+  // advertising measurement, both of which are correct rather than missing.
+  SIGNUP_ATTRIBUTED: "SIGNUP_ATTRIBUTED",
   USER_UPDATED: "USER_UPDATED",
   // M56 Phase B — `DELETE /api/users/:id` performs a REVERSIBLE deactivation:
   // no row is removed and no PII is erased. USER_DELETED named an operation the
