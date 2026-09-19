@@ -128,3 +128,22 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* Instrument Serif — the landing page's editorial italic (marketing/LZ_ledger).
+   Fontsource latin subset, OFL. Self-hosted like every other family here: the
+   CSP names `font-src 'self'` and no third-party font host is allowed. */
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('/fonts/instrument-serif-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Instrument Serif';
+  src: url('/fonts/instrument-serif-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
