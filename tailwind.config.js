@@ -3,7 +3,23 @@ export default {
   content: [
     "./client/index.html",
     "./client/src/**/*.{js,jsx,ts,tsx}",
-    "./marketing/**/*.{js,jsx,ts,tsx}"
+    // Scoped to each sub-project's own sources. The previous `marketing/**`
+    // also walked marketing/LFP_final/node_modules — 3324 files — on every
+    // build. These two patterns cover every real source file in both
+    // sub-projects and nothing else.
+    "./marketing/*/*.{js,jsx,ts,tsx}",
+    "./marketing/*/src/**/*.{js,jsx,ts,tsx}",
+    // LFP_final is no longer imported by anything — "/" renders LZ_ledger now
+    // — but scanning it still emitted 41 utility classes that nothing else
+    // used into the one stylesheet every route loads. Measured, not guessed:
+    // 207,475 -> 194,869 bytes, and each of the 41 was checked against
+    // client/src, marketing/LZ_ledger and client/index.html first, so no
+    // rendered surface loses a rule.
+    //
+    // The files stay on disk as the rollback target (see the LFP_final case in
+    // tests/unit/m59-consent-withdrawal.test.js). A rollback has to delete
+    // this line too, or "/" comes back unstyled.
+    "!./marketing/LFP_final/**"
   ],
   theme: {
     extend: {
