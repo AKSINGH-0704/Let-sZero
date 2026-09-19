@@ -509,11 +509,30 @@ describe("withdrawal reachability (ADS-005)", () => {
     }
     for (const r of roots) await walk(r);
 
-    // The marketing sub-project has its own module tree and dispatches the same
-    // DOM event directly rather than importing the component (see
-    // LandingExperience.tsx), so it is verified by event name instead.
-    expect(await read("marketing/LFP_final/LandingExperience.tsx"))
-      .toContain("letszero:cookie-preferences");
+    // The marketing sub-projects have their own module trees and dispatch the
+    // same DOM event directly rather than importing the component, so they are
+    // verified here instead of through PUBLIC_FOOTER_FILES.
+    //
+    // Both are checked. LFP_final is no longer the page served at "/" but it
+    // remains the rollback target, and a rollback that lands a footer with no
+    // withdrawal control would reopen ADS-005 silently.
+    //
+    // Asserting the RENDERED control, not the event name. A bare substring is
+    // satisfied by a comment or a dead constant — the same failure mode this
+    // file already documents above for <CookiePreferencesLink>. Each file must
+    // contain a real element whose onClick dispatches the event.
+    const DISPATCHES_WITHDRAWAL =
+      /<button[^>]*\sonClick=\{\(\)\s*=>\s*window\.dispatchEvent\(\s*new CustomEvent\("letszero:cookie-preferences"\)\s*\)\}/;
+
+    for (const marketingFooter of [
+      "marketing/LZ_ledger/Closing.jsx",
+      "marketing/LFP_final/LandingExperience.tsx",
+    ]) {
+      expect(
+        await read(marketingFooter),
+        `${marketingFooter} renders no cookie-preferences control`,
+      ).toMatch(DISPATCHES_WITHDRAWAL);
+    }
 
     const unaccounted = found.filter((f) => !PUBLIC_FOOTER_FILES.includes(f));
     expect(unaccounted, "public footer(s) with no cookie-preferences control").toEqual([]);
