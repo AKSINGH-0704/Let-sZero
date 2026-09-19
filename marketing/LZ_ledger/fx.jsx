@@ -1,0 +1,451 @@
+/**
+ * LETSZERO "LIVING LEDGER" — high-end FX layer.
+ * Custom dynamic cursor, cinematic preloader, duotone image cards,
+ * rotating badge, outlined ghost type. Award-site grammar, reduced-motion safe.
+ */
+
+import { useState, useEffect } from "react";
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useSpring,
+  useReducedMotion,
+  animate,
+} from "framer-motion";
+import { C, EASE, useMounted } from "./theme.jsx";
+
+/* ----------------------------------------------------------------
+   GLOBAL STYLES — fonts, keyframes, cursor + scroll behavior.
+   Shared by every Living Ledger page.
+---------------------------------------------------------------- */
+export function GlobalStyles() {
+  // dangerouslySetInnerHTML, not a text child.
+  //
+  // React escapes text children, and <style> is RAWTEXT in the HTML parser —
+  // character references inside it are never decoded. A plain child therefore
+  // prerendered as `font-family: &#x27;Cabinet Grotesk&#x27;`, which is an
+  // invalid declaration, so every quoted value in this sheet (36 of them, plus
+  // the grain data-URI) was dead until React hydrated and replaced the node.
+  // On a prerendered page that is exactly the window the prerender exists to
+  // cover. This is the documented way to emit a stylesheet from React, and the
+  // content is a static template in this file — no user input reaches it.
+  const css = `
+      /* Fonts are self-hosted in client/src/fonts.css (M34) — no third-party font hosts. */
+
+      .lz-display { font-family: 'Cabinet Grotesk', 'Space Grotesk', sans-serif; }
+      .lz-body    { font-family: 'General Sans', 'Inter', sans-serif; }
+      .lz-mono    { font-family: 'JetBrains Mono', monospace; }
+      .lz-serif   { font-family: 'Instrument Serif', Georgia, serif; }
+      .lz-root ::selection { background: ${C.oxide}; color: ${C.paper}; }
+
+      @keyframes lz-ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+      .lz-ticker-track  { animation: lz-ticker 44s linear infinite; will-change: transform; }
+      .lz-marquee-track { animation: lz-ticker 28s linear infinite; will-change: transform; }
+      .lz-marquee-rev   { animation-direction: reverse; }
+      .lz-ticker:hover .lz-ticker-track,
+      .lz-marquee:hover .lz-marquee-track { animation-play-state: paused; }
+
+      @keyframes lz-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+      .lz-float { animation: lz-float 7s ease-in-out infinite; }
+
+      @keyframes lz-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.8); } }
+      .lz-pulse { animation: lz-pulse 2.2s ease-in-out infinite; }
+
+      @keyframes lz-scan { 0% { top: -10%; } 100% { top: 110%; } }
+      .lz-scan { animation: lz-scan 5s cubic-bezier(.4,0,.6,1) infinite; }
+
+      /* The sweep used to animate background-position, which PERFORMANCE_BUDGETS
+         names outright: "Never animate background-position. It cannot be
+         composited and repaints the element every frame." It was one of the two
+         measured causes of M32's scroll jitter, and here it ran forever on the
+         H1 — the LCP element. The gradient is now static and a composited
+         overlay translates across it instead, so the effect is identical and
+         the work moves to the compositor. */
+      @keyframes lz-shimmer { from { transform: translateX(-60%); } to { transform: translateX(160%); } }
+      .lz-shimmer-text {
+        position: relative;
+        display: inline-block;
+        background: linear-gradient(110deg, ${C.oxide} 0%, ${C.amber} 34%, ${C.rose} 67%, ${C.oxide} 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        isolation: isolate;
+      }
+      .lz-shimmer-text::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(110deg, transparent 0%, ${C.paper}00 35%, ${C.paper}66 50%, ${C.paper}00 65%, transparent 100%);
+        mix-blend-mode: screen;
+        animation: lz-shimmer 6s linear infinite;
+        will-change: transform;
+      }
+
+      /* WCAG 2.2.2 (Level A) covers motion that starts on its own and runs past
+         five seconds. Slowing the tickers to 110s left them doing exactly that,
+         so they stop with everything else. ADR-016's rule is the one being
+         followed here: enforce per-mechanism, and stop decoration rather than
+         feedback. */
+      @media (prefers-reduced-motion: reduce) {
+        .lz-pulse, .lz-scan, .lz-float,
+        .lz-ticker-track, .lz-marquee-track,
+        .lz-shimmer-text::after { animation: none; }
+        /* The sweep is decoration on top of a gradient that reads fine without
+           it; the text underneath keeps its colours. */
+        .lz-shimmer-text::after { opacity: 0; }
+      }
+
+      /* M32-A pauses ambient motion during scroll with the rule
+         html[data-scrolling] [data-ambient]. That selector reaches elements,
+         not pseudo-elements, so the shimmer sweep — which lives on ::after so
+         the gradient can stay clipped to the text — is named explicitly here
+         rather than left as the one infinite animation that keeps running
+         while the page moves. */
+      /* Footer links: one declaration drives hover AND focus-visible, so a
+         keyboard user gets the same accent a mouse user does. The base colour
+         measures 9.17:1 on the ink footer and each accent is an on-ink variant
+         at >=4.7:1, so neither state drops below AA. */
+      .lz-footer-link { color: #BDB5A4; }
+      .lz-footer-link:hover,
+      .lz-footer-link:focus-visible { color: var(--lz-accent, #BDB5A4); }
+
+      html[data-scrolling] .lz-shimmer-text::after {
+        animation-play-state: paused;
+      }
+
+      .lz-grain {
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+        opacity: 0.04;
+      }
+
+      html { scroll-behavior: smooth; }
+      @media (pointer: fine) {
+        .lz-cursor-on .lz-root, .lz-cursor-on .lz-root a,
+        .lz-cursor-on .lz-root button, .lz-cursor-on .lz-root [data-cursor] {
+          cursor: none;
+        }
+      }
+    `;
+  return <style dangerouslySetInnerHTML={{ __html: css }} />;
+}
+
+/* ---------------- imagery (duotone-treated Unsplash, infra aesthetic) ---------------- */
+// `arch` was declared here and referenced nowhere, which still shipped its
+// 330KB file into client/public. Dropped along with the asset.
+export const IMAGES = {
+  circuit: "/images/landing/circuit.webp",
+  servers: "/images/landing/servers.webp",
+  globe: "/images/landing/globe.webp",
+  abstract: "/images/landing/abstract.webp",
+  analytics: "/images/landing/analytics.webp",
+  workspace: "/images/landing/workspace.webp",
+};
+
+/* ----------------------------------------------------------------
+   CUSTOM CURSOR — ink dot + spring ring, scales over interactive
+   targets, shows a label for [data-cursor="LABEL"], difference-blend.
+   Desktop fine-pointer only; native cursor restored on touch.
+---------------------------------------------------------------- */
+export function Cursor() {
+  const [enabled, setEnabled] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [label, setLabel] = useState("");
+  const reduce = useReducedMotion();
+
+  const x = useMotionValue(-100);
+  const y = useMotionValue(-100);
+  const ringX = useSpring(x, { stiffness: 260, damping: 24, mass: 0.5 });
+  const ringY = useSpring(y, { stiffness: 260, damping: 24, mass: 0.5 });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(pointer: fine)").matches) return;
+    setEnabled(true);
+    document.documentElement.classList.add("lz-cursor-on");
+
+    const move = (e) => {
+      x.set(e.clientX);
+      y.set(e.clientY);
+      const t = e.target instanceof Element ? e.target.closest("a, button, [data-cursor]") : null;
+      setHover(!!t);
+      setLabel(t?.getAttribute?.("data-cursor") || "");
+    };
+    const down = () => setPressed(true);
+    const up = () => setPressed(false);
+    window.addEventListener("mousemove", move, { passive: true });
+    window.addEventListener("mousedown", down);
+    window.addEventListener("mouseup", up);
+    return () => {
+      document.documentElement.classList.remove("lz-cursor-on");
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [x, y]);
+
+  if (!enabled) return null;
+
+  const ringScale = pressed ? 0.7 : label ? 3.2 : hover ? 1.9 : 1;
+
+  return (
+    <>
+      {/* core dot */}
+      <motion.div
+        className="fixed top-0 left-0 z-[120] pointer-events-none w-0 h-0 flex items-center justify-center"
+        style={{ x, y }}
+        aria-hidden="true"
+      >
+        <motion.div
+          animate={{ scale: pressed ? 0.5 : hover ? 0.4 : 1 }}
+          transition={{ duration: 0.2 }}
+          className="w-[9px] h-[9px] rounded-full shrink-0"
+          style={{ background: C.oxide }}
+        />
+      </motion.div>
+      {/* trailing ring / label puck */}
+      <motion.div
+        className="fixed top-0 left-0 z-[119] pointer-events-none w-0 h-0 flex items-center justify-center"
+        style={{ x: reduce ? x : ringX, y: reduce ? y : ringY }}
+        aria-hidden="true"
+      >
+        <motion.div
+          animate={{ scale: ringScale }}
+          transition={{ duration: 0.3, ease: EASE }}
+          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+          style={{
+            border: label ? "none" : `1.5px solid ${C.ink}`,
+            background: label ? C.ink : "transparent",
+            mixBlendMode: label ? "normal" : "difference",
+            borderColor: label ? "transparent" : "#fff",
+          }}
+        >
+          {label && (
+            <span className="lz-mono text-[6.5px] font-bold tracking-[0.18em]" style={{ color: C.paper }}>
+              {label}
+            </span>
+          )}
+        </motion.div>
+      </motion.div>
+    </>
+  );
+}
+
+/* ----------------------------------------------------------------
+   PRELOADER — ink curtain, counting meter, wordmark; lifts after load.
+---------------------------------------------------------------- */
+/**
+ * Cinematic curtain.
+ *
+ * It is deliberately NOT rendered into the prerendered HTML. This page is
+ * prerendered and the curtain is `fixed inset-0` over everything, so shipping
+ * it in the static markup made the first paint a solid dark rectangle covering
+ * the hero — the LCP element became the curtain, and the headline underneath
+ * could not be the largest contentful paint until the curtain lifted ~1.4s
+ * later. Marketing mobile LCP is already the one Core Web Vitals budget this
+ * project is breaching (PERF-006, 5.2s against a 2.5s budget), so the curtain
+ * must not be the reason content is late.
+ *
+ * `useMounted()` is false on the server and on the first client render, so the
+ * static HTML contains the hero and nothing else. The curtain then mounts and
+ * plays for visitors whose browsers run it, which is the whole audience it was
+ * designed for, and is skipped entirely for reduced-motion users.
+ */
+export function Preloader() {
+  const reduce = useReducedMotion();
+  const mounted = useMounted();
+  const [done, setDone] = useState(false);
+  const [n, setN] = useState(0);
+
+  useEffect(() => {
+    if (reduce) {
+      setDone(true);
+      return;
+    }
+    const c = animate(0, 100, {
+      duration: 1.25,
+      ease: [0.65, 0, 0.35, 1],
+      onUpdate: (v) => setN(Math.round(v)),
+      onComplete: () => setTimeout(() => setDone(true), 180),
+    });
+    // The counter is driven by requestAnimationFrame, which browsers pause in
+    // background tabs and starve under heavy load. Never let the curtain hide
+    // the page: lift it on a plain timer if the animation hasn't finished.
+    const failsafe = setTimeout(() => setDone(true), 2500);
+    return () => {
+      c.stop();
+      clearTimeout(failsafe);
+    };
+  }, [reduce]);
+
+  if (!mounted) return null;
+
+  return (
+    <AnimatePresence>
+      {!done && (
+        <motion.div
+          exit={{ y: "-100%" }}
+          transition={{ duration: 0.75, ease: [0.76, 0, 0.24, 1] }}
+          className="fixed inset-0 z-[110] flex flex-col justify-between overflow-hidden"
+          style={{ background: C.ink }}
+          aria-hidden="true"
+        >
+          {/* faint aurora inside the curtain */}
+          <div
+            className="absolute -top-1/4 right-0 w-[60vw] h-[60vw] rounded-full pointer-events-none"
+            style={{ background: `radial-gradient(circle, ${C.oxide}26, transparent 65%)`, filter: "blur(60px)" }}
+          />
+          <div className="relative flex items-center gap-2.5 p-8 md:p-12">
+            <span className="w-7 h-7 grid place-items-center rounded-md" style={{ background: C.paper }}>
+              <span
+                className="w-3 h-3 rounded-sm"
+                style={{ background: `conic-gradient(from 45deg, ${C.oxide}, ${C.amber}, ${C.emerald}, ${C.teal}, ${C.oxide})` }}
+              />
+            </span>
+            <span className="lz-display text-xl font-extrabold tracking-tight" style={{ color: C.paper }}>
+              LetsZero
+            </span>
+          </div>
+
+          <div className="relative flex items-end justify-between p-8 md:p-12">
+            <div className="lz-mono text-[11px] tracking-[0.25em] uppercase" style={{ color: "#9A937F" }}>
+              OPENING THE LEDGER
+              <span className="inline-block w-6 text-left">
+                {".".repeat((Math.floor(n / 12) % 3) + 1)}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="lz-display font-extrabold leading-none text-[clamp(64px,12vw,160px)]" style={{ color: C.paper }}>
+                {n}
+              </span>
+              <span className="lz-mono text-xl align-top" style={{ color: C.oxide }}>%</span>
+            </div>
+          </div>
+
+          {/* progress hairline */}
+          <div className="relative h-[3px] w-full" style={{ background: `${C.paper}1A` }}>
+            <div
+              className="h-full"
+              style={{
+                width: `${n}%`,
+                background: `linear-gradient(to right, ${C.oxide}, ${C.amber})`,
+                transition: "width 60ms linear",
+              }}
+            />
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/* ----------------------------------------------------------------
+   DUOTONE IMAGE CARD — grayscale source + brand-color wash + grain,
+   mono caption chip, zoom-on-hover. data-cursor aware.
+---------------------------------------------------------------- */
+/**
+ * `priority` marks a card that renders above the fold. Those two live in the
+ * hero collage, and `loading="lazy"` on an image the viewport already contains
+ * only delays it — the browser has to discover, queue and fetch it after
+ * layout, which is the opposite of what an LCP candidate needs. Everything
+ * below the fold keeps the lazy default.
+ */
+export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, cursorLabel = "VIEW", priority = false }) {
+  return (
+    <motion.div
+      whileHover={{ scale: 1.03, rotate: 0, zIndex: 30 }}
+      transition={{ duration: 0.35, ease: EASE }}
+      data-cursor={cursorLabel}
+      className={`relative overflow-hidden rounded-2xl ${className}`}
+      style={{
+        rotate,
+        border: `1px solid ${C.ink}26`,
+        boxShadow: `0 24px 60px -24px ${C.ink}66`,
+      }}
+    >
+      <div className="relative w-full h-full overflow-hidden">
+        <motion.img
+          src={src}
+          alt=""
+          loading={priority ? "eager" : "lazy"}
+          fetchpriority={priority ? "high" : undefined}
+          decoding="async"
+          className="w-full h-full object-cover"
+          style={{ filter: "grayscale(1) contrast(1.08)" }}
+          whileHover={{ scale: 1.08 }}
+          transition={{ duration: 0.6, ease: EASE }}
+        />
+        {/* duotone wash */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `linear-gradient(150deg, ${tone}59, transparent 55%, ${C.ink}73)`,
+            mixBlendMode: "multiply",
+          }}
+        />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: `linear-gradient(to top, ${C.ink}99, transparent 45%)` }}
+        />
+      </div>
+      {caption && (
+        <span
+          className="absolute bottom-3 left-3 lz-mono text-[9.5px] tracking-[0.18em] uppercase px-2.5 py-1.5 rounded-full backdrop-blur-sm"
+          style={{ color: C.paper, background: `${C.ink}CC`, border: `1px solid ${C.paper}33` }}
+        >
+          {caption}
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+/* ----------------------------------------------------------------
+   ROTATING BADGE — circular text on an SVG path, slow spin.
+---------------------------------------------------------------- */
+export function RotatingBadge({ text = "OUTREACH · ACCOUNTED FOR · LETSZERO · ", size = 120, tone = C.ink, className = "" }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: reduce ? 60 : 18, repeat: Infinity, ease: "linear" }}
+      className={`pointer-events-none ${className}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <svg viewBox="0 0 100 100" width="100%" height="100%">
+        <defs>
+          <path id="lz-badge-circle" d="M 50,50 m -38,0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
+        </defs>
+        <circle cx="50" cy="50" r="49" fill="none" stroke={`${tone}33`} strokeWidth="0.75" />
+        <circle cx="50" cy="50" r="2.5" fill={C.oxide} />
+        <text style={{ fontSize: "8.4px", letterSpacing: "0.16em", fontFamily: "'JetBrains Mono', monospace", fill: tone }}>
+          <textPath href="#lz-badge-circle">{text}</textPath>
+        </text>
+      </svg>
+    </motion.div>
+  );
+}
+
+/* ----------------------------------------------------------------
+   GHOST TYPE — oversized outlined display word for depth layers.
+---------------------------------------------------------------- */
+export function GhostWord({ word, tone = C.ink, className = "", opacity = 0.1 }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`lz-display font-extrabold select-none pointer-events-none leading-none ${className}`}
+      style={{
+        color: "transparent",
+        WebkitTextStroke: `1.5px ${tone}`,
+        opacity,
+        letterSpacing: "-0.02em",
+      }}
+    >
+      {word}
+    </span>
+  );
+}
