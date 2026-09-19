@@ -57,7 +57,7 @@ import Contact from "@/pages/Contact";
 import Privacy from "@/pages/Privacy";
 import Terms from "@/pages/Terms";
 import NotFound from "@/pages/not-found";
-import LandingExperience from "@marketing/LFP_final/LandingExperience";
+import LandingExperience from "@marketing/LZ_ledger/LandingExperience";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ConsentBanner from "@/components/consent/ConsentBanner";
 import CookiePreferences from "@/components/consent/CookiePreferences";

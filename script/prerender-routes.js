@@ -80,7 +80,7 @@ function rcBreadcrumbJsonLd(product, { academy, academyHref, articleTitle } = {}
 export const STATIC_ROUTES = [
   {
     path: "/",
-    componentPath: "@marketing/LFP_final/LandingExperience",
+    componentPath: "@marketing/LZ_ledger/LandingExperience",
     title: "LetsZero — Email infrastructure built for outbound teams",
     description: "LetsZero builds RepMail and the infrastructure behind it — campaign automation, deliverability intelligence, and performance analytics for outbound email teams.",
     ogImage: "https://www.letszero.in/letszero-logo.png",

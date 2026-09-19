@@ -89,8 +89,13 @@ const ROUTE_FONT_PRELOADS = [
   // The Resource Center sets body copy in Open Sans throughout.
   [/^\/repmail\/(learn|changelog)(\/|$)/, ["open-sans-300_800-normal.woff2"]],
   [/^\/learn(\/|$)/, ["open-sans-300_800-normal.woff2"]],
-  // Marketing and product pages lead with a Space Grotesk headline.
-  [/^\/($|products\/)/, ["space-grotesk-300_700-normal.woff2"]],
+  // The homepage leads with Cabinet Grotesk (marketing/LZ_ledger's .lz-display)
+  // over General Sans body copy. It used to share the /products/ rule below and
+  // preload Space Grotesk, which the landing page now only names as a fallback
+  // — so the LCP element's actual font was the one font not being preloaded.
+  [/^\/$/, ["cabinet-grotesk-800-normal.woff2", "general-sans-400-normal.woff2"]],
+  // Product pages still lead with a Space Grotesk headline.
+  [/^\/products\//, ["space-grotesk-300_700-normal.woff2"]],
 ];
 
 function fontPreloadTagsFor(routePath) {
