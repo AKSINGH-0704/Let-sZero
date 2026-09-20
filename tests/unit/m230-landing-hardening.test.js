@@ -318,3 +318,42 @@ describe("Audit 230 M7 — in-page anchors clear the fixed header", () => {
     expect(globalSheet()).toMatch(/scroll-behavior:\s*smooth/);
   });
 });
+
+describe("Audit 230 M8 — the domain card reads as an example, not as your data", () => {
+  it("does not claim to have inspected the reader's domain", () => {
+    // Nothing on a public marketing page has looked at the visitor's domain,
+    // and this page has no way to. The figures under this heading are static
+    // literals in Hero.jsx.
+    expect(html).not.toMatch(/YOUR DOMAIN, RIGHT NOW/i);
+  });
+
+  it("says plainly that the view is an example", () => {
+    expect(html).toContain("EXAMPLE DOMAIN VIEW");
+  });
+
+  it("tells assistive tech which numbers are illustrative and which are real", () => {
+    const note = html.match(/<p class="sr-only">([\s\S]*?)<\/p>/);
+    expect(note, "no clarification for screen readers").toBeTruthy();
+    expect(note[1]).toMatch(/illustrative/i);
+  });
+
+  it("keeps the thresholds that production actually runs on", () => {
+    // Verified against Railway on 2026-09-20:
+    //   COMPLAINT_RATE_PAUSE_THRESHOLD = 0.0005  -> 0.05%
+    //   BOUNCE_RATE_PAUSE_THRESHOLD    = 0.03    -> 3%
+    //   SES_RATE_PER_SECOND unset                -> code default 14
+    //   AUDIT_LOG_RETENTION_DAYS unset           -> code default 180
+    expect(html).toContain("auto-pause at 0.05%");
+    expect(html).toContain("auto-pause at 3%");
+    expect(html).toContain("14/sec");
+    expect(html).toContain("account ceiling, matched to SES");
+    expect(html).toContain("180 days");
+  });
+
+  it("states no threshold the configuration contradicts", () => {
+    // The incoming design carried 0.1% and 8%. Those are the code defaults,
+    // not the live values, and both are looser than what production enforces.
+    expect(html).not.toMatch(/auto-pause at 0\.1%/);
+    expect(html).not.toMatch(/auto-pause at 8%/);
+  });
+});

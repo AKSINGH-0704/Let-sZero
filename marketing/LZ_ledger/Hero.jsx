@@ -589,8 +589,19 @@ export function Hero() {
                       background: `linear-gradient(to right, ${C.oxide}0D, ${C.amber}0D, transparent)`,
                     }}
                   >
+                    {/* Was "YOUR DOMAIN, RIGHT NOW", over a HEALTHY pill and two
+                        figures that are static literals in this file. On a
+                        public marketing page nothing has inspected the reader's
+                        domain, and this page has no way to — so the heading was
+                        claiming a personalisation the product had not done.
+
+                        The thresholds below are real and stay: 0.05% and 3% are
+                        the live Railway values, 14/sec is the account ceiling
+                        with SES_RATE_PER_SECOND unset, 180 days is
+                        AUDIT_LOG_RETENTION_DAYS. Only the two readings are
+                        illustrative, and the heading now says so. */}
                     <span className="lz-mono text-[10px] tracking-[0.2em]" style={{ color: C.inkFaintText }}>
-                      YOUR DOMAIN, RIGHT NOW
+                      EXAMPLE DOMAIN VIEW
                     </span>
                     <span className="flex items-center gap-1.5">
                       <span data-ambient className="w-1.5 h-1.5 rounded-full lz-pulse" style={{ background: C.emerald }} />
@@ -599,6 +610,12 @@ export function Hero() {
                       </span>
                     </span>
                   </div>
+                  <p className="sr-only">
+                    An example of the domain view inside RepMail. The complaint
+                    and bounce readings shown are illustrative; the auto-pause
+                    thresholds, sending ceiling and retention beside them are the
+                    values the product actually runs on.
+                  </p>
                   <div className="px-5 py-4 space-y-3.5">
                     {LEDGER_ROWS.map(([k, v, note, accent], i) => (
                       <motion.div
