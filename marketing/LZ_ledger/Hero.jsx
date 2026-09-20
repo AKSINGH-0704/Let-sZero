@@ -138,6 +138,19 @@ export function Nav({ delay = 0.05 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
+  /* The desktop Products dropdown closes on Escape; the mobile drawer did not.
+     It covers the page and every way out was a pointer target, so a keyboard
+     user who opened it had no way to dismiss it without activating one of its
+     links. Same key, same behaviour, both menus. */
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     window.addEventListener("scroll", onScroll, { passive: true });
