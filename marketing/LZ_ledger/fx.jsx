@@ -268,9 +268,6 @@ export function Cursor() {
 }
 
 /* ----------------------------------------------------------------
-   PRELOADER — ink curtain, counting meter, wordmark; lifts after load.
----------------------------------------------------------------- */
-/* ----------------------------------------------------------------
    The cinematic preloader was REMOVED here (Audit 230, M1).
 
    It rendered `fixed inset-0 z-[110]` over the whole page for 1.25s of
@@ -288,8 +285,18 @@ export function Cursor() {
 ---------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------
-   DUOTONE IMAGE CARD — grayscale source + brand-color wash + grain,
-   mono caption chip, zoom-on-hover. data-cursor aware.
+   DUOTONE IMAGE CARD — grayscale source + brand-color wash, mono caption chip.
+
+   DECORATIVE, and it now behaves that way. It used to carry
+   `data-cursor="VIEW"`, which made the custom cursor swell into a black disc
+   reading VIEW over an image that is not a link, is not a button, has no
+   destination and does nothing when clicked — while `cursor: none` removed
+   the arrow that would have told the truth. It also scaled itself and zoomed
+   its image on hover, which is the response an interactive card gives.
+
+   The only two of these on the page are in the hero collage and neither is
+   interactive, so all of that was a promise the page could not keep. Removed
+   rather than replaced: a decorative image should look like one.
 ---------------------------------------------------------------- */
 /**
  * `width`/`height` carry the INTRINSIC dimensions so the aspect ratio is known
@@ -299,12 +306,9 @@ export function Cursor() {
  * The old `priority` prop is gone — see the note on the <img> below for the
  * measurement that retired it.
  */
-export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, cursorLabel = "VIEW", width, height, minWidth = 1024 }) {
+export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, width, height, minWidth = 1024 }) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.03, rotate: 0, zIndex: 30 }}
-      transition={{ duration: 0.35, ease: EASE }}
-      data-cursor={cursorLabel}
+    <div
       className={`relative overflow-hidden rounded-2xl ${className}`}
       style={{
         rotate,
@@ -328,7 +332,7 @@ export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate
             fallback and asks the network for nothing at all. */}
         <picture>
           <source media={`(min-width: ${minWidth}px)`} srcSet={src} />
-          <motion.img
+          <img
             src={BLANK_PIXEL}
             alt=""
             width={width}
@@ -336,8 +340,6 @@ export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate
             decoding="async"
             className="w-full h-full object-cover"
             style={{ filter: "grayscale(1) contrast(1.08)" }}
-            whileHover={{ scale: 1.08 }}
-            transition={{ duration: 0.6, ease: EASE }}
           />
         </picture>
         {/* duotone wash */}
@@ -361,7 +363,7 @@ export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate
           {caption}
         </span>
       )}
-    </motion.div>
+    </div>
   );
 }
 

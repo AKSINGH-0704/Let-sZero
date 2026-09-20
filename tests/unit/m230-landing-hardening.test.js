@@ -184,3 +184,48 @@ describe("Audit 230 M4 — nav link geometry does not depend on font weight", ()
     }
   });
 });
+
+describe("Audit 230 M5 — every interaction affordance is truthful", () => {
+  // A `data-cursor` label makes the custom cursor swell into a puck announcing
+  // an action. On the hero's two decorative ImageCards it announced "VIEW" for
+  // something with no destination and no handler, while `cursor: none` removed
+  // the arrow that would have told the truth.
+  it("puts a cursor label only on elements that actually do something", () => {
+    const tagged = [...html.matchAll(/<(\w+)([^>]*\sdata-cursor="[^"]*"[^>]*)>/g)]
+      .map((m) => ({ tag: m[1], attrs: m[2] }));
+    expect(tagged.length, "no cursor affordances rendered at all").toBeGreaterThan(0);
+
+    for (const el of tagged) {
+      expect(["a", "button"], `<${el.tag}> carries a cursor label but is not a control`)
+        .toContain(el.tag);
+      if (el.tag === "a") {
+        expect(el.attrs, "an anchor carries a cursor label but has no destination")
+          .toMatch(/\shref="[^"]+"/);
+      }
+    }
+  });
+
+  it("no longer promises VIEW on the decorative hero imagery", () => {
+    expect(html).not.toContain('data-cursor="VIEW"');
+  });
+
+  it("leaves the decorative image cards inert", () => {
+    // The card sits inside a <picture>; find the wrapper that owns it.
+    const cards = html.match(/<div class="relative overflow-hidden rounded-2xl[^"]*"[^>]*>/g) || [];
+    expect(cards.length, "hero image cards did not render").toBeGreaterThan(0);
+    for (const c of cards) {
+      expect(c).not.toMatch(/data-cursor/);
+      expect(c, "a decorative card claims a pointer").not.toMatch(/cursor-pointer/);
+      expect(c, "a decorative card is focusable").not.toMatch(/tabindex="0"/);
+    }
+  });
+
+  it("keeps a pointer cursor only where there is a destination", () => {
+    // `cursor-pointer` appears on the platform cards, but only the ones with
+    // an href become anchors at all.
+    const pointer = html.match(/<(\w+)([^>]*cursor-pointer[^>]*)>/g) || [];
+    for (const el of pointer) {
+      expect(el, "cursor-pointer on something with no href").toMatch(/\shref="[^"]+"/);
+    }
+  });
+});
