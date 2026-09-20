@@ -575,9 +575,19 @@ export function Hero() {
           background: C.paperHi,
         }}
       >
+        {/* The second copy exists so translateX(-50%) lands on an identical
+            frame. It is a rendering device, not content: it was being read out
+            twice by screen readers, and under reduced motion it is removed
+            entirely so the static layout shows each event once. */}
         <div data-ambient className="lz-ticker-track flex w-max whitespace-nowrap py-3.5">
           {[...LEDGER_EVENTS, ...LEDGER_EVENTS].map((e, i) => (
-            <span key={i} className="lz-mono text-[11px] flex items-center gap-2.5 px-6" style={{ borderRight: `1px solid ${C.ink}12` }}>
+            <span
+              key={i}
+              data-dup={i >= LEDGER_EVENTS.length ? "" : undefined}
+              aria-hidden={i >= LEDGER_EVENTS.length ? "true" : undefined}
+              className="lz-mono text-[11px] flex items-center gap-2.5 px-6"
+              style={{ borderRight: `1px solid ${C.ink}12` }}
+            >
               <span style={{ color: C.inkFaintText }}>{e.t}</span>
               <span className="font-bold px-1.5 py-0.5 rounded" style={{ color: asText(e.c), background: `${e.c}16` }}>
                 {e.k}

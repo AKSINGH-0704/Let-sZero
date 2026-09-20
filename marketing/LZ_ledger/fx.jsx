@@ -95,6 +95,34 @@ export function GlobalStyles() {
         /* The sweep is decoration on top of a gradient that reads fine without
            it; the text underneath keeps its colours. */
         .lz-shimmer-text::after { opacity: 0; }
+
+        /* Stopping a ticker is not the same as making it readable.
+           Both tracks are far wider than the viewport — measured 7,534px and
+           6,212px against ~1,280px of visible box — so simply freezing them
+           leaves most of the content permanently outside an overflow:hidden
+           window with no scrollbar and no way to reach it. What is stranded is
+           not decoration: the ledger is the page's product evidence, and the
+           marquee is its list of guarantees.
+
+           So reduced motion gets the same information as a static, wrapped
+           block: the loop's duplicate copies are dropped, the track stops being
+           max-content and wraps, and the clip is released. No animation, no
+           horizontal scrolling, nothing lost. */
+        .lz-ticker, .lz-marquee { overflow: visible; }
+        .lz-ticker-track,
+        .lz-marquee-track {
+          width: auto;
+          flex-wrap: wrap;
+          justify-content: center;
+          white-space: normal;
+          row-gap: 2px;
+        }
+        .lz-ticker-track > [data-dup],
+        .lz-marquee-track > [data-dup] { display: none; }
+        .lz-marquee[data-dup-row] { display: none; }
+        /* The vertical rule between events reads as a divider in one line and
+           as clutter in a wrapped block. */
+        .lz-ticker-track > span { border-right: 0 !important; }
       }
 
       /* M32-A pauses ambient motion during scroll with the rule

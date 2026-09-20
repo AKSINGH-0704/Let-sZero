@@ -475,12 +475,16 @@ function MarqueeRow({ reverse = false }) {
   // Four identical copies, so sliding by exactly half the track (two copies)
   // lands on an identical frame and the loop never visibly jumps.
   return (
-    <div className="lz-marquee overflow-hidden">
+    /* The reverse row is a second pass of the same six claims, drifting the
+       other way. That reads as texture while it moves and as the same list
+       printed twice once it stops, so reduced motion keeps one row. */
+    <div className="lz-marquee overflow-hidden" data-dup-row={reverse ? "" : undefined}>
       <div data-ambient className={`lz-marquee-track flex w-max whitespace-nowrap py-4 ${reverse ? "lz-marquee-rev" : ""}`}>
         {[0, 1, 2, 3].flatMap((copy) =>
           MARQUEE_CLAIMS.map(([t, accent]) => (
             <span
               key={`${copy}-${t}`}
+              data-dup={copy > 0 ? "" : undefined}
               aria-hidden={copy > 0 ? "true" : undefined}
               className="lz-mono text-[12px] tracking-[0.2em] flex items-center gap-4 px-6"
             >
