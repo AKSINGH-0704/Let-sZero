@@ -162,19 +162,13 @@ export function GlobalStyles() {
 /* ---------------- imagery (duotone-treated Unsplash, infra aesthetic) ---------------- */
 // `arch` was declared here and referenced nowhere, which still shipped its
 // 330KB file into client/public. Dropped along with the asset.
-/* A 1x1 transparent GIF. Used as the <img> fallback inside a <picture> whose
-   only real <source> is gated on a media query: below that width the browser
-   resolves THIS and issues no network request. Inline, so it costs nothing. */
-export const BLANK_PIXEL =
-  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-
+/* Only the two section backdrops resolve through this map now. The resource
+   cards reach their own images by literal path from RESOURCES in theme.jsx,
+   and the hero no longer uses photography at all, so the other four keys were
+   pointing at nothing. */
 export const IMAGES = {
-  circuit: "/images/landing/circuit.webp",
   servers: "/images/landing/servers.webp",
   globe: "/images/landing/globe.webp",
-  abstract: "/images/landing/abstract.webp",
-  analytics: "/images/landing/analytics.webp",
-  workspace: "/images/landing/workspace.webp",
 };
 
 /* ----------------------------------------------------------------
@@ -285,83 +279,79 @@ export function Cursor() {
 ---------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------
-   DUOTONE IMAGE CARD — grayscale source + brand-color wash, mono caption chip.
+   ImageCard was REMOVED here (Audit 230, M6).
 
-   DECORATIVE, and it now behaves that way. It used to carry
-   `data-cursor="VIEW"`, which made the custom cursor swell into a black disc
-   reading VIEW over an image that is not a link, is not a button, has no
-   destination and does nothing when clicked — while `cursor: none` removed
-   the arrow that would have told the truth. It also scaled itself and zoomed
-   its image on hover, which is the response an interactive card gives.
-
-   The only two of these on the page are in the hero collage and neither is
-   interactive, so all of that was a promise the page could not keep. Removed
-   rather than replaced: a decorative image should look like one.
+   Its only two call sites were the hero collage's stock photographs, and
+   those are now ProductPanels built from the implementation instead. With
+   no call sites left the component, its <picture> media gate and its 1x1
+   fallback pixel are all dead code — the media gate mattered while the
+   photographs existed; removing the photographs is the stronger fix,
+   because below `lg` the page now requests nothing for the collage at all
+   rather than requesting a transparent pixel.
 ---------------------------------------------------------------- */
-/**
- * `width`/`height` carry the INTRINSIC dimensions so the aspect ratio is known
- * before the bytes arrive. The rendered box is sized by CSS either way; the
- * attributes are what let the browser reserve the right shape.
- *
- * The old `priority` prop is gone — see the note on the <img> below for the
- * measurement that retired it.
- */
-export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, width, height, minWidth = 1024 }) {
+
+/* ----------------------------------------------------------------
+   PRODUCT PANEL — the hero collage's supporting evidence.
+
+   Replaces two stock photographs (a circuit board and a generic analytics
+   screenshot) that shared nothing with the card they sat beside: measured,
+   circuit.webp was a 1000x667 landscape source forced into a 180x230 portrait
+   box, so `object-cover` discarded about 46% of its width, and the two boxes
+   had different aspect ratios, different rotations and no common visual
+   language with the domain-health card.
+
+   These are built from the same parts as that card — same radius, border,
+   shadow, paperHi ground, ink footer strip, mono labels — so the three read as
+   one system rather than a card between two photos.
+
+   Everything they state is drawn from the implementation, not written for the
+   page. See the call sites in Hero.jsx for the source of each line.
+---------------------------------------------------------------- */
+export function ProductPanel({ label, accent = C.teal, accentText, rows = [], footer, className = "" }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl ${className}`}
+      className={`relative rounded-2xl overflow-hidden flex flex-col ${className}`}
       style={{
-        rotate,
-        border: `1px solid ${C.ink}26`,
-        boxShadow: `0 24px 60px -24px ${C.ink}66`,
+        background: C.paperHi,
+        border: `1px solid ${C.ink}1F`,
+        boxShadow: `0 24px 60px -24px ${C.ink}59, 0 0 0 5px ${C.paperHi}`,
       }}
     >
-      <div className="relative w-full h-full overflow-hidden">
-        {/* The request is gated by `media`, not by `loading`.
-            These cards sit in a `hidden lg:block` collage. Marking them
-            priority made every phone and tablet download 193KB of pictures it
-            could not render, at the HIGHEST priority, competing with an LCP
-            path they cannot contribute to — measured at 390px: circuit.webp
-            133,880B and analytics.webp 59,594B, both `laidOut=false`.
-
-            `loading="lazy"` does NOT fix that, which was measured too: Chrome
-            still fetched both at 390px, because a `display:none` image sits at
-            the origin and lands inside the lazy-load distance threshold. Only
-            a `<source media>` that does not match actually suppresses the
-            request, so below `lg` the browser resolves the 1x1 transparent
-            fallback and asks the network for nothing at all. */}
-        <picture>
-          <source media={`(min-width: ${minWidth}px)`} srcSet={src} />
-          <img
-            src={BLANK_PIXEL}
-            alt=""
-            width={width}
-            height={height}
-            decoding="async"
-            className="w-full h-full object-cover"
-            style={{ filter: "grayscale(1) contrast(1.08)" }}
-          />
-        </picture>
-        {/* duotone wash */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `linear-gradient(150deg, ${tone}59, transparent 55%, ${C.ink}73)`,
-            mixBlendMode: "multiply",
-          }}
-        />
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: `linear-gradient(to top, ${C.ink}99, transparent 45%)` }}
-        />
-      </div>
-      {caption && (
-        <span
-          className="absolute bottom-3 left-3 lz-mono text-[9.5px] tracking-[0.18em] uppercase px-2.5 py-1.5 rounded-full backdrop-blur-sm"
-          style={{ color: C.paper, background: `${C.ink}CC`, border: `1px solid ${C.paper}33` }}
-        >
-          {caption}
+      <div
+        className="px-3 py-2 flex items-center gap-1.5 shrink-0"
+        style={{
+          borderBottom: `1px solid ${C.ink}14`,
+          background: `linear-gradient(to right, ${accent}12, transparent)`,
+        }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: accent }} />
+        <span className="lz-mono text-[8.5px] tracking-[0.18em] uppercase" style={{ color: C.inkFaintText }}>
+          {label}
         </span>
+      </div>
+
+      <div className="px-3 py-2.5 flex-1 flex flex-col justify-center gap-[7px]">
+        {rows.map(([name, verdict]) => (
+          <div key={name} className="flex items-baseline justify-between gap-2">
+            <span className="lz-mono text-[9px] leading-tight" style={{ color: C.inkSoft }}>
+              {name}
+            </span>
+            <span
+              className="lz-mono text-[8.5px] font-bold tracking-[0.1em] uppercase shrink-0"
+              style={{ color: accentText || C.inkFaintText }}
+            >
+              {verdict}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {footer && (
+        <div className="px-3 py-2 shrink-0" style={{ background: C.ink }}>
+          <span className="lz-mono text-[8px] tracking-[0.14em] uppercase leading-snug" style={{ color: "#9A937F" }}>
+            {footer}
+          </span>
+        </div>
       )}
     </div>
   );

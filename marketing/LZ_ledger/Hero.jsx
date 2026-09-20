@@ -13,7 +13,7 @@ import {
 } from "framer-motion";
 import { ArrowRight, ArrowDown, ChevronDown, Menu, X } from "lucide-react";
 import { C, EASE, LEDGER_EVENTS, PRODUCTS, Counter, Tilt, Aurora, KineticWords, go, asText } from "./theme.jsx";
-import { IMAGES, ImageCard, RotatingBadge, GhostWord } from "./fx.jsx";
+import { RotatingBadge, GhostWord, ProductPanel } from "./fx.jsx";
 
 const NAV_LINKS = [
   ["How it works", "#system", C.teal],
@@ -492,24 +492,72 @@ export function Hero() {
             </motion.div>
 
             {/* photo collage behind and beside the card */}
+            {/* Two supporting panels, same box and same design language as the
+                card between them. Every line is taken from the implementation:
+
+                BEFORE IT SENDS — server/campaignLoop.js runs an idempotency
+                guard (a retry skips contacts already sent), then per-contact
+                checks: storage.isSuppressed for the account's own list,
+                storage.isGloballySuppressed platform-wide, and skips for
+                addresses already BOUNCED or COMPLAINED.
+
+                OPENS & CLICKS — server/trackingClassifier.js separates machine
+                opens from human ones: Apple Mail Privacy Protection by user
+                agent AND by the 17.0.0.0/8 range, Gmail's proxy, and the
+                security gateways (Proofpoint, Barracuda, Mimecast, Abnormal)
+                and link scanners.
+
+                No counts, no customers, no uptime — nothing that would need a
+                number this page cannot stand behind.
+
+                Shown from `xl` up only. These carry text, and text that a card
+                overlaps is not a supporting visual, it is an unreadable one:
+                at 1024 the column leaves about 56px beside a 330px card, so
+                there is no honest way to place a readable panel there. The
+                photographs they replaced could tuck behind the card because
+                nothing was lost when their edges disappeared. */}
             <motion.div
-              initial={{ opacity: 0, x: 40, rotate: 10 }}
-              animate={{ opacity: 1, x: 0, rotate: 5 }}
-              transition={{ duration: 1, delay: T + 0.5, ease: EASE }}
-              className="absolute right-0 top-32 z-0 w-[180px] h-[230px]"
+              initial={reduce ? false : { opacity: 0, x: 32 }}
+              animate={reduce ? false : { opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, delay: T + 0.5, ease: EASE }}
+              className="absolute hidden xl:block -right-3 top-16 z-20 w-[165px] h-[178px]"
             >
               <div data-ambient className="lz-float w-full h-full">
-                <ImageCard src={IMAGES.circuit} caption="Checked before sending" tone={C.teal} className="w-full h-full" width={1000} height={667} />
+                <ProductPanel
+                  label="Before it sends"
+                  accent={C.teal}
+                  accentText={C.tealText}
+                  rows={[
+                    ["Already sent", "skip"],
+                    ["Suppressed", "skip"],
+                    ["Bounced before", "skip"],
+                    ["Complained", "skip"],
+                  ]}
+                  footer="Everything else sends. Once."
+                  className="w-full h-full"
+                />
               </div>
             </motion.div>
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, delay: T + 0.8, ease: EASE }}
-              className="absolute -right-4 bottom-[-104px] z-0 w-[170px] h-[120px]"
+              initial={reduce ? false : { opacity: 0, y: 32 }}
+              animate={reduce ? false : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: T + 0.8, ease: EASE }}
+              className="absolute hidden xl:block -right-3 bottom-[-64px] z-20 w-[165px] h-[178px]"
             >
               <div data-ambient className="lz-float w-full h-full" style={{ animationDelay: "-3.5s" }}>
-                <ImageCard src={IMAGES.analytics} caption="Live numbers" tone={C.amber} className="w-full h-full" width={900} height={600} />
+                <ProductPanel
+                  label="Opens & clicks"
+                  accent={C.amber}
+                  accentText={C.amberText}
+                  rows={[
+                    ["Human opens", "counted"],
+                    ["Apple MPP", "filtered"],
+                    ["Gmail proxy", "filtered"],
+                    ["Link scanners", "filtered"],
+                  ]}
+                  footer="Only real numbers."
+                  className="w-full h-full"
+                />
               </div>
             </motion.div>
 

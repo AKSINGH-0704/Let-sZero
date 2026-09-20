@@ -33,6 +33,21 @@ function globalSheet() {
   return m[1];
 }
 
+/**
+ * The hero's right-hand collage: the domain-health card and its two supporting
+ * panels. Bounded by the column class and the first section anchor, because
+ * the section eyebrows are uppercased by CSS and do not appear as uppercase
+ * text in the HTML — matching on "THE PROBLEM" silently selects the whole
+ * document instead of the hero.
+ */
+function heroCollage() {
+  const start = html.indexOf("lg:col-span-5");
+  expect(start, "hero collage column not found").toBeGreaterThan(-1);
+  const end = html.indexOf('id="system"');
+  expect(end, "no section anchor to bound the hero").toBeGreaterThan(start);
+  return html.slice(start, end);
+}
+
 /** The body of the `prefers-reduced-motion: reduce` at-rule, brace-matched. */
 function reducedMotionBlock() {
   const css = globalSheet();
@@ -209,15 +224,14 @@ describe("Audit 230 M5 — every interaction affordance is truthful", () => {
     expect(html).not.toContain('data-cursor="VIEW"');
   });
 
-  it("leaves the decorative image cards inert", () => {
-    // The card sits inside a <picture>; find the wrapper that owns it.
-    const cards = html.match(/<div class="relative overflow-hidden rounded-2xl[^"]*"[^>]*>/g) || [];
-    expect(cards.length, "hero image cards did not render").toBeGreaterThan(0);
-    for (const c of cards) {
-      expect(c).not.toMatch(/data-cursor/);
-      expect(c, "a decorative card claims a pointer").not.toMatch(/cursor-pointer/);
-      expect(c, "a decorative card is focusable").not.toMatch(/tabindex="0"/);
-    }
+  it("leaves the decorative hero imagery inert", () => {
+    // M6 went further and removed the decorative image cards altogether, so
+    // the strongest form of this guard is that nothing in the hero column is
+    // dressed up as interactive at all.
+    const collage = heroCollage();
+    expect(collage).not.toMatch(/data-cursor/);
+    expect(collage, "something decorative claims a pointer").not.toMatch(/cursor-pointer/);
+    expect(collage, "something decorative is focusable").not.toMatch(/tabindex="0"/);
   });
 
   it("keeps a pointer cursor only where there is a destination", () => {
@@ -227,5 +241,54 @@ describe("Audit 230 M5 — every interaction affordance is truthful", () => {
     for (const el of pointer) {
       expect(el, "cursor-pointer on something with no href").toMatch(/\shref="[^"]+"/);
     }
+  });
+});
+
+describe("Audit 230 M6 — the hero's supporting visuals are product evidence", () => {
+  it("uses no photography in the hero collage", () => {
+    // The collage used to hold two stock photographs. Every landing photograph
+    // the page still renders belongs to the resource cards, far below.
+    const imgs = heroCollage().match(/<img[^>]*src="[^"]*"/g) || [];
+    for (const i of imgs) {
+      expect(i, "the hero still renders a landing photograph").not.toMatch(/\/images\/landing\//);
+    }
+  });
+
+  it("no longer references the retired circuit asset anywhere", () => {
+    expect(html).not.toContain("circuit.webp");
+  });
+
+  it("states only claims the implementation backs", () => {
+    // Each of these is read from the sending path or the tracking classifier;
+    // see the comment at the call site in Hero.jsx for the source of each.
+    for (const line of [
+      "Already sent", "Suppressed", "Bounced before", "Complained",
+      "Human opens", "Apple MPP", "Gmail proxy", "Link scanners",
+    ]) {
+      expect(html, `panel line missing: ${line}`).toContain(line);
+    }
+  });
+
+  it("puts no fabricated counts, customers or uptime in the panels", () => {
+    // Text of the two ProductPanels only — the domain-health card beside them
+    // carries real thresholds and is audited separately in M8.
+    const panels = heroCollage().match(
+      /<div class="relative rounded-2xl overflow-hidden flex flex-col[\s\S]*?<\/div><\/div>/g,
+    ) || [];
+    expect(panels.length, "the product panels did not render").toBe(2);
+    const text = panels.join(" ").replace(/<[^>]*>/g, " ");
+    expect(text).not.toMatch(/\d{1,3}(,\d{3})+/);
+    expect(text).not.toMatch(/\buptime\b/i);
+    expect(text).not.toMatch(/\bcustomers?\b/i);
+    expect(text, "a panel quotes a percentage it cannot source").not.toMatch(/\d+(\.\d+)?%/);
+  });
+
+  it("keeps the panels in the card's design language", () => {
+    // Same radius and the same paperHi ground as the domain-health card, so
+    // the three read as one system rather than a card between two photos.
+    const panel = html.match(/<div class="relative rounded-2xl overflow-hidden flex flex-col[^"]*"[^>]*style="([^"]*)"/);
+    expect(panel, "product panel did not render").toBeTruthy();
+    expect(panel[1]).toMatch(/background:#FDFBF5/i);
+    expect(panel[1]).toMatch(/border:1px solid #15120D1F/i);
   });
 });
