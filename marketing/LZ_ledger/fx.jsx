@@ -1,6 +1,6 @@
 /**
  * LETSZERO "LIVING LEDGER" — high-end FX layer.
- * Custom dynamic cursor, cinematic preloader, duotone image cards,
+ * Custom dynamic cursor, duotone image cards,
  * rotating badge, outlined ghost type. Award-site grammar, reduced-motion safe.
  */
 
@@ -11,7 +11,6 @@ import {
   useMotionValue,
   useSpring,
   useReducedMotion,
-  animate,
 } from "framer-motion";
 import { C, EASE, useMounted } from "./theme.jsx";
 
@@ -237,110 +236,22 @@ export function Cursor() {
 /* ----------------------------------------------------------------
    PRELOADER — ink curtain, counting meter, wordmark; lifts after load.
 ---------------------------------------------------------------- */
-/**
- * Cinematic curtain.
- *
- * It is deliberately NOT rendered into the prerendered HTML. This page is
- * prerendered and the curtain is `fixed inset-0` over everything, so shipping
- * it in the static markup made the first paint a solid dark rectangle covering
- * the hero — the LCP element became the curtain, and the headline underneath
- * could not be the largest contentful paint until the curtain lifted ~1.4s
- * later. Marketing mobile LCP is already the one Core Web Vitals budget this
- * project is breaching (PERF-006, 5.2s against a 2.5s budget), so the curtain
- * must not be the reason content is late.
- *
- * `useMounted()` is false on the server and on the first client render, so the
- * static HTML contains the hero and nothing else. The curtain then mounts and
- * plays for visitors whose browsers run it, which is the whole audience it was
- * designed for, and is skipped entirely for reduced-motion users.
- */
-export function Preloader() {
-  const reduce = useReducedMotion();
-  const mounted = useMounted();
-  const [done, setDone] = useState(false);
-  const [n, setN] = useState(0);
+/* ----------------------------------------------------------------
+   The cinematic preloader was REMOVED here (Audit 230, M1).
 
-  useEffect(() => {
-    if (reduce) {
-      setDone(true);
-      return;
-    }
-    const c = animate(0, 100, {
-      duration: 1.25,
-      ease: [0.65, 0, 0.35, 1],
-      onUpdate: (v) => setN(Math.round(v)),
-      onComplete: () => setTimeout(() => setDone(true), 180),
-    });
-    // The counter is driven by requestAnimationFrame, which browsers pause in
-    // background tabs and starve under heavy load. Never let the curtain hide
-    // the page: lift it on a plain timer if the animation hasn't finished.
-    const failsafe = setTimeout(() => setDone(true), 2500);
-    return () => {
-      c.stop();
-      clearTimeout(failsafe);
-    };
-  }, [reduce]);
+   It rendered `fixed inset-0 z-[110]` over the whole page for 1.25s of
+   counter plus a 0.75s exit — roughly 2.2s of full-screen curtain laid
+   over a hero the prerender had ALREADY painted. That is the exact
+   inversion this page is supposed to avoid: prerender made the content
+   visible, hydration hid it again. The hero's entrance ladder was sized
+   to that curtain (T = 1.45s), which is why the supporting paragraph was
+   the LCP element at 4792ms on a 390px cold load.
 
-  if (!mounted) return null;
-
-  return (
-    <AnimatePresence>
-      {!done && (
-        <motion.div
-          exit={{ y: "-100%" }}
-          transition={{ duration: 0.75, ease: [0.76, 0, 0.24, 1] }}
-          className="fixed inset-0 z-[110] flex flex-col justify-between overflow-hidden"
-          style={{ background: C.ink }}
-          aria-hidden="true"
-        >
-          {/* faint aurora inside the curtain */}
-          <div
-            className="absolute -top-1/4 right-0 w-[60vw] h-[60vw] rounded-full pointer-events-none"
-            style={{ background: `radial-gradient(circle, ${C.oxide}26, transparent 65%)`, filter: "blur(60px)" }}
-          />
-          <div className="relative flex items-center gap-2.5 p-8 md:p-12">
-            <span className="w-7 h-7 grid place-items-center rounded-md" style={{ background: C.paper }}>
-              <span
-                className="w-3 h-3 rounded-sm"
-                style={{ background: `conic-gradient(from 45deg, ${C.oxide}, ${C.amber}, ${C.emerald}, ${C.teal}, ${C.oxide})` }}
-              />
-            </span>
-            <span className="lz-display text-xl font-extrabold tracking-tight" style={{ color: C.paper }}>
-              LetsZero
-            </span>
-          </div>
-
-          <div className="relative flex items-end justify-between p-8 md:p-12">
-            <div className="lz-mono text-[11px] tracking-[0.25em] uppercase" style={{ color: "#9A937F" }}>
-              OPENING THE LEDGER
-              <span className="inline-block w-6 text-left">
-                {".".repeat((Math.floor(n / 12) % 3) + 1)}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="lz-display font-extrabold leading-none text-[clamp(64px,12vw,160px)]" style={{ color: C.paper }}>
-                {n}
-              </span>
-              <span className="lz-mono text-xl align-top" style={{ color: C.oxide }}>%</span>
-            </div>
-          </div>
-
-          {/* progress hairline */}
-          <div className="relative h-[3px] w-full" style={{ background: `${C.paper}1A` }}>
-            <div
-              className="h-full"
-              style={{
-                width: `${n}%`,
-                background: `linear-gradient(to right, ${C.oxide}, ${C.amber})`,
-                transition: "width 60ms linear",
-              }}
-            />
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
+   The visual identity does not live in the curtain: the kinetic headline,
+   the collage entrance, the tickers, the cursor and the rotating badge all
+   remain. Nothing replaced it, because a faster first paint IS the
+   improvement.
+---------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------
    DUOTONE IMAGE CARD — grayscale source + brand-color wash + grain,

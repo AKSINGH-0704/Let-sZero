@@ -2,10 +2,10 @@
  * LETSZERO — "THE LIVING LEDGER" LANDING EXPERIENCE  ·  v3
  *
  * Composition root. Tokens/data/primitives in theme.jsx; FX layer (cursor,
- * preloader, imagery, global styles) in fx.jsx; sections split across
+ * imagery, global styles) in fx.jsx; sections split across
  * Hero.jsx / Sections.jsx / Closing.jsx.
  *
- * v3 adds: cinematic preloader, custom dynamic cursor, duotone image collage,
+ * v3 adds: custom dynamic cursor, duotone image collage,
  * ghost type parallax, rotating badge, image-backed dark sections.
  *
  * Every number on this page is real and sourced from the engineering handoff.
@@ -14,7 +14,7 @@
 
 import { motion, useScroll, useSpring } from "framer-motion";
 import { C } from "./theme.jsx";
-import { GlobalStyles, Cursor, Preloader } from "./fx.jsx";
+import { GlobalStyles, Cursor } from "./fx.jsx";
 import { Nav, Hero } from "./Hero.jsx";
 import { ProblemSection, SystemSection, GuaranteesSection } from "./Sections.jsx";
 import { AISection, PlatformSection, PricingSection, ResourcesSection, CTASection, Footer } from "./Closing.jsx";
@@ -29,7 +29,6 @@ export default function LandingExperience() {
       style={{ background: C.paper, color: C.ink }}
     >
       <GlobalStyles />
-      <Preloader />
       <Cursor />
 
       {/* scroll progress */}

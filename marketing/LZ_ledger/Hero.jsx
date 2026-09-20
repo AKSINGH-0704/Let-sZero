@@ -117,7 +117,8 @@ function ProductsMenu() {
   );
 }
 
-export function Nav({ delay = 1.4 }) {
+export function Nav({ delay = 0.05 }) {
+  const reduce = useReducedMotion();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -129,9 +130,14 @@ export function Nav({ delay = 1.4 }) {
 
   return (
     <motion.header
-      initial={{ y: -24, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6, delay, ease: EASE }}
+      /* Transform-only. The header used to prerender at opacity 0, so the
+         primary navigation — and the nav CTA, the page's main conversion
+         entry — did not exist for anyone reading the static HTML, and blinked
+         in only after hydration. A translate is enough of an entrance and
+         leaves the markup legible from the first paint. */
+      initial={reduce ? false : { y: -16 }}
+      animate={reduce ? false : { y: 0 }}
+      transition={{ duration: 0.5, delay, ease: EASE }}
       className="fixed top-0 left-0 right-0 z-50 transition-colors duration-300"
       style={{
         background: scrolled ? "rgba(247,243,234,0.88)" : "transparent",
@@ -301,10 +307,16 @@ const LEDGER_ROWS = [
   ["Activity log", "180 days", "can't be edited", C.amber],
 ];
 
-/* Base delay for the hero's supporting copy. The H1 itself no longer waits on
-   this — see KineticWords: it is painted in the prerendered HTML and reveals
-   on mount, so the headline is never gated behind the curtain. */
-const T = 1.45;
+/* Base delay for the hero's DECORATIVE entrances only.
+   It used to be 1.45s, sized to hide behind the full-screen preloader curtain
+   while that curtain existed. Measured on production, that ladder was the LCP:
+   the supporting paragraph sat at opacity 0 until 3.9s and LCP landed at
+   4792ms on a 390px cold load — and reduced-motion users paid the same price,
+   because the delay was on `transition`, which no motion preference touches.
+   Nothing load-bearing waits on this any more: the headline, the paragraph and
+   the primary CTA are painted by the prerender and stay painted. What is left
+   here staggers the collage and the ornaments, which no one is reading. */
+const T = 0.05;
 
 export function Hero() {
   const reduce = useReducedMotion();
@@ -336,9 +348,9 @@ export function Hero() {
           {/* Left — kinetic mixed-type statement */}
           <div className="lg:col-span-7 pt-2 md:pt-6">
             <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.55, delay: T }}
+              initial={reduce ? false : { y: 10 }}
+              animate={reduce ? false : { y: 0 }}
+              transition={{ duration: 0.45, delay: 0, ease: EASE }}
               className="inline-flex items-center gap-2.5 mb-8 px-3.5 py-2 rounded-full border"
               style={{ borderColor: `${C.emerald}50`, background: `${C.emerald}12` }}
             >
@@ -386,9 +398,9 @@ export function Hero() {
             </h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: T + 0.95 }}
+              initial={reduce ? false : { y: 14 }}
+              animate={reduce ? false : { y: 0 }}
+              transition={{ duration: 0.5, delay: 0.06, ease: EASE }}
               className="mt-9 max-w-[560px] text-[16.5px] md:text-lg leading-relaxed"
               style={{ color: C.inkSoft }}
             >
@@ -404,9 +416,9 @@ export function Hero() {
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: T + 1.1 }}
+              initial={reduce ? false : { y: 14 }}
+              animate={reduce ? false : { y: 0 }}
+              transition={{ duration: 0.5, delay: 0.12, ease: EASE }}
               className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
             >
               {/* Primary CTA keeps the production journey: the product page
