@@ -148,7 +148,25 @@ export function GlobalStyles() {
         opacity: 0.04;
       }
 
-      html { scroll-behavior: smooth; }
+      /* The header is position:fixed and 73px tall, and nothing reserved
+         room for it. Measured on production, every in-page anchor put its
+         target's top edge at viewport 0 — #system at scrollY 1914, #guarantees
+         at 3509, #main-content at 0 — so the first 73px of each destination
+         sat behind the navigation, including the heading that says which
+         section you just jumped to. scroll-padding-top is the property that
+         belongs to the scroll container rather than to each target, so it
+         covers the skip link, the nav's in-page links and any deep link into
+         /#system from another page with one declaration.
+
+         This lives in the landing page's own sheet, which renders only on
+         "/", so it does not change scrolling anywhere else in the product. */
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 88px;
+      }
+      @media (min-width: 768px) {
+        html { scroll-padding-top: 96px; }
+      }
       @media (pointer: fine) {
         .lz-cursor-on .lz-root, .lz-cursor-on .lz-root a,
         .lz-cursor-on .lz-root button, .lz-cursor-on .lz-root [data-cursor] {

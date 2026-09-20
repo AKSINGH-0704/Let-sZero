@@ -292,3 +292,29 @@ describe("Audit 230 M6 — the hero's supporting visuals are product evidence", 
     expect(panel[1]).toMatch(/border:1px solid #15120D1F/i);
   });
 });
+
+describe("Audit 230 M7 — in-page anchors clear the fixed header", () => {
+  it("reserves room for the header on the scroll container", () => {
+    // The header is position:fixed and 73px tall at desktop, 65px at mobile.
+    // Without this, every anchor put its target's top edge at viewport 0 and
+    // the navigation covered the heading naming the section just jumped to.
+    const css = globalSheet();
+    const rule = css.match(/html\s*\{([^}]*)\}/);
+    expect(rule, "no html rule in the landing sheet").toBeTruthy();
+    expect(rule[1], "the scroll container reserves no room for the header")
+      .toMatch(/scroll-padding-top:\s*(\d+)px/);
+    const base = Number(rule[1].match(/scroll-padding-top:\s*(\d+)px/)[1]);
+    expect(base, "reserved room is smaller than the mobile header").toBeGreaterThanOrEqual(65);
+
+    // And a larger reservation once the header grows at md.
+    const wide = css.match(/@media \(min-width: 768px\)\s*\{\s*html\s*\{([^}]*)\}/);
+    expect(wide, "no wider reservation for the taller desktop header").toBeTruthy();
+    const desktop = Number(wide[1].match(/scroll-padding-top:\s*(\d+)px/)[1]);
+    expect(desktop, "reserved room is smaller than the desktop header").toBeGreaterThanOrEqual(73);
+    expect(desktop).toBeGreaterThanOrEqual(base);
+  });
+
+  it("still scrolls smoothly rather than jumping", () => {
+    expect(globalSheet()).toMatch(/scroll-behavior:\s*smooth/);
+  });
+});
