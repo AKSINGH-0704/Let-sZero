@@ -35,7 +35,12 @@ export function GlobalStyles() {
       .lz-display { font-family: 'Cabinet Grotesk', 'Space Grotesk', sans-serif; }
       .lz-body    { font-family: 'General Sans', 'Inter', sans-serif; }
       .lz-mono    { font-family: 'JetBrains Mono', monospace; }
-      .lz-serif   { font-family: 'Instrument Serif', Georgia, serif; }
+      /* Audit 231 - font-weight is pinned because .lz-serif is applied to <em>
+         inside headings that set 700, and Instrument Serif ships only a 400
+         file (client/src/fonts.css). Inheriting 700 made the browser
+         synthesise a bold, so five nodes rendered a smeared faux-bold of a
+         display serif. 400 is the weight actually served. */
+      .lz-serif   { font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; }
       .lz-root ::selection { background: ${C.oxide}; color: ${C.paper}; }
 
       @keyframes lz-ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }

@@ -67,3 +67,17 @@ describe("Audit 231 — the icon is not the 1024px master", () => {
     expect(read("script/prerender-routes.js")).toMatch(/og[Ii]mage:\s*"https:\/\/www\.letszero\.in\/letszero-logo\.png"/);
   });
 });
+
+describe("Audit 231 — the serif accent renders at a weight that exists", () => {
+  it(".lz-serif pins font-weight: 400", () => {
+    expect(read("marketing/LZ_ledger/fx.jsx")).toMatch(/\.lz-serif\s*\{[^}]*font-weight:\s*400/);
+  });
+
+  it("only a 400 Instrument Serif file is declared, which is why 400 is pinned", () => {
+    const css = read("client/src/fonts.css");
+    const block = css.slice(css.indexOf("Instrument Serif"));
+    const weights = [...block.matchAll(/font-family:\s*'Instrument Serif'[\s\S]*?font-weight:\s*(\d+)/g)].map((m) => m[1]);
+    expect(weights.length).toBeGreaterThan(0);
+    expect(new Set(weights)).toEqual(new Set(["400"]));
+  });
+});
