@@ -14,7 +14,8 @@ import { safeNextPath } from "@/lib/commerce/purchaseIntent";
 const BRANDS = {
   letszero: {
     title: "LetsZero",
-    favicon: "/letszero-logo.png",
+    // Audit 231 - 192px variant of the same mark; see client/index.html.
+    favicon: "/letszero-logo-192.png",
     routes: ["/", "/early-access", "/contact", "/privacy", "/terms", "/learn"],
   },
   repmail: {

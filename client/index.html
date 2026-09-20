@@ -5,8 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google-site-verification" content="b1YaWyMGKu18MuO5Qb1QVCL2H732tGKO38WiqyVA3cQ" />
     <title>LetsZero</title>
-    <link rel="icon" type="image/png" href="/letszero-logo.png" />
-    <link rel="apple-touch-icon" href="/letszero-logo.png" />
+    <!-- Audit 231 - the icon is 192px because that is the largest size anything
+         asks for: a tab favicon paints at 16-32px and apple-touch-icon at 180px.
+         /letszero-logo.png is the same artwork at 1024x1024 and 169,003 bytes,
+         downloaded on every route to be drawn into a 16px box. It stays the
+         og:image, where the full resolution is what social cards consume. -->
+    <link rel="icon" type="image/png" href="/letszero-logo-192.png" />
+    <link rel="apple-touch-icon" href="/letszero-logo-192.png" />
     <!-- M34 â€” fonts are self-hosted from /fonts (client/src/fonts.css), so the
          preconnects to fonts.googleapis.com, fonts.gstatic.com and
          api.fontshare.com are gone along with the stylesheets they warmed.

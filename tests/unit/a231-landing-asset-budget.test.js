@@ -39,3 +39,31 @@ describe("Audit 231 — decorative backdrops stay within their budget", () => {
     expect(read("marketing/LZ_ledger/Sections.jsx")).toMatch(/grayscale\(1\)/);
   });
 });
+
+describe("Audit 231 — the icon is not the 1024px master", () => {
+  const html = read("client/index.html");
+
+  it("neither icon link points at letszero-logo.png", () => {
+    const links = html.match(/<link[^>]+rel="(?:icon|apple-touch-icon)"[^>]*>/g) ?? [];
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) expect(link).not.toMatch(/href="\/letszero-logo\.png"/);
+  });
+
+  it("the icon it does point at is small", () => {
+    const hrefs = [...html.matchAll(/<link[^>]+rel="(?:icon|apple-touch-icon)"[^>]+href="([^"]+)"/g)].map((m) => m[1]);
+    expect(hrefs.length).toBe(2);
+    for (const href of hrefs) expect(bytes(path.join("client/public", href))).toBeLessThan(30_000);
+  });
+
+  it("the runtime brand registry does not reinstate it", () => {
+    // App.jsx rewrites the href on route change, so a stale entry here would
+    // undo the markup above the moment the router settles.
+    expect(read("client/src/App.jsx")).not.toMatch(/favicon:\s*"\/letszero-logo\.png"/);
+  });
+
+  it("og:image keeps the full-resolution master", () => {
+    // The 1024px file is correct for a social card. This guard exists so the
+    // byte reduction above is never "fixed" by shrinking the wrong consumer.
+    expect(read("script/prerender-routes.js")).toMatch(/og[Ii]mage:\s*"https:\/\/www\.letszero\.in\/letszero-logo\.png"/);
+  });
+});
