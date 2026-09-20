@@ -133,3 +133,54 @@ describe("Audit 230 M1 — the prerender paints critical content", () => {
     expect(html).not.toMatch(/OPENING THE LEDGER/);
   });
 });
+
+describe("Audit 230 M4 — nav link geometry does not depend on font weight", () => {
+  /** The rendered <a> for a nav label, as a string. */
+  function navAnchor(label) {
+    const all = html.match(/<a[^>]*class="relative inline-flex[\s\S]*?<\/a>/g) || [];
+    const hit = all.find((a) => a.includes(label));
+    expect(hit, `no nav anchor rendered for ${label}`).toBeTruthy();
+    return hit;
+  }
+
+  // "How it works" is the only multi-word item, and the only one that broke.
+  const LABEL = "How it works";
+
+  it("exposes the label to assistive tech exactly once", () => {
+    const a = navAnchor(LABEL);
+    const spans = a.match(/<span[^>]*>/g) || [];
+    const readable = spans.filter((t) => !t.includes('aria-hidden="true"'));
+    expect(readable.length, "more than one readable copy of the label").toBe(1);
+    // Three copies are drawn; two of them must be hidden from the name.
+    expect((a.match(new RegExp(LABEL, "g")) || []).length).toBe(3);
+  });
+
+  it("sizes the anchor from an in-flow copy at the heaviest weight", () => {
+    const a = navAnchor(LABEL);
+    const sizing = (a.match(/<span[^>]*>/g) || [])[0];
+    expect(sizing).toMatch(/aria-hidden="true"/);
+    expect(sizing, "the sizing layer is visible").toMatch(/invisible/);
+    expect(sizing, "the sizing layer must not wrap").toMatch(/whitespace-nowrap/);
+    expect(sizing, "the sizing layer is not the heaviest state").toMatch(/font-medium/);
+    expect(sizing, "the sizing layer must stay in flow to give the anchor a width")
+      .not.toMatch(/absolute/);
+  });
+
+  it("keeps both visible layers out of flow and on one line", () => {
+    const a = navAnchor(LABEL);
+    const layers = (a.match(/<span[^>]*absolute inset-0[^>]*>/g) || []);
+    expect(layers.length).toBe(2);
+    for (const l of layers) expect(l).toMatch(/whitespace-nowrap/);
+  });
+
+  it("gives a keyboard the same state a mouse gets", () => {
+    const a = navAnchor(LABEL);
+    // Every hover-driven state change has a focus-visible twin.
+    const hovers = (a.match(/group-hover:[a-z-]+(?:-\[?[^\s"']*\]?)?/g) || []);
+    expect(hovers.length).toBeGreaterThan(0);
+    for (const h of hovers) {
+      const twin = h.replace("group-hover:", "group-focus-visible:");
+      expect(a, `${h} has no focus-visible equivalent`).toContain(twin);
+    }
+  });
+});

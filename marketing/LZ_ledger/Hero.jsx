@@ -26,9 +26,25 @@ const NAV_LINKS = [
 // no focus indicator of their own. `py-2` lifts them past the 24px WCAG 2.5.8
 // minimum without moving anything visually (the row is items-center), and
 // focus-visible gives keyboard users the indicator they otherwise had none of.
+/* The anchor is sized by an invisible copy of the label at the HEAVIEST weight
+   any state uses. Both visible layers are then absolutely positioned inside
+   that fixed box, so swapping between them can never change the anchor's
+   width or height.
+
+   It used to be sized by the 400-weight layer while the hover layer rendered
+   at 500 inside `absolute inset-0`. 500 does not fit in a box measured at 400,
+   so the hover copy wrapped: measured identically at 1024, 1280 and 1440,
+   span[0] was 80.4x20 on one line and the hover span 80.4x36 on TWO — which is
+   why "How it works", the only multi-word item, broke on hover and the
+   underline struck through its second line. A `nowrap` alone would have
+   pushed the heavier text out of the box instead of wrapping it; this fixes
+   the measurement rather than the symptom. */
 const NAV_LINK_CLASS =
-  "relative inline-flex items-center rounded py-2 text-sm group " +
+  "relative inline-flex items-center justify-center rounded py-2 text-sm group " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15120D]/40";
+
+const NAV_LAYER_CLASS =
+  "absolute inset-0 flex items-center justify-center whitespace-nowrap transition-opacity duration-150";
 
 /* Products dropdown: opens on hover (desktop) and on click/keyboard,
    closes on outside click, Escape, or leaving the menu. */
@@ -179,15 +195,27 @@ export function Nav({ delay = 0.05 }) {
           <ProductsMenu />
           {NAV_LINKS.map(([label, href, accent]) => (
             <a key={label} href={href} className={NAV_LINK_CLASS} style={{ color: C.inkSoft }}>
-              <span className="group-hover:opacity-0 transition-opacity duration-150">{label}</span>
+              {/* Sizing layer: in flow, heaviest weight, never shown, never
+                  read. It is what gives the anchor a width. */}
+              <span aria-hidden="true" className="invisible whitespace-nowrap font-medium">
+                {label}
+              </span>
+              {/* The only copy with an accessible name. */}
+              <span className={`${NAV_LAYER_CLASS} group-hover:opacity-0 group-focus-visible:opacity-0`}>
+                {label}
+              </span>
+              {/* Hover AND focus-visible resolve to the same state, so a
+                  keyboard reaches the accent a mouse does. */}
               <span
-                className="absolute inset-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 font-medium"
+                aria-hidden="true"
+                className={`${NAV_LAYER_CLASS} font-medium opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100`}
                 style={{ color: accent }}
               >
                 {label}
               </span>
               <span
-                className="absolute bottom-1 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-300"
+                aria-hidden="true"
+                className="absolute bottom-1 left-0 h-[2px] w-0 group-hover:w-full group-focus-visible:w-full transition-all duration-300"
                 style={{ background: accent }}
               />
             </a>
