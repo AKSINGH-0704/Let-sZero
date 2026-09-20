@@ -424,7 +424,14 @@ export function ResourcesSection() {
                 <img
                   src={r.img}
                   alt=""
+                  width={900}
+                  height={600}
                   loading="lazy"
+                  decoding="async"
+                  /* The card box is 3 across on desktop inside a 1320px rail,
+                     one across below `md`. Without `sizes` the browser assumes
+                     100vw and over-fetches for a ~390px box. */
+                  sizes="(min-width: 768px) 33vw, 100vw"
                   className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
                 />
                 <div

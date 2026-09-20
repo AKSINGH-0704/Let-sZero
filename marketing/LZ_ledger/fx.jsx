@@ -134,6 +134,12 @@ export function GlobalStyles() {
 /* ---------------- imagery (duotone-treated Unsplash, infra aesthetic) ---------------- */
 // `arch` was declared here and referenced nowhere, which still shipped its
 // 330KB file into client/public. Dropped along with the asset.
+/* A 1x1 transparent GIF. Used as the <img> fallback inside a <picture> whose
+   only real <source> is gated on a media query: below that width the browser
+   resolves THIS and issues no network request. Inline, so it costs nothing. */
+export const BLANK_PIXEL =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 export const IMAGES = {
   circuit: "/images/landing/circuit.webp",
   servers: "/images/landing/servers.webp",
@@ -258,13 +264,14 @@ export function Cursor() {
    mono caption chip, zoom-on-hover. data-cursor aware.
 ---------------------------------------------------------------- */
 /**
- * `priority` marks a card that renders above the fold. Those two live in the
- * hero collage, and `loading="lazy"` on an image the viewport already contains
- * only delays it — the browser has to discover, queue and fetch it after
- * layout, which is the opposite of what an LCP candidate needs. Everything
- * below the fold keeps the lazy default.
+ * `width`/`height` carry the INTRINSIC dimensions so the aspect ratio is known
+ * before the bytes arrive. The rendered box is sized by CSS either way; the
+ * attributes are what let the browser reserve the right shape.
+ *
+ * The old `priority` prop is gone — see the note on the <img> below for the
+ * measurement that retired it.
  */
-export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, cursorLabel = "VIEW", priority = false }) {
+export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate = 0, cursorLabel = "VIEW", width, height, minWidth = 1024 }) {
   return (
     <motion.div
       whileHover={{ scale: 1.03, rotate: 0, zIndex: 30 }}
@@ -278,17 +285,33 @@ export function ImageCard({ src, caption, tone = C.oxide, className = "", rotate
       }}
     >
       <div className="relative w-full h-full overflow-hidden">
-        <motion.img
-          src={src}
-          alt=""
-          loading={priority ? "eager" : "lazy"}
-          fetchpriority={priority ? "high" : undefined}
-          decoding="async"
-          className="w-full h-full object-cover"
-          style={{ filter: "grayscale(1) contrast(1.08)" }}
-          whileHover={{ scale: 1.08 }}
-          transition={{ duration: 0.6, ease: EASE }}
-        />
+        {/* The request is gated by `media`, not by `loading`.
+            These cards sit in a `hidden lg:block` collage. Marking them
+            priority made every phone and tablet download 193KB of pictures it
+            could not render, at the HIGHEST priority, competing with an LCP
+            path they cannot contribute to — measured at 390px: circuit.webp
+            133,880B and analytics.webp 59,594B, both `laidOut=false`.
+
+            `loading="lazy"` does NOT fix that, which was measured too: Chrome
+            still fetched both at 390px, because a `display:none` image sits at
+            the origin and lands inside the lazy-load distance threshold. Only
+            a `<source media>` that does not match actually suppresses the
+            request, so below `lg` the browser resolves the 1x1 transparent
+            fallback and asks the network for nothing at all. */}
+        <picture>
+          <source media={`(min-width: ${minWidth}px)`} srcSet={src} />
+          <motion.img
+            src={BLANK_PIXEL}
+            alt=""
+            width={width}
+            height={height}
+            decoding="async"
+            className="w-full h-full object-cover"
+            style={{ filter: "grayscale(1) contrast(1.08)" }}
+            whileHover={{ scale: 1.08 }}
+            transition={{ duration: 0.6, ease: EASE }}
+          />
+        </picture>
         {/* duotone wash */}
         <div
           className="absolute inset-0 pointer-events-none"

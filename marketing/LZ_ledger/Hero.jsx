@@ -471,7 +471,7 @@ export function Hero() {
               className="absolute right-0 top-32 z-0 w-[180px] h-[230px]"
             >
               <div data-ambient className="lz-float w-full h-full">
-                <ImageCard src={IMAGES.circuit} caption="Checked before sending" tone={C.teal} className="w-full h-full" priority />
+                <ImageCard src={IMAGES.circuit} caption="Checked before sending" tone={C.teal} className="w-full h-full" width={1000} height={667} />
               </div>
             </motion.div>
             <motion.div
@@ -481,7 +481,7 @@ export function Hero() {
               className="absolute -right-4 bottom-[-104px] z-0 w-[170px] h-[120px]"
             >
               <div data-ambient className="lz-float w-full h-full" style={{ animationDelay: "-3.5s" }}>
-                <ImageCard src={IMAGES.analytics} caption="Live numbers" tone={C.amber} className="w-full h-full" priority />
+                <ImageCard src={IMAGES.analytics} caption="Live numbers" tone={C.amber} className="w-full h-full" width={900} height={600} />
               </div>
             </motion.div>
 
