@@ -2,13 +2,27 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-08-11 (v2.5.0)
+**Last updated:** 2026-09-21 (v2.6.0)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.5.0 (2026-08-11)
+## Current Release — v2.6.0 (2026-09-21)
+
+**A new front page, and you can now stop it moving.**
+
+- **A rebuilt landing page.** The public front page now shows what the product actually does — a live-looking ledger of what happens to an email after you send it, and panels drawn from the real product rather than stock photography.
+- **You can pause the motion.** The two moving strips on the front page each carry a Pause control. It works with a mouse, with the keyboard, and on touch, and pausing one pauses all the motion on the page. Press it again to start it moving.
+- **If your device asks for reduced motion, we already listened.** Nothing on the page animates, and the moving strips become plain readable lists instead — nothing is hidden or left scrolling off the edge. This was already true; the Pause control is for everyone else.
+- **The page loads lighter.** Roughly 373 KB less on every visit, and images, fonts and scripts are now cached properly — a repeat visit re-downloads none of them instead of seventeen.
+- **Smaller fixes.** Escape closes the mobile menu; jumping to a section no longer hides its heading behind the navigation bar; and the mouse pointer no longer disappears against the page's lighter sections.
+
+**Behind the scenes: our advertising measurement was counting purchases against the wrong identifier.** It has been corrected. This changed nothing about what we collect or when — advertising cookies are still only ever set if you agree, and you can still withdraw that at any time from Cookie preferences.
+
+---
+
+## Previous Release — v2.5.0 (2026-08-11)
 
 **You can hand your workspace to a teammate, and now both of you are told exactly what changed.**
 
