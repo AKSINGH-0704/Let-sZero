@@ -316,15 +316,21 @@ export function useMounted() {
    no per-frame work: flipping one attribute is the entire runtime cost, and
    CSS does the rest on the compositor.
 
-   Scope is one document. Measured, following the header's /pricing link from
-   this page produces a NEW document - a marker set on `window` and an
-   attribute set on <html> are both gone afterwards - so the state resets on
-   navigation and on reload, and a fresh page starts moving. SC 2.2.2 asks for
-   a mechanism, not a remembered preference, and the users who want motion off
-   everywhere and permanently are already served by prefers-reduced-motion.
-   Persisting it would mean either reading storage during render, which breaks
-   hydration on a prerendered page, or applying it in an effect, which shows a
-   flash of the motion the visitor asked to stop.
+   Scope is one document, and on production that turns out to be more generous
+   than it sounds. Measured against the live site: following the header's
+   /pricing link builds a NEW document, so a forward navigation or a reload
+   starts moving again; pressing Back restores the SAME document from the
+   back/forward cache, with a `window` marker, an <html> probe attribute and
+   this paused state all intact. (A local static server sending
+   `Cache-Control: no-store` makes the page bfcache-ineligible and hides that
+   entirely - measure this one against production.)
+
+   It is deliberately not persisted beyond that. SC 2.2.2 asks for a mechanism,
+   not a remembered preference, and the users who want motion off everywhere
+   and permanently are already served by prefers-reduced-motion. Persisting it
+   would mean either reading storage during render, which breaks hydration on a
+   prerendered page, or applying it in an effect, which shows a flash of the
+   motion the visitor asked to stop.
 
    Reduced motion is NOT touched by any of this. Under `reduce` the animations
    are already `none`, so the control renders nothing at all rather than
