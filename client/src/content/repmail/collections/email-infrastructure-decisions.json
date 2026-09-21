@@ -1,0 +1,17 @@
+{
+  "slug": "email-infrastructure-decisions",
+  "name": "Email Infrastructure Decisions",
+  "description": "Decision guides for SES access, bounce and complaint events, domains, interfaces, and platform operating models.",
+  "articleSlugs": [
+    "aws-ses-sandbox-to-production",
+    "aws-ses-bounce-complaint-notifications",
+    "aws-ses-account-level-suppression",
+    "return-path-vs-from-domain",
+    "sending-domain-vs-mailbox",
+    "smtp-connection-vs-api",
+    "email-sending-platform-selection",
+    "raw-ses-vs-sending-platform",
+    "transactional-marketing-cold-email-infrastructure",
+    "email-sending-observability"
+  ]
+}

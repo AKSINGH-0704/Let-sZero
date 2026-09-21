@@ -1,0 +1,15 @@
+{
+  "slug": "provider-deliverability-diagnostics",
+  "name": "Provider Deliverability Diagnostics",
+  "description": "A practical path from authentication evidence to provider-specific diagnosis and controlled recovery.",
+  "level": "intermediate",
+  "steps": [
+    "dmarc-alignment-explained",
+    "read-authentication-results",
+    "google-postmaster-tools-guide",
+    "microsoft-365-email-delivery-diagnostics",
+    "provider-specific-deliverability-triage",
+    "spam-complaint-spike-response",
+    "sender-reputation-recovery-plan"
+  ]
+}

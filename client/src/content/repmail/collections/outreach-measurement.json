@@ -1,0 +1,9 @@
+{
+  "slug": "outreach-measurement",
+  "name": "Outreach Measurement",
+  "description": "Measure replies consistently and make informed choices about click tracking and deliverability trade-offs.",
+  "articleSlugs": [
+    "cold-email-reply-rate-measurement",
+    "click-tracking-deliverability-tradeoffs"
+  ]
+}

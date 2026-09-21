@@ -59,21 +59,34 @@ const GTAG_SRC = `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_I
 /**
  * Conversion labels.
  *
- * Google generates the `AW-XXXXXXX/LABEL` send_to value when a conversion
- * action is created in the Ads UI. Those actions do not exist yet, so there are
- * no labels to hardcode and NONE ARE INVENTED. Each is supplied at build time
- * once the operator creates the action; until then the label is null and the
- * corresponding conversion is a documented no-op rather than a fabricated hit.
+ * These are the labels for the currently active primary website actions in
+ * the connected LetsZero Google Ads account (re-read 2026-09-21):
+ *   - Sign-up, action 7728201277: 1glMCL38i-UcENiG2KRE
+ *   - Purchase (1), action 7729403464: CrijCMis1eUcENiG2KRE
  *
- * Read through import.meta.env so the values are build-time constants — there
- * is no runtime fetch and no server round-trip for a tag identifier.
+ * The previous production bundle used stale build-environment values that did
+ * not identify either active action. Signup and purchase therefore use the
+ * verified account mapping here rather than trusting an old Railway/Vite
+ * environment value. The test-only branch keeps the existing null-label and
+ * custom-label protections intact; it is eliminated from production builds by
+ * Vite static MODE value.
  */
+const VERIFIED_PRIMARY_LABELS = Object.freeze({
+  purchase: "CrijCMis1eUcENiG2KRE",
+  sign_up: "1glMCL38i-UcENiG2KRE",
+});
+
+const labelsForTest = import.meta.env.MODE === "test";
+
 export const CONVERSION_LABELS = {
-  purchase: import.meta.env.VITE_GADS_LABEL_PURCHASE || null,
-  sign_up: import.meta.env.VITE_GADS_LABEL_SIGN_UP || null,
+  purchase: labelsForTest
+    ? import.meta.env.VITE_GADS_LABEL_PURCHASE || null
+    : VERIFIED_PRIMARY_LABELS.purchase,
+  sign_up: labelsForTest
+    ? import.meta.env.VITE_GADS_LABEL_SIGN_UP || null
+    : VERIFIED_PRIMARY_LABELS.sign_up,
   qualified_lead: import.meta.env.VITE_GADS_LABEL_QUALIFIED_LEAD || null,
 };
-
 // Module-level, not window-level: a second copy of this module would mean a
 // second bundle, which is a build defect rather than a runtime one.
 let tagRequested = false;

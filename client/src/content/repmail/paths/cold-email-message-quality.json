@@ -1,0 +1,14 @@
+{
+  "slug": "cold-email-message-quality",
+  "name": "Cold Email Message Quality",
+  "description": "Build a relevant message, check its evidence, and release a sequence with clear stop rules.",
+  "level": "intermediate",
+  "steps": [
+    "cold-email-opening-line-frameworks",
+    "personalization-data-checklist",
+    "cold-email-cta-examples",
+    "ai-generated-cold-email-review",
+    "cold-email-sequence-quality-checklist",
+    "breakup-email-guide"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "slug": "deliverability-diagnostics",
+  "name": "Deliverability Diagnostics",
+  "description": "Provider-aware troubleshooting for authentication, complaints, reputation, SMTP errors, and delivery evidence.",
+  "articleSlugs": [
+    "dmarc-alignment-explained",
+    "read-authentication-results",
+    "google-postmaster-tools-guide",
+    "microsoft-365-email-delivery-diagnostics",
+    "delivery-vs-deliverability-vs-placement",
+    "spam-complaint-spike-response",
+    "sender-reputation-recovery-plan",
+    "smtp-4xx-5xx-email-errors",
+    "email-authentication-change-management",
+    "provider-specific-deliverability-triage"
+  ]
+}

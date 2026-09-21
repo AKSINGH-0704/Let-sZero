@@ -1,0 +1,11 @@
+{
+  "slug": "compliance-operations",
+  "name": "Cold Email Compliance Operations",
+  "description": "Operational guidance for opt-outs, legal-context questions, jurisdictional comparisons, and compliance records.",
+  "articleSlugs": [
+    "cold-email-unsubscribe-requirements",
+    "legitimate-interest-cold-email",
+    "can-spam-vs-gdpr-cold-email",
+    "cold-email-compliance-recordkeeping"
+  ]
+}

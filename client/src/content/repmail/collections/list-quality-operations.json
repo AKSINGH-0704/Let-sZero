@@ -1,0 +1,13 @@
+{
+  "slug": "list-quality-operations",
+  "name": "List Quality Operations",
+  "description": "Practical controls for verification uncertainty, role and disposable addresses, list hygiene, and outbound suppression.",
+  "articleSlugs": [
+    "email-verification-catch-all-domains",
+    "disposable-email-addresses",
+    "role-based-email-addresses",
+    "email-list-hygiene-checklist",
+    "email-verification-statuses",
+    "outbound-suppression-rules"
+  ]
+}

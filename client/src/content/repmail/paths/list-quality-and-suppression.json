@@ -1,0 +1,14 @@
+{
+  "slug": "list-quality-and-suppression",
+  "name": "List Quality and Suppression",
+  "description": "Move from verification signals to list hygiene, campaign review, and durable suppression decisions.",
+  "level": "beginner",
+  "steps": [
+    "email-verification-statuses",
+    "email-verification-catch-all-domains",
+    "disposable-email-addresses",
+    "role-based-email-addresses",
+    "email-list-hygiene-checklist",
+    "outbound-suppression-rules"
+  ]
+}
