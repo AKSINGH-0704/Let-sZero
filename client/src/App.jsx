@@ -42,10 +42,26 @@ function BrandingManager() {
 
   useEffect(() => {
     const brand = resolveBrand(location);
-    document.title = brand.title;
     document
       .querySelectorAll("link[rel~='icon'], link[rel='apple-touch-icon']")
       .forEach((el) => { el.href = brand.favicon; });
+
+    // Resource Center pages are prerendered with route-specific titles. The
+    // generic brand assignment used to overwrite those titles after hydration,
+    // leaving every live guide tab as simply "RepMail". Preserve the
+    // prerendered title on direct loads and derive the title from the rendered
+    // route heading during client-side navigation. Other product routes keep the
+    // existing central brand title behavior.
+    if (location.startsWith("/repmail/learn")) {
+      const frame = requestAnimationFrame(() => {
+        const metadataTitle = document.querySelector('meta[property="og:title"]')?.content?.trim();
+        const heading = document.querySelector("main h1")?.textContent?.trim();
+        document.title = metadataTitle || (heading ? `${heading} | RepMail Resource Center` : "RepMail Resource Center");
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+
+    document.title = brand.title;
   }, [location]);
 
   return null;
