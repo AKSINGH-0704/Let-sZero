@@ -495,12 +495,33 @@ export function Hero() {
 
           {/* Right — reputation ledger card + badge */}
           <motion.div style={{ y: collageDrift }} className="lg:col-span-5 relative hidden lg:block flex items-center justify-center">
-            {/* rotating badge: top-right corner, above and clear of the card */}
+            {/* Rotating badge: top-right corner, above and clear of the card.
+
+                The `xl:` offset is not a nudge. Both this badge and the top
+                supporting panel below are anchored to this column's right edge,
+                but the panel only exists from `xl` up (`hidden xl:block`), so
+                the pair were never placed against each other — the badge's
+                position was chosen at `lg`, where that space is empty, and
+                inherited unchanged into the breakpoint that fills it.
+
+                Measured on production at 1280/1366/1440/1600/1920, the badge's
+                visible circle ran from 128 to 228 while the panel's painted top
+                edge sat at 209 once its 5px ring and the 10px `lz-float` rise
+                are counted: a 18.6px collision at every xl width, worst at the
+                top of the float. Moving the badge to -64px puts its bottom at
+                196, which clears the panel's float envelope by 13.1px and still
+                leaves 23px under the sticky header.
+
+                The offset is scoped to `xl` because that is exactly where the
+                panel appears; at `lg` the original -32px is still the designed
+                position and is unchanged. Rotation is deliberately not involved
+                — it grows the axis-aligned box from 100 to 141px but the
+                visible ink is the inscribed circle, which does not move. */}
             <motion.div
               initial={{ opacity: 0, scale: 0.6 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.7, delay: T + 0.9, ease: EASE }}
-              className="absolute -top-8 right-0 z-30"
+              className="absolute -top-8 xl:-top-16 right-0 z-30"
             >
               <RotatingBadge size={100} />
             </motion.div>
