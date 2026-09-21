@@ -257,9 +257,32 @@ export function Cursor() {
         />
       </motion.div>
       {/* trailing ring / label puck */}
+      {/* The blend belongs on THIS wrapper, not on the ring inside it.
+          `mix-blend-mode` composites an element against the backdrop of its
+          nearest stacking-context ancestor, and this wrapper is already one
+          (fixed + z-index, plus the transform framer-motion compiles x/y
+          into). Its only child is the ring, so a blend declared on the ring
+          had nothing beneath it to blend with: it painted plain white.
+          Measured on production against four rings over the same cream
+          backdrop — blend on the node itself, blend under a z-indexed
+          wrapper, blend under a transformed wrapper, and no blend at all —
+          only the first inverted; the other three were indistinguishable.
+          So the ring was invisible on every light section of the page, which
+          is most of it, and the one thing a desktop visitor could see of
+          their own pointer was the 9px oxide dot — the same shape and colour
+          the product panels use for status. Hiding the native cursor
+          (`cursor: none`) left that dot sitting on the domain-health card
+          reading as part of the product UI.
+          Moving the declaration up one level gives the group the page as its
+          backdrop, so the ring inverts as intended: dark on paper, light on
+          ink. */}
       <motion.div
         className="fixed top-0 left-0 z-[119] pointer-events-none w-0 h-0 flex items-center justify-center"
-        style={{ x: reduce ? x : ringX, y: reduce ? y : ringY }}
+        style={{
+          x: reduce ? x : ringX,
+          y: reduce ? y : ringY,
+          mixBlendMode: label ? "normal" : "difference",
+        }}
         aria-hidden="true"
       >
         <motion.div
@@ -269,7 +292,6 @@ export function Cursor() {
           style={{
             border: label ? "none" : `1.5px solid ${C.ink}`,
             background: label ? C.ink : "transparent",
-            mixBlendMode: label ? "normal" : "difference",
             borderColor: label ? "transparent" : "#fff",
           }}
         >
