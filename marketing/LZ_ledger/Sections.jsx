@@ -16,6 +16,7 @@ import {
   staggerChild,
   onInk,
   asText,
+  useAmbientPaused,
 } from "./theme.jsx";
 import { IMAGES } from "./fx.jsx";
 
@@ -141,6 +142,7 @@ export function ProblemSection() {
 ============================================================ */
 export function SystemSection() {
   const reduce = useReducedMotion();
+  const paused = useAmbientPaused();
   return (
     <section id="system" className="relative py-24 md:py-36 overflow-hidden" style={{ background: C.ink, color: C.paper }}>
       {/* image backdrop — data-center rails under heavy ink wash */}
@@ -209,7 +211,7 @@ export function SystemSection() {
             <motion.div
               className="absolute left-[3px] md:left-[5px] w-[9px] h-[9px] rounded-full hidden sm:block"
               style={{ background: C.paper, boxShadow: `0 0 14px 3px ${C.amber}` }}
-              animate={{ top: ["0%", "100%"] }}
+              animate={paused ? {} : { top: ["0%", "100%"] }}
               transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
             />
           )}

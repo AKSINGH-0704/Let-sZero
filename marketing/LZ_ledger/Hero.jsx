@@ -12,8 +12,8 @@ import {
   useReducedMotion,
 } from "framer-motion";
 import { ArrowRight, ArrowDown, ChevronDown, Menu, X } from "lucide-react";
-import { C, EASE, LEDGER_EVENTS, PRODUCTS, Counter, Tilt, Aurora, KineticWords, go, asText } from "./theme.jsx";
-import { RotatingBadge, GhostWord, ProductPanel } from "./fx.jsx";
+import { C, EASE, LEDGER_EVENTS, PRODUCTS, Counter, Tilt, Aurora, KineticWords, go, asText, useAmbientPaused } from "./theme.jsx";
+import { RotatingBadge, GhostWord, ProductPanel, MotionToggle } from "./fx.jsx";
 
 const NAV_LINKS = [
   ["How it works", "#system", C.teal],
@@ -361,6 +361,7 @@ const T = 0.05;
 
 export function Hero() {
   const reduce = useReducedMotion();
+  const paused = useAmbientPaused();
   const heroRef = useRef(null);
   const { scrollYProgress: heroScroll } = useScroll({
     target: heroRef,
@@ -485,7 +486,7 @@ export function Hero() {
                 style={{ borderColor: `${C.ink}30`, color: C.ink }}
               >
                 See how it works
-                <motion.span animate={reduce ? {} : { y: [0, 4, 0] }} transition={{ duration: 1.6, repeat: Infinity }}>
+                <motion.span animate={reduce || paused ? {} : { y: [0, 4, 0] }} transition={{ duration: 1.6, repeat: Infinity }}>
                   <ArrowDown className="w-4 h-4" />
                 </motion.span>
               </motion.a>
@@ -685,6 +686,7 @@ export function Hero() {
             frame. It is a rendering device, not content: it was being read out
             twice by screen readers, and under reduced motion it is removed
             entirely so the static layout shows each event once. */}
+        <MotionToggle tone="paper" />
         <div data-ambient className="lz-ticker-track flex w-max whitespace-nowrap py-3.5">
           {[...LEDGER_EVENTS, ...LEDGER_EVENTS].map((e, i) => (
             <span

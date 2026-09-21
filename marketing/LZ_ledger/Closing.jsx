@@ -20,7 +20,7 @@ import {
   asText,
   onInk,
 } from "./theme.jsx";
-import { IMAGES } from "./fx.jsx";
+import { IMAGES, MotionToggle } from "./fx.jsx";
 
 /* ============================================================
    05 — INTELLIGENCE, GOVERNED
@@ -581,6 +581,12 @@ export function CTASection() {
         className="relative mt-20"
         style={{ borderTop: `1px solid ${C.paper}1A`, borderBottom: `1px solid ${C.paper}1A` }}
       >
+        {/* The second access point to the one shared state. The hero ticker's
+            control is ~8,000px up the page, which is no use to someone the
+            marquee is distracting, and WCAG asks for a mechanism that is
+            actually available. Both instances read and write the same
+            attribute, so there is one state, not two. */}
+        <MotionToggle tone="ink" />
         <MarqueeRow />
         <div style={{ borderTop: `1px solid ${C.paper}0F` }}>
           <MarqueeRow reverse />

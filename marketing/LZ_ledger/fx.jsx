@@ -12,7 +12,7 @@ import {
   useSpring,
   useReducedMotion,
 } from "framer-motion";
-import { C, EASE, useMounted } from "./theme.jsx";
+import { C, EASE, useMounted, useAmbientPaused, toggleAmbientPaused } from "./theme.jsx";
 
 /* ----------------------------------------------------------------
    GLOBAL STYLES — fonts, keyframes, cursor + scroll behavior.
@@ -52,6 +52,9 @@ export function GlobalStyles() {
 
       @keyframes lz-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
       .lz-float { animation: lz-float 7s ease-in-out infinite; }
+
+      @keyframes lz-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      .lz-badge-spin { animation: lz-spin 18s linear infinite; will-change: transform; }
 
       @keyframes lz-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.8); } }
       .lz-pulse { animation: lz-pulse 2.2s ease-in-out infinite; }
@@ -101,6 +104,12 @@ export function GlobalStyles() {
            it; the text underneath keeps its colours. */
         .lz-shimmer-text::after { opacity: 0; }
 
+        /* The badge kept turning under reduced motion, just at 60s instead of
+           18s. That was a deliberate choice and Audit 235 does not revisit it,
+           so the duration that used to live in a framer prop is restated here
+           and the behaviour is byte-for-byte what it was. */
+        .lz-badge-spin { animation-duration: 60s; }
+
         /* Stopping a ticker is not the same as making it readable.
            Both tracks are far wider than the viewport — measured 7,534px and
            6,212px against ~1,280px of visible box — so simply freezing them
@@ -146,6 +155,26 @@ export function GlobalStyles() {
 
       html[data-scrolling] .lz-shimmer-text::after {
         animation-play-state: paused;
+      }
+
+      /* WCAG 2.2.2 (Audit 235) — the in-content pause mechanism.
+         Deliberately the same shape as the M32-A scroll rule above, and it
+         reaches the same set: every decorative loop on this page is either
+         marked [data-ambient] or is the shimmer sweep, which lives on a
+         pseudo-element that attribute selectors cannot reach and so is named
+         here. The !important is for the same reason M32-A needs one: several
+         of these animations are declared as inline styles, which otherwise
+         win over any stylesheet rule.
+
+         This pauses rather than removes, so the strips hold their position
+         and resume from it; nothing reflows, so toggling costs no layout and
+         cannot shift the page. */
+      html[data-motion-paused] [data-ambient] {
+        animation-play-state: paused !important;
+      }
+      html[data-motion-paused] .lz-shimmer-text::after,
+      html[data-motion-paused] .lz-badge-spin {
+        animation-play-state: paused !important;
       }
 
       .lz-grain {
@@ -403,15 +432,89 @@ export function ProductPanel({ label, accent = C.teal, accentText, rows = [], fo
 }
 
 /* ----------------------------------------------------------------
+   MOTION TOGGLE — the visible half of the WCAG 2.2.2 mechanism.
+
+   One shared page-level state (see theme.jsx), rendered beside each of the
+   two continuous strips so it is adjacent to the content it stops rather
+   than parked in the footer 8,000px away from the hero ticker. Both
+   instances read and write the same attribute, so they can never disagree.
+
+   The accessible name carries the state — "Pause motion" while it runs,
+   "Play motion" once stopped — rather than a constant name plus
+   `aria-pressed`. Mixing the two is what makes toggle buttons ambiguous, and
+   a name that changes is announced on activation without moving focus. The
+   icon and the word change together, so the state is truthful for sighted
+   and screen-reader users from the same markup.
+
+   Renders nothing until mounted, so the prerendered HTML and React's first
+   pass agree, and nothing at all under reduced motion, where the animations
+   are already `none` and a pause control would be offering to stop something
+   that is not moving.
+---------------------------------------------------------------- */
+export function MotionToggle({ tone = "paper", className = "" }) {
+  const mounted = useMounted();
+  const reduce = useReducedMotion();
+  const paused = useAmbientPaused();
+  if (!mounted || reduce) return null;
+
+  const onInk = tone === "ink";
+  const fg = onInk ? "#BDB5A4" : C.inkFaintText;
+  const bg = onInk ? C.ink : C.paperHi;
+
+  return (
+    <button
+      type="button"
+      onClick={toggleAmbientPaused}
+      aria-label={paused ? "Play motion" : "Pause motion"}
+      className={`absolute right-0 top-0 bottom-0 z-10 pl-10 sm:pl-12 pr-3 sm:pr-4 flex items-center gap-1.5 lz-mono text-[9px] tracking-[0.14em] uppercase rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset ${
+        onInk ? "focus-visible:ring-white/50" : "focus-visible:ring-[#15120D]/40"
+      } ${className}`}
+      style={{
+        color: fg,
+        // A fade rather than a hard edge, so the moving track dissolves under
+        // the control instead of being chopped off by it. The ramp needs real
+        // width to read as a fade: at 38% of an 84px control it was ~32px, or
+        // about three characters of 11px mono, and the screenshot showed the
+        // ticker cut mid-word. 58% of a wider control is ~58px.
+        background: `linear-gradient(to right, ${bg}00 0%, ${bg} 58%, ${bg} 100%)`,
+      }}
+    >
+      {paused ? (
+        <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" fill="currentColor">
+          <path d="M2 1.2 8.4 5 2 8.8z" />
+        </svg>
+      ) : (
+        <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true" fill="currentColor">
+          <rect x="2" y="1.4" width="2.3" height="7.2" />
+          <rect x="5.7" y="1.4" width="2.3" height="7.2" />
+        </svg>
+      )}
+      {/* Below `sm` the word is dropped and the control is the icon alone, so
+          it takes ~14% of a 360px strip instead of ~25%. The button keeps its
+          full accessible name either way, and with no visible text there is
+          nothing for WCAG 2.5.3 to disagree with; where the word IS shown,
+          the name still contains it. */}
+      <span className="hidden sm:inline">{paused ? "Play" : "Pause"}</span>
+    </button>
+  );
+}
+
+/* ----------------------------------------------------------------
    ROTATING BADGE — circular text on an SVG path, slow spin.
 ---------------------------------------------------------------- */
 export function RotatingBadge({ text = "OUTREACH · ACCOUNTED FOR · LETSZERO · ", size = 120, tone = C.ink, className = "" }) {
-  const reduce = useReducedMotion();
+  // Framer drove this rotation, and framer has no "stop where you are": setting
+  // `animate` to {} makes it transition the element back to its resting value,
+  // so pausing produced a slow unwind to 0deg instead of a stop. Measured, the
+  // badge was still turning 1.2s after the control said PLAY.
+  //
+  // As a CSS animation it freezes in place under the same one-line rule as
+  // every other loop here, and the rAF loop goes away with it. The reduced
+  // motion path is deliberately unchanged: still a spin, still 60s, declared
+  // in the sheet instead of in this prop.
   return (
-    <motion.div
-      animate={{ rotate: 360 }}
-      transition={{ duration: reduce ? 60 : 18, repeat: Infinity, ease: "linear" }}
-      className={`pointer-events-none ${className}`}
+    <div
+      className={`lz-badge-spin pointer-events-none ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
@@ -425,7 +528,7 @@ export function RotatingBadge({ text = "OUTREACH · ACCOUNTED FOR · LETSZERO ·
           <textPath href="#lz-badge-circle">{text}</textPath>
         </text>
       </svg>
-    </motion.div>
+    </div>
   );
 }
 

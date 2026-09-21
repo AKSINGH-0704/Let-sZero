@@ -298,6 +298,70 @@ export function useMounted() {
   return mounted;
 }
 
+/* ----------------------------------------------------------------
+   AMBIENT MOTION PAUSE — the WCAG 2.2.2 mechanism (Audit 235).
+
+   Everything decorative on this page starts on its own, loops forever and
+   runs beside other content, which is exactly the content SC 2.2.2 (Level A)
+   requires a pause/stop/hide mechanism for. The only one that existed was
+   `:hover`, and a measured sweep of all 36 focusable elements with
+   `preventScroll` never moved the ticker out of `running` — so keyboard users
+   had nothing, and a real touch press-and-hold never matched `:hover` either.
+   `prefers-reduced-motion` covers people who set the OS preference; it is not
+   an in-content mechanism and does not discharge the criterion.
+
+   The state lives on <html> rather than in React because that is what the CSS
+   half of the fix keys off, and because one attribute keeps the two controls
+   agreeing without a store between them. There is no timer, no observer and
+   no per-frame work: flipping one attribute is the entire runtime cost, and
+   CSS does the rest on the compositor.
+
+   Scope is one document. Measured, following the header's /pricing link from
+   this page produces a NEW document - a marker set on `window` and an
+   attribute set on <html> are both gone afterwards - so the state resets on
+   navigation and on reload, and a fresh page starts moving. SC 2.2.2 asks for
+   a mechanism, not a remembered preference, and the users who want motion off
+   everywhere and permanently are already served by prefers-reduced-motion.
+   Persisting it would mean either reading storage during render, which breaks
+   hydration on a prerendered page, or applying it in an effect, which shows a
+   flash of the motion the visitor asked to stop.
+
+   Reduced motion is NOT touched by any of this. Under `reduce` the animations
+   are already `none`, so the control renders nothing at all rather than
+   offering to pause what is not moving.
+---------------------------------------------------------------- */
+const PAUSE_ATTR = "data-motion-paused";
+const PAUSE_EVENT = "letszero:motion-paused";
+
+export function isAmbientPaused() {
+  return typeof document !== "undefined" && document.documentElement.hasAttribute(PAUSE_ATTR);
+}
+
+export function toggleAmbientPaused() {
+  const de = document.documentElement;
+  if (de.hasAttribute(PAUSE_ATTR)) de.removeAttribute(PAUSE_ATTR);
+  else de.setAttribute(PAUSE_ATTR, "");
+  // Every mounted control and every framer-driven loop re-reads the attribute
+  // from this one event, so two controls can never disagree about the state.
+  window.dispatchEvent(new CustomEvent(PAUSE_EVENT));
+}
+
+/**
+ * Starts `false` on the server AND on the first client render, so the
+ * prerendered markup and React's first pass agree; the effect then syncs from
+ * the attribute, which is what carries the state across a remount.
+ */
+export function useAmbientPaused() {
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    const sync = () => setPaused(isAmbientPaused());
+    sync();
+    window.addEventListener(PAUSE_EVENT, sync);
+    return () => window.removeEventListener(PAUSE_EVENT, sync);
+  }, []);
+  return paused;
+}
+
 export function Reveal({ children, delay = 0, y = 28, className = "", once = true }) {
   const reduce = useReducedMotion();
   return (
@@ -376,6 +440,7 @@ export function Tilt({ children, className = "", max = 5 }) {
 /** Drifting aurora color field. mode: "paper" | "ink" */
 export function Aurora({ mode = "paper" }) {
   const reduce = useReducedMotion();
+  const paused = useAmbientPaused();
   const blobs =
     mode === "paper"
       ? [
@@ -405,7 +470,7 @@ export function Aurora({ mode = "paper" }) {
             filter: "blur(70px)",
             willChange: "transform",
           }}
-          animate={reduce ? {} : { x: [0, b.dx, 0], y: [0, b.dy, 0], scale: [1, 1.12, 1] }}
+          animate={reduce || paused ? {} : { x: [0, b.dx, 0], y: [0, b.dy, 0], scale: [1, 1.12, 1] }}
           transition={{ duration: b.dur, repeat: Infinity, ease: "easeInOut" }}
         />
       ))}
