@@ -2,7 +2,7 @@
  * LETSZERO "LIVING LEDGER" — Problem, System (dark control room), Guarantees.
  */
 
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   C,
   EASE,
@@ -17,6 +17,7 @@ import {
   onInk,
   asText,
   useAmbientPaused,
+  useReducedMotionLive,
 } from "./theme.jsx";
 import { IMAGES } from "./fx.jsx";
 
@@ -141,7 +142,10 @@ export function ProblemSection() {
    03 — THE SYSTEM (dark control room)
 ============================================================ */
 export function SystemSection() {
-  const reduce = useReducedMotion();
+  // `reduce` here gates only the pipeline's travelling scan dot, which loops
+  // forever on framer's rAF driver. A one-shot read left it running after a
+  // live switch to reduced motion.
+  const reduce = useReducedMotionLive();
   const paused = useAmbientPaused();
   return (
     <section id="system" className="relative py-24 md:py-36 overflow-hidden" style={{ background: C.ink, color: C.paper }}>

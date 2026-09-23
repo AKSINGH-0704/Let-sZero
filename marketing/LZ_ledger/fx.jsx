@@ -12,7 +12,7 @@ import {
   useSpring,
   useReducedMotion,
 } from "framer-motion";
-import { C, EASE, useMounted, useAmbientPaused, toggleAmbientPaused } from "./theme.jsx";
+import { C, EASE, useMounted, useAmbientPaused, toggleAmbientPaused, useReducedMotionLive } from "./theme.jsx";
 
 /* ----------------------------------------------------------------
    GLOBAL STYLES — fonts, keyframes, cursor + scroll behavior.
@@ -453,7 +453,11 @@ export function ProductPanel({ label, accent = C.teal, accentText, rows = [], fo
 ---------------------------------------------------------------- */
 export function MotionToggle({ tone = "paper", className = "" }) {
   const mounted = useMounted();
-  const reduce = useReducedMotion();
+  // The control has to agree with the stylesheet at all times, including after
+  // the visitor changes the OS preference with this page open. framer's
+  // one-shot read left it claiming to pause loops that were already gone, and
+  // — the direction that actually matters — absent while the tickers ran.
+  const reduce = useReducedMotionLive();
   const paused = useAmbientPaused();
   if (!mounted || reduce) return null;
 

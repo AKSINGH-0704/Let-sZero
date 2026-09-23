@@ -368,6 +368,46 @@ export function useAmbientPaused() {
   return paused;
 }
 
+/**
+ * `prefers-reduced-motion`, re-read whenever the preference actually changes.
+ *
+ * framer's useReducedMotion() resolves the query once and never revisits it.
+ * Measured against production: flipping the OS setting on an open page fires a
+ * `change` event (a control listener registered on the same MediaQueryList saw
+ * it), and the stylesheet follows immediately — `.lz-ticker-track` went from
+ * `lz-ticker` to `none` inside 500ms. The hook's value did not move, at 500ms,
+ * 1.5s, 4s, or after a resize forced a re-render. Three states then contradict
+ * what is on screen:
+ *
+ *   no-preference -> reduce   10 Aurora blobs and the hero arrow keep moving
+ *                             (framer drives those on its own rAF loop, which
+ *                             no stylesheet rule can reach), while the pause
+ *                             control unmounts — so the motion a visitor just
+ *                             asked to stop cannot be stopped by hand either.
+ *   reduce -> no-preference   the tickers start with no pause control present,
+ *                             which is the WCAG 2.2.2 gap Audit 235 closed.
+ *   either direction          a "Pause motion" button offering to pause loops
+ *                             the sheet has already removed.
+ *
+ * Deliberately layered on top of framer's value rather than replacing it: the
+ * first render returns exactly what it returns today, so the prerendered
+ * markup and React's first pass still agree and nothing about hydration
+ * changes. Only the live updates are new. One MediaQueryList listener, no
+ * timer, no rAF, no polling.
+ */
+export function useReducedMotionLive() {
+  const initial = useReducedMotion();
+  const [live, setLive] = useState(null);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setLive(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return live === null ? !!initial : live;
+}
+
 export function Reveal({ children, delay = 0, y = 28, className = "", once = true }) {
   const reduce = useReducedMotion();
   return (
@@ -445,7 +485,11 @@ export function Tilt({ children, className = "", max = 5 }) {
 
 /** Drifting aurora color field. mode: "paper" | "ink" */
 export function Aurora({ mode = "paper" }) {
-  const reduce = useReducedMotion();
+  // Live, not framer's one-shot read: these blobs loop forever on framer's own
+  // rAF driver, so the reduced-motion stylesheet cannot stop them and a stale
+  // value leaves ten of them drifting for someone who just asked for less
+  // motion. Same reason as the tracks, different engine.
+  const reduce = useReducedMotionLive();
   const paused = useAmbientPaused();
   const blobs =
     mode === "paper"

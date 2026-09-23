@@ -12,7 +12,7 @@ import {
   useReducedMotion,
 } from "framer-motion";
 import { ArrowRight, ArrowDown, ChevronDown, Menu, X } from "lucide-react";
-import { C, EASE, LEDGER_EVENTS, PRODUCTS, Counter, Tilt, Aurora, KineticWords, go, asText, useAmbientPaused } from "./theme.jsx";
+import { C, EASE, LEDGER_EVENTS, PRODUCTS, Counter, Tilt, Aurora, KineticWords, go, asText, useAmbientPaused, useReducedMotionLive } from "./theme.jsx";
 import { RotatingBadge, GhostWord, ProductPanel, MotionToggle } from "./fx.jsx";
 
 const NAV_LINKS = [
@@ -361,6 +361,12 @@ const T = 0.05;
 
 export function Hero() {
   const reduce = useReducedMotion();
+  // `reduce` above gates one-shot entry reveals and the scroll-linked drifts,
+  // which are settled by the time any preference change could arrive. The
+  // scroll cue below is the one thing in this component that loops forever, so
+  // it reads the live value instead; keeping them separate leaves the reveals
+  // and the parallax exactly as measured.
+  const reduceLive = useReducedMotionLive();
   const paused = useAmbientPaused();
   const heroRef = useRef(null);
   const { scrollYProgress: heroScroll } = useScroll({
@@ -486,7 +492,7 @@ export function Hero() {
                 style={{ borderColor: `${C.ink}30`, color: C.ink }}
               >
                 See how it works
-                <motion.span animate={reduce || paused ? {} : { y: [0, 4, 0] }} transition={{ duration: 1.6, repeat: Infinity }}>
+                <motion.span animate={reduceLive || paused ? {} : { y: [0, 4, 0] }} transition={{ duration: 1.6, repeat: Infinity }}>
                   <ArrowDown className="w-4 h-4" />
                 </motion.span>
               </motion.a>
