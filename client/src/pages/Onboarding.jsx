@@ -91,10 +91,10 @@ export default function Onboarding() {
   // workspace: members inherit it and never verify one. This is the functional
   // half of the defect — the banners merely pointed here.
   if (!submitted && user && !isWorkspaceOwner && !isRootAdmin && !user.isSecondaryRoot) {
-    return <Redirect to="/app/dashboard" />;
+    return <Redirect to="/app/dashboard" replace />;
   }
   if (!submitted && user && (user.sendingIdentityType || isRootAdmin || user.isSecondaryRoot)) {
-    return <Redirect to="/app/dashboard" />;
+    return <Redirect to="/app/dashboard" replace />;
   }
 
   const handleDomainChange = (val) => {

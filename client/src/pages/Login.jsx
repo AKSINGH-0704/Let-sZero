@@ -450,7 +450,7 @@ export default function Login() {
   if (isAuthenticated) {
     // M39 Phase 1B — honour a validated post-login return path so a purchase started
     // while signed out resumes at checkout; falls back to the dashboard.
-    return <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} />;
+    return <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} replace />;
   }
 
   return (

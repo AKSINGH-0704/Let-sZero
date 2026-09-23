@@ -148,17 +148,42 @@ function LoadingScreen() {
   );
 }
 
+/**
+ * Every guard redirect on this page REPLACES; it never pushes.
+ *
+ * wouter's navigate() defaults to pushState, and <Redirect> forwards its props
+ * straight through as navigate options — so without `replace` each of these
+ * bounces left the route the visitor was thrown out of sitting in history, and
+ * appended the destination after it. Measured against the built app:
+ *
+ *   logged out, open /app/dashboard
+ *     entries ["about:blank", "/app/dashboard", "/login"] — Back returns to
+ *     /app/dashboard, the guard fires again, and the visitor is deposited back
+ *     on /login. Two consecutive Back presses, both absorbed.
+ *
+ *   signed in, navigate to /
+ *     one user action grew history by 2, and three Back presses in a row all
+ *     landed on /app/dashboard.
+ *
+ * A guard bounce is not somewhere the visitor ever was, so it does not belong
+ * in their history. Replacing makes Back mean "the last page I actually chose",
+ * which is what it meant before the guard intervened.
+ *
+ * Deliberately scoped to <Redirect> only. The bare navigate()/setLocation()
+ * calls elsewhere are user-initiated ("take me to Payments"), and those SHOULD
+ * push — that is a real step in the visitor's journey.
+ */
 function ProtectedRoute({ children, requiredRole }) {
   const { isAuthenticated, user } = useAuth();
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    return <Redirect to="/login" replace />;
   }
 
   if (requiredRole) {
     const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
     if (!roles.includes(user?.role)) {
-      return <Redirect to="/app/dashboard" />;
+      return <Redirect to="/app/dashboard" replace />;
     }
   }
 
@@ -248,7 +273,7 @@ function AppRoutes() {
         )}
 
         <Route path="/">
-          {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <LandingExperience />}
+          {() => isAuthenticated ? <Redirect to="/app/dashboard" replace /> : <LandingExperience />}
         </Route>
 
       <Route path="/early-access">
@@ -261,7 +286,7 @@ function AppRoutes() {
 
       <Route path="/login">
         {() => isAuthenticated
-          ? <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} />
+          ? <Redirect to={safeNextPath(new URLSearchParams(window.location.search).get("next"))} replace />
           : <Login />}
       </Route>
 
@@ -352,11 +377,11 @@ function AppRoutes() {
       </Route>
 
       <Route path="/forgot-password">
-        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <ForgotPassword />}
+        {() => isAuthenticated ? <Redirect to="/app/dashboard" replace /> : <ForgotPassword />}
       </Route>
 
       <Route path="/reset-password/token/:token">
-        {() => isAuthenticated ? <Redirect to="/app/dashboard" /> : <ResetByToken />}
+        {() => isAuthenticated ? <Redirect to="/app/dashboard" replace /> : <ResetByToken />}
       </Route>
 
       <Route path="/link-expired">
@@ -477,7 +502,7 @@ function AppRoutes() {
 
       <Route path="/app/:rest*">
         <ProtectedRoute>
-          <Redirect to="/app/dashboard" />
+          <Redirect to="/app/dashboard" replace />
         </ProtectedRoute>
       </Route>
 

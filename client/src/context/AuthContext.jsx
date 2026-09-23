@@ -43,6 +43,35 @@ export function AuthProvider({ children }) {
     setIsInitialized(true);
   }, []);
 
+  // A back/forward restore must re-check the session, because nothing else will.
+  //
+  // Measured against the built app: navigating off-origin and pressing Back
+  // restored this document from the back/forward cache with `pageshow.persisted
+  // === true` — the same document, the same React tree, the same query cache,
+  // and no remount. `/api/auth/me` is held at `staleTime: Infinity` (deliberately
+  // — see the query below), so the restored tab would go on believing whatever
+  // it believed when it was frozen. With the session revoked server-side in
+  // between, the authenticated shell kept rendering and navigating between
+  // /app/* routes; a focus event did not help either, because
+  // refetchOnWindowFocus is a no-op while a query is never stale.
+  //
+  // The server always remained authoritative — every protected call still
+  // answered 401, so no data was ever served — but the customer was left
+  // driving an authenticated-looking shell that no longer had a session behind
+  // it. Invalidating here is what makes a restored document reconcile with the
+  // session that actually exists now. invalidateQueries refetches active
+  // observers regardless of staleTime, which is exactly the escape hatch this
+  // needs; it costs one request, and only on a genuine bfcache restore.
+  useEffect(() => {
+    const onPageShow = (event) => {
+      if (event.persisted) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   // Mirror auth transitions announced by other tabs. A logout elsewhere clears this
   // tab's state; a login elsewhere invalidates so this tab re-reads the now-valid
   // session. Symmetric with the mutations below, so the whole browser stays in one
