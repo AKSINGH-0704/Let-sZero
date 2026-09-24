@@ -72,4 +72,6 @@ Before production publication, run the normal clean-environment install/build/te
 
 This wave changes Resource Center article Markdown only, plus this report. It does not modify the application route architecture, content schema, loader, metadata builders, structured-data builders, sitemap logic, RSS logic, search logic, related-content logic, pricing, Google Ads, consent, or production configuration. `Blogs.docx` remains immutable legacy reference material.
 
-**Deployment state:** not committed, pushed, or deployed by this wave-one QA pass. The next release action is to review the exact Git scope, create the content-and-test-fixture commit, and deploy through the repository’s established production path.
+**Commit:** `4ec69cd009378eb2965dba7e02ad5c66e42a3875` on branch `seo/repmail-topic-expansion-2026-09-24`.
+
+**Deployment state:** committed locally, not pushed or deployed by this wave-one QA pass. The next release action is to review the exact Git scope and deploy through the repository’s established production path.
