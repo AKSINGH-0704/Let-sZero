@@ -9,6 +9,25 @@
     "disposable-email-addresses",
     "role-based-email-addresses",
     "email-list-hygiene-checklist",
-    "outbound-suppression-rules"
+    "outbound-suppression-rules",
+    "email-verification-tools-compared",
+    "email-list-decay-reverification",
+    "why-verified-contacts-bounce",
+    "list-hygiene-metrics-beyond-bounce-rate",
+    "deduplicate-contacts-before-suppression",
+    "email-address-normalization-suppression-matching",
+    "suppression-event-precedence",
+    "validate-suppression-list-import",
+    "unsubscribe-synchronization-crm-sending-provider",
+    "suppression-list-reconciliation-audit",
+    "resubscription-after-unsubscribe",
+    "contact-vs-domain-suppression",
+    "complaint-feedback-loop-suppression",
+    "bounce-webhook-idempotency-suppression",
+    "test-seed-addresses-suppression-metrics",
+    "reactivating-dormant-contacts-suppression",
+    "email-list-quarantine-before-sending",
+    "tracking-suppression-reasons-evidence",
+    "shared-mailboxes-team-aliases-suppression"
   ]
 }

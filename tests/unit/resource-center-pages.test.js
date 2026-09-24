@@ -88,12 +88,12 @@ describe("Resource Center route pages render without errors (real SSR)", () => {
     expect(html).toContain("helps here"); // "How RepMail helps here" (name is a separate text node in SSR)
   });
 
-  it("AcademyHubPage shows an aspirational 'on the way' state with planned topics for a Wave 1-deferred Academy (Compliance)", async () => {
+  it("AcademyHubPage renders the populated Compliance academy added in Wave 1", async () => {
     const html = await renderPage("/src/pages/resource-center/AcademyHubPage.jsx", "/repmail/learn/compliance");
-    expect(html).toContain("academy-empty");
-    expect(html).toContain("This Academy is being written now.");
-    expect(html).toContain("CAN-SPAM and GDPR"); // a real planned topic from academyEditorial
-    expect(html).not.toContain("academy-article-list"); // no fabricated guides
+    expect(html).toContain("Compliance");
+    expect(html).toContain("academy-article-list");
+    expect(html).toContain("Is This Email Transactional or Marketing?");
+    expect(html).not.toContain("academy-empty");
   });
 
   it("AcademyHubPage renders NotFound for an unknown academy slug", async () => {

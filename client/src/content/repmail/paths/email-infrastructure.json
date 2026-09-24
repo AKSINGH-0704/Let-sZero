@@ -9,6 +9,23 @@
     "dns-records-for-email",
     "aws-ses-for-cold-email",
     "shared-vs-dedicated-ip",
-    "separate-sending-domain-for-cold-email"
+    "separate-sending-domain-for-cold-email",
+    "email-infrastructure-audit-checklist",
+    "shared-ip-pool-vendor-questions",
+    "inventory-systems-sending-as-domain",
+    "email-sending-credentials-rotation",
+    "tracking-domain-migration",
+    "email-infrastructure-ownership-matrix-agency",
+    "dkim-selector-rotation-provider-change",
+    "email-authentication-subdomain-scope",
+    "mx-record-cutover-testing-rollback",
+    "ptr-reverse-dns-dedicated-sending-ip",
+    "mta-sts-testing-to-enforcement",
+    "smtp-tls-reporting-tls-rpt",
+    "email-provider-webhook-event-migration",
+    "provider-suppression-reconciliation",
+    "email-provider-rate-limit-retry-queue",
+    "email-dns-change-validation-checklist",
+    "multi-tenant-email-infrastructure-isolation"
   ]
 }

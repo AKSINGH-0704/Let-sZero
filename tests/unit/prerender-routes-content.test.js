@@ -54,11 +54,12 @@ describe("getPublicRoutes — derived from the real content, never hand-maintain
     for (const p of expectedPaths) expect(findRoute(p), `missing route ${p}`).toBeTruthy();
   });
 
-  it("only emits an Academy hub once that Academy has content — an empty Academy is never indexed as a thin page", () => {
+  it("emits an Academy hub once that Academy has content — an empty Academy is never indexed as a thin page", () => {
     const academySlugsWithContent = new Set(articles.map((a) => a.academy.slug));
-    expect(academySlugsWithContent.has("lead-generation")).toBe(false);
-    expect(findRoute("/repmail/learn/lead-generation")).toBeFalsy();
-    expect(findRoute("/repmail/learn/compliance")).toBeFalsy();
+    expect(academySlugsWithContent.has("lead-generation")).toBe(true);
+    expect(findRoute("/repmail/learn/lead-generation")).toBeTruthy();
+    expect(academySlugsWithContent.has("compliance")).toBe(true);
+    expect(findRoute("/repmail/learn/compliance")).toBeTruthy();
   });
 
   it("every article route reuses buildArticleJsonLd — BlogPosting with an Organization author (repmail-team, ADR-014), built from the real frontmatter", () => {
