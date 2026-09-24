@@ -97,8 +97,8 @@ describe("groupGuidesByAcademy", () => {
   it("groups the real content and drops Academies with nothing published", () => {
     const groups = groupGuidesByAcademy(product, realArticles);
     const slugs = groups.map((g) => g.academy.slug);
-    expect(slugs).not.toContain("lead-generation"); // genuinely empty
-    expect(slugs).not.toContain("compliance"); // genuinely empty
+    expect(slugs).toContain("lead-generation"); // Wave 1 now publishes this academy
+    expect(slugs).toContain("compliance"); // Wave 1 now publishes this academy
     expect(slugs).toContain("deliverability");
     expect(slugs).toContain("glossary");
     for (const g of groups) expect(g.articles.length).toBeGreaterThan(0);

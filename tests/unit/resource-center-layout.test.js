@@ -56,9 +56,9 @@ describe("ResourceCenterLayout — persistent chrome", () => {
     for (const filledSlug of ["deliverability", "cold-email", "outreach", "infrastructure", "email-platform", "glossary"]) {
       expect(html).toContain(`link-nav-academy-${filledSlug}`);
     }
-    // The Academies that are still genuinely empty must NOT appear:
-    for (const emptySlug of ["lead-generation", "compliance"]) {
-      expect(html).not.toContain(`link-nav-academy-${emptySlug}`);
+    // Wave 1 now publishes lead-generation and compliance content too.
+    for (const filledSlug of ["lead-generation", "compliance"]) {
+      expect(html).toContain(`link-nav-academy-${filledSlug}`);
     }
   });
 
