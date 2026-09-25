@@ -77,7 +77,7 @@ No existing Resource Center article was rewritten or deleted. The Wave 2 changes
 
 ## Release state
 
-This report documents the completed research, drafting, integration, and local QA gates. The branch is ready for exact-scope staging and review. The verified commits were pushed normally to `main`; Railway-triggered production rollout succeeded, and post-deployment HTTP/browser verification is recorded in `POST_DEPLOYMENT_RELEASE_VERIFICATION.md`.
+This report documents the completed research, drafting, integration, local QA, deployment, and production verification gates. The verified commits were pushed normally to `main`; Railway-triggered production rollout succeeded, and post-deployment HTTP/browser verification is recorded in `POST_DEPLOYMENT_RELEASE_VERIFICATION.md`.
 
 **Wave 2 branch:** `seo/repmail-topic-expansion-wave2-20260925`
 **Commit:** `20fb942e9c1d8daffdc2d4517a9640771cfe30be`
