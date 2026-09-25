@@ -3,9 +3,26 @@
   "name": "Core Email Glossary",
   "description": "Canonical one-page definitions of the terms every sender should know: authentication, infrastructure, and deliverability, each linking to its full guide.",
   "articleSlugs": [
-    "spf", "dkim", "dmarc", "arc", "bimi",
-    "smtp", "dns-records", "ptr-record", "mx-record",
-    "reputation", "spam-score", "inbox-placement", "bounce", "email-warmup",
-    "email-service-provider"
+    "spf",
+    "dkim",
+    "dmarc",
+    "arc",
+    "bimi",
+    "smtp",
+    "dns-records",
+    "ptr-record",
+    "mx-record",
+    "reputation",
+    "spam-score",
+    "inbox-placement",
+    "bounce",
+    "email-warmup",
+    "email-service-provider",
+    "ctr-vs-ctor-email",
+    "email-delivery-latency",
+    "email-delivery-status-denominators",
+    "authentication-results-header",
+    "email-greylisting",
+    "list-unsubscribe-one-click-semantics"
   ]
 }

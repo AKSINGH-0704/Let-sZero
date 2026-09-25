@@ -1,0 +1,728 @@
+{
+  "generatedAt": "2026-09-25",
+  "baseline": {
+    "articles": 414,
+    "markdownFiles": 414,
+    "collections": 17,
+    "learningPaths": 6,
+    "publicRoutes": 455
+  },
+  "selectionCount": 288,
+  "exact": {
+    "ids": [],
+    "slugs": [],
+    "titles": []
+  },
+  "missingRequiredFields": [],
+  "emptyEvidence": [
+    {
+      "id": "wave2-011-can-spam-opt-out-sla-monitoring",
+      "title": "CAN-SPAM Opt-Out SLA Monitoring and Escalation",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-012-can-spam-primary-purpose-classifier",
+      "title": "CAN-SPAM Primary-Purpose Classifier for Mixed Emails",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-013-casl-implied-consent-expiry-calendar",
+      "title": "CASL Implied Consent Expiry Calendar",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-030-consent-capture-ux-qa",
+      "title": "Consent Capture UX QA: No Prechecked Boxes, Clear Purpose",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-033-deletion-holds-suppression-compliance-evidence",
+      "title": "Deletion Holds for Suppression and Compliance Evidence",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-036-dpia-ai-personalization-data-flow",
+      "title": "DPIA for AI Personalization: Data Flow and Residual Risk",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-037-dpia-triage-prospect-enrichment-profiling",
+      "title": "DPIA Triage for Prospect Enrichment and Profiling",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-058-international-transfer-triage-prospect-data",
+      "title": "International Transfer Triage for Prospect Data",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-061-lawful-basis-change-control-outreach",
+      "title": "Lawful Basis Change Control for Outreach Data",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-069-privacy-notice-update-trigger-outreach",
+      "title": "Privacy Notice Update Trigger for New Outreach Purposes",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-071-purpose-compatibility-review-prospect-data",
+      "title": "Purpose Compatibility Review Before Reusing Prospect Data",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-072-regional-campaign-routing-location-uncertain",
+      "title": "Regional Campaign Routing When Recipient Location Is Uncertain",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-100-adequacy-vs-safeguard-cross-border-routing",
+      "title": "Adequacy Decision vs. Safeguard: Cross-Border Routing Choice",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-111-b2b-corporate-subscriber-vs-individual-address",
+      "title": "B2B Corporate Subscriber vs. Individual Address: PECR Routing",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-114-can-spam-sender-initiator-responsibility-map",
+      "title": "CAN-SPAM Sender and Initiator Responsibility Map",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-115-casl-abandoned-cart-inquiry-consent-review",
+      "title": "CASL Abandoned Cart and Inquiry Consent Review",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-116-casl-express-consent-evidence-packet",
+      "title": "CASL Express Consent Evidence Packet",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-117-casl-identification-agencies-affiliates",
+      "title": "CASL Identification for Agencies and Multiple Affiliates",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-124-cname-flattening-dkim-verification",
+      "title": "CNAME Flattening and DKIM Verification: Detecting Provider Interference",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-134-consent-withdrawal-vs-marketing-suppression",
+      "title": "Consent Withdrawal vs. Marketing Suppression: Keep Both Signals",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-141-dpia-signoff-residual-high-risk-escalation",
+      "title": "DPIA Sign-Off and Residual High-Risk Escalation",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-166-multiple-dkim-signatures-dmarc",
+      "title": "DKIM Multiple Signatures: Which Signature Can Satisfy DMARC?",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-171-onward-transfer-inventory-email-services",
+      "title": "Onward Transfer Inventory for Email Service Chains",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-183-scc-transfer-impact-assessment-evidence",
+      "title": "SCC and Transfer Impact Assessment Evidence Pack",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-186-spf-helo-vs-mail-from-identity",
+      "title": "SPF HELO vs MAIL FROM: Which Identity Did the Receiver Check?",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "observed_user_problem"
+    },
+    {
+      "id": "wave2-203-dpia-review-after-processing-change",
+      "title": "DPIA Review After a New Vendor, Model, or Data Source",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-210-processor-controller-outreach-role-map",
+      "title": "Processor vs. Controller Role Map for Outreach Vendors",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "authoritative_guidance"
+    },
+    {
+      "id": "wave2-217-arc-chain-first-failure",
+      "title": "ARC Chain Validation Failure: Find the First Broken Instance",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "serp_observed"
+    },
+    {
+      "id": "wave2-219-bimi-svg-validation-failures",
+      "title": "BIMI SVG Validation Failures: A Preflight Checklist",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-220-bimi-vmc-vs-cmc-evidence",
+      "title": "BIMI VMC vs CMC: Evidence Needed Before Choosing a Certificate",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "serp_observed"
+    },
+    {
+      "id": "wave2-237-dkim-canonicalization-rewriting",
+      "title": "DKIM Canonicalization Choices: Simple vs Relaxed Under Rewriting",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-238-dmarc-header-from-display-name",
+      "title": "DMARC Header From vs Display From: Identity Parsing Checklist",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "serp_observed"
+    },
+    {
+      "id": "wave2-239-dmarc-policy-discovery-outcomes",
+      "title": "DMARC Policy Discovery: Parent, Subdomain, and No-Record Outcomes",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-240-dmarc-rua-mailbox-validation",
+      "title": "DMARC rua Mailbox Validation: Preventing Misrouted Aggregate Reports",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "serp_observed"
+    },
+    {
+      "id": "wave2-241-dsar-search-scope-outreach-systems",
+      "title": "DSAR Search Scope for CRM, Sender, and Suppression Systems",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-245-eprivacy-vs-gdpr-two-layer-permission-map",
+      "title": "ePrivacy vs. GDPR: Two-Layer Marketing Permission Map",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-260-soft-opt-in-existing-customer-decision-tree",
+      "title": "Soft Opt-In Decision Tree for Existing Customers",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-274-authentication-drift-detection",
+      "title": "Authentication Drift Detection: Compare Intended and Observed Senders",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "repeated_competitor_coverage"
+    },
+    {
+      "id": "wave2-280-dkim-key-length-compatibility-matrix",
+      "title": "DKIM Key Length Compatibility Test Matrix",
+      "cluster": "Email authentication and DNS",
+      "evidenceClass": "serp_observed"
+    },
+    {
+      "id": "wave2-287-subprocessor-register-email-enrichment",
+      "title": "Subprocessor Register Review for Email and Enrichment Vendors",
+      "cluster": "Compliance and privacy operations",
+      "evidenceClass": "repeated_competitor_coverage"
+    }
+  ],
+  "invalidAcademy": [],
+  "invalidContentType": [],
+  "existingSlugCollisions": [],
+  "existingTitleCollisions": [],
+  "existingNearCollisionCount": 0,
+  "existingNearCollisions": [],
+  "internalNearCollisionCount": 0,
+  "internalNearCollisions": [],
+  "resurrectedWave1Rejected": [],
+  "suggestedNavigationUnknownCount": 67,
+  "suggestedNavigationUnknown": [
+    {
+      "id": "wave2-002-agency-departing-account-owner-knowledge-transfer",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-003-agency-sales-to-delivery-handoff-record",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-006-authentication-record-change-worksheet",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-010-campaign-rollback-pause-decision-table",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-014-client-data-deletion-certificate-retention-exceptions",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-015-client-exit-export-package-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-016-client-owned-vs-agency-owned-account-decision-tree",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-017-client-report-access-controls-isolation",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-031-cross-client-suppression-ownership-governance",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-038-duplicate-contact-resolution-decision-table",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-044-enrichment-conflict-resolution-prospect-data",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-045-enrichment-field-priority-matrix",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-057-intent-signal-thresholds-action",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-066-out-of-office-classification-revisit-queue",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-073-reject-recycle-codes-prospect-handoff",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-074-reply-ownership-sla-multi-client-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-075-role-evidence-matrix-decision-maker",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-076-sdr-handoff-packet-qualified-account",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-077-segment-drift-detect-icp-mismatch",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-082-stale-prospect-record-quarantine",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-101-agency-client-account-transfer-acceptance-test",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-102-agency-outbound-report-qa-checklist",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-103-agency-permission-matrix-client-contractor-vendor",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-104-agency-subcontractor-access-review-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-118-client-campaign-rollback-restore-checklist",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-119-client-consent-evidence-register-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-120-client-outbound-service-catalog-responsibility-boundaries",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-121-client-recovery-methods-break-glass-access",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-122-client-report-source-trace-worksheet",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-123-client-reporting-data-dictionary-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-135-contact-to-account-matching-ambiguous-domains",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-138-data-freshness-sla-prospect-lists",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-155-firmographic-segmentation-fields-sales-motion",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-161-mailbox-credential-recovery-inventory",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-162-merge-field-safety-test-sheet",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-170-oauth-token-inventory-agency-client-accounts",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-174-post-offboarding-access-verification-client-systems",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-178-provider-escalation-readiness-checklist",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-180-purchased-list-due-diligence-checklist",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-187-spf-include-dependency-map",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-190-unsubscribe-request-evidence-register",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-194-warmup-live-sending-handoff-form",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-195-webhook-event-contract-test-matrix",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-200-data-provenance-register-prospect-lists",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-201-dkim-selector-ownership-register",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-202-dmarc-aggregate-report-review-queue",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-206-gmail-postmaster-snapshot-log",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-207-icp-vs-buyer-persona-account-person-fit",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-208-microsoft-message-trace-request-form",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-211-prospect-correction-suppression-intake",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-213-suppression-exception-review-form",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-216-agency-client-pause-vs-termination-protocol",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-223-bounce-evidence-capture-form",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-225-client-isolation-test-data-boundaries",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-226-client-outbound-incident-escalation-matrix",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-227-client-renewal-readiness-outbound-retainers",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-242-email-authentication-vendor-offboarding-checklist",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-249-list-import-acceptance-test-plan",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-250-list-import-qa-required-fields-suppression",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-259-smtp-error-to-action-decision-table",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-272-agency-shared-vs-client-dedicated-mailbox",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-273-approval-authority-matrix-client-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-277-campaign-pause-communications-template",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-278-client-offboarding-evidence-pack-outbound",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-281-emergency-client-change-protocol-live-campaigns",
+      "suggestion": "agency-outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-283-list-sourcing-decision-tree-build-buy-reuse",
+      "suggestion": "lead-generation-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    },
+    {
+      "id": "wave2-284-provider-incident-intake-worksheet",
+      "suggestion": "outreach-operations",
+      "collectionKnown": false,
+      "pathKnown": false
+    }
+  ],
+  "countsByAcademy": {
+    "cold-email": 40,
+    "compliance": 29,
+    "deliverability": 105,
+    "email-platform": 1,
+    "glossary": 13,
+    "infrastructure": 33,
+    "lead-generation": 15,
+    "outreach": 52
+  },
+  "countsByContentType": {
+    "comparison": 32,
+    "glossary-term": 1,
+    "guide": 122,
+    "knowledge-base": 14,
+    "template": 107,
+    "tutorial": 12
+  },
+  "countsByCluster": {
+    "Advanced email and deliverability glossary": 13,
+    "Agency outreach workflows": 27,
+    "AI-assisted outreach and personalization": 14,
+    "Cold email copy and message quality": 26,
+    "Compliance and privacy operations": 29,
+    "Cross-cluster emerging deliverability gaps": 37,
+    "Email architecture and platform comparisons": 1,
+    "Email authentication and DNS": 12,
+    "Email infrastructure and sending": 21,
+    "Lead generation and account qualification": 15,
+    "List quality and suppression": 20,
+    "Outreach templates and operational resources": 25,
+    "Provider-specific deliverability": 24,
+    "Reputation recovery and incident response": 24
+  },
+  "countsByEvidenceClass": {
+    "authoritative_first_party": 40,
+    "authoritative_first-party": 10,
+    "authoritative_guidance": 18,
+    "authoritative_standard": 2,
+    "first_party_change": 6,
+    "first_party_documentation": 17,
+    "first_party_plus_authoritative": 3,
+    "first_party_plus_observed_problem": 1,
+    "measured": 4,
+    "observed_user_problem": 97,
+    "observed_user_problem;_unmeasured": 3,
+    "repeated_competitor_coverage": 44,
+    "repeated_competitor_coverage;_observed_user_problem": 4,
+    "serp_observed": 23,
+    "serp_observed;_authoritative_standard": 1,
+    "serp_observed;_observed_user_problem": 9,
+    "serp_observed;_repeated_competitor_coverage": 1,
+    "visible_serp_proxy": 5
+  },
+  "decision": "PROVISIONAL — semantic review, source revalidation, and final reducer required before writing"
+}

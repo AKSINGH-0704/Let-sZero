@@ -1,0 +1,1740 @@
+{
+  "generatedAt": "2026-09-25",
+  "createdCount": 161,
+  "collisions": [],
+  "collectionAdds": {
+    "deliverability-diagnostics": [
+      "accepted-gmail-missing-outlook-handoff",
+      "email-deliverability-change-log-vendors-dns",
+      "google-workspace-quarantine-evidence-request",
+      "hard-soft-unknown-list-workflow",
+      "informational-blocklist-listing-early-warning",
+      "ip-vs-domain-blocklist-triage",
+      "microsoft-365-email-delivery-troubleshooter-inputs",
+      "outlook-com-sender-support-evidence-packet",
+      "verified-mark-certificate-ownership-renewal",
+      "bounce-spike-after-dns-change",
+      "deduplicate-before-email-verification",
+      "disposable-detection-point-of-capture",
+      "email-syntax-regex-cannot-prove",
+      "google-workspace-vs-personal-gmail-test",
+      "icloud-mail-no-feedback-loop-complaint-proxy",
+      "microsoft-365-message-trace-says-delivered-next-evidence",
+      "new-campaign-complaint-spike-comparison",
+      "valid-p2-from-reply-to-automated-outreach",
+      "yahoo-spam-rate-denominator",
+      "blocklist-delisting-evidence-packet",
+      "bounce-incident-triage-dns-recipient-policy-reputation",
+      "complaint-spike-cohort-analysis",
+      "icloud-mail-delivery-escalation-packet",
+      "microsoft-365-message-trace-search-window-evidence",
+      "post-incident-review-email-deliverability",
+      "provider-acceptance-evidence-matrix",
+      "spam-folder-recovery-by-provider",
+      "spamhaus-sbl-xbl-pbl-dbl-explained",
+      "yahoo-sender-support-new-ip-domain-launch",
+      "yahoo-smtp-error-codes-sender-triage",
+      "compromised-account-blocklist-containment",
+      "first-15-minutes-deliverability-incident",
+      "spam-recovery-after-content-change",
+      "yahoo-sender-hub-insights-vs-complaint-feedback-loop"
+    ],
+    "outreach-measurement": [
+      "agency-departing-account-owner-knowledge-transfer",
+      "agency-sales-to-delivery-handoff-record",
+      "campaign-rollback-pause-decision-table",
+      "client-data-deletion-certificate-retention-exceptions",
+      "client-exit-export-package-outbound",
+      "client-report-access-controls-isolation",
+      "out-of-office-classification-revisit-queue",
+      "reply-ownership-sla-multi-client-outbound",
+      "agency-client-account-transfer-acceptance-test",
+      "agency-outbound-report-qa-checklist",
+      "agency-permission-matrix-client-contractor-vendor",
+      "agency-subcontractor-access-review-outbound",
+      "client-consent-evidence-register-outbound",
+      "client-recovery-methods-break-glass-access",
+      "client-report-source-trace-worksheet",
+      "client-reporting-data-dictionary-outbound",
+      "mailbox-credential-recovery-inventory",
+      "oauth-token-inventory-agency-client-accounts",
+      "post-offboarding-access-verification-client-systems",
+      "provider-escalation-readiness-checklist",
+      "spf-include-dependency-map",
+      "unsubscribe-request-evidence-register",
+      "dkim-selector-ownership-register",
+      "gmail-postmaster-snapshot-log",
+      "microsoft-message-trace-request-form",
+      "prospect-correction-suppression-intake",
+      "bounce-evidence-capture-form",
+      "client-isolation-test-data-boundaries",
+      "email-authentication-vendor-offboarding-checklist",
+      "list-import-acceptance-test-plan",
+      "smtp-error-to-action-decision-table",
+      "campaign-pause-communications-template",
+      "client-offboarding-evidence-pack-outbound"
+    ],
+    "cold-email-message-quality": [
+      "ai-outreach-data-deletion-subject-request",
+      "cold-email-follow-up-stop-conditions-silence",
+      "cold-email-follow-up-subject-continuity",
+      "cold-email-offer-clarity-test",
+      "cold-email-proof-to-promise-ratio",
+      "cold-email-subject-body-promise-match",
+      "cold-email-worth-a-reply-cta-test",
+      "when-not-to-personalize-evidence-insufficient",
+      "ai-outreach-ab-test-guardrails",
+      "ai-outreach-hallucination-escalation-matrix",
+      "ai-vendor-data-retention-questions-outreach",
+      "cold-email-copy-qa-before-launch",
+      "cold-email-follow-up-positive-vague-reply",
+      "cold-email-link-cta-destination-qa",
+      "cold-email-not-interested-respectful-exit",
+      "cold-email-test-stop-rules-negative-signals",
+      "prompt-injection-defense-prospect-research-agents",
+      "cold-email-unsubscribe-wording-clear",
+      "consumer-vs-business-ai-prospect-data",
+      "cold-email-cta-specificity-one-action",
+      "cold-email-message-test-plan-isolate-variable",
+      "cold-email-opening-line-audit",
+      "cold-email-segment-to-message-fit-check",
+      "human-approval-gates-ai-personalized-sequences",
+      "personalization-fallback-hierarchy"
+    ],
+    "email-infrastructure-decisions": [
+      "aws-ses-sandbox-production-readiness",
+      "aws-ses-smtp-credentials-rotation",
+      "ses-rendering-failures-template-data",
+      "aws-ses-api-v2-formatted-vs-raw",
+      "aws-ses-configuration-sets-routing",
+      "bulk-email-partial-failure-reconciliation",
+      "cname-flattening-dkim-verification",
+      "email-api-rate-limit-headers-retry-after",
+      "email-provider-retries-exponential-backoff-jitter",
+      "email-rate-limit-429-454-throttles",
+      "email-webhook-acknowledgement-processing",
+      "email-webhook-signature-replay-protection",
+      "multiple-dkim-signatures-dmarc",
+      "ses-delivery-delay-events",
+      "smtp-vs-email-api-sending-interface",
+      "aws-ses-daily-quota-vs-sending-rate",
+      "email-send-state-machine",
+      "arc-chain-first-failure",
+      "bimi-svg-validation-failures",
+      "bimi-vmc-vs-cmc-evidence",
+      "dkim-canonicalization-rewriting",
+      "dmarc-policy-discovery-outcomes",
+      "authentication-drift-detection",
+      "aws-ses-event-destinations-compared"
+    ],
+    "compliance-operations": [
+      "can-spam-opt-out-sla-monitoring",
+      "casl-implied-consent-expiry-calendar",
+      "consent-capture-ux-qa",
+      "dpia-triage-prospect-enrichment-profiling",
+      "international-transfer-triage-prospect-data",
+      "lawful-basis-change-control-outreach",
+      "privacy-notice-update-trigger-outreach",
+      "purpose-compatibility-review-prospect-data",
+      "regional-campaign-routing-location-uncertain",
+      "vendor-offboarding-outreach-data-access",
+      "adequacy-vs-safeguard-cross-border-routing",
+      "b2b-corporate-subscriber-vs-individual-address",
+      "can-spam-sender-initiator-responsibility-map",
+      "casl-express-consent-evidence-packet",
+      "casl-identification-agencies-affiliates",
+      "consent-withdrawal-vs-marketing-suppression",
+      "dpia-signoff-residual-high-risk-escalation",
+      "onward-transfer-inventory-email-services",
+      "scc-transfer-impact-assessment-evidence",
+      "dpia-review-after-processing-change",
+      "processor-controller-outreach-role-map",
+      "dsar-search-scope-outreach-systems",
+      "eprivacy-vs-gdpr-two-layer-permission-map",
+      "soft-opt-in-existing-customer-decision-tree",
+      "subprocessor-register-email-enrichment"
+    ],
+    "list-quality-operations": [
+      "enrichment-conflict-resolution-prospect-data",
+      "enrichment-field-priority-matrix",
+      "intent-signal-thresholds-action",
+      "role-evidence-matrix-decision-maker",
+      "sdr-handoff-packet-qualified-account",
+      "segment-drift-detect-icp-mismatch",
+      "stale-prospect-record-quarantine",
+      "contact-to-account-matching-ambiguous-domains",
+      "data-freshness-sla-prospect-lists",
+      "firmographic-segmentation-fields-sales-motion",
+      "purchased-list-due-diligence-checklist",
+      "icp-vs-buyer-persona-account-person-fit",
+      "list-import-qa-required-fields-suppression",
+      "list-sourcing-decision-tree-build-buy-reuse"
+    ],
+    "core-email-glossary": [
+      "ctr-vs-ctor-email",
+      "email-delivery-latency",
+      "email-delivery-status-denominators",
+      "authentication-results-header",
+      "email-greylisting",
+      "list-unsubscribe-one-click-semantics"
+    ]
+  },
+  "pathAdds": {
+    "provider-deliverability-diagnostics": [
+      "accepted-gmail-missing-outlook-handoff",
+      "email-deliverability-change-log-vendors-dns",
+      "google-workspace-quarantine-evidence-request",
+      "hard-soft-unknown-list-workflow",
+      "informational-blocklist-listing-early-warning",
+      "ip-vs-domain-blocklist-triage",
+      "microsoft-365-email-delivery-troubleshooter-inputs",
+      "outlook-com-sender-support-evidence-packet",
+      "verified-mark-certificate-ownership-renewal",
+      "bounce-spike-after-dns-change",
+      "deduplicate-before-email-verification",
+      "disposable-detection-point-of-capture",
+      "email-syntax-regex-cannot-prove",
+      "google-workspace-vs-personal-gmail-test",
+      "icloud-mail-no-feedback-loop-complaint-proxy",
+      "microsoft-365-message-trace-says-delivered-next-evidence",
+      "new-campaign-complaint-spike-comparison",
+      "valid-p2-from-reply-to-automated-outreach",
+      "yahoo-spam-rate-denominator",
+      "blocklist-delisting-evidence-packet",
+      "bounce-incident-triage-dns-recipient-policy-reputation",
+      "complaint-spike-cohort-analysis",
+      "icloud-mail-delivery-escalation-packet",
+      "microsoft-365-message-trace-search-window-evidence",
+      "post-incident-review-email-deliverability",
+      "provider-acceptance-evidence-matrix",
+      "spam-folder-recovery-by-provider",
+      "spamhaus-sbl-xbl-pbl-dbl-explained",
+      "yahoo-sender-support-new-ip-domain-launch",
+      "yahoo-smtp-error-codes-sender-triage",
+      "compromised-account-blocklist-containment",
+      "first-15-minutes-deliverability-incident",
+      "spam-recovery-after-content-change",
+      "yahoo-sender-hub-insights-vs-complaint-feedback-loop"
+    ],
+    "cold-email-message-quality": [
+      "ai-outreach-data-deletion-subject-request",
+      "cold-email-follow-up-stop-conditions-silence",
+      "cold-email-follow-up-subject-continuity",
+      "cold-email-offer-clarity-test",
+      "cold-email-proof-to-promise-ratio",
+      "cold-email-subject-body-promise-match",
+      "cold-email-worth-a-reply-cta-test",
+      "when-not-to-personalize-evidence-insufficient",
+      "ai-outreach-ab-test-guardrails",
+      "ai-outreach-hallucination-escalation-matrix",
+      "ai-vendor-data-retention-questions-outreach",
+      "cold-email-copy-qa-before-launch",
+      "cold-email-follow-up-positive-vague-reply",
+      "cold-email-link-cta-destination-qa",
+      "cold-email-not-interested-respectful-exit",
+      "cold-email-test-stop-rules-negative-signals",
+      "prompt-injection-defense-prospect-research-agents",
+      "cold-email-unsubscribe-wording-clear",
+      "consumer-vs-business-ai-prospect-data",
+      "cold-email-cta-specificity-one-action",
+      "cold-email-message-test-plan-isolate-variable",
+      "cold-email-opening-line-audit",
+      "cold-email-segment-to-message-fit-check",
+      "human-approval-gates-ai-personalized-sequences",
+      "personalization-fallback-hierarchy"
+    ],
+    "email-infrastructure": [
+      "aws-ses-sandbox-production-readiness",
+      "aws-ses-smtp-credentials-rotation",
+      "ses-rendering-failures-template-data",
+      "aws-ses-api-v2-formatted-vs-raw",
+      "aws-ses-configuration-sets-routing",
+      "bulk-email-partial-failure-reconciliation",
+      "cname-flattening-dkim-verification",
+      "email-api-rate-limit-headers-retry-after",
+      "email-provider-retries-exponential-backoff-jitter",
+      "email-rate-limit-429-454-throttles",
+      "email-webhook-acknowledgement-processing",
+      "email-webhook-signature-replay-protection",
+      "multiple-dkim-signatures-dmarc",
+      "ses-delivery-delay-events",
+      "smtp-vs-email-api-sending-interface",
+      "aws-ses-daily-quota-vs-sending-rate",
+      "email-send-state-machine",
+      "arc-chain-first-failure",
+      "bimi-svg-validation-failures",
+      "bimi-vmc-vs-cmc-evidence",
+      "dkim-canonicalization-rewriting",
+      "dmarc-policy-discovery-outcomes",
+      "authentication-drift-detection",
+      "aws-ses-event-destinations-compared"
+    ],
+    "list-quality-and-suppression": [
+      "enrichment-conflict-resolution-prospect-data",
+      "enrichment-field-priority-matrix",
+      "intent-signal-thresholds-action",
+      "role-evidence-matrix-decision-maker",
+      "sdr-handoff-packet-qualified-account",
+      "segment-drift-detect-icp-mismatch",
+      "stale-prospect-record-quarantine",
+      "contact-to-account-matching-ambiguous-domains",
+      "data-freshness-sla-prospect-lists",
+      "firmographic-segmentation-fields-sales-motion",
+      "purchased-list-due-diligence-checklist",
+      "icp-vs-buyer-persona-account-person-fit",
+      "list-import-qa-required-fields-suppression",
+      "list-sourcing-decision-tree-build-buy-reuse"
+    ]
+  },
+  "created": [
+    {
+      "id": "wave2-001-accepted-gmail-missing-outlook-handoff",
+      "slug": "accepted-gmail-missing-outlook-handoff",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 983,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-002-agency-departing-account-owner-knowledge-transfer",
+      "slug": "agency-departing-account-owner-knowledge-transfer",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 807,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-003-agency-sales-to-delivery-handoff-record",
+      "slug": "agency-sales-to-delivery-handoff-record",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 825,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-004-ai-outreach-data-deletion-subject-request",
+      "slug": "ai-outreach-data-deletion-subject-request",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 1045,
+      "sourceCount": 8
+    },
+    {
+      "id": "wave2-007-aws-ses-sandbox-production-readiness",
+      "slug": "aws-ses-sandbox-production-readiness",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 999,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-008-aws-ses-smtp-credentials-rotation",
+      "slug": "aws-ses-smtp-credentials-rotation",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 891,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-010-campaign-rollback-pause-decision-table",
+      "slug": "campaign-rollback-pause-decision-table",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 978,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-011-can-spam-opt-out-sla-monitoring",
+      "slug": "can-spam-opt-out-sla-monitoring",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 760,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-013-casl-implied-consent-expiry-calendar",
+      "slug": "casl-implied-consent-expiry-calendar",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 856,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-014-client-data-deletion-certificate-retention-exceptions",
+      "slug": "client-data-deletion-certificate-retention-exceptions",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 892,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-015-client-exit-export-package-outbound",
+      "slug": "client-exit-export-package-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 830,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-017-client-report-access-controls-isolation",
+      "slug": "client-report-access-controls-isolation",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 760,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-020-cold-email-follow-up-stop-conditions-silence",
+      "slug": "cold-email-follow-up-stop-conditions-silence",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 966,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-021-cold-email-follow-up-subject-continuity",
+      "slug": "cold-email-follow-up-subject-continuity",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 1029,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-023-cold-email-offer-clarity-test",
+      "slug": "cold-email-offer-clarity-test",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 780,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-024-cold-email-proof-to-promise-ratio",
+      "slug": "cold-email-proof-to-promise-ratio",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 845,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-027-cold-email-subject-body-promise-match",
+      "slug": "cold-email-subject-body-promise-match",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 893,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-028-cold-email-worth-a-reply-cta-test",
+      "slug": "cold-email-worth-a-reply-cta-test",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 934,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-030-consent-capture-ux-qa",
+      "slug": "consent-capture-ux-qa",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 818,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-037-dpia-triage-prospect-enrichment-profiling",
+      "slug": "dpia-triage-prospect-enrichment-profiling",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 905,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-040-email-deliverability-change-log-vendors-dns",
+      "slug": "email-deliverability-change-log-vendors-dns",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 921,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-044-enrichment-conflict-resolution-prospect-data",
+      "slug": "enrichment-conflict-resolution-prospect-data",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 870,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-045-enrichment-field-priority-matrix",
+      "slug": "enrichment-field-priority-matrix",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 870,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-053-google-workspace-quarantine-evidence-request",
+      "slug": "google-workspace-quarantine-evidence-request",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 1056,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-054-hard-soft-unknown-list-workflow",
+      "slug": "hard-soft-unknown-list-workflow",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 946,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-056-informational-blocklist-listing-early-warning",
+      "slug": "informational-blocklist-listing-early-warning",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 812,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-057-intent-signal-thresholds-action",
+      "slug": "intent-signal-thresholds-action",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 980,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-058-international-transfer-triage-prospect-data",
+      "slug": "international-transfer-triage-prospect-data",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 774,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-059-ip-vs-domain-blocklist-triage",
+      "slug": "ip-vs-domain-blocklist-triage",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 994,
+      "sourceCount": 7
+    },
+    {
+      "id": "wave2-061-lawful-basis-change-control-outreach",
+      "slug": "lawful-basis-change-control-outreach",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 969,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-062-microsoft-365-email-delivery-troubleshooter-inputs",
+      "slug": "microsoft-365-email-delivery-troubleshooter-inputs",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 916,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-066-out-of-office-classification-revisit-queue",
+      "slug": "out-of-office-classification-revisit-queue",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 1022,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-068-outlook-com-sender-support-evidence-packet",
+      "slug": "outlook-com-sender-support-evidence-packet",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 899,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-069-privacy-notice-update-trigger-outreach",
+      "slug": "privacy-notice-update-trigger-outreach",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 968,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-071-purpose-compatibility-review-prospect-data",
+      "slug": "purpose-compatibility-review-prospect-data",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 846,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-072-regional-campaign-routing-location-uncertain",
+      "slug": "regional-campaign-routing-location-uncertain",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 805,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-074-reply-ownership-sla-multi-client-outbound",
+      "slug": "reply-ownership-sla-multi-client-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 754,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-075-role-evidence-matrix-decision-maker",
+      "slug": "role-evidence-matrix-decision-maker",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 783,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-076-sdr-handoff-packet-qualified-account",
+      "slug": "sdr-handoff-packet-qualified-account",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 881,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-077-segment-drift-detect-icp-mismatch",
+      "slug": "segment-drift-detect-icp-mismatch",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 859,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-079-ses-rendering-failures-template-data",
+      "slug": "ses-rendering-failures-template-data",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1029,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-082-stale-prospect-record-quarantine",
+      "slug": "stale-prospect-record-quarantine",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 792,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-093-vendor-offboarding-outreach-data-access",
+      "slug": "vendor-offboarding-outreach-data-access",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 990,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-095-verified-mark-certificate-ownership-renewal",
+      "slug": "verified-mark-certificate-ownership-renewal",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 881,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-096-when-not-to-personalize-evidence-insufficient",
+      "slug": "when-not-to-personalize-evidence-insufficient",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 860,
+      "sourceCount": 8
+    },
+    {
+      "id": "wave2-100-adequacy-vs-safeguard-cross-border-routing",
+      "slug": "adequacy-vs-safeguard-cross-border-routing",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 911,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-101-agency-client-account-transfer-acceptance-test",
+      "slug": "agency-client-account-transfer-acceptance-test",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 878,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-102-agency-outbound-report-qa-checklist",
+      "slug": "agency-outbound-report-qa-checklist",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 944,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-103-agency-permission-matrix-client-contractor-vendor",
+      "slug": "agency-permission-matrix-client-contractor-vendor",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 960,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-104-agency-subcontractor-access-review-outbound",
+      "slug": "agency-subcontractor-access-review-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 768,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-105-ai-outreach-ab-test-guardrails",
+      "slug": "ai-outreach-ab-test-guardrails",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 989,
+      "sourceCount": 7
+    },
+    {
+      "id": "wave2-107-ai-outreach-hallucination-escalation-matrix",
+      "slug": "ai-outreach-hallucination-escalation-matrix",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 947,
+      "sourceCount": 6
+    },
+    {
+      "id": "wave2-108-ai-vendor-data-retention-questions-outreach",
+      "slug": "ai-vendor-data-retention-questions-outreach",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 1116,
+      "sourceCount": 6
+    },
+    {
+      "id": "wave2-109-aws-ses-api-v2-formatted-vs-raw",
+      "slug": "aws-ses-api-v2-formatted-vs-raw",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 893,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-110-aws-ses-configuration-sets-routing",
+      "slug": "aws-ses-configuration-sets-routing",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 987,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-111-b2b-corporate-subscriber-vs-individual-address",
+      "slug": "b2b-corporate-subscriber-vs-individual-address",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 779,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-112-bounce-spike-after-dns-change",
+      "slug": "bounce-spike-after-dns-change",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 972,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-113-bulk-email-partial-failure-reconciliation",
+      "slug": "bulk-email-partial-failure-reconciliation",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 909,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-114-can-spam-sender-initiator-responsibility-map",
+      "slug": "can-spam-sender-initiator-responsibility-map",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 831,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-116-casl-express-consent-evidence-packet",
+      "slug": "casl-express-consent-evidence-packet",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 955,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-117-casl-identification-agencies-affiliates",
+      "slug": "casl-identification-agencies-affiliates",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 980,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-119-client-consent-evidence-register-outbound",
+      "slug": "client-consent-evidence-register-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 907,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-121-client-recovery-methods-break-glass-access",
+      "slug": "client-recovery-methods-break-glass-access",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 789,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-122-client-report-source-trace-worksheet",
+      "slug": "client-report-source-trace-worksheet",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 900,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-123-client-reporting-data-dictionary-outbound",
+      "slug": "client-reporting-data-dictionary-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 866,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-124-cname-flattening-dkim-verification",
+      "slug": "cname-flattening-dkim-verification",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1058,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-125-cold-email-copy-qa-before-launch",
+      "slug": "cold-email-copy-qa-before-launch",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 908,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-127-cold-email-follow-up-positive-vague-reply",
+      "slug": "cold-email-follow-up-positive-vague-reply",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 745,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-128-cold-email-link-cta-destination-qa",
+      "slug": "cold-email-link-cta-destination-qa",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 894,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-129-cold-email-not-interested-respectful-exit",
+      "slug": "cold-email-not-interested-respectful-exit",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 768,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-133-cold-email-test-stop-rules-negative-signals",
+      "slug": "cold-email-test-stop-rules-negative-signals",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 1005,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-134-consent-withdrawal-vs-marketing-suppression",
+      "slug": "consent-withdrawal-vs-marketing-suppression",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 949,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-135-contact-to-account-matching-ambiguous-domains",
+      "slug": "contact-to-account-matching-ambiguous-domains",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 791,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-137-ctr-vs-ctor-email",
+      "slug": "ctr-vs-ctor-email",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 879,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-138-data-freshness-sla-prospect-lists",
+      "slug": "data-freshness-sla-prospect-lists",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 774,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-139-deduplicate-before-email-verification",
+      "slug": "deduplicate-before-email-verification",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 819,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-140-disposable-detection-point-of-capture",
+      "slug": "disposable-detection-point-of-capture",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 993,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-141-dpia-signoff-residual-high-risk-escalation",
+      "slug": "dpia-signoff-residual-high-risk-escalation",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 973,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-142-email-api-rate-limit-headers-retry-after",
+      "slug": "email-api-rate-limit-headers-retry-after",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 891,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-146-email-delivery-latency",
+      "slug": "email-delivery-latency",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 938,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-147-email-delivery-status-denominators",
+      "slug": "email-delivery-status-denominators",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 913,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-148-email-provider-retries-exponential-backoff-jitter",
+      "slug": "email-provider-retries-exponential-backoff-jitter",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 809,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-150-email-rate-limit-429-454-throttles",
+      "slug": "email-rate-limit-429-454-throttles",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 988,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-152-email-syntax-regex-cannot-prove",
+      "slug": "email-syntax-regex-cannot-prove",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 967,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-153-email-webhook-acknowledgement-processing",
+      "slug": "email-webhook-acknowledgement-processing",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 757,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-154-email-webhook-signature-replay-protection",
+      "slug": "email-webhook-signature-replay-protection",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1011,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-155-firmographic-segmentation-fields-sales-motion",
+      "slug": "firmographic-segmentation-fields-sales-motion",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 959,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-157-google-workspace-vs-personal-gmail-test",
+      "slug": "google-workspace-vs-personal-gmail-test",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 787,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-158-icloud-mail-no-feedback-loop-complaint-proxy",
+      "slug": "icloud-mail-no-feedback-loop-complaint-proxy",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 869,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-161-mailbox-credential-recovery-inventory",
+      "slug": "mailbox-credential-recovery-inventory",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 983,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-164-microsoft-365-message-trace-says-delivered-next-evidence",
+      "slug": "microsoft-365-message-trace-says-delivered-next-evidence",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 835,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-166-multiple-dkim-signatures-dmarc",
+      "slug": "multiple-dkim-signatures-dmarc",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 999,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-168-new-campaign-complaint-spike-comparison",
+      "slug": "new-campaign-complaint-spike-comparison",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 853,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-170-oauth-token-inventory-agency-client-accounts",
+      "slug": "oauth-token-inventory-agency-client-accounts",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 826,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-171-onward-transfer-inventory-email-services",
+      "slug": "onward-transfer-inventory-email-services",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 850,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-174-post-offboarding-access-verification-client-systems",
+      "slug": "post-offboarding-access-verification-client-systems",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 883,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-177-prompt-injection-defense-prospect-research-agents",
+      "slug": "prompt-injection-defense-prospect-research-agents",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 1072,
+      "sourceCount": 5
+    },
+    {
+      "id": "wave2-178-provider-escalation-readiness-checklist",
+      "slug": "provider-escalation-readiness-checklist",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 1038,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-180-purchased-list-due-diligence-checklist",
+      "slug": "purchased-list-due-diligence-checklist",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 894,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-183-scc-transfer-impact-assessment-evidence",
+      "slug": "scc-transfer-impact-assessment-evidence",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 1004,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-184-ses-delivery-delay-events",
+      "slug": "ses-delivery-delay-events",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 859,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-185-smtp-vs-email-api-sending-interface",
+      "slug": "smtp-vs-email-api-sending-interface",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 962,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-187-spf-include-dependency-map",
+      "slug": "spf-include-dependency-map",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 1050,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-190-unsubscribe-request-evidence-register",
+      "slug": "unsubscribe-request-evidence-register",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 911,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-192-valid-p2-from-reply-to-automated-outreach",
+      "slug": "valid-p2-from-reply-to-automated-outreach",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 759,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-196-aws-ses-daily-quota-vs-sending-rate",
+      "slug": "aws-ses-daily-quota-vs-sending-rate",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 897,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-197-cold-email-unsubscribe-wording-clear",
+      "slug": "cold-email-unsubscribe-wording-clear",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 828,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-199-consumer-vs-business-ai-prospect-data",
+      "slug": "consumer-vs-business-ai-prospect-data",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 763,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-201-dkim-selector-ownership-register",
+      "slug": "dkim-selector-ownership-register",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 841,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-203-dpia-review-after-processing-change",
+      "slug": "dpia-review-after-processing-change",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 958,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-204-email-send-state-machine",
+      "slug": "email-send-state-machine",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1032,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-206-gmail-postmaster-snapshot-log",
+      "slug": "gmail-postmaster-snapshot-log",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 881,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-207-icp-vs-buyer-persona-account-person-fit",
+      "slug": "icp-vs-buyer-persona-account-person-fit",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 933,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-208-microsoft-message-trace-request-form",
+      "slug": "microsoft-message-trace-request-form",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 739,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-210-processor-controller-outreach-role-map",
+      "slug": "processor-controller-outreach-role-map",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 902,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-211-prospect-correction-suppression-intake",
+      "slug": "prospect-correction-suppression-intake",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 814,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-215-yahoo-spam-rate-denominator",
+      "slug": "yahoo-spam-rate-denominator",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 883,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-217-arc-chain-first-failure",
+      "slug": "arc-chain-first-failure",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 999,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-218-authentication-results-header",
+      "slug": "authentication-results-header",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 1041,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-219-bimi-svg-validation-failures",
+      "slug": "bimi-svg-validation-failures",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 935,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-220-bimi-vmc-vs-cmc-evidence",
+      "slug": "bimi-vmc-vs-cmc-evidence",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 921,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-222-blocklist-delisting-evidence-packet",
+      "slug": "blocklist-delisting-evidence-packet",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 927,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-223-bounce-evidence-capture-form",
+      "slug": "bounce-evidence-capture-form",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 931,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-224-bounce-incident-triage-dns-recipient-policy-reputation",
+      "slug": "bounce-incident-triage-dns-recipient-policy-reputation",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 983,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-225-client-isolation-test-data-boundaries",
+      "slug": "client-isolation-test-data-boundaries",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 884,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-229-cold-email-cta-specificity-one-action",
+      "slug": "cold-email-cta-specificity-one-action",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 875,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-230-cold-email-message-test-plan-isolate-variable",
+      "slug": "cold-email-message-test-plan-isolate-variable",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 920,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-231-cold-email-opening-line-audit",
+      "slug": "cold-email-opening-line-audit",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 793,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-232-cold-email-segment-to-message-fit-check",
+      "slug": "cold-email-segment-to-message-fit-check",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 847,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-233-complaint-spike-cohort-analysis",
+      "slug": "complaint-spike-cohort-analysis",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 957,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-237-dkim-canonicalization-rewriting",
+      "slug": "dkim-canonicalization-rewriting",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 906,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-239-dmarc-policy-discovery-outcomes",
+      "slug": "dmarc-policy-discovery-outcomes",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 993,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-241-dsar-search-scope-outreach-systems",
+      "slug": "dsar-search-scope-outreach-systems",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 952,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-242-email-authentication-vendor-offboarding-checklist",
+      "slug": "email-authentication-vendor-offboarding-checklist",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 881,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-244-email-greylisting",
+      "slug": "email-greylisting",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 903,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-245-eprivacy-vs-gdpr-two-layer-permission-map",
+      "slug": "eprivacy-vs-gdpr-two-layer-permission-map",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 781,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-247-human-approval-gates-ai-personalized-sequences",
+      "slug": "human-approval-gates-ai-personalized-sequences",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 972,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-248-icloud-mail-delivery-escalation-packet",
+      "slug": "icloud-mail-delivery-escalation-packet",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 858,
+      "sourceCount": 1
+    },
+    {
+      "id": "wave2-249-list-import-acceptance-test-plan",
+      "slug": "list-import-acceptance-test-plan",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 895,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-250-list-import-qa-required-fields-suppression",
+      "slug": "list-import-qa-required-fields-suppression",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 870,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-251-list-unsubscribe-one-click-semantics",
+      "slug": "list-unsubscribe-one-click-semantics",
+      "academy": "glossary",
+      "collection": "core-email-glossary",
+      "path": null,
+      "wordCount": 1026,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-252-microsoft-365-message-trace-search-window-evidence",
+      "slug": "microsoft-365-message-trace-search-window-evidence",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 863,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-255-personalization-fallback-hierarchy",
+      "slug": "personalization-fallback-hierarchy",
+      "academy": "cold-email",
+      "collection": "cold-email-message-quality",
+      "path": "cold-email-message-quality",
+      "wordCount": 828,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-256-post-incident-review-email-deliverability",
+      "slug": "post-incident-review-email-deliverability",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 1019,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-257-provider-acceptance-evidence-matrix",
+      "slug": "provider-acceptance-evidence-matrix",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 963,
+      "sourceCount": 4
+    },
+    {
+      "id": "wave2-259-smtp-error-to-action-decision-table",
+      "slug": "smtp-error-to-action-decision-table",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 918,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-260-soft-opt-in-existing-customer-decision-tree",
+      "slug": "soft-opt-in-existing-customer-decision-tree",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 886,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-261-spam-folder-recovery-by-provider",
+      "slug": "spam-folder-recovery-by-provider",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 1101,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-263-spamhaus-sbl-xbl-pbl-dbl-explained",
+      "slug": "spamhaus-sbl-xbl-pbl-dbl-explained",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 1090,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-269-yahoo-sender-support-new-ip-domain-launch",
+      "slug": "yahoo-sender-support-new-ip-domain-launch",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 864,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-270-yahoo-smtp-error-codes-sender-triage",
+      "slug": "yahoo-smtp-error-codes-sender-triage",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 932,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-274-authentication-drift-detection",
+      "slug": "authentication-drift-detection",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1045,
+      "sourceCount": 3
+    },
+    {
+      "id": "wave2-275-aws-ses-event-destinations-compared",
+      "slug": "aws-ses-event-destinations-compared",
+      "academy": "infrastructure",
+      "collection": "email-infrastructure-decisions",
+      "path": "email-infrastructure",
+      "wordCount": 1015,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-277-campaign-pause-communications-template",
+      "slug": "campaign-pause-communications-template",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 756,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-278-client-offboarding-evidence-pack-outbound",
+      "slug": "client-offboarding-evidence-pack-outbound",
+      "academy": "outreach",
+      "collection": "outreach-measurement",
+      "path": null,
+      "wordCount": 921,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-279-compromised-account-blocklist-containment",
+      "slug": "compromised-account-blocklist-containment",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 936,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-282-first-15-minutes-deliverability-incident",
+      "slug": "first-15-minutes-deliverability-incident",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 967,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-283-list-sourcing-decision-tree-build-buy-reuse",
+      "slug": "list-sourcing-decision-tree-build-buy-reuse",
+      "academy": "lead-generation",
+      "collection": "list-quality-operations",
+      "path": "list-quality-and-suppression",
+      "wordCount": 822,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-286-spam-recovery-after-content-change",
+      "slug": "spam-recovery-after-content-change",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 1041,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-287-subprocessor-register-email-enrichment",
+      "slug": "subprocessor-register-email-enrichment",
+      "academy": "compliance",
+      "collection": "compliance-operations",
+      "path": null,
+      "wordCount": 1041,
+      "sourceCount": 2
+    },
+    {
+      "id": "wave2-288-yahoo-sender-hub-insights-vs-complaint-feedback-loop",
+      "slug": "yahoo-sender-hub-insights-vs-complaint-feedback-loop",
+      "academy": "deliverability",
+      "collection": "deliverability-diagnostics",
+      "path": "provider-deliverability-diagnostics",
+      "wordCount": 984,
+      "sourceCount": 2
+    }
+  ]
+}

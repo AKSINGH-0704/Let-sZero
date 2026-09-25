@@ -1,0 +1,13 @@
+{
+  "sitemapCount": 616,
+  "rssCount": 575,
+  "expectedArticles": 575,
+  "expectedRoutes": 616,
+  "expectedRss": 575,
+  "robotsExists": true,
+  "newArticleCount": 161,
+  "newRouteChecks": 161,
+  "issues": [],
+  "worktreeChangedCount": 173,
+  "protectedDiff": []
+}

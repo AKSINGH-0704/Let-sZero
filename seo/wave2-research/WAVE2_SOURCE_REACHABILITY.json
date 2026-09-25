@@ -1,0 +1,717 @@
+{
+  "uniqueUrlCount": 98,
+  "checkedUrlCount": 98,
+  "reachable": 95,
+  "unreachable": [
+    {
+      "url": "https://6sense.com/glossary/inbound-sales/",
+      "status": 403,
+      "finalUrl": "https://6sense.com/glossary/inbound-sales/",
+      "ok": false,
+      "error": "HTTPError"
+    },
+    {
+      "url": "https://crtc.gc.ca/eng/com500/faq500.htm",
+      "status": 403,
+      "finalUrl": "https://crtc.gc.ca/eng/com500/faq500.htm",
+      "ok": false,
+      "error": "HTTPError"
+    },
+    {
+      "url": "https://openai.com/enterprise-privacy/",
+      "status": 403,
+      "finalUrl": "https://openai.com/enterprise-privacy/",
+      "ok": false,
+      "error": "HTTPError"
+    }
+  ],
+  "results": [
+    {
+      "url": "https://6sense.com/glossary/inbound-sales/",
+      "status": 403,
+      "finalUrl": "https://6sense.com/glossary/inbound-sales/",
+      "ok": false,
+      "error": "HTTPError"
+    },
+    {
+      "url": "https://automattic.com/for-agencies/blog/agency-client-onboarding/",
+      "status": 200,
+      "finalUrl": "https://automattic.com/for-agencies/blog/agency-client-onboarding/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://bimigroup.org/implementation-guide/",
+      "status": 200,
+      "finalUrl": "https://bimigroup.org/implementation-guide/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://bimigroup.org/verified-mark-certificates-vmc-and-bimi/",
+      "status": 200,
+      "finalUrl": "https://bimigroup.org/verified-mark-certificates-vmc-and-bimi/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://business.linkedin.com/sales-solutions/sales-navigator-customer-hub/resources/inmail-best-practices",
+      "status": 200,
+      "finalUrl": "https://business.linkedin.com/sales-solutions/sales-navigator-customer-hub/resources/inmail-best-practices",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://crtc.gc.ca/eng/com500/faq500.htm",
+      "status": 403,
+      "finalUrl": "https://crtc.gc.ca/eng/com500/faq500.htm",
+      "ok": false,
+      "error": "HTTPError"
+    },
+    {
+      "url": "https://datatracker.ietf.org/doc/html/rfc3463",
+      "status": 200,
+      "finalUrl": "https://datatracker.ietf.org/doc/html/rfc3463",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://datatracker.ietf.org/doc/html/rfc8058",
+      "status": 200,
+      "finalUrl": "https://datatracker.ietf.org/doc/html/rfc8058",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://developers.cloudflare.com/dns/cname-flattening/",
+      "status": 200,
+      "finalUrl": "https://developers.cloudflare.com/dns/cname-flattening/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/your-data",
+      "status": 200,
+      "finalUrl": "https://developers.openai.com/api/docs/guides/your-data",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/general/latest/gr/ses.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/general/latest/gr/ses.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/APIReference-V2/API_SendEmail.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/APIReference/API_SendTemplatedEmail.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/APIReference/API_SendTemplatedEmail.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas-errors.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/manage-sending-quotas-errors.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/monitor-using-event-publishing.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/monitor-using-event-publishing.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/request-production-access.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/send-email-api.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/send-email-api.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/send-email-smtp.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/send-email-smtp.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/sending-email-suppression-list.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/sending-email-suppression-list.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.aws.amazon.com/ses/latest/dg/using-configuration-sets.html",
+      "status": 200,
+      "finalUrl": "https://docs.aws.amazon.com/ses/latest/dg/using-configuration-sets.html",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://docs.clearout.io/email-verifier/overview",
+      "status": 200,
+      "finalUrl": "https://docs.clearout.io/email-verifier/overview",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://documentation.mailgun.com/docs/mailgun/api-reference/api-overview",
+      "status": 200,
+      "finalUrl": "https://documentation.mailgun.com/docs/mailgun/api-reference/api-overview",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/securing-webhooks",
+      "status": 200,
+      "finalUrl": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/securing-webhooks",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-payloads",
+      "status": 200,
+      "finalUrl": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-payloads",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-retries",
+      "status": 200,
+      "finalUrl": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-retries",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/about-the-ico/what-we-do/our-work-on-artificial-intelligence/generative-ai-fourth-call-for-evidence/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/about-the-ico/what-we-do/our-work-on-artificial-intelligence/generative-ai-fourth-call-for-evidence/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-direct-marketing-using-electronic-mail/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-direct-marketing-using-electronic-mail/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/accountability-and-governance/contracts-and-liabilities-between-controllers-and-processors-multi/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/accountability-and-governance/contracts-and-liabilities-between-controllers-and-processors-multi/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/data-sharing-a-code-of-practice/sharing-personal-data-in-databases-and-lists/?search=transparency",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/data-sharing-a-code-of-practice/sharing-personal-data-in-databases-and-lists/?search=transparency",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/right-of-access/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/individual-rights/right-of-access/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/lawful-basis/a-guide-to-lawful-basis/",
+      "status": 200,
+      "finalUrl": "https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/lawful-basis/a-guide-to-lawful-basis/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://knowledge.workspace.google.com/admin/generative-ai/generative-ai-in-google-workspace-privacy-hub",
+      "status": 200,
+      "finalUrl": "https://knowledge.workspace.google.com/admin/generative-ai/generative-ai-in-google-workspace-privacy-hub",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://knowledge.workspace.google.com/admin/gmail/advanced/email-routing-and-delivery-options-for-google-workspace",
+      "status": 200,
+      "finalUrl": "https://knowledge.workspace.google.com/admin/gmail/advanced/email-routing-and-delivery-options-for-google-workspace",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://knowledge.workspace.google.com/admin/users/maintain-data-security-after-an-employee-leaves",
+      "status": 200,
+      "finalUrl": "https://knowledge.workspace.google.com/admin/users/maintain-data-security-after-an-employee-leaves",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure",
+      "status": 200,
+      "finalUrl": "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://learn.microsoft.com/en-us/exchange/monitoring/trace-an-email-message/message-trace-modern-eac",
+      "status": 200,
+      "finalUrl": "https://learn.microsoft.com/en-us/exchange/monitoring/trace-an-email-message/message-trace-modern-eac",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://learn.microsoft.com/en-us/microsoft-365/admin/add-users/remove-former-employee?view=o365-worldwide",
+      "status": 200,
+      "finalUrl": "https://learn.microsoft.com/en-us/microsoft-365/admin/add-users/remove-former-employee?view=o365-worldwide",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/email-delivery-issues",
+      "status": 200,
+      "finalUrl": "https://learn.microsoft.com/en-us/troubleshoot/exchange/email-delivery/email-delivery-issues",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://mailmeteor.com/checklists/cold-email",
+      "status": 200,
+      "finalUrl": "https://mailmeteor.com/checklists/cold-email",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://mailshake.com/blog/how-not-to-use-ai-for-lead-generation/",
+      "status": 200,
+      "finalUrl": "https://mailshake.com/blog/how-not-to-use-ai-for-lead-generation/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://openai.com/enterprise-privacy/",
+      "status": 403,
+      "finalUrl": "https://openai.com/enterprise-privacy/",
+      "ok": false,
+      "error": "HTTPError"
+    },
+    {
+      "url": "https://resend.com/changelog/api-rate-limit",
+      "status": 200,
+      "finalUrl": "https://resend.com/changelog/api-rate-limit",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://senders.yahooinc.com/best-practices/",
+      "status": 200,
+      "finalUrl": "https://senders.yahooinc.com/best-practices/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://senders.yahooinc.com/complaint-feedback-loop/",
+      "status": 200,
+      "finalUrl": "https://senders.yahooinc.com/complaint-feedback-loop/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://senders.yahooinc.com/contact/",
+      "status": 200,
+      "finalUrl": "https://senders.yahooinc.com/contact/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://senders.yahooinc.com/faqs/",
+      "status": 200,
+      "finalUrl": "https://senders.yahooinc.com/faqs/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://senders.yahooinc.com/smtp-error-codes/",
+      "status": 200,
+      "finalUrl": "https://senders.yahooinc.com/smtp-error-codes/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.apple.com/en-us/102322",
+      "status": 200,
+      "finalUrl": "https://support.apple.com/en-us/102322",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/a/answer/81126",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/81126?visit_id=639259273231785881-1065205658&rd=1",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/accounts/answer/7682439",
+      "status": 200,
+      "finalUrl": "https://support.google.com/accounts/answer/7682439",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/analytics/answer/9305587?hl=en",
+      "status": 200,
+      "finalUrl": "https://support.google.com/analytics/answer/9305587?hl=en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/mail/answer/14289100?hl=en",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/14289100?hl=en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/mail/answer/175365?hl=en",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/175365?hl=en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/mail/answer/81126",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/81126",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/mail/answer/81126?hl=en",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/81126?hl=en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.google.com/mail/answer/9981691?hl=en",
+      "status": 200,
+      "finalUrl": "https://support.google.com/mail/answer/9981691?hl=en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.microsoft.com/en-us/outlook/failed-delivery-messages-from-the-postmaster-at-outlook-com-microsoft-com-or-service-microsoft-com",
+      "status": 200,
+      "finalUrl": "https://support.microsoft.com/en-us/outlook/failed-delivery-messages-from-the-postmaster-at-outlook-com-microsoft-com-or-service-microsoft-com",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://support.microsoft.com/en-us/outlook/sender-support-in-outlook-com",
+      "status": 200,
+      "finalUrl": "https://support.microsoft.com/en-us/outlook/sender-support-in-outlook-com",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://trailhead.salesforce.com/content/learn/modules/data-enrichment-fundamentals/define-data-enrichment",
+      "status": 200,
+      "finalUrl": "https://trailhead.salesforce.com/content/learn/modules/data-enrichment-fundamentals/define-data-enrichment",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://trygtm.com/blog/multi-seat-role-permissions-client-isolated-workspaces",
+      "status": 200,
+      "finalUrl": "https://trygtm.com/blog/multi-seat-role-permissions-client-isolated-workspaces",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://woodpecker.co/blog/lean-approach/",
+      "status": 200,
+      "finalUrl": "https://woodpecker.co/blog/lean-approach/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.braze.com/resources/articles/10-essential-email-metrics",
+      "status": 200,
+      "finalUrl": "https://www.braze.com/resources/articles/10-essential-email-metrics",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.campaignmonitor.com/blog/email-marketing/email-campaign-preflight-checklist/",
+      "status": 200,
+      "finalUrl": "https://www.campaignmonitor.com/blog/email-marketing/email-campaign-preflight-checklist/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.dataprotection.ie/en/organisations/know-your-obligations/data-protection-impact-assessments",
+      "status": 200,
+      "finalUrl": "https://www.dataprotection.ie/en/organisations/know-your-obligations/data-protection-impact-assessments",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.edpb.europa.eu/sme/be-compliant/international-data-transfers_en",
+      "status": 200,
+      "finalUrl": "https://www.edpb.europa.eu/sme/be-compliant/international-data-transfers_en",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.ftc.gov/business-guidance/advertising-marketing",
+      "status": 200,
+      "finalUrl": "https://www.ftc.gov/business-guidance/advertising-marketing",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business",
+      "status": 200,
+      "finalUrl": "https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.gmass.co/blog/cold-email-ai/",
+      "status": 200,
+      "finalUrl": "https://www.gmass.co/blog/cold-email-ai/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.higherlevels.com/blog/cold-email-guide-sales-templates",
+      "status": 200,
+      "finalUrl": "https://www.higherlevels.com/blog/cold-email-guide-sales-templates",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.infobip.com/docs/reporting/metrics-reference/email-metrics-reference",
+      "status": 200,
+      "finalUrl": "https://www.infobip.com/docs/reporting/metrics-reference/email-metrics-reference",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.letszero.in/repmail/learn/deliverability/deliverability-change-log-template",
+      "status": 200,
+      "finalUrl": "https://www.letszero.in/repmail/learn/deliverability/deliverability-change-log-template",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.letszero.in/repmail/learn/deliverability/outreach-tool-reply-routing-ownership",
+      "status": 200,
+      "finalUrl": "https://www.letszero.in/repmail/learn/deliverability/outreach-tool-reply-routing-ownership",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.litmus.com/blog/how-to-fix-email-reputation",
+      "status": 200,
+      "finalUrl": "https://www.litmus.com/blog/how-to-fix-email-reputation",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.mailgun.com/glossary/greylisting/",
+      "status": 200,
+      "finalUrl": "https://www.mailgun.com/glossary/greylisting/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.microsoft.com/en-us/ai/principles-and-approach",
+      "status": 200,
+      "finalUrl": "https://www.microsoft.com/en-us/ai/principles-and-approach",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.mixmax.com/blog/cold-email-call-to-action-examples",
+      "status": 200,
+      "finalUrl": "https://www.mixmax.com/blog/cold-email-call-to-action-examples",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence",
+      "status": 200,
+      "finalUrl": "https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.process.st/marketing-client-onboarding/",
+      "status": 200,
+      "finalUrl": "https://www.process.st/marketing-client-onboarding/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc1034",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc1034/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc3463",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc3463/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc3464",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc3464/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc5321",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc5321/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc5322",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc5322/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc6376",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc6376/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc6647",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc6647/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc7208",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc7208/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc7489",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc7489/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc8058",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc8058/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc8601",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc8601/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.rfc-editor.org/rfc/rfc8617",
+      "status": 200,
+      "finalUrl": "https://www.rfc-editor.org/info/rfc8617/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.salesforce.com/welcome-to-the-agentic-enterprise/ai-guardrails/",
+      "status": 200,
+      "finalUrl": "https://www.salesforce.com/welcome-to-the-agentic-enterprise/ai-guardrails/?bc=OTH",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.snov.io/blog/cold-email-ai/",
+      "status": 200,
+      "finalUrl": "https://snov.io/blog/cold-email-ai/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.spamhaus.org/blocklists/",
+      "status": 200,
+      "finalUrl": "https://www.spamhaus.org/blocklists/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.spamhaus.org/blocklists/spamhaus-blocklist/",
+      "status": 200,
+      "finalUrl": "https://www.spamhaus.org/blocklists/spamhaus-blocklist/",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.trychaser.com/checklist-articles/client-offboarding-checklist-for-agencies",
+      "status": 200,
+      "finalUrl": "https://www.trychaser.com/checklist-articles/client-offboarding-checklist-for-agencies",
+      "sampleBytes": 256,
+      "ok": true
+    },
+    {
+      "url": "https://www.validity.com/blog/email-list-validation-automation/",
+      "status": 200,
+      "finalUrl": "https://www.validity.com/blog/email-list-validation-automation/",
+      "sampleBytes": 256,
+      "ok": true
+    }
+  ],
+  "note": "Reachability is not a substitute for source-content review; no demand or ranking metric is inferred."
+}

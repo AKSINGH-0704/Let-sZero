@@ -28,6 +28,20 @@
     "reactivating-dormant-contacts-suppression",
     "email-list-quarantine-before-sending",
     "tracking-suppression-reasons-evidence",
-    "shared-mailboxes-team-aliases-suppression"
+    "shared-mailboxes-team-aliases-suppression",
+    "enrichment-conflict-resolution-prospect-data",
+    "enrichment-field-priority-matrix",
+    "intent-signal-thresholds-action",
+    "role-evidence-matrix-decision-maker",
+    "sdr-handoff-packet-qualified-account",
+    "segment-drift-detect-icp-mismatch",
+    "stale-prospect-record-quarantine",
+    "contact-to-account-matching-ambiguous-domains",
+    "data-freshness-sla-prospect-lists",
+    "firmographic-segmentation-fields-sales-motion",
+    "purchased-list-due-diligence-checklist",
+    "icp-vs-buyer-persona-account-person-fit",
+    "list-import-qa-required-fields-suppression",
+    "list-sourcing-decision-tree-build-buy-reuse"
   ]
 }
