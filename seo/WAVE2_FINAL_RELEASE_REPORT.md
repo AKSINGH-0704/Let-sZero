@@ -1,6 +1,6 @@
 # RepMail Resource Center — Wave 2 Final Release Report
 
-**Release status:** READY FOR Git review and normal release pipeline
+**Release status:** RELEASED AND PRODUCTION-VERIFIED
 
 ## Scope and selection
 
@@ -77,9 +77,9 @@ No existing Resource Center article was rewritten or deleted. The Wave 2 changes
 
 ## Release state
 
-This report documents the completed research, drafting, integration, and local QA gates. The branch is ready for exact-scope staging and review. Push to `main`, Railway deployment, and production HTTP/browser verification remain separate release steps and have not been performed in this report.
+This report documents the completed research, drafting, integration, and local QA gates. The branch is ready for exact-scope staging and review. The verified commits were pushed normally to `main`; Railway-triggered production rollout succeeded, and post-deployment HTTP/browser verification is recorded in `POST_DEPLOYMENT_RELEASE_VERIFICATION.md`.
 
 **Wave 2 branch:** `seo/repmail-topic-expansion-wave2-20260925`
 **Commit:** `20fb942e9c1d8daffdc2d4517a9640771cfe30be`
-**Railway deployment:** pending normal release pipeline
-**Production verification:** pending deployment
+**Railway deployment:** succeeded through the normal `origin/main` release path
+**Production verification:** PASS — 616/616 sitemap routes and 161/161 new article URLs

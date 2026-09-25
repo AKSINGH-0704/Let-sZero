@@ -1,0 +1,23 @@
+{
+  "base": "https://www.letszero.in",
+  "sitemapStatus": 200,
+  "sitemapCount": 616,
+  "rssStatus": 200,
+  "rssItemCount": 575,
+  "robotsStatus": 200,
+  "robotsHasSitemap": true,
+  "crawledCount": 616,
+  "http200Count": 616,
+  "newUrlExpected": 161,
+  "newUrlCrawled": 161,
+  "newUrl200Count": 161,
+  "allRouteFailures": [],
+  "newUrlFailures": [],
+  "retryCountOverOne": 1,
+  "sampleHeaders": {
+    "cache-control": "public, max-age=0",
+    "content-security-policy": "default-src 'self';script-src 'self' https://checkout.razorpay.com https://www.googletagmanager.com;style-src 'self' 'unsafe-inline';img-src 'self' data: blob: https://www.googleadservices.com https://googleads.g.doubleclick.net https://pagead2.googlesyndication.com https://www.google.com;connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://www.google-analytics.com https://pagead2.googlesyndication.com https://www.google.com https://ad.doubleclick.net;font-src 'self';object-src 'none';frame-src https://api.razorpay.com;base-uri 'self';form-action 'self';upgrade-insecure-requests;frame-ancestors 'self';script-src-attr 'none'",
+    "content-type": "text/html; charset=UTF-8",
+    "etag": "W/\"1bd50-1a0d80e9f00\""
+  }
+}
