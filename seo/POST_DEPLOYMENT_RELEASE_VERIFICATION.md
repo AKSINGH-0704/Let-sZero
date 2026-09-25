@@ -2,7 +2,7 @@
 
 **Verification date:** 25 September 2026 (UTC)
 **Production:** `https://www.letszero.in`
-**Pushed main head:** `52dbafea7d83cd3e5d23bd0457eb3ca564388ddf`
+**Production rollout main head:** `52dbafea7d83cd3e5d23bd0457eb3ca564388ddf`  \n**Final documentation main head:** `6499d4148eed452314c211a61d5f47bb1aa70d30`
 **Wave 2 implementation commit:** `20fb942e9c1d8daffdc2d4517a9640771cfe30be`
 **Railway release path:** Git push to `origin/main`; production rollout observed through public readiness checks.
 
