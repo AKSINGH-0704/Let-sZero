@@ -80,6 +80,6 @@ No existing Resource Center article was rewritten or deleted. The Wave 2 changes
 This report documents the completed research, drafting, integration, and local QA gates. The branch is ready for exact-scope staging and review. Push to `main`, Railway deployment, and production HTTP/browser verification remain separate release steps and have not been performed in this report.
 
 **Wave 2 branch:** `seo/repmail-topic-expansion-wave2-20260925`
-**Commit:** `25a8c6b2658585802028b36a315fe751fca52238`
+**Commit:** `20fb942e9c1d8daffdc2d4517a9640771cfe30be`
 **Railway deployment:** pending normal release pipeline
 **Production verification:** pending deployment
