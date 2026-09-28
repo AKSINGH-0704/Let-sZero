@@ -176,17 +176,18 @@ export function Nav({ delay = 0.05 }) {
     >
       <div className="max-w-[1320px] mx-auto px-5 sm:px-8 h-16 md:h-[72px] flex items-center justify-between">
         <a href="/" className="flex items-center gap-2.5 rounded group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15120D]/40">
-          <motion.span
-            whileHover={{ rotate: 90 }}
-            transition={{ duration: 0.35, ease: EASE }}
-            className="w-7 h-7 grid place-items-center rounded-md"
-            style={{ background: C.ink }}
-          >
-            <span
-              className="w-3 h-3 rounded-sm"
-              style={{ background: `conic-gradient(from 45deg, ${C.oxide}, ${C.amber}, ${C.emerald}, ${C.teal}, ${C.oxide})` }}
-            />
-          </motion.span>
+          {/* The platform logo artwork, as the pre-Ledger landing shipped it
+              (LFP_final, M31-C's 192px variant), in the Ledger's 28px slot. */}
+          <img
+            src="/letszero-logo-192.png"
+            alt=""
+            width={28}
+            height={28}
+            fetchPriority="high"
+            decoding="async"
+            className="w-7 h-7 rounded-md object-contain"
+            style={{ background: "#111118" }}
+          />
           <span className="flex items-baseline gap-2">
             <span className="lz-display text-[20px] font-extrabold tracking-tight">LetsZero</span>
             {/* The tagline costs ~168px. Measured, it is the difference between

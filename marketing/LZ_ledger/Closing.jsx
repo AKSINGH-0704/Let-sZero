@@ -636,12 +636,16 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
           <div className="md:col-span-4">
             <div className="flex items-center gap-2.5">
-              <span className="w-7 h-7 grid place-items-center rounded-md" style={{ background: C.paper }}>
-                <span
-                  className="w-3 h-3 rounded-sm"
-                  style={{ background: `conic-gradient(from 45deg, ${C.oxide}, ${C.amber}, ${C.emerald}, ${C.teal}, ${C.oxide})` }}
-                />
-              </span>
+              <img
+                src="/letszero-logo-192.png"
+                alt=""
+                width={28}
+                height={28}
+                loading="lazy"
+                decoding="async"
+                className="w-7 h-7 rounded-md object-contain"
+                style={{ background: "#111118", boxShadow: "0 0 0 1px rgba(255,255,255,0.07)" }}
+              />
               <span className="lz-display text-xl font-extrabold tracking-tight">LetsZero</span>
             </div>
             <p className="mt-4 max-w-[340px] text-[13.5px] leading-relaxed" style={{ color: "#9A937F" }}>
