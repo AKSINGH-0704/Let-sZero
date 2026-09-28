@@ -171,15 +171,19 @@ function TabSwitcher({ activeTab, onChange }) {
   // icon stranded beside the gap, making the two tabs different heights. The
   // label is held on one line and the type/padding step down on small screens
   // so it fits the half-width tab instead.
+  // Those steps are em, not sm's 640px, so they follow the browser font size.
+  // Side by side the tabs need ~19.2em of viewport; below 19.5em (a phone at
+  // 150%+ text) they stack and the label may wrap, since "Request Access" alone
+  // outgrows the row at 200%: kept on one line it ran 166px past the card.
   const tabClass = (tab) =>
-    `flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-3 rounded-md text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+    `flex-1 flex items-center justify-center gap-1.5 [@media(min-width:40em)]:gap-2 py-2 px-2 [@media(min-width:40em)]:px-3 rounded-md text-xs [@media(min-width:40em)]:text-sm font-medium text-center whitespace-nowrap [@media(max-width:19.5em)]:whitespace-normal transition-all duration-200 ${
       activeTab === tab
         ? "bg-background text-foreground shadow-sm"
         : "text-muted-foreground hover:text-foreground"
     }`;
 
   return (
-    <div className="flex bg-muted/50 rounded-lg p-1 gap-1">
+    <div className="flex [@media(max-width:19.5em)]:flex-col bg-muted/50 rounded-lg p-1 gap-1">
       <button type="button" onClick={() => onChange("signin")} className={tabClass("signin")}>
         <LogIn className="h-3.5 w-3.5 shrink-0" />
         Sign In
@@ -282,7 +286,8 @@ function SignInForm({ login, isLoggingIn, loginError, resetLoginError }) {
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          {/* flex-wrap: at 200% text "Forgot password?" ran past the card beside the label. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2">
             <Label htmlFor="password" className="text-sm font-medium">
               Password
             </Label>

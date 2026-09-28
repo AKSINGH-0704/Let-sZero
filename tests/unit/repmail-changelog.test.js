@@ -9,7 +9,7 @@ import { renderToString } from "react-dom/server";
 import React from "react";
 import { readFile } from "fs/promises";
 import path from "path";
-import { shiftHeadingLevelsDown } from "../../client/src/pages/RepMailChangelog.jsx";
+import { shiftHeadingLevelsDown, wrapTables } from "../../client/src/pages/RepMailChangelog.jsx";
 
 let vite, Router;
 
@@ -39,6 +39,20 @@ describe("shiftHeadingLevelsDown", () => {
   it("does not touch h6 (nothing to shift it down to) or non-heading tags", () => {
     const input = "<h6>Deep heading</h6><p>Some <strong>text</strong>.</p>";
     expect(shiftHeadingLevelsDown(input)).toBe(input);
+  });
+});
+
+describe("wrapTables", () => {
+  it("puts each table in its own focusable horizontal scroll region", () => {
+    const out = wrapTables("<p>a</p><table><tr><td>1</td></tr></table><table></table>");
+    expect(out).toBe(
+      '<p>a</p><div class="changelog-table-scroll" role="region" aria-label="Table" tabindex="0"><table><tr><td>1</td></tr></table></div>' +
+      '<div class="changelog-table-scroll" role="region" aria-label="Table" tabindex="0"><table></table></div>'
+    );
+  });
+
+  it("leaves table-free html untouched", () => {
+    expect(wrapTables("<h2>v1</h2><p>x</p>")).toBe("<h2>v1</h2><p>x</p>");
   });
 });
 

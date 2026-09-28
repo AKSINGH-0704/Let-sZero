@@ -371,7 +371,10 @@ export default function Terms() {
             />
             <span>&copy; {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
-          <div className="flex items-center gap-6 text-sm" style={{ color: "#7878A0" }}>
+          {/* flex-wrap: the same unwrapped row clipped the RepMail legal footers'
+              first and last links below ~380px. Three links fit here today;
+              wrapped, a fourth cannot run off the edge. */}
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm" style={{ color: "#7878A0" }}>
             <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>

@@ -43,6 +43,10 @@ import { getInitials } from "@/lib/utils";
 // full 8–10-item flat nav clipped through 1024–1280. Below lg, everything moves into the
 // mobile sheet. Config/admin areas live in the grouped "Manage" menu — the seed of the
 // future settings/operations hub — so the top bar stays uncluttered and future-scalable.
+// The breakpoint is 64em, not lg's 1024px: identical at the default 16px font, but the
+// bar's contents are sized in rem, so with a larger browser font (~60em needed) a px
+// breakpoint revealed the full bar where it could not fit — at 150% it squeezed the
+// logo to nothing and clipped the account menu 154px off the right edge.
 export default function Navbar() {
   const { user, logout, isAdmin, isRootAdmin, isPlatformOperator, canManageTeam } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -106,8 +110,10 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 overflow-hidden">
-      {/* Main navbar row */}
-      <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6">
+      {/* Main navbar row. Below 14em of width (~175%+ browser text on a phone)
+          the rem padding and gap halve: at full size they left the logo, the
+          row's only shrinkable item, 12px, drawing it as a dot. */}
+      <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 [@media(max-width:14em)]:gap-2 [@media(max-width:14em)]:px-2">
         <div className="flex items-center gap-8">
           <Link href="/app/dashboard" className="flex items-center gap-2" data-testid="link-logo">
             <img src="/repmail-logo-white.png" alt="RepMail" className="h-9 w-auto hidden dark:block" style={{ objectFit: "contain" }} />
@@ -115,7 +121,7 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop nav (>=lg) */}
-          <nav className="hidden lg:flex items-center gap-1">
+          <nav className="hidden [@media(min-width:64em)]:flex items-center gap-1">
             {workflowItems.map((item) => {
               const active = isActive(item.href);
               // Button asChild → single <a> styled as a button (no nested interactive elements)
@@ -145,7 +151,7 @@ export default function Navbar() {
         <div className="flex items-center gap-2">
           {/* Mobile hamburger (<lg) */}
           <button
-            className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
+            className="[@media(min-width:64em)]:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-muted transition-colors"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label="Toggle menu"
             aria-expanded={mobileOpen}
@@ -172,11 +178,11 @@ export default function Navbar() {
                     {getInitials(user?.username)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="hidden lg:flex flex-col items-start">
+                <div className="hidden [@media(min-width:64em)]:flex flex-col items-start">
                   <span className="text-sm font-medium">{user?.username}</span>
                   <span className="text-xs text-muted-foreground">{user?.role}</span>
                 </div>
-                <ChevronDown className="hidden lg:block h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="hidden [@media(min-width:64em)]:block h-4 w-4 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
@@ -220,9 +226,13 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile slide-down menu (<lg) */}
-      <div className={`lg:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-        mobileOpen ? 'max-h-[640px] opacity-100' : 'max-h-0 opacity-0'
+      {/* Mobile slide-down menu (<lg). Open, it is capped at the viewport below
+          the 4rem row and scrolls: a fixed 640px cap with overflow-hidden cut
+          off an admin's last items (858px of content at 100% text, 1714px at
+          200%) where no pointer could reach them. vh first: dvh needs Chrome 108,
+          and Vite's default build target still includes Chrome/Edge 107. */}
+      <div className={`[@media(min-width:64em)]:hidden transition-all duration-300 ease-in-out ${
+        mobileOpen ? 'max-h-[calc(100vh-4rem)] supports-[height:100dvh]:max-h-[calc(100dvh-4rem)] overflow-y-auto opacity-100' : 'max-h-0 overflow-hidden opacity-0'
       }`}>
         <div className="border-t border-border px-4 py-3 space-y-1">
           {workflowItems.map((item) => {

@@ -114,10 +114,12 @@ export function PageScrollIndicator({ showHint = true }) {
         )}
       />
 
+      {/* z-40, the gradient's layer: at z-50 this hint painted over the consent
+          banner's buttons and dialog overlays on short screens. */}
       {showHint && canScrollDown && !hasScrolledOnce && (
         <div
           className={cn(
-            "fixed bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none transition-opacity duration-500 z-50",
+            "fixed bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none transition-opacity duration-500 z-40",
             hasScrolledOnce ? "opacity-0" : "opacity-100"
           )}
         >

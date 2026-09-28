@@ -28,9 +28,20 @@ export function shiftHeadingLevelsDown(html) {
   return html.replace(/<(\/?)h([1-5])(\s[^>]*)?>/g, (_match, closing, level, attrs = "") => `<${closing}h${Number(level) + 1}${closing ? "" : attrs}>`);
 }
 
+// The release notes carry 3- and 4-column tables whose longest words need
+// ~322px, wider than the 288px column at a 320px viewport. The page's
+// overflow-x clipping then cut the last column off instead of letting it
+// scroll. Each table gets its own horizontal scroll region, focusable so a
+// keyboard user can scroll it too (WCAG 2.1.1).
+export function wrapTables(html) {
+  return html
+    .replace(/<table>/g, '<div class="changelog-table-scroll" role="region" aria-label="Table" tabindex="0"><table>')
+    .replace(/<\/table>/g, "</table></div>");
+}
+
 export default function RepMailChangelog() {
   const product = PRODUCTS.repmail;
-  const bodyHtml = shiftHeadingLevelsDown(marked.parse(RELEASE_NOTES_RAW));
+  const bodyHtml = wrapTables(shiftHeadingLevelsDown(marked.parse(RELEASE_NOTES_RAW)));
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10" data-testid="repmail-changelog">
@@ -39,7 +50,7 @@ export default function RepMailChangelog() {
         <h1 className="text-3xl font-bold tracking-tight">What&rsquo;s New in {product.name}</h1>
       </header>
       <div
-        className="prose prose-neutral dark:prose-invert max-w-none"
+        className="prose prose-neutral dark:prose-invert max-w-none [&_.changelog-table-scroll]:overflow-x-auto"
         data-testid="changelog-body"
         dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />

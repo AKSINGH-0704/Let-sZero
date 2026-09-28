@@ -38,6 +38,22 @@ function sliderToCredits(pos) {
 }
 
 const PRESET_LABELS = ["3K", "5K", "10K", "15K", "25K", "50K", "100K", "200K", "300K"];
+// On the log scale 10K/15K and 200K/300K sit ~9% of the track apart, so on a
+// narrow track (a phone, or md–lg where the calculator is half-width) their
+// labels ran together ("200K300K") and their 24px targets overlapped. These two
+// in-between presets drop out there; the slider and exact-amount field still
+// reach both values. Breakpoints here are em, not px, so they move with the
+// browser font size: identical at 16px, later with larger text.
+const CROWDED_PRESETS = new Set(["15K", "200K"]);
+// The next tightest pairs, 3K/5K and then the 2x steps around 50K, need a
+// ~236px and ~180px track for two 24px targets. Below 21em of width (a 320px
+// phone, or large text on a phone) 5K's label drops out, and below 14em
+// (~175%+ text on a phone) 50K's too, rather than any target shrinking; both
+// stay reachable as above.
+const NARROW_HIDDEN_PRESETS = {
+  "5K": "[@media(max-width:21em)]:hidden",
+  "50K": "[@media(max-width:14em)]:hidden",
+};
 
 // ─── Animated number hook ─────────────────────────────────────────────────────
 // snapKey: when this value changes, skip animation and jump instantly (e.g. currency switch)
@@ -138,7 +154,7 @@ export default function PricingCalculator({ currency = "INR", onBuy, initialCred
         Estimate Your Cost
       </div>
 
-      <div className="grid md:grid-cols-2 gap-10">
+      <div className="grid [@media(min-width:48em)]:grid-cols-2 gap-10">
         {/* Left: Slider + input */}
         <div>
           {/* M38 — stack the credit total above the input on narrow screens. */}
@@ -212,7 +228,7 @@ export default function PricingCalculator({ currency = "INR", onBuy, initialCred
                   <button
                     key={value}
                     onClick={() => setCredits(value)}
-                    className="absolute top-0 inline-flex min-h-[24px] min-w-[24px] items-center justify-center rounded px-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]"
+                    className={`absolute top-0 ${CROWDED_PRESETS.has(PRESET_LABELS[i]) ? "hidden [@media(min-width:40em)]:inline-flex [@media(min-width:48em)]:hidden [@media(min-width:64em)]:inline-flex" : `inline-flex ${NARROW_HIDDEN_PRESETS[PRESET_LABELS[i]] ?? ""}`} min-h-[24px] min-w-[24px] items-center justify-center rounded px-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00E5C8]`}
                     style={{
                       left: `calc(10px + ${frac} * (100% - 20px))`,
                       transform: "translateX(-50%)",

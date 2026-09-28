@@ -1091,17 +1091,17 @@ export default function Payments() {
           </motion.div>
 
           {/* ── Individual / Teams Tab Toggle ───────────────────────────── */}
+          {/* Two equal columns, full width up to 16rem: with px-8 buttons the
+              toggle grew with the browser font and ran off both edges of a
+              phone at 150%. Below 14em of width (large text on a phone) the
+              options stack, since "Individual" alone outgrows half the column.
+              The pill lives in the active button (shared layoutId), so it
+              follows it in either orientation; a fixed x offset could not. */}
           <div className="flex justify-center mb-10">
             <div
-              className="relative inline-flex rounded-xl p-1"
+              className="relative grid w-full max-w-[16rem] grid-cols-2 [@media(max-width:14em)]:grid-cols-1 rounded-xl p-1"
               style={{ background: "#16162A", border: "1px solid #2A2A45" }}
             >
-              <motion.div
-                className="absolute inset-y-1 rounded-lg"
-                style={{ background: "#00E5C8", width: "calc(50% - 4px)" }}
-                animate={{ x: pricingTab === "teams" ? "calc(100% + 8px)" : 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              />
               {[
                 { id: "individual", label: "Individual" },
                 { id: "teams", label: "Teams" },
@@ -1109,10 +1109,18 @@ export default function Payments() {
                 <button
                   key={id}
                   onClick={() => setPricingTab(id)}
-                  className="relative z-10 px-8 py-2.5 text-sm font-semibold rounded-lg transition-colors"
+                  className="relative px-2 py-2.5 text-sm font-semibold rounded-lg transition-colors"
                   style={{ color: pricingTab === id ? "#06060B" : "#8888A0" }}
                 >
-                  {label}
+                  {pricingTab === id && (
+                    <motion.span
+                      layoutId="pricing-tab-pill"
+                      className="absolute inset-0 rounded-lg"
+                      style={{ background: "#00E5C8" }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                  <span className="relative">{label}</span>
                 </button>
               ))}
             </div>
@@ -1132,10 +1140,15 @@ export default function Payments() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                {/* Desktop: 5-col grid */}
+                {/* Desktop: 3 columns from md, 5 from xl. Five cards need ~930px
+                    and a 1fr track cannot shrink below a card's content, so a
+                    5-col grid from md pushed the last card off-screen between
+                    768 and ~1000px (beside the sidebar there is 672px at 768).
+                    48em/80em rather than md/xl's px so the switch follows the
+                    browser font: at 768 with 200% text the 3 columns were 165px
+                    and every card's content and buy button overflowed it. */}
                 <motion.div
-                  className="hidden md:grid gap-5"
-                  style={{ gridTemplateColumns: "repeat(5, 1fr)" }}
+                  className="hidden [@media(min-width:48em)]:grid [@media(min-width:48em)]:grid-cols-3 [@media(min-width:80em)]:grid-cols-5 gap-5"
                   initial="hidden"
                   animate="visible"
                   variants={staggerContainer}
@@ -1155,7 +1168,7 @@ export default function Payments() {
                 </motion.div>
                 {/* Mobile */}
                 <motion.div
-                  className="flex md:hidden flex-col gap-4"
+                  className="flex [@media(min-width:48em)]:hidden flex-col gap-4"
                   initial="hidden"
                   animate="visible"
                   variants={staggerContainer}
@@ -1516,9 +1529,10 @@ export default function Payments() {
                   allocation, invoice — at minimal cost. Visible only to ROOT_ADMIN and SUB_ADMIN.
                 </p>
 
-                {/* Plan row */}
+                {/* Plan row — wraps so the price and button drop below the label
+                    rather than off the right edge on a narrow screen or large font. */}
                 <div
-                  className="flex items-center justify-between rounded-xl p-4"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-4"
                   style={{ background: "#0A0A12", border: "1px solid #1A1A2E" }}
                 >
                   <div>
@@ -1529,7 +1543,7 @@ export default function Payments() {
                       100 credits · ₹11 · Admin only
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div
                       className="text-xl font-bold"
                       style={{

@@ -418,13 +418,22 @@ export default function Users() {
             it was the first thing a customer saw after paying, on a phone.
             The rule here is the one @/components/common/PageHeader already
             uses: stack below sm, row from sm, min-w-0 on the text so it can
-            shrink, shrink-0 on the actions so they never compress. */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            shrink, shrink-0 on the actions so they never compress. Except
+            here the row waits for md: this page's two buttons plus the h1 need
+            ~700px, so from 640 to 767 (a phone in landscape) the shrink-0
+            cluster ran 60px off the right edge, clipped and unclickable.
+            48em rather than md's 768px so the switch moves with the browser
+            font size, and the cluster is capped at 60%: uncapped, the helper
+            sentence's one-line width (691px) set it, squeezing the title
+            column to 17px at 768 and letting the h1 run under the buttons. */}
+        <div className="flex flex-col gap-3 [@media(min-width:48em)]:flex-row [@media(min-width:48em)]:items-start [@media(min-width:48em)]:justify-between">
           <div className="min-w-0">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">User Management</h1>
+            {/* Below 14em of width (only at ~175%+ browser text on a phone) text-3xl's
+                "Management" alone is wider than the column; text-2xl still scales. */}
+            <h1 className="text-3xl [@media(max-width:14em)]:text-2xl font-bold text-slate-900 dark:text-white">User Management</h1>
             <p className="text-slate-600 dark:text-slate-400 mt-1">Manage team members and their permissions</p>
           </div>
-          <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+          <div className="flex shrink-0 flex-col gap-1.5 [@media(min-width:48em)]:max-w-[60%] [@media(min-width:48em)]:items-end">
             {isRootAdmin && (
               <span className="text-xs text-muted-foreground">{secondaryRootCount}/2 secondary admins</span>
             )}
@@ -433,7 +442,7 @@ export default function Users() {
             {/* Invite User (Recommended) */}
             <Dialog open={isInviteOpen} onOpenChange={(open) => { setIsInviteOpen(open); if (!open) setInviteFieldErrors({}); }}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2" data-testid="button-invite-member">
+                <Button variant="outline" className="h-auto min-h-10 flex-wrap gap-2 whitespace-normal" data-testid="button-invite-member">
                   <Mail className="w-4 h-4" />
                   Invite User
                   <span className="text-xs opacity-60 font-normal">(Recommended)</span>
@@ -506,7 +515,7 @@ export default function Users() {
               }}
             >
               <DialogTrigger asChild>
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-user">
+                <Button className="h-auto min-h-10 whitespace-normal bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-create-user">
                   <Plus className="w-5 h-5" />
                   Create User Directly
                 </Button>
@@ -691,9 +700,10 @@ export default function Users() {
           </div>
         )}
 
-        {/* Users table */}
+        {/* Users table. The scroller is a size container so the empty state
+            below can be exactly as wide as the visible area (100cqw). */}
         <div className="bg-white dark:bg-slate-900/50 rounded-xl border border-gray-200 dark:border-slate-700/50 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto [container-type:inline-size]">
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-gray-200 dark:border-slate-700/70 bg-gray-50 dark:bg-slate-800/30">
@@ -975,25 +985,34 @@ export default function Users() {
                 ) : (
                   <tr>
                     <td colSpan={7} className="py-16 text-center">
-                      <div className="relative mb-6">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="h-24 w-24 rounded-full bg-primary/5" />
+                      {/* The cell spans the whole scrollable table (538px at 100%,
+                          1077px at 200% text), so content centred in it put
+                          "Create Directly" off-screen on a phone. Pinned to the
+                          visible width, it needs no sideways scroll; the header
+                          row above still scrolls. Without container units
+                          (Firefox <110) the width is dropped and this falls back
+                          to the previous table-wide centring, still scrollable. */}
+                      <div className="sticky left-0 w-[100cqw] px-4">
+                        <div className="relative mb-6">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="h-24 w-24 rounded-full bg-primary/5" />
+                          </div>
+                          <UsersIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
                         </div>
-                        <UsersIcon className="relative h-12 w-12 mx-auto text-muted-foreground/40" />
-                      </div>
-                      <p className="text-lg font-medium mb-2">No team members yet</p>
-                      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                        Invite team members to collaborate on campaigns and manage credits across your organization.
-                      </p>
-                      <div className="flex justify-center gap-2">
-                        <Button variant="outline" onClick={() => setIsInviteOpen(true)} data-testid="button-invite-first">
-                          <Mail className="mr-2 h-4 w-4" />
-                          Invite User
-                        </Button>
-                        <Button onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Create Directly
-                        </Button>
+                        <p className="text-lg font-medium mb-2">No team members yet</p>
+                        <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                          Invite team members to collaborate on campaigns and manage credits across your organization.
+                        </p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          <Button variant="outline" className="h-auto min-h-10 whitespace-normal" onClick={() => setIsInviteOpen(true)} data-testid="button-invite-first">
+                            <Mail className="mr-2 h-4 w-4" />
+                            Invite User
+                          </Button>
+                          <Button className="h-auto min-h-10 whitespace-normal" onClick={() => setIsCreateOpen(true)} data-testid="button-create-first-user">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create Directly
+                          </Button>
+                        </div>
                       </div>
                     </td>
                   </tr>

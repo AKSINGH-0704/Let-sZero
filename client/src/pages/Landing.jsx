@@ -728,7 +728,10 @@ export default function Landing() {
             />
             <span>© 2026 RepMail by LetsZero. All rights reserved.</span>
           </div>
-          <div className="flex items-center space-x-6">
+          {/* flex-wrap: unwrapped, this row ran past both edges below ~380px and the
+              page's overflow-x clipping hid the first and last links rather than
+              letting them scroll. Wrapped, rows sit 28px apart (WCAG 2.5.8 spacing). */}
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             <Link href="/repmail/learn" className="hover:text-white transition-colors">Resources</Link>
             <Link href="/repmail/privacy" className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/repmail/terms" className="hover:text-white transition-colors">Terms</Link>

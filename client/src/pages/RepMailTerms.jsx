@@ -563,7 +563,10 @@ export default function RepMailTerms() {
             <img src="/repmail-logo-white.png" alt="RepMail" className="h-6 w-auto" style={{ objectFit: "contain" }} />
             <span>© {new Date().getFullYear()} LetsZero. All rights reserved.</span>
           </div>
-          <div className="flex items-center gap-6 text-sm">
+          {/* flex-wrap: unwrapped, this row ran past both edges below ~380px and the
+              page's overflow-x clipping hid the first and last links rather than
+              letting them scroll. Wrapped, rows sit 28px apart (WCAG 2.5.8 spacing). */}
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
             <Link href="/repmail/privacy" style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors">Privacy</Link>
             <Link href="/repmail/terms" style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors">Terms</Link>
             <CookiePreferencesLink style={{ color: "#9CA3AF" }} className="hover:text-white transition-colors" />
