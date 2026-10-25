@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-10-25",
+  "sitemapStatus": 200,
+  "sitemapRoutes": 628,
+  "allRoutes": 628,
+  "failedRoutes": [],
+  "newResults": [
+    {
+      "path": "/repmail/learn/cold-email/cold-email-subject-line-tester-review-sheet",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 45840
+    },
+    {
+      "path": "/repmail/learn/deliverability/dmarc-checker-policy-alignment",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 49651
+    },
+    {
+      "path": "/repmail/learn/deliverability/email-spam-checker-diagnostic-limits",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 50278
+    },
+    {
+      "path": "/repmail/learn/infrastructure/dkim-checker-selector-alignment",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 45776
+    },
+    {
+      "path": "/repmail/learn/infrastructure/email-api-202-accepted-not-delivered",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 45087
+    },
+    {
+      "path": "/repmail/learn/infrastructure/inbound-email-api-webhook-vs-polling",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 46401
+    },
+    {
+      "path": "/repmail/learn/infrastructure/repmail-verify-custom-sending-domain",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 47529
+    },
+    {
+      "path": "/repmail/learn/infrastructure/ses-smtp-535-authentication-troubleshooting",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 44532
+    },
+    {
+      "path": "/repmail/learn/infrastructure/spf-checker-result-interpretation",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 46832
+    },
+    {
+      "path": "/repmail/learn/infrastructure/zoho-mail-domain-verification-dns-handoff",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 46071
+    },
+    {
+      "path": "/repmail/learn/infrastructure/zoho-mail-smtp-port-465-vs-587",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 45221
+    },
+    {
+      "path": "/repmail/learn/email-platform/repmail-merge-fields-preview-vs-send",
+      "status": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "bytes": 44004
+    }
+  ],
+  "newPass": true,
+  "robotsStatus": 200,
+  "robotsBytes": 85,
+  "rssStatus": 200,
+  "rssItems": 587
+}

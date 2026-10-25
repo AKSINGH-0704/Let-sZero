@@ -60,3 +60,59 @@ Public HTTP responses included the existing content security policy header. No p
 Google Ads, consent, attribution, authentication, pricing, payment, and campaign behavior are **UNVERIFIED by functional replay** because the release explicitly did not perform real conversion or account actions. Their protected source scope was verified unchanged.
 
 **Remaining operational note:** Search demand evidence remains qualitative. No measured volume, ranking, traffic, CTR, conversion, or keyword-difficulty dataset was available for this wave, and none is claimed.
+
+
+---
+
+# Wave 3 Release 1 — Post-Deployment Release Verification
+
+**Verification date:** 2026-10-25
+
+**Production rollout commit:** `5fdd9881acb28985cfd844515105d24a6f02bbc4`
+
+## Production counts
+
+The Railway-triggered rollout was observed transitioning from the previous baseline of 616 sitemap routes / 575 RSS items to the Release 1 state. Final production counts are:
+
+- **587 published RepMail articles**
+- **628 sitemap/public routes**
+- **587 RepMail RSS items**
+- **17 collections and 6 learning paths**; no new collection or path system was introduced
+- **12 new Release 1 articles** live
+
+## Complete HTTP crawl
+
+A bounded retrying crawl checked every URL in the live sitemap and every new Release 1 URL. The machine-readable evidence is `seo/wave3-research/WAVE3_RELEASE1_PRODUCTION_VERIFICATION.json`.
+
+- Sitemap HTTP status: **200**
+- Routes crawled: **628/628**
+- Route failures: **0**
+- New Release 1 URLs: **12/12 HTTP 200**
+- Every crawled route had a title: **628/628**
+- Every crawled route had a canonical: **628/628**
+- Every crawled route had JSON-LD: **628/628**
+- RSS HTTP status: **200**, item count **587**
+- `robots.txt` HTTP status: **200**
+
+## Representative rendered production checks
+
+- Resource Center homepage `/repmail/learn/`: hydrated successfully; rendered the 587-guide count, 8 academy navigation, latest Release 1 guides, collections, paths and search control.
+- New DMARC guide `/repmail/learn/deliverability/dmarc-checker-policy-alignment`: rendered title, description, breadcrumbs, key-takeaway checklist, source links, continue-learning CTA, related content and previous/next links.
+- New infrastructure guide `/repmail/learn/infrastructure/email-api-202-accepted-not-delivered`: rendered title, description, breadcrumbs, practical evidence timeline, source links, CTA and related content.
+- Deliverability Diagnostics collection: rendered its expanded collection membership and the new diagnostic guides.
+- Provider Deliverability Diagnostics learning path: rendered the path and its expanded 118-step navigation, including the new DMARC step.
+- Search: broad read-only query `DMARC` returned the new `DMARC Checker: Read Policy, Alignment, and Reports` result. A longer natural-language query returned no result, but the indexed article appeared correctly for its core topic term; no search implementation change was made.
+- Metadata script inspection on the new API guide: canonical present, **4 JSON-LD blocks**, visible breadcrumb navigation, correct title, and no CSP meta override.
+- Browser console: **no console output/errors** on the homepage, new article and final representative article checks; no CSP violation was observed.
+
+## Preservation and safety checks
+
+- No signup, purchase, campaign, ad-click, Google Ads setting, conversion, consent, attribution, payment or auth action was performed.
+- Protected analytics, consent, authentication, payment, pricing and campaign files were outside the Release 1 diff.
+- Existing Resource Center architecture was reused: canonical Markdown loader/schema, article template, asset renderer, collections, learning paths, related content, JSON-LD, prerendering, sitemap, RSS and search.
+- `Blogs.docx` remained immutable and was not modified, migrated, overwritten or used as current product truth.
+- No production code or architecture redesign was introduced.
+
+## Final result
+
+**PASS — Wave 3 Release 1 is live and production-verified.** The 12 retained articles are crawlable, rendered, internally connected, represented in navigation, included in sitemap/RSS output, and free of observed route, metadata, hydration, console or CSP regressions.
