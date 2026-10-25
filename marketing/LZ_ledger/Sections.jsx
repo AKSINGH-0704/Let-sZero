@@ -20,6 +20,91 @@ import {
   useReducedMotionLive,
 } from "./theme.jsx";
 import { IMAGES } from "./fx.jsx";
+import { ArrowRight } from "lucide-react";
+import ProductVideo from "@/components/marketing/ProductVideo";
+import { REPMAIL_EXPLAINER } from "@/components/marketing/repmailExplainer";
+
+/* ============================================================
+   INSIDE REPMAIL — the narrated walkthrough
+   ------------------------------------------------------------
+   Placed straight after the hero, NOT inside it. The hero's right column is
+   the measured ledger-card composition and only exists from `lg` up, so a
+   video there would have replaced audited work and vanished on every phone
+   and tablet. Here it is full width at every breakpoint.
+
+   Unnumbered on purpose: this is proof of the hero's claim rather than a
+   chapter of the page's argument, and numbering it would renumber 02–0N.
+
+   The heading stays a Reveal like every other section's; the player does
+   not, so the play button is in the prerendered HTML and the 16:9 box
+   holds its geometry from first paint.
+============================================================ */
+export function WalkthroughSection() {
+  return (
+    <section
+      id="walkthrough"
+      aria-labelledby="walkthrough-heading"
+      className="relative pt-20 md:pt-28 pb-2 md:pb-6"
+    >
+      <div className="max-w-[1120px] mx-auto px-5 sm:px-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-10 items-end mb-8 md:mb-10">
+          <div className="lg:col-span-7">
+            <Reveal y={10}>
+              <span
+                className="lz-mono text-xs tracking-[0.25em] uppercase px-2.5 py-1 rounded-full border"
+                style={{ color: C.tealText, borderColor: `${C.teal}55`, background: `${C.teal}14` }}
+              >
+                Inside RepMail · 3 min
+              </span>
+            </Reveal>
+            <Reveal delay={0.06}>
+              <h2
+                id="walkthrough-heading"
+                className="mt-5 lz-display font-bold tracking-[-0.02em] leading-[1.05] text-[clamp(28px,3.6vw,46px)]"
+              >
+                Watch a campaign go from upload{" "}
+                <em className="lz-serif" style={{ fontStyle: "italic", color: C.tealText }}>
+                  to send.
+                </em>
+              </h2>
+            </Reveal>
+          </div>
+          <Reveal delay={0.12} className="lg:col-span-5">
+            <p className="text-[15.5px] md:text-[16.5px] leading-relaxed" style={{ color: C.inkSoft }}>
+              Why good email lands in spam, the four signals behind it, and how
+              RepMail checks a campaign before it goes out. Narrated, so turn
+              the sound on.
+            </p>
+          </Reveal>
+        </div>
+
+        <ProductVideo
+          {...REPMAIL_EXPLAINER}
+          frameClassName="rounded-2xl"
+          frameStyle={{
+            border: `1px solid ${C.ink}1F`,
+            boxShadow: `0 30px 80px -30px ${C.ink}59, 0 0 0 6px ${C.paperHi}`,
+          }}
+          // The chapter list lives on the product page; here it is one piece
+          // of proof, not a syllabus.
+          chapters={null}
+          endTitle="Your domain, kept sendable."
+          endAction={
+            <a
+              href="/products/repmail"
+              data-cursor="GO"
+              className="group inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-sm font-semibold text-white sm:h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+              style={{ background: `linear-gradient(120deg, ${C.ctaFrom}, ${C.ctaTo})` }}
+            >
+              Explore RepMail
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+            </a>
+          }
+        />
+      </div>
+    </section>
+  );
+}
 
 /* ============================================================
    02 — THE PROBLEM

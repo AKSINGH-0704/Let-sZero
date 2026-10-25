@@ -6,7 +6,7 @@
  * Navigation handled via wouter Links.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from "wouter";
 import CookiePreferencesLink from "@/components/consent/CookiePreferencesLink";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,6 +30,8 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import ProductVideo from "@/components/marketing/ProductVideo";
+import { REPMAIL_EXPLAINER } from "@/components/marketing/repmailExplainer";
 
 // Animation variants
 const fadeInUp = {
@@ -233,6 +235,17 @@ const stats = [
 ];
 
 export default function Landing() {
+  const walkthroughRef = useRef(null);
+
+  const watchWalkthrough = (e) => {
+    const section = document.getElementById("walkthrough");
+    if (!section || !walkthroughRef.current) return; // let the href jump
+    e.preventDefault();
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    section.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    walkthroughRef.current.start(0);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 relative overflow-hidden">
       {/* Ambient background effects */}
@@ -397,6 +410,22 @@ export default function Landing() {
               </Link>
             </motion.div>
           </motion.div>
+
+          {/* Tertiary on purpose: the walkthrough sits right under the hero on
+              desktop but below the fold on a phone, so this is how a mobile
+              visitor learns it exists. It starts playback from this click
+              (iOS only allows sound inside the gesture) and falls back to the
+              plain #walkthrough jump if the player isn't mounted. */}
+          <motion.div variants={fadeInUp}>
+            <a
+              href="#walkthrough"
+              onClick={watchWalkthrough}
+              className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium text-cyan-300 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
+            >
+              <Play className="w-4 h-4 fill-current" aria-hidden="true" />
+              Watch the 3-min walkthrough
+            </a>
+          </motion.div>
           
           <motion.div 
             className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400"
@@ -418,112 +447,62 @@ export default function Landing() {
         </motion.div>
       </section>
 
-      {/* Dashboard Preview Section */}
-      <section className="relative z-10 container mx-auto px-6 pb-20">
-        <motion.div 
-          className="max-w-6xl mx-auto"
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={scaleIn}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="relative">
-            {/* Glow effect behind dashboard */}
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-indigo-500/20 to-purple-500/20 rounded-2xl blur-2xl transform scale-105" />
-            
-            {/* Dashboard mockup */}
-            <div className="relative bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
-              {/* Browser chrome */}
-              <div className="flex items-center space-x-2 px-4 py-3 bg-slate-800/80 border-b border-white/10">
-                <div className="flex space-x-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <div className="px-4 py-1 bg-slate-700/50 rounded-md text-xs text-slate-400 font-mono">
-                    app.repmail.com/dashboard
-                  </div>
-                </div>
-              </div>
-              
-              {/* Dashboard content */}
-              {/* M36 — this mockup was authored at desktop width only: a fixed
-                  192px sidebar plus an unconditional 4-column stat grid left
-                  ~78px of main content at 360px, so the stat cards overflowed
-                  the card and were cut off by the rounded-corner overflow-hidden
-                  above. The sidebar is decorative, so it is dropped below `sm`
-                  and the stats fall back to two columns until there is room. */}
-              <div className="p-4 sm:p-6">
-                <div className="flex gap-4 sm:gap-6">
-                  {/* Sidebar preview */}
-                  <div className="hidden sm:block w-40 md:w-48 shrink-0 space-y-3">
-                    <div className="flex items-center gap-2 px-3 py-2 bg-cyan-500/20 rounded-lg border border-cyan-500/30">
-                      <div className="w-4 h-4 bg-cyan-400/50 rounded" />
-                      <span className="text-sm text-cyan-300">Dashboard</span>
-                    </div>
-                    {['Campaigns', 'Templates', 'Analytics', 'Contacts'].map((item, i) => (
-                      <div key={i} className="flex items-center gap-2 px-3 py-2 text-slate-500">
-                        <div className="w-4 h-4 bg-slate-700 rounded" />
-                        <span className="text-sm">{item}</span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  {/* Main content */}
-                  <div className="min-w-0 flex-1 space-y-4">
-                    {/* Stats row */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-                      {[
-                        { label: 'Available Credits', value: '7,500', trend: '+12%', color: 'text-cyan-400' },
-                        { label: 'Emails Sent', value: '28,543', trend: '+8%', color: 'text-emerald-400' },
-                        { label: 'Delivery Rate', value: '97.4%', trend: '+2%', color: 'text-blue-400' },
-                        { label: 'Active Campaigns', value: '12', trend: '+3', color: 'text-purple-400' }
-                      ].map((stat, i) => (
-                        <motion.div 
-                          key={i}
-                          className="bg-slate-800/50 border border-white/5 rounded-xl p-3 sm:p-4"
-                          initial={{ opacity: 0, y: 20 }}
-                          whileInView={{ opacity: 1, y: 0 }}
-                          viewport={{ once: true }}
-                          transition={{ delay: i * 0.1 }}
-                        >
-                          <p className="text-xs text-slate-500 mb-1">{stat.label}</p>
-                          <p className="text-xl font-bold text-white">{stat.value}</p>
-                          <p className={`text-xs ${stat.color} mt-1`}>{stat.trend}</p>
-                        </motion.div>
-                      ))}
-                    </div>
-                    
-                    {/* Chart placeholder */}
-                    <div className="bg-slate-800/50 border border-white/5 rounded-xl p-3 sm:p-4">
-                      {/* M36 — the two labels used to collide and stack onto three
-                          lines inside a fixed h-40 box; wrapping them and letting
-                          the box grow keeps the bars on the baseline. */}
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-4">
-                        <span className="text-sm text-slate-400">Campaign Performance</span>
-                        <span className="text-xs text-slate-500">Last 30 days</span>
-                      </div>
-                      <div className="flex items-end justify-between h-20 gap-2">
-                        {[40, 65, 45, 80, 55, 90, 70, 85, 60, 95, 75, 88].map((h, i) => (
-                          <motion.div 
-                            key={i}
-                            className="flex-1 bg-gradient-to-t from-cyan-500/50 to-indigo-500/50 rounded-t"
-                            initial={{ height: 0 }}
-                            whileInView={{ height: `${h}%` }}
-                            viewport={{ once: true }}
-                            transition={{ delay: i * 0.05, duration: 0.5 }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+      {/* Walkthrough — the narrated product video, in the slot the
+          illustrative dashboard mockup used to hold. The mockup's figures
+          ("28,543 sent", "97.4%") were placeholders under a URL bar reading a
+          domain LetsZero does not own; the video shows the real workflow, so
+          stacking both would put two competing "hero visuals" in a row.
+
+          Deliberately NOT wrapped in a whileInView reveal: that would
+          prerender the play button at opacity 0 and hide it until hydration
+          and intersection, and the 16:9 box must hold its geometry from the
+          first paint. */}
+      <section
+        id="walkthrough"
+        aria-labelledby="walkthrough-heading"
+        className="relative z-10 container mx-auto px-6 pb-20 scroll-mt-6"
+      >
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+            <div className="min-w-0">
+              <h2 id="walkthrough-heading" className="text-2xl sm:text-3xl font-bold text-white">
+                See how RepMail works
+              </h2>
+              <p className="mt-2 text-slate-400 max-w-2xl">
+                Why good email lands in spam, what to fix first, and how RepMail checks a campaign before it goes out.
+              </p>
             </div>
+            <p className="text-sm text-slate-400">Narrated · 3 min · sound on</p>
           </div>
-        </motion.div>
+          <div className="relative">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-indigo-500/20 to-purple-500/20 rounded-2xl blur-2xl transform scale-105"
+            />
+            <ProductVideo
+              ref={walkthroughRef}
+              {...REPMAIL_EXPLAINER}
+              className="relative"
+              frameClassName="rounded-2xl border border-white/10 shadow-2xl"
+              chapterTone="dark"
+              endTitle="Ready to run your first campaign?"
+              // Button asChild -> one <a> styled as a button. The page's older
+              // <Link><Button> pattern nests a <button> inside an <a>.
+              endAction={
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-10 sm:h-11 w-full sm:w-auto bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-xl shadow-cyan-500/25"
+                >
+                  <Link href="/login">
+                    Start Free Trial
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </Link>
+                </Button>
+              }
+            />
+          </div>
+        </div>
       </section>
 
       {/* How It Works Section */}

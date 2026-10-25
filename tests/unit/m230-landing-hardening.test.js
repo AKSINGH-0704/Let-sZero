@@ -35,16 +35,23 @@ function globalSheet() {
 
 /**
  * The hero's right-hand collage: the domain-health card and its two supporting
- * panels. Bounded by the column class and the first section anchor, because
+ * panels. Bounded by the column class and the hero's own closing tag, because
  * the section eyebrows are uppercased by CSS and do not appear as uppercase
  * text in the HTML — matching on "THE PROBLEM" silently selects the whole
  * document instead of the hero.
+ *
+ * It used to end at the first section anchor, `id="system"`, which silently
+ * included the whole Problem section too. Once the walkthrough section landed
+ * between the hero and #system, that bound swept in its play button — a real
+ * control that rightly carries `data-cursor` — and blamed the collage for it.
+ * The hero contains no nested <section>, so its first `</section>` is exact.
  */
 function heroCollage() {
   const start = html.indexOf("lg:col-span-5");
   expect(start, "hero collage column not found").toBeGreaterThan(-1);
-  const end = html.indexOf('id="system"');
-  expect(end, "no section anchor to bound the hero").toBeGreaterThan(start);
+  const end = html.indexOf("</section>", start);
+  expect(end, "the hero section never closes").toBeGreaterThan(start);
+  expect(html.slice(start, end), "bound ran past the hero").not.toMatch(/<section\b/);
   return html.slice(start, end);
 }
 

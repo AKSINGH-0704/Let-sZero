@@ -2,13 +2,25 @@
 
 **Product:** RepMail by LetsZero Solutions Private Limited  
 **Audience:** Customers, stakeholders, partners  
-**Last updated:** 2026-09-21 (v2.6.0)
+**Last updated:** 2026-10-25 (v2.6.1)
 
 This document summarises what was built, improved, and hardened across the RepMail engineering programme. Changes are grouped by theme rather than internal milestone numbering. Technical implementation details are omitted in favour of customer-facing descriptions.
 
 ---
 
-## Current Release — v2.6.0 (2026-09-21)
+## Current Release — v2.6.1 (2026-10-25)
+
+**See RepMail work before you sign up.**
+
+- **A three-minute walkthrough, on the page.** The front page and the RepMail page now carry a narrated walkthrough: why good email ends up in spam, what to fix first, and a campaign going from upload to send — including the spam check catching a risky line before it goes out.
+- **It only plays when you ask.** Nothing starts on its own, and the video isn't downloaded until you press play. It's narrated, so it plays with sound.
+- **Jump to the part you need.** On the RepMail page, chapters let you start at any section — or skip straight to sending a campaign at 1:50.
+- **Works the way you do.** The player is reachable by keyboard, uses your browser's own controls including fullscreen, and if the video can't load you can try again without leaving the page.
+- On the RepMail page, the walkthrough replaces the illustrative dashboard picture that used to sit under the headline — it shows the real product instead.
+
+---
+
+## Previous Release — v2.6.0 (2026-09-21)
 
 **A new front page, and you can now stop it moving.**
 

@@ -16,7 +16,7 @@ import { motion, useScroll, useSpring } from "framer-motion";
 import { C } from "./theme.jsx";
 import { GlobalStyles, Cursor } from "./fx.jsx";
 import { Nav, Hero } from "./Hero.jsx";
-import { ProblemSection, SystemSection, GuaranteesSection } from "./Sections.jsx";
+import { WalkthroughSection, ProblemSection, SystemSection, GuaranteesSection } from "./Sections.jsx";
 import { AISection, PlatformSection, PricingSection, ResourcesSection, CTASection, Footer } from "./Closing.jsx";
 
 export default function LandingExperience() {
@@ -42,6 +42,7 @@ export default function LandingExperience() {
 
       <Nav />
       <Hero />
+      <WalkthroughSection />
       <ProblemSection />
       <SystemSection />
       <GuaranteesSection />

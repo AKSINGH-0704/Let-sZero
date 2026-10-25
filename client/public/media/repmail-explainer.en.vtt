@@ -1,0 +1,216 @@
+WEBVTT
+
+1
+00:00:00.050 --> 00:00:02.610
+Most of your emails are never even seen.
+
+2
+00:00:02.640 --> 00:00:06.110
+They're sitting in spam, or
+in a folder nobody checks.
+
+3
+00:00:06.200 --> 00:00:09.130
+Here's why that happens,
+and what to fix first.
+
+4
+00:00:09.630 --> 00:00:13.580
+Every email gets scored in real
+time by the receiving server,
+
+5
+00:00:13.590 --> 00:00:15.710
+before a human ever sees it.
+
+6
+00:00:15.940 --> 00:00:18.160
+Four things drive that score.
+
+7
+00:00:18.310 --> 00:00:20.100
+Your domain reputation.
+
+8
+00:00:20.250 --> 00:00:24.340
+A new domain with no sending history
+gets no benefit of the doubt.
+
+9
+00:00:24.490 --> 00:00:26.110
+Your sending pattern.
+
+10
+00:00:26.260 --> 00:00:31.030
+Jumping from five emails a day to five
+hundred overnight looks like a spam
+
+11
+00:00:31.040 --> 00:00:33.780
+campaign, because it usually is one.
+
+12
+00:00:33.930 --> 00:00:37.660
+Your content. Spammy
+language, too many links,
+
+13
+00:00:37.670 --> 00:00:40.710
+and identical copy sent
+to hundreds of people.
+
+14
+00:00:40.860 --> 00:00:42.340
+And your engagement.
+
+15
+00:00:42.540 --> 00:00:46.840
+When people don't open, don't
+reply, or mark you as spam,
+
+16
+00:00:46.850 --> 00:00:50.950
+providers learn from it, and route
+your future mail straight to junk.
+
+17
+00:00:51.520 --> 00:00:56.390
+No platform, including ours, can guarantee
+the inbox if the basics aren't in
+
+18
+00:00:56.400 --> 00:00:59.330
+place. Two things are on you.
+
+19
+00:00:59.480 --> 00:01:03.320
+One: warm up your domain,
+in both directions.
+
+20
+00:01:03.470 --> 00:01:08.210
+Outgoing: email people you actually
+know and ask them to reply.
+
+21
+00:01:08.470 --> 00:01:12.480
+If you land in spam, ask
+them to mark it 'not spam'.
+
+22
+00:01:12.490 --> 00:01:15.990
+That's one of the strongest
+trust signals you can generate.
+
+23
+00:01:16.140 --> 00:01:18.980
+Spread those asks over a few days.
+
+24
+00:01:19.070 --> 00:01:22.720
+Replies clustered in the
+same hour look coordinated.
+
+25
+00:01:22.870 --> 00:01:27.000
+Incoming: subscribe to a few
+newsletters and open them.
+
+26
+00:01:27.160 --> 00:01:31.620
+An inbox that only sends and
+never receives looks synthetic.
+
+27
+00:01:31.770 --> 00:01:35.290
+Then ease into volume
+over two to three weeks.
+
+28
+00:01:35.440 --> 00:01:37.580
+Two: clean your list.
+
+29
+00:01:37.730 --> 00:01:42.690
+Bounces are one of the fastest ways
+to burn the reputation you just built.
+
+30
+00:01:42.700 --> 00:01:45.150
+And the fix most people get
+stuck on?
+
+31
+00:01:50.300 --> 00:01:54.550
+Think of inbox placement
+as a stack of odds.
+
+32
+00:01:54.560 --> 00:01:58.970
+Every step in RepMail removes
+one more reason to get flagged.
+
+33
+00:01:58.980 --> 00:02:04.510
+Upload your list. RepMail reads
+your CSV or Excel file and maps
+
+34
+00:02:04.520 --> 00:02:07.990
+columns into variables
+like name and company.
+
+35
+00:02:08.000 --> 00:02:09.530
+Build the template.
+
+36
+00:02:09.540 --> 00:02:12.690
+Write it yourself,
+or let the AI write it.
+
+37
+00:02:12.700 --> 00:02:14.700
+Preview every email.
+
+38
+00:02:16.340 --> 00:02:17.840
+Run the spam check,
+
+39
+00:02:17.850 --> 00:02:22.230
+and anything flagged gets
+fixed by AI in one click.
+
+40
+00:02:22.240 --> 00:02:26.450
+Then confirm. See every send
+detail, credits included,
+
+41
+00:02:26.460 --> 00:02:28.770
+before anything goes out.
+
+42
+00:02:28.780 --> 00:02:33.030
+Warm up properly and keep your list clean.
+That's on you.
+
+43
+00:02:33.040 --> 00:02:36.670
+Everything else, writing,
+personalization,
+
+44
+00:02:36.680 --> 00:02:42.010
+spam checks, authentication and
+sending, RepMail takes off your plate.
+
+45
+00:02:42.020 --> 00:02:45.450
+So landing in the inbox
+stops being a guessing game.
+
+46
+00:02:45.460 --> 00:02:47.900
+Get started with RepMail below.
