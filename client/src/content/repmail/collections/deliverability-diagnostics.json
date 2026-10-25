@@ -123,6 +123,12 @@
     "dmarc-checker-policy-alignment",
     "email-spam-checker-diagnostic-limits",
     "spf-checker-result-interpretation",
-    "dkim-checker-selector-alignment"
+    "dkim-checker-selector-alignment",
+    "email-open-rate-benchmark-calculator-denominator",
+    "email-deliverability-benchmark-calculator-boundaries",
+    "repmail-warmup-daily-cap-ladder",
+    "emails-spam-despite-spf-dkim-dmarc-pass",
+    "outlook-suspected-spam-rejection-fix",
+    "gmail-only-spam-vs-other-providers"
   ]
 }

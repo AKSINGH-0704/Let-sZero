@@ -57,6 +57,7 @@
     "zoho-mail-smtp-port-465-vs-587",
     "inbound-email-api-webhook-vs-polling",
     "repmail-verify-custom-sending-domain",
-    "repmail-merge-fields-preview-vs-send"
+    "repmail-merge-fields-preview-vs-send",
+    "email-api-hidden-costs"
   ]
 }

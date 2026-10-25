@@ -71,6 +71,9 @@
     "warmup-to-real-sending-ramp",
     "mailbox-access-offboarding-credential-rotation",
     "mailbox-acceptance-test-sending-workflow",
-    "mailbox-incident-log-template"
+    "mailbox-incident-log-template",
+    "dpdp-rules-2025-commencement-timeline",
+    "dpdp-act-commencement-timeline-india",
+    "dpdp-data-protection-board-status"
   ]
 }
