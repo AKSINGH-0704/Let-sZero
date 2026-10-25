@@ -23,6 +23,7 @@
     "provider-suppression-reconciliation",
     "email-provider-rate-limit-retry-queue",
     "email-dns-change-validation-checklist",
-    "multi-tenant-email-infrastructure-isolation"
+    "multi-tenant-email-infrastructure-isolation",
+    "repmail-merge-fields-preview-vs-send"
   ]
 }

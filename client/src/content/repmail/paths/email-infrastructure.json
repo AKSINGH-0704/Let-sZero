@@ -50,6 +50,13 @@
     "dkim-canonicalization-rewriting",
     "dmarc-policy-discovery-outcomes",
     "authentication-drift-detection",
-    "aws-ses-event-destinations-compared"
+    "aws-ses-event-destinations-compared",
+    "zoho-mail-domain-verification-dns-handoff",
+    "ses-smtp-535-authentication-troubleshooting",
+    "email-api-202-accepted-not-delivered",
+    "zoho-mail-smtp-port-465-vs-587",
+    "inbound-email-api-webhook-vs-polling",
+    "repmail-verify-custom-sending-domain",
+    "repmail-merge-fields-preview-vs-send"
   ]
 }

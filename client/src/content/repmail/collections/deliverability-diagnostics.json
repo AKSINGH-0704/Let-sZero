@@ -119,6 +119,10 @@
     "compromised-account-blocklist-containment",
     "first-15-minutes-deliverability-incident",
     "spam-recovery-after-content-change",
-    "yahoo-sender-hub-insights-vs-complaint-feedback-loop"
+    "yahoo-sender-hub-insights-vs-complaint-feedback-loop",
+    "dmarc-checker-policy-alignment",
+    "email-spam-checker-diagnostic-limits",
+    "spf-checker-result-interpretation",
+    "dkim-checker-selector-alignment"
   ]
 }

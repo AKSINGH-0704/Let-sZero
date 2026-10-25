@@ -73,6 +73,7 @@
     "cold-email-opening-line-audit",
     "cold-email-segment-to-message-fit-check",
     "human-approval-gates-ai-personalized-sequences",
-    "personalization-fallback-hierarchy"
+    "personalization-fallback-hierarchy",
+    "cold-email-subject-line-tester-review-sheet"
   ]
 }
