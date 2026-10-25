@@ -1,0 +1,95 @@
+{
+  "status": "passed",
+  "sitemapStatus": 200,
+  "sitemapCount": 638,
+  "rssStatus": 200,
+  "rssItems": 597,
+  "robotsStatus": 200,
+  "healthStatus": 200,
+  "healthBody": "{\"status\":\"ok\",\"uptime\":1174,\"postgres\":\"connected\",\"redis\":\"connected\",\"worker\":\"running\",\"smtp\":\"verified\",\"sendPaused\":false,\"ai\":\"ok\",\"sesTracking\":\"configured\",\"domainPoll\":{\"lastCompletedAt\":\"2026-10-25T18:02:43.450Z\",\"inProgress\":false},\"timestamp\":\"2026-10-25T18:11:48.170Z\"}",
+  "allRoutesFailed": [],
+  "allRoutesChecked": 638,
+  "newRoutes": [
+    {
+      "path": "/repmail/learn/deliverability/email-open-rate-benchmark-calculator-denominator",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/deliverability/email-deliverability-benchmark-calculator-boundaries",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/compliance/dpdp-rules-2025-commencement-timeline",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/compliance/dpdp-act-commencement-timeline-india",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/compliance/dpdp-data-protection-board-status",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/deliverability/repmail-warmup-daily-cap-ladder",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/deliverability/emails-spam-despite-spf-dkim-dmarc-pass",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/deliverability/outlook-suspected-spam-rejection-fix",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/deliverability/gmail-only-spam-vs-other-providers",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    },
+    {
+      "path": "/repmail/learn/email-platform/email-api-hidden-costs",
+      "http": 200,
+      "title": true,
+      "canonical": true,
+      "jsonLd": true,
+      "attempts": 1
+    }
+  ],
+  "newRouteCount": 10
+}

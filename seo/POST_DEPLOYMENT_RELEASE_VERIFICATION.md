@@ -116,3 +116,52 @@ A bounded retrying crawl checked every URL in the live sitemap and every new Rel
 ## Final result
 
 **PASS — Wave 3 Release 1 is live and production-verified.** The 12 retained articles are crawlable, rendered, internally connected, represented in navigation, included in sitemap/RSS output, and free of observed route, metadata, hydration, console or CSP regressions.
+
+
+---
+
+# Wave 3 Release 2 — Post-Deployment Release Verification
+
+**Verification date:** 2026-10-25
+**Production:** `https://www.letszero.in`
+**Content rollout commit:** `7584ff68d972d913a3ab219e975733f217cca363`
+
+## Production counts
+
+The Railway-triggered rollout was observed transitioning from the Release 1 baseline of 628 sitemap routes / 587 RSS items to the Release 2 state:
+
+- **597 published RepMail articles**
+- **638 sitemap/public routes**
+- **597 RepMail RSS items**
+- **127 guides in Deliverability Diagnostics**
+- **124 steps in Provider Deliverability Diagnostics**
+- **10 new Release 2 articles live**
+
+## Complete HTTP crawl
+
+The retry-aware production verifier checked every URL in the live sitemap and every retained Release 2 URL. Machine-readable evidence is stored in `seo/wave3-research/WAVE3_RELEASE2_PRODUCTION_VERIFICATION.json`.
+
+- Sitemap HTTP status: **200**
+- Routes crawled: **638/638**
+- Route failures: **0**
+- New Release 2 URLs: **10/10 HTTP 200**
+- Every crawled route had a title, canonical and JSON-LD: **638/638**
+- RSS HTTP status: **200**, item count **597**
+- `robots.txt` HTTP status: **200**
+- `/api/health` HTTP status: **200**
+
+## Representative rendered production checks
+
+- Resource Center homepage `/repmail/learn/`: hydrated successfully; rendered the 597-guide count, academy navigation, latest Release 2 guides, collections, paths and search control.
+- Read-only Resource Center search for `DPDP`: returned all three new DPDP guides, including the Rules timeline, Act timeline and Board status guide.
+- New compliance guide `/repmail/learn/compliance/dpdp-rules-2025-commencement-timeline`: rendered its date table, breadcrumbs, 4 JSON-LD blocks, related/continue-learning links and next navigation.
+- New email-platform guide `/repmail/learn/email-platform/email-api-hidden-costs`: rendered its cost table, breadcrumbs, 4 JSON-LD blocks, related/continue-learning links and next navigation.
+- Deliverability Diagnostics collection: rendered **127 guides** and visibly included new Release 2 diagnostic links.
+- Provider Deliverability Diagnostics learning path: rendered **124 steps** and visibly included new Release 2 steps.
+- Browser console checks: no console output/errors on the homepage, representative compliance article, collection, learning path or email-platform article; no CSP violation was observed.
+
+## Preservation and safety checks
+
+No signup, purchase, campaign, ad-click, Google Ads setting, conversion, consent, attribution, payment or auth action was performed. Protected analytics, consent, authentication, payment, pricing and campaign files were outside the Release 2 diff. Existing Resource Center architecture, design system, Markdown loader/schema, asset renderer, collections, learning paths, related-content, JSON-LD, prerendering, sitemap, RSS and search were reused. `Blogs.docx` remained immutable.
+
+**Final result: PASS — Wave 3 Release 2 is live and production-verified.**
