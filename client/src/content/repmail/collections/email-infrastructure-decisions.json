@@ -59,6 +59,7 @@
     "email-api-202-accepted-not-delivered",
     "zoho-mail-smtp-port-465-vs-587",
     "inbound-email-api-webhook-vs-polling",
-    "repmail-verify-custom-sending-domain"
+    "repmail-verify-custom-sending-domain",
+    "repmail-do-you-need-mailbox-for-sending-domain"
   ]
 }

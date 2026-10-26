@@ -58,6 +58,13 @@
     "inbound-email-api-webhook-vs-polling",
     "repmail-verify-custom-sending-domain",
     "repmail-merge-fields-preview-vs-send",
-    "email-api-hidden-costs"
+    "email-api-hidden-costs",
+    "repmail-do-you-need-mailbox-for-sending-domain",
+    "repmail-merge-fields-explained",
+    "smtp-reply-codes-explained",
+    "queued-email-meaning",
+    "email-headers-explained",
+    "free-bulk-email-limits",
+    "how-many-free-emails-can-you-send"
   ]
 }

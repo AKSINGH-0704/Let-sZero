@@ -129,6 +129,7 @@
     "repmail-warmup-daily-cap-ladder",
     "emails-spam-despite-spf-dkim-dmarc-pass",
     "outlook-suspected-spam-rejection-fix",
-    "gmail-only-spam-vs-other-providers"
+    "gmail-only-spam-vs-other-providers",
+    "how-to-send-mass-email-safely"
   ]
 }

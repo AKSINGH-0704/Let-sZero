@@ -25,6 +25,9 @@
     "email-dns-change-validation-checklist",
     "multi-tenant-email-infrastructure-isolation",
     "repmail-merge-fields-preview-vs-send",
-    "email-api-hidden-costs"
+    "email-api-hidden-costs",
+    "repmail-merge-fields-explained",
+    "free-bulk-email-limits",
+    "how-many-free-emails-can-you-send"
   ]
 }

@@ -23,6 +23,9 @@
     "email-delivery-status-denominators",
     "authentication-results-header",
     "email-greylisting",
-    "list-unsubscribe-one-click-semantics"
+    "list-unsubscribe-one-click-semantics",
+    "smtp-reply-codes-explained",
+    "queued-email-meaning",
+    "email-headers-explained"
   ]
 }
